@@ -1,0 +1,24 @@
+# Node
+node_modules/
+dist/
+
+# Rust
+target/
+**/*.rs.bk
+
+# Tauri
+apps/desktop/src-tauri/gen/
+
+# macOS
+.DS_Store
+
+# Env & secrets
+.env
+.env.*
+*.local
+
+# Xcode (M2, apps/ios)
+apps/ios/*.xcodeproj
+apps/ios/PacketTunnel/*.xcodeproj
+xcuserdata/
+DerivedData/
