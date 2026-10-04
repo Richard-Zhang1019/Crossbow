@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+/* 主题变量：明暗双套 + 可换强调色（设置页接入后由 JS 切换 class） */
+:root {
+  --cb-bg: #f5f5f7;
+  --cb-surface: #ffffff;
+  --cb-border: #e5e5ea;
+  --cb-text: #1d1d1f;
+  --cb-text-dim: #6e6e73;
+  --cb-accent: #d6482b; /* crossbow red */
+}
+
+.dark {
+  --cb-bg: #161618;
+  --cb-surface: #1f1f22;
+  --cb-border: #2c2c30;
+  --cb-text: #f5f5f7;
+  --cb-text-dim: #98989d;
+  --cb-accent: #ff6b4a;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: var(--cb-bg);
+  color: var(--cb-text);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC",
+    "Helvetica Neue", sans-serif;
+  user-select: none;
+}
+
+/* 等宽区域（日志/连接）恢复可选中文本 */
+.cb-selectable {
+  user-select: text;
+}
