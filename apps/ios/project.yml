@@ -1,0 +1,60 @@
+# XcodeGen 工程定义 — Crossbow iOS (M2)
+# 生成：xcodegen generate（需要完整 Xcode 与 libbox.xcframework）
+name: Crossbow
+options:
+  bundleIdPrefix: com.crossbow
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    DEVELOPMENT_TEAM: "" # TODO: 填写 Apple Developer Team ID
+    CODE_SIGN_STYLE: Automatic
+packages:
+  # M2 引入：sing-box libbox 以 SPM binary target 或本地 xcframework 接入
+  # libbox:
+  #   url: https://github.com/SagerNet/sing-box
+targets:
+  Crossbow:
+    type: application
+    platform: iOS
+    sources:
+      - Crossbow
+    entitlements:
+      path: Crossbow/Crossbow.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.crossbow.app
+        # NetworkExtension 主 App 权限
+        com.apple.developer.networking.networkextension:
+          - packet-tunnel-provider
+    info:
+      path: Crossbow/Info.plist
+      properties:
+        UILaunchScreen: {}
+        NSLocalNetworkUsageDescription: Crossbow 需要访问本地网络以提供代理服务。
+  PacketTunnel:
+    type: app-extension
+    platform: iOS
+    sources:
+      - PacketTunnel
+    entitlements:
+      path: PacketTunnel/PacketTunnel.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.crossbow.app
+    info:
+      path: PacketTunnel/Info.plist
+      properties:
+        CFBundleDisplayName: Crossbow Tunnel
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
+schemes:
+  Crossbow:
+    build:
+      targets:
+        Crossbow: all
+        PacketTunnel: all
+    run:
+      config: Debug
