@@ -68,6 +68,20 @@ export interface LogEntry {
   payload: string;
 }
 
+export interface NodeView {
+  name: string;
+  kind: string;
+  alive: boolean;
+  delay_ms: number | null;
+}
+
+export interface GroupView {
+  name: string;
+  kind: string;
+  now: string | null;
+  nodes: NodeView[];
+}
+
 export const CORE_MODES = [
   { id: "direct", label: "直连" },
   { id: "rule", label: "规则" },
@@ -96,11 +110,18 @@ export const ipc = {
   getUiSettings: () => invoke<UiSettings>("get_ui_settings"),
   getEngineConfig: () => invoke<EngineConfigView>("get_engine_config"),
   setTheme: (theme: UiSettings["theme"]) => invoke<void>("set_theme", { theme }),
+  setLang: (lang: string) => invoke<void>("set_lang", { lang }),
   setMixedPort: (port: number) => invoke<void>("set_mixed_port", { port }),
   setAllowLan: (enabled: boolean) => invoke<void>("set_allow_lan", { enabled }),
   autostartStatus: () => invoke<boolean>("autostart_status"),
   autostartSet: (enable: boolean) => invoke<void>("autostart_set", { enable }),
   coreVersion: () => invoke<string>("core_version"),
+  proxiesSnapshot: () => invoke<GroupView[]>("proxies_snapshot"),
+  selectProxy: (group: string, name: string) =>
+    invoke<void>("select_proxy", { group, name }),
+  testGroupDelay: (group: string) =>
+    invoke<Record<string, number>>("test_group_delay", { group }),
+  testNodeDelay: (node: string) => invoke<number>("test_node_delay", { node }),
   subscribeTraffic: () => invoke<void>("subscribe_traffic"),
   unsubscribeTraffic: () => invoke<void>("unsubscribe_traffic"),
   subscribeConnections: () => invoke<void>("subscribe_connections"),
@@ -121,6 +142,8 @@ export const ipc = {
     listen<LogEntry[]>("logs://data", (e) => cb(e.payload)),
   onTheme: (cb: (t: UiSettings["theme"]) => void) =>
     listen<UiSettings["theme"]>("ui://theme", (e) => cb(e.payload)),
+  onLang: (cb: (l: string) => void) =>
+    listen<string>("ui://lang", (e) => cb(e.payload)),
   onProfileImported: (cb: (url: string) => void) =>
     listen<string>("profile://imported", (e) => cb(e.payload)),
   onProfileImportFailed: (cb: (msg: string) => void) =>

@@ -1,22 +1,27 @@
 import { useEffect, useState } from "react";
 import { ipc, type EngineConfigView, type UiSettings } from "../ipc";
+import { useT } from "../i18n";
 
 /** 设置页（M0-S4）：内核端口/局域网、外观主题、开机自启、内核版本。 */
 export default function SettingsPage() {
+  const t = useT();
   const [engine, setEngine] = useState<EngineConfigView | null>(null);
   const [portDraft, setPortDraft] = useState<string>("");
   const [theme, setTheme] = useState<UiSettings["theme"]>("system");
   const [autostart, setAutostart] = useState(false);
   const [version, setVersion] = useState<string>("…");
+  const [lang, setLangState] = useState<"zh" | "en">("zh");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const load = async () => {
     const e = await ipc.getEngineConfig().catch(() => null);
     setEngine(e);
     setPortDraft(e ? String(e.mixed_port) : "");
+    const ui = await ipc.getUiSettings().catch(() => null);
+    if (ui) setLangState((ui.lang as "zh" | "en") ?? "zh");
     setTheme(await ipc.getUiSettings().then((u) => u.theme).catch(() => "system" as const));
     setAutostart(await ipc.autostartStatus().catch(() => false));
-    setVersion(await ipc.coreVersion().catch(() => "未安装"));
+    setVersion(await ipc.coreVersion().catch(() => t("settings.notInstalled")));
   };
 
   useEffect(() => {
@@ -31,12 +36,12 @@ export default function SettingsPage() {
   const applyPort = async () => {
     const port = Number(portDraft);
     if (!Number.isInteger(port) || port < 1024 || port > 65535) {
-      flash(false, "端口需为 1024–65535 的整数");
+      flash(false, t("settings.invalidPort"));
       return;
     }
     try {
       await ipc.setMixedPort(port);
-      flash(true, `混合端口已改为 ${port}${engine?.allow_lan ? "" : "（仅本机监听）"}`);
+      flash(true, `${t("settings.port")}: ${port}`);
     } catch (e) {
       flash(false, String(e));
     }
@@ -45,7 +50,7 @@ export default function SettingsPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold">设置</h1>
+        <h1 className="text-lg font-semibold">{t("settings.title")}</h1>
         {msg && (
           <span className="text-xs" style={{ color: msg.ok ? "#34c759" : "#e0524c" }}>
             {msg.text}
@@ -53,13 +58,13 @@ export default function SettingsPage() {
         )}
       </div>
 
-      <Group title="内核">
-        <Row label="内核版本" hint="mihomo sidecar">
+      <Group title={t("settings.coreSection")}>
+        <Row label={t("settings.version")} hint="mihomo sidecar">
           <span className="cb-selectable text-xs" style={{ color: "var(--cb-text-dim)" }}>
             {version}
           </span>
         </Row>
-        <Row label="混合监听端口" hint="HTTP + SOCKS5 共用；修改后内核运行中会自动热重启">
+        <Row label={t("settings.port")} hint={t("settings.portHint")}>
           <input
             value={portDraft}
             onChange={(e) => setPortDraft(e.target.value)}
@@ -69,20 +74,20 @@ export default function SettingsPage() {
             style={{ borderColor: "var(--cb-border)", background: "var(--cb-bg)" }}
           />
         </Row>
-        <Row label="允许局域网连接" hint="同一网络下的其他设备可使用本机代理（bind 0.0.0.0）">
+        <Row label={t("settings.lan")} hint={t("settings.lanHint")}>
           <Switch
             checked={engine?.allow_lan ?? false}
             onChange={async (v) => {
               await ipc.setAllowLan(v).catch((e) => flash(false, String(e)));
               load();
-              flash(true, v ? "已允许局域网" : "已改为仅本机");
+              flash(true, v ? t("settings.lanOn") : t("settings.lanOff"));
             }}
           />
         </Row>
       </Group>
 
-      <Group title="外观">
-        <Row label="主题" hint="跟随系统 / 浅色 / 深色">
+      <Group title={t("settings.appearance")}>
+        <Row label={t("settings.theme")}>
           <select
             value={theme}
             onChange={async (e) => {
@@ -93,22 +98,30 @@ export default function SettingsPage() {
             className="rounded-lg border px-2 py-1 text-sm"
             style={{ borderColor: "var(--cb-border)", background: "var(--cb-bg)" }}
           >
-            <option value="system">跟随系统</option>
-            <option value="light">浅色</option>
-            <option value="dark">深色</option>
+            <option value="system">{t("theme.system")}</option>
+            <option value="light">{t("theme.light")}</option>
+            <option value="dark">{t("theme.dark")}</option>
           </select>
         </Row>
-        <Row label="语言" hint="英文界面在 M1 提供">
-          <select disabled className="rounded-lg border px-2 py-1 text-sm opacity-50"
-            style={{ borderColor: "var(--cb-border)", background: "var(--cb-bg)" }}>
-            <option>简体中文</option>
-            <option>English</option>
+        <Row label={t("settings.lang")}>
+          <select
+            value={lang}
+            onChange={async (e) => {
+              const l = e.target.value as "zh" | "en";
+              await ipc.setLang(l).catch((e) => flash(false, String(e)));
+              setLangState(l);
+            }}
+            className="rounded-lg border px-2 py-1 text-sm"
+            style={{ borderColor: "var(--cb-border)", background: "var(--cb-bg)" }}
+          >
+            <option value="zh">简体中文</option>
+            <option value="en">English</option>
           </select>
         </Row>
       </Group>
 
-      <Group title="系统">
-        <Row label="开机自启" hint="登录后自动启动（隐藏窗口，驻留托盘）">
+      <Group title={t("settings.systemSection")}>
+        <Row label={t("settings.autostart")} hint={t("settings.autostartHint")}>
           <Switch
             checked={autostart}
             onChange={async (v) => {
@@ -118,13 +131,13 @@ export default function SettingsPage() {
               });
               if (ok) {
                 setAutostart(v);
-                flash(true, v ? "已开启自启" : "已关闭自启");
+                flash(true, v ? t("settings.autostartOn") : t("settings.autostartOff"));
               }
             }}
           />
         </Row>
-        <Row label="配置快照" hint="每次保存前自动快照，保留最近 5 份">
-          <span className="text-xs" style={{ color: "var(--cb-text-dim)" }}>自动</span>
+        <Row label={t("settings.snapshot")} hint={t("settings.snapshotAuto")}>
+          <span className="text-xs" style={{ color: "var(--cb-text-dim)" }}>{t("settings.snapshotAuto")}</span>
         </Row>
       </Group>
     </div>

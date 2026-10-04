@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import VirtualList from "../components/VirtualList";
 import { fmtBytes, fmtDuration } from "../format";
 import { ipc, type ConnRow, type ConnSnapshot } from "../ipc";
+import { useT } from "../i18n";
 
 const ROW_H = 30;
 const BODY_H = 480;
 
 /** 连接页：实时连接表（内核 connections WS → Rust 节流聚合 → 此处渲染）。 */
 export default function ConnectionsPage() {
+  const t = useT();
   const [snapshot, setSnapshot] = useState<ConnSnapshot>({
     rows: [],
     upload_total: 0,
@@ -49,16 +51,16 @@ export default function ConnectionsPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-3">
       <div className="flex items-center gap-3">
-        <h1 className="text-lg font-semibold">连接</h1>
+        <h1 className="text-lg font-semibold">{t("conn.title")}</h1>
         <span className="text-xs" style={{ color: "var(--cb-text-dim)" }}>
           {rows.length} 条 · ↑{fmtBytes(snapshot.upload_total)} ↓
-          {fmtBytes(snapshot.download_total)} · 内存 {fmtBytes(snapshot.memory)}
+          {fmtBytes(snapshot.download_total)} · {t("conn.mem")} {fmtBytes(snapshot.memory)}
         </span>
         <div className="flex-1" />
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="过滤：主机 / 规则 / 链路 / 进程"
+          placeholder={t("conn.filter")}
           className="cb-selectable w-72 rounded-lg border px-3 py-1.5 text-xs outline-none focus:border-[var(--cb-accent)]"
           style={{ borderColor: "var(--cb-border)", background: "var(--cb-surface)" }}
         />
@@ -71,7 +73,7 @@ export default function ConnectionsPage() {
             color: paused ? "#fff" : "var(--cb-text-dim)",
           }}
         >
-          {paused ? "已暂停（点击恢复）" : "暂停"}
+          {paused ? t("conn.paused") : t("conn.pause")}
         </button>
       </div>
 
@@ -85,20 +87,20 @@ export default function ConnectionsPage() {
             borderBottom: "1px solid var(--cb-border)",
           }}
         >
-          <span>目标</span>
-          <span>规则</span>
-          <span>链路</span>
-          <span>进程</span>
-          <span className="text-right">↑ 上行</span>
-          <span className="text-right">↓ 下行</span>
-          <span className="text-right">耗时</span>
+          <span>{t("col.target")}</span>
+          <span>{t("col.rule")}</span>
+          <span>{t("col.chains")}</span>
+          <span>{t("col.process")}</span>
+          <span className="text-right">{t("col.up")}</span>
+          <span className="text-right">{t("col.down")}</span>
+          <span className="text-right">{t("col.elapsed")}</span>
         </div>
         {rows.length === 0 ? (
           <div
             className="flex items-center justify-center text-xs"
             style={{ height: BODY_H, color: "var(--cb-text-dim)" }}
           >
-            {snapshot.rows.length === 0 ? "内核未运行或暂无连接" : "无匹配连接"}
+            {snapshot.rows.length === 0 ? t("conn.empty") : t("conn.noMatch")}
           </div>
         ) : (
           <VirtualList

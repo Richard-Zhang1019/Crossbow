@@ -1,0 +1,248 @@
+import { useEffect, useReducer } from "react";
+import { ipc } from "./ipc";
+
+export type Lang = "zh" | "en";
+
+const dict: Record<Lang, Record<string, string>> = {
+  zh: {
+    "nav.home": "首页",
+    "nav.proxies": "代理",
+    "nav.profiles": "配置",
+    "nav.connections": "连接",
+    "nav.logs": "日志",
+    "nav.settings": "设置",
+    "common.on": "开启",
+    "common.off": "关闭",
+    "common.retry": "重试",
+    "home.sysproxy": "系统代理",
+    "home.core": "内核",
+    "home.coreRunning": "运行中",
+    "home.coreStarting": "启动中…",
+    "home.coreStopped": "已停止",
+    "home.coreCrashed": "异常（{msg}）",
+    "home.activeProfile": "当前配置",
+    "home.none": "未选择",
+    "home.modeHint": "内核运行中才实际生效",
+    "home.outbound": "当前出口",
+    "home.comingM1": "M1 接入",
+    "home.traffic": "累计流量（本次内核运行）",
+    "home.connections": "活动连接",
+    "home.rate": "实时速率",
+    "home.profiles": "配置档案",
+    "home.noProfiles": "暂无配置 — 到「配置」页导入第一个订阅",
+    "mode.direct": "直连",
+    "mode.rule": "规则",
+    "mode.global": "全局",
+    "proxies.title": "代理",
+    "proxies.testAll": "⚡ 测速全部",
+    "proxies.refresh": "刷新",
+    "proxies.testing": "测速中…",
+    "proxies.untested": "—",
+    "proxies.selectHint": "单击选择节点（选择会被记住）",
+    "proxies.noCore": "尚未接入内核",
+    "proxies.noCoreHint": "先在「配置」页导入订阅并开启代理",
+    "proxies.noGroups": "当前配置没有策略组",
+    "proxies.now": "当前",
+    "profiles.title": "配置",
+    "profiles.import": "＋ 导入",
+    "profiles.importing": "导入中…",
+    "profiles.urlPlaceholder": "订阅 URL，回车或点击导入",
+    "profiles.empty": "还没有配置，粘贴订阅 URL 开始",
+    "profiles.remote": "订阅",
+    "profiles.local": "本地",
+    "profiles.updatedAt": "更新于 {time}",
+    "profiles.justNow": "刚刚",
+    "profiles.minAgo": "{n} 分钟前",
+    "profiles.hourAgo": "{n} 小时前",
+    "profiles.update": "更新",
+    "profiles.setActive": "设为当前",
+    "profiles.remove": "删除",
+    "profiles.current": "当前",
+    "conn.title": "连接",
+    "conn.filter": "过滤：主机 / 规则 / 链路 / 进程",
+    "conn.pause": "暂停",
+    "conn.paused": "已暂停（点击恢复）",
+    "conn.mem": "内存",
+    "conn.empty": "内核未运行或暂无连接",
+    "conn.noMatch": "无匹配连接",
+    "col.target": "目标",
+    "col.rule": "规则",
+    "col.chains": "链路",
+    "col.process": "进程",
+    "col.up": "↑ 上行",
+    "col.down": "↓ 下行",
+    "col.elapsed": "耗时",
+    "logs.title": "日志",
+    "logs.keyword": "关键字过滤",
+    "logs.clear": "清空",
+    "logs.empty": "内核未运行或暂无日志",
+    "settings.title": "设置",
+    "settings.coreSection": "内核",
+    "settings.version": "内核版本",
+    "settings.notInstalled": "未安装",
+    "settings.port": "混合监听端口",
+    "settings.portHint": "HTTP + SOCKS5 共用；修改后内核运行中会自动热重启",
+    "settings.invalidPort": "端口需为 1024–65535 的整数",
+    "settings.lan": "允许局域网连接",
+    "settings.lanHint": "同一网络下的其他设备可使用本机代理（bind 0.0.0.0）",
+    "settings.appearance": "外观",
+    "settings.theme": "主题",
+    "theme.system": "跟随系统",
+    "theme.light": "浅色",
+    "theme.dark": "深色",
+    "settings.lang": "语言 / Language",
+    "settings.systemSection": "系统",
+    "settings.autostart": "开机自启",
+    "settings.autostartHint": "登录后自动启动（隐藏窗口，驻留托盘）",
+    "settings.snapshot": "配置快照",
+    "settings.snapshotAuto": "自动",
+    "settings.lanOn": "已允许局域网",
+    "settings.lanOff": "已改为仅本机",
+    "settings.autostartOn": "已开启自启",
+    "settings.autostartOff": "已关闭自启",
+    "toast.imported": "订阅导入成功：{url}",
+    "toast.importFailed": "导入失败：{msg}",
+  },
+  en: {
+    "nav.home": "Home",
+    "nav.proxies": "Proxies",
+    "nav.profiles": "Profiles",
+    "nav.connections": "Connections",
+    "nav.logs": "Logs",
+    "nav.settings": "Settings",
+    "common.on": "On",
+    "common.off": "Off",
+    "common.retry": "Retry",
+    "home.sysproxy": "System Proxy",
+    "home.core": "Core",
+    "home.coreRunning": "running",
+    "home.coreStarting": "starting…",
+    "home.coreStopped": "stopped",
+    "home.coreCrashed": "error ({msg})",
+    "home.activeProfile": "Active profile",
+    "home.none": "none",
+    "home.modeHint": "Only effective while the core is running",
+    "home.outbound": "Outbound",
+    "home.comingM1": "coming in M1",
+    "home.traffic": "Traffic (this core session)",
+    "home.connections": "Active connections",
+    "home.rate": "Live rate",
+    "home.profiles": "Profiles",
+    "home.noProfiles": "No profiles yet — import your first subscription in Profiles",
+    "mode.direct": "Direct",
+    "mode.rule": "Rule",
+    "mode.global": "Global",
+    "proxies.title": "Proxies",
+    "proxies.testAll": "⚡ Test all",
+    "proxies.refresh": "Refresh",
+    "proxies.testing": "testing…",
+    "proxies.untested": "—",
+    "proxies.selectHint": "Click a node to select it (selection is remembered)",
+    "proxies.noCore": "Core not connected",
+    "proxies.noCoreHint": "Import a subscription in Profiles and turn the proxy on first",
+    "proxies.noGroups": "No policy groups in the active profile",
+    "proxies.now": "now",
+    "profiles.title": "Profiles",
+    "profiles.import": "＋ Import",
+    "profiles.importing": "importing…",
+    "profiles.urlPlaceholder": "Subscription URL, press Enter or click Import",
+    "profiles.empty": "No profiles yet — paste a subscription URL to start",
+    "profiles.remote": "Remote",
+    "profiles.local": "Local",
+    "profiles.updatedAt": "updated {time}",
+    "profiles.justNow": "just now",
+    "profiles.minAgo": "{n} min ago",
+    "profiles.hourAgo": "{n} h ago",
+    "profiles.update": "Update",
+    "profiles.setActive": "Activate",
+    "profiles.remove": "Delete",
+    "profiles.current": "Active",
+    "conn.title": "Connections",
+    "conn.filter": "Filter: host / rule / chain / process",
+    "conn.pause": "Pause",
+    "conn.paused": "Paused (click to resume)",
+    "conn.mem": "memory",
+    "conn.empty": "Core not running or no connections",
+    "conn.noMatch": "No matching connections",
+    "col.target": "Target",
+    "col.rule": "Rule",
+    "col.chains": "Chain",
+    "col.process": "Process",
+    "col.up": "↑ Up",
+    "col.down": "↓ Down",
+    "col.elapsed": "Age",
+    "logs.title": "Logs",
+    "logs.keyword": "Keyword filter",
+    "logs.clear": "Clear",
+    "logs.empty": "Core not running or no logs",
+    "settings.title": "Settings",
+    "settings.coreSection": "Core",
+    "settings.version": "Core version",
+    "settings.notInstalled": "not installed",
+    "settings.port": "Mixed listen port",
+    "settings.portHint": "Shared by HTTP + SOCKS5; the core hot-restarts on change",
+    "settings.invalidPort": "Port must be an integer in 1024–65535",
+    "settings.lan": "Allow LAN",
+    "settings.lanHint": "Other devices on the same network can use this proxy (bind 0.0.0.0)",
+    "settings.appearance": "Appearance",
+    "settings.theme": "Theme",
+    "theme.system": "System",
+    "theme.light": "Light",
+    "theme.dark": "Dark",
+    "settings.lang": "语言 / Language",
+    "settings.systemSection": "System",
+    "settings.autostart": "Launch at login",
+    "settings.autostartHint": "Start hidden in the tray after login",
+    "settings.snapshot": "Config snapshots",
+    "settings.snapshotAuto": "automatic",
+    "settings.lanOn": "LAN allowed",
+    "settings.lanOff": "Local host only",
+    "settings.autostartOn": "Autostart enabled",
+    "settings.autostartOff": "Autostart disabled",
+    "toast.imported": "Subscription imported: {url}",
+    "toast.importFailed": "Import failed: {msg}",
+  },
+};
+
+let lang: Lang = "zh";
+const listeners = new Set<() => void>();
+
+export function setLang(l: Lang) {
+  if (l === lang) return;
+  lang = l;
+  listeners.forEach((f) => f());
+}
+
+export function currentLang(): Lang {
+  return lang;
+}
+
+export type TKey = keyof typeof dict.zh;
+
+export function useT() {
+  const [, force] = useReducer((x: number) => x + 1, 0);
+  useEffect(() => {
+    listeners.add(force);
+    return () => {
+      listeners.delete(force);
+    };
+  }, []);
+  return (key: TKey, params?: Record<string, string | number>): string => {
+    let s = dict[lang][key] ?? dict.zh[key] ?? key;
+    if (params) {
+      for (const [k, v] of Object.entries(params)) {
+        s = s.replace(`{${k}}`, String(v));
+      }
+    }
+    return s;
+  };
+}
+
+/** 启动时调用：读取持久化语言并跟随设置页修改。 */
+export function initLang() {
+  ipc
+    .getUiSettings()
+    .then((u) => setLang((u.lang as Lang) ?? "zh"))
+    .catch(() => {});
+  ipc.onLang((l) => setLang((l as Lang) ?? "zh"));
+}

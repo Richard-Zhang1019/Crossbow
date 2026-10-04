@@ -46,6 +46,10 @@ pub fn apply_runtime(base_yaml: &str, rt: &RuntimeConfig) -> Result<String, serd
     );
     patch.insert(Value::from("mode"), Value::from("rule"));
     patch.insert(Value::from("log-level"), Value::from(rt.log_level.as_str()));
+    // 节点选择持久化：内核侧记住手工选择（等价「固定节点」），重启不丢。
+    let mut profile = Mapping::new();
+    profile.insert(Value::from("store-selected"), Value::from(true));
+    patch.insert(Value::from("profile"), Value::from(profile));
     if rt.controller_port != 0 {
         patch.insert(
             Value::from("external-controller"),

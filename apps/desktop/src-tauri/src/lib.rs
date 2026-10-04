@@ -4,6 +4,7 @@
 //! （traffic/connections/logs 节流聚合）、设置（端口/局域网/主题/自启/
 //! 内核版本）、深链接导入与单实例。
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -283,6 +284,39 @@ fn unsubscribe_logs(state: State<AppState>) -> Result<(), String> {
     Ok(())
 }
 
+// ---------- 代理组命令（代理页） ----------
+
+fn controller_client(state: &AppState) -> Result<mihomo_api::Controller, String> {
+    let (port, secret) = state
+        .core
+        .controller()
+        .ok_or_else(|| "内核未运行".to_string())?;
+    Ok(mihomo_api::Controller { port, secret })
+}
+
+#[tauri::command]
+fn proxies_snapshot(state: State<AppState>) -> Result<Vec<mihomo_api::GroupView>, String> {
+    controller_client(&state)?.groups()
+}
+
+#[tauri::command]
+fn select_proxy(state: State<AppState>, group: String, name: String) -> Result<(), String> {
+    controller_client(&state)?.select_proxy(&group, &name)
+}
+
+#[tauri::command]
+fn test_group_delay(
+    state: State<AppState>,
+    group: String,
+) -> Result<BTreeMap<String, u64>, String> {
+    controller_client(&state)?.test_group_delay(&group)
+}
+
+#[tauri::command]
+fn test_node_delay(state: State<AppState>, node: String) -> Result<u64, String> {
+    controller_client(&state)?.test_node_delay(&node)
+}
+
 // ---------- 设置命令 ----------
 
 #[tauri::command]
@@ -318,6 +352,21 @@ fn set_theme(app: AppHandle, state: State<AppState>, theme: String) -> Result<()
         store.save().map_err(|e| e.to_string())?;
     }
     let _ = app.emit("ui://theme", theme);
+    Ok(())
+}
+
+#[tauri::command]
+fn set_lang(app: AppHandle, state: State<AppState>, lang: String) -> Result<(), String> {
+    if !["zh", "en"].contains(&lang.as_str()) {
+        return Err(format!("invalid lang: {lang}"));
+    }
+    {
+        let mut store = state.store.lock().unwrap();
+        store.data_mut().ui.lang = lang.clone();
+        store.save().map_err(|e| e.to_string())?;
+    }
+    let _ = app.emit("ui://lang", lang);
+    refresh_tray(&app);
     Ok(())
 }
 
@@ -473,14 +522,28 @@ fn set_core_mode(app: AppHandle, state: State<AppState>, mode: String) -> Result
 
 // ---------- 托盘 ----------
 
+/// 托盘文案的双语标签（语言跟随设置页）。
+fn tr(lang: &str, zh: &str, en: &str) -> String {
+    if lang == "en" {
+        en.to_string()
+    } else {
+        zh.to_string()
+    }
+}
+
 fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
     let state = app.state::<AppState>();
+    let lang = state.store.lock().unwrap().data().ui.lang.clone();
 
     let sp = state.sysproxy.status();
     let proxy_label = if sp.enabled {
-        format!("系统代理：已开启 :{}", sp.port)
+        format!(
+            "{} :{}",
+            tr(&lang, "系统代理：已开启", "System Proxy: On"),
+            sp.port
+        )
     } else {
-        "系统代理：已关闭".to_string()
+        tr(&lang, "系统代理：已关闭", "System Proxy: Off")
     };
     let proxy = MenuItem::with_id(app, "toggle-proxy", &proxy_label, true, None::<&str>)?;
 
@@ -488,10 +551,22 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
     let mk_check = |id: &str, label: &str, checked: bool| {
         CheckMenuItem::with_id(app, id, label, true, checked, None::<&str>)
     };
-    let mode_menu = SubmenuBuilder::new(app, "模式")
-        .item(&mk_check("mode-direct", "直连", mode == "direct")?)
-        .item(&mk_check("mode-rule", "规则", mode == "rule")?)
-        .item(&mk_check("mode-global", "全局", mode == "global")?)
+    let mode_menu = SubmenuBuilder::new(app, tr(&lang, "模式", "Mode"))
+        .item(&mk_check(
+            "mode-direct",
+            &tr(&lang, "直连", "Direct"),
+            mode == "direct",
+        )?)
+        .item(&mk_check(
+            "mode-rule",
+            &tr(&lang, "规则", "Rule"),
+            mode == "rule",
+        )?)
+        .item(&mk_check(
+            "mode-global",
+            &tr(&lang, "全局", "Global"),
+            mode == "global",
+        )?)
         .build()?;
 
     let (profiles, active) = {
@@ -501,7 +576,7 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
             store.data().active_profile.clone(),
         )
     };
-    let mut profile_builder = SubmenuBuilder::new(app, "配置");
+    let mut profile_builder = SubmenuBuilder::new(app, tr(&lang, "配置", "Profiles"));
     for p in &profiles {
         profile_builder = profile_builder.item(&mk_check(
             &format!("profile-{}", p.id),
@@ -511,8 +586,20 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
     }
     let profile_menu = profile_builder.build()?;
 
-    let open = MenuItem::with_id(app, "open", "打开主窗口", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "退出（还原系统代理）", true, None::<&str>)?;
+    let open = MenuItem::with_id(
+        app,
+        "open",
+        tr(&lang, "打开主窗口", "Open Window"),
+        true,
+        None::<&str>,
+    )?;
+    let quit = MenuItem::with_id(
+        app,
+        "quit",
+        tr(&lang, "退出（还原系统代理）", "Quit (restore proxy)"),
+        true,
+        None::<&str>,
+    )?;
 
     MenuBuilder::new(app)
         .item(&proxy)
@@ -700,11 +787,16 @@ pub fn run() {
             get_ui_settings,
             get_engine_config,
             set_theme,
+            set_lang,
             set_mixed_port,
             set_allow_lan,
             autostart_status,
             autostart_set,
             core_version,
+            proxies_snapshot,
+            select_proxy,
+            test_group_delay,
+            test_node_delay,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

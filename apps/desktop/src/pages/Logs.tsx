@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ipc, type LogEntry } from "../ipc";
+import { useT } from "../i18n";
 
 const MAX_LINES = 2000;
 const RENDER_TAIL = 500;
@@ -16,6 +17,7 @@ const LEVEL_COLOR: Record<string, string> = {
 
 /** 日志页：内核日志实时滚动 + 级别过滤；缓冲上限 2000 行。 */
 export default function LogsPage() {
+  const t = useT();
   const [lines, setLines] = useState<LogEntry[]>([]);
   const [enabled, setEnabled] = useState<Record<Level, boolean>>({
     debug: false,
@@ -59,7 +61,7 @@ export default function LogsPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-3">
       <div className="flex items-center gap-3">
-        <h1 className="text-lg font-semibold">日志</h1>
+        <h1 className="text-lg font-semibold">{t("logs.title")}</h1>
         {LEVELS.map((lv) => (
           <label key={lv} className="flex items-center gap-1 text-xs"
             style={{ color: "var(--cb-text-dim)" }}>
@@ -75,7 +77,7 @@ export default function LogsPage() {
         <input
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
-          placeholder="关键字过滤"
+          placeholder={t("logs.keyword")}
           className="cb-selectable w-56 rounded-lg border px-3 py-1.5 text-xs outline-none focus:border-[var(--cb-accent)]"
           style={{ borderColor: "var(--cb-border)", background: "var(--cb-surface)" }}
         />
@@ -84,7 +86,7 @@ export default function LogsPage() {
           className="rounded-lg border px-3 py-1.5 text-xs"
           style={{ borderColor: "var(--cb-border)", color: "var(--cb-text-dim)" }}
         >
-          清空
+          {t("logs.clear")}
         </button>
       </div>
 
@@ -105,7 +107,7 @@ export default function LogsPage() {
         {shown.length === 0 ? (
           <div className="flex h-full items-center justify-center"
             style={{ color: "var(--cb-text-dim)" }}>
-            内核未运行或暂无日志
+            {t("logs.empty")}
           </div>
         ) : (
           shown.map((l, i) => (

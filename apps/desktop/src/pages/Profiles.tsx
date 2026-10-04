@@ -1,24 +1,26 @@
 import { useCallback, useEffect, useState } from "react";
 import { ipc, type Profile } from "../ipc";
+import { useT } from "../i18n";
 
-function fmtBytes(n: number): string {
+function fmtBytesLocal(n: number): string {
   if (n <= 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
   const i = Math.min(Math.floor(Math.log(n) / Math.log(1024)), units.length - 1);
   return `${(n / 1024 ** i).toFixed(1)} ${units[i]}`;
 }
 
-function fmtTime(ts?: number | null): string {
-  if (!ts) return "未更新";
+function fmtTime(ts: number | null | undefined, t: (k: "profiles.justNow" | "profiles.minAgo" | "profiles.hourAgo", p?: Record<string, number>) => string): string {
+  if (!ts) return "—";
   const diff = Date.now() / 1000 - ts;
-  if (diff < 60) return "刚刚";
-  if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`;
+  if (diff < 60) return t("profiles.justNow");
+  if (diff < 3600) return t("profiles.minAgo", { n: Math.floor(diff / 60) });
+  if (diff < 86400) return t("profiles.hourAgo", { n: Math.floor(diff / 3600) });
   return new Date(ts * 1000).toLocaleDateString();
 }
 
 /** 配置页：订阅导入（URL）、更新、激活、删除；覆写链在 M0-S3 接入。 */
 export default function ProfilesPage() {
+  const t = useT();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [url, setUrl] = useState("");
@@ -49,7 +51,7 @@ export default function ProfilesPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-5">
-      <h1 className="text-lg font-semibold">配置</h1>
+      <h1 className="text-lg font-semibold">{t("profiles.title")}</h1>
 
       <div className="flex gap-2">
         <input
@@ -63,7 +65,7 @@ export default function ProfilesPage() {
               });
             }
           }}
-          placeholder="订阅 URL，回车或点击导入"
+          placeholder={t("profiles.urlPlaceholder")}
           className="cb-selectable flex-1 rounded-lg border px-3 py-2 text-sm outline-none focus:border-[var(--cb-accent)]"
           style={{ borderColor: "var(--cb-border)", background: "var(--cb-surface)" }}
         />
@@ -78,7 +80,7 @@ export default function ProfilesPage() {
           className="rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
           style={{ background: "var(--cb-accent)" }}
         >
-          {busy === "import" ? "导入中…" : "＋ 导入"}
+          {busy === "import" ? t("profiles.importing") : t("profiles.import")}
         </button>
       </div>
 
@@ -92,7 +94,7 @@ export default function ProfilesPage() {
       {profiles.length === 0 ? (
         <div className="flex h-48 items-center justify-center rounded-xl border text-sm"
           style={{ background: "var(--cb-surface)", borderColor: "var(--cb-border)", color: "var(--cb-text-dim)" }}>
-          还没有配置，粘贴订阅 URL 开始
+          {t("profiles.empty")}
         </div>
       ) : (
         <div className="space-y-3">
@@ -128,9 +130,10 @@ function ProfileCard({
   onActivate: () => void;
   onRemove: () => void;
 }) {
-  const t = profile.traffic;
-  const used = t ? t.upload + t.download : 0;
-  const pct = t && t.total > 0 ? Math.min(100, (used / t.total) * 100) : 0;
+  const t = useT();
+  const traffic = profile.traffic;
+  const used = traffic ? traffic.upload + traffic.download : 0;
+  const pct = traffic && traffic.total > 0 ? Math.min(100, (used / traffic.total) * 100) : 0;
 
   return (
     <section
@@ -148,15 +151,16 @@ function ProfileCard({
             {active && (
               <span className="rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
                 style={{ background: "var(--cb-accent)" }}>
-                当前
+                {t("profiles.current")}
               </span>
             )}
           </div>
           <div className="mt-1 text-xs" style={{ color: "var(--cb-text-dim)" }}>
-            {profile.kind === "remote" ? "订阅" : "本地"} · 更新于 {fmtTime(profile.last_updated)}
+            {profile.kind === "remote" ? t("profiles.remote") : t("profiles.local")} ·{" "}
+            {t("profiles.updatedAt", { time: fmtTime(profile.last_updated, t) })}
           </div>
 
-          {t && t.total > 0 && (
+          {traffic && traffic.total > 0 && (
             <div className="mt-2">
               <div className="h-1.5 w-full overflow-hidden rounded-full"
                 style={{ background: "var(--cb-border)" }}>
@@ -164,7 +168,7 @@ function ProfileCard({
                   style={{ width: `${pct}%`, background: pct > 90 ? "#e0524c" : "var(--cb-accent)" }} />
               </div>
               <div className="mt-1 text-[11px]" style={{ color: "var(--cb-text-dim)" }}>
-                ↑{fmtBytes(t.upload)} ↓{fmtBytes(t.download)} / {fmtBytes(t.total)}
+                ↑{fmtBytesLocal(traffic.upload)} ↓{fmtBytesLocal(traffic.download)} / {fmtBytesLocal(traffic.total)}
               </div>
             </div>
           )}
@@ -175,20 +179,20 @@ function ProfileCard({
             <button disabled={busy} onClick={onUpdate}
               className="rounded-lg border px-3 py-1.5 disabled:opacity-40"
               style={{ borderColor: "var(--cb-border)" }}>
-              {busy ? "…" : "更新"}
+              {busy ? "…" : t("profiles.update")}
             </button>
           )}
           {!active && (
             <button disabled={busy} onClick={onActivate}
               className="rounded-lg border px-3 py-1.5 disabled:opacity-40"
               style={{ borderColor: "var(--cb-border)" }}>
-              设为当前
+              {t("profiles.setActive")}
             </button>
           )}
           <button disabled={busy} onClick={onRemove}
             className="rounded-lg border px-3 py-1.5 disabled:opacity-40"
             style={{ borderColor: "var(--cb-border)", color: "#e0524c" }}>
-            删除
+            {t("profiles.remove")}
           </button>
         </div>
       </div>

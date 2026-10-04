@@ -8,11 +8,13 @@ import {
   type SysProxyStatus,
 } from "../ipc";
 import { fmtBytes } from "../format";
+import { useT } from "../i18n";
 
 const POINTS = 120;
 
-/** 首页仪表盘（M0-S4）：系统代理总开关 + 模式 + 实时速率曲线 + 累计统计。 */
+/** 首页仪表盘：系统代理总开关 + 模式 + 实时速率曲线 + 累计统计。 */
 export default function HomePage() {
+  const t = useT();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [core, setCore] = useState<CoreStatus>({ state: "Stopped" });
@@ -40,14 +42,12 @@ export default function HomePage() {
     const un1 = ipc.onCoreStatus(setCore);
     const un2 = ipc.onSysproxyStatus(setProxy);
     const un3 = ipc.onCoreMode(setMode);
-    // 订阅 traffic（内核运行时每秒一条）驱动曲线与累计值
     ipc.subscribeTraffic().catch(() => {});
     const un4 = ipc.onTraffic(({ up, down }) => {
       if (!mounted.current) return;
       setRates((prev) => [...prev.slice(-(POINTS - 1)), { up, down }]);
-      setTotals((t) => ({ up: t.up + up, down: t.down + down }));
+      setTotals((t0) => ({ up: t0.up + up, down: t0.down + down }));
     });
-    // 连接数：仅取 rows 长度做展示（也顺带触发 Rust 侧订阅）
     ipc.subscribeConnections().catch(() => {});
     const un5 = ipc.onConnections((s) => {
       if (mounted.current) setConnCount(s.rows.length);
@@ -78,27 +78,28 @@ export default function HomePage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-5">
-      <h1 className="text-lg font-semibold">首页</h1>
+      <h1 className="text-lg font-semibold">{t("nav.home")}</h1>
 
       <section className="rounded-xl border p-5"
         style={{ background: "var(--cb-surface)", borderColor: "var(--cb-border)" }}>
         <div className="flex items-center justify-between">
           <div>
             <div className="text-sm font-medium">
-              系统代理{proxy.enabled ? ` :${proxy.port}` : ""}
+              {t("home.sysproxy")}
+              {proxy.enabled ? ` :${proxy.port}` : ""}
             </div>
             <div className="mt-0.5 text-xs" style={{ color: "var(--cb-text-dim)" }}>
-              内核 {coreStatusText(core)} · 当前配置 {active ? active.name : "未选择"}
-            </div>
+              {t("home.core")} {coreStatusText(t, core)} · {t("home.activeProfile")}{" "}
+              {active ? active.name : t("home.none")}            </div>
           </div>
           <button
             onClick={toggleProxy}
             disabled={busy || !activeId}
-            title={activeId ? undefined : "请先在「配置」页导入订阅"}
+            title={activeId ? undefined : t("home.noProfiles")}
             className="rounded-full px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40"
             style={{ background: proxy.enabled ? "var(--cb-accent)" : "#8e8e93" }}
           >
-            {busy ? "…" : proxy.enabled ? "关闭" : "开启"}
+            {busy ? "…" : proxy.enabled ? t("common.off") : t("common.on")}
           </button>
         </div>
 
@@ -114,11 +115,11 @@ export default function HomePage() {
                   : { color: "var(--cb-text-dim)", border: "1px solid var(--cb-border)" }
               }
             >
-              {m.label}
+              {t(`mode.${m.id}` as const)}
             </button>
           ))}
           <span className="ml-2 text-[11px]" style={{ color: "var(--cb-text-dim)" }}>
-            内核运行中才实际生效
+            {t("home.modeHint")}
           </span>
         </div>
       </section>
@@ -131,27 +132,27 @@ export default function HomePage() {
       )}
 
       <div className="grid grid-cols-3 gap-4">
-        <Card title="当前出口">
-          <div className="text-sm">— M1 接入 —</div>
+        <Card title={t("home.outbound")}>
+          <div className="text-sm">— {t("home.comingM1")} —</div>
         </Card>
-        <Card title="累计流量（本次内核运行）">
+        <Card title={t("home.traffic")}>
           <div className="text-sm cb-selectable">
             ↑ {fmtBytes(totals.up)} · ↓ {fmtBytes(totals.down)}
           </div>
         </Card>
-        <Card title="活动连接">
+        <Card title={t("home.connections")}>
           <div className="text-sm">{connCount ?? "—"}</div>
         </Card>
       </div>
 
-      <Card title={`实时速率　↑ ${fmtBytes(latest?.up ?? 0)}/s · ↓ ${fmtBytes(latest?.down ?? 0)}/s`}>
+      <Card title={`${t("home.rate")}　↑ ${fmtBytes(latest?.up ?? 0)}/s · ↓ ${fmtBytes(latest?.down ?? 0)}/s`}>
         <Sparkline rates={rates} />
       </Card>
 
-      <Card title="配置档案">
+      <Card title={t("home.profiles")}>
         {profiles.length === 0 ? (
           <div className="text-xs" style={{ color: "var(--cb-text-dim)" }}>
-            暂无配置 — 到「配置」页导入第一个订阅
+            {t("home.noProfiles")}
           </div>
         ) : (
           <ul className="space-y-1 text-sm">
@@ -168,7 +169,22 @@ export default function HomePage() {
   );
 }
 
-/** 纯 SVG 双线 sparkline，无图表库依赖。 */
+function coreStatusText(
+  t: ReturnType<typeof useT>,
+  s: CoreStatus,
+): string {
+  switch (s.state) {
+    case "Running":
+      return t("home.coreRunning");
+    case "Starting":
+      return t("home.coreStarting");
+    case "Crashed":
+      return t("home.coreCrashed", { msg: s.message ?? "?" });
+    default:
+      return t("home.coreStopped");
+  }
+}
+
 function Sparkline({ rates }: { rates: { up: number; down: number }[] }) {
   const W = 860;
   const H = 96;
@@ -176,7 +192,7 @@ function Sparkline({ rates }: { rates: { up: number; down: number }[] }) {
   const path = (key: "up" | "down") => {
     if (rates.length < 2) return "";
     const step = W / (POINTS - 1);
-    const offset = POINTS - rates.length; // 右对齐
+    const offset = POINTS - rates.length;
     return rates
       .map((r, i) => {
         const x = (i + offset) * step;
@@ -191,19 +207,6 @@ function Sparkline({ rates }: { rates: { up: number; down: number }[] }) {
       <path d={path("up")} fill="none" stroke="var(--cb-accent)" strokeWidth="1.5" />
     </svg>
   );
-}
-
-function coreStatusText(s: CoreStatus): string {
-  switch (s.state) {
-    case "Running":
-      return "运行中";
-    case "Starting":
-      return "启动中…";
-    case "Crashed":
-      return `异常（${s.message ?? "未知"}）`;
-    default:
-      return "已停止";
-  }
 }
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {

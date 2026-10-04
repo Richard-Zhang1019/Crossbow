@@ -6,14 +6,15 @@ import ConnectionsPage from "./pages/Connections";
 import LogsPage from "./pages/Logs";
 import SettingsPage from "./pages/Settings";
 import { ipc, type UiSettings } from "./ipc";
+import { initLang, useT } from "./i18n";
 
 const NAV = [
-  { id: "home", label: "首页", icon: "◆" },
-  { id: "proxies", label: "代理", icon: "⚡" },
-  { id: "profiles", label: "配置", icon: "▤" },
-  { id: "connections", label: "连接", icon: "⇄" },
-  { id: "logs", label: "日志", icon: "☰" },
-  { id: "settings", label: "设置", icon: "⚙" },
+  { id: "home", icon: "◆" },
+  { id: "proxies", icon: "⚡" },
+  { id: "profiles", icon: "▤" },
+  { id: "connections", icon: "⇄" },
+  { id: "logs", icon: "☰" },
+  { id: "settings", icon: "⚙" },
 ] as const;
 
 type PageId = (typeof NAV)[number]["id"];
@@ -26,12 +27,16 @@ function applyTheme(theme: UiSettings["theme"]) {
   document.documentElement.classList.toggle("dark", dark);
 }
 
+const NAV_KEYS = ["nav.home", "nav.proxies", "nav.profiles", "nav.connections", "nav.logs", "nav.settings"] as const;
+
 export default function App() {
+  const t = useT();
   const [page, setPage] = useState<PageId>("home");
   const [toast, setToast] = useState<string | null>(null);
 
   // 主题：启动读取设置 + 响应设置页修改 + 跟随系统
   useEffect(() => {
+    initLang();
     ipc.getUiSettings().then((u) => applyTheme(u.theme)).catch(() => {});
     const un = ipc.onTheme(applyTheme);
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -45,10 +50,11 @@ export default function App() {
 
   // 深链接导入结果通知
   useEffect(() => {
+    const tt = useT();
     const un1 = ipc.onProfileImported((url) =>
-      setToast(`订阅导入成功：${url.slice(0, 60)}…`),
+      setToast(tt("toast.imported", { url: url.slice(0, 60) })),
     );
-    const un2 = ipc.onProfileImportFailed((msg) => setToast(`导入失败：${msg}`));
+    const un2 = ipc.onProfileImportFailed((msg) => setToast(tt("toast.importFailed", { msg })));
     return () => {
       for (const un of [un1, un2]) void un.then((f) => f());
     };
@@ -74,7 +80,7 @@ export default function App() {
             }
           >
             <span className="w-4 text-center">{item.icon}</span>
-            {item.label}
+            {t(NAV_KEYS[NAV.indexOf(item)])}
           </button>
         ))}
         <div className="mt-auto px-3 text-[11px]" style={{ color: "var(--cb-text-dim)" }}>

@@ -4,6 +4,7 @@
 //! 文件；正常关闭/退出时清除。若上次会话异常退出（journal 残留），本次启动
 //! 先执行一次全量还原——保证「任何路径退出都不留脏系统代理」。
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -25,8 +26,12 @@ pub trait SysProxyBackend: Send + Sync {
     fn list_services(&self) -> Result<Vec<String>, String>;
     /// 为单个服务开启代理（HTTP/HTTPS/SOCKS → 127.0.0.1:port + bypass）。
     fn enable_service(&self, service: &str, port: u16) -> Result<(), String>;
-    /// 为单个服务还原（关闭三类代理，不动其他配置）。
+    /// 为单个服务全量关闭三类代理（无快照时的兜底路径）。
     fn disable_service(&self, service: &str) -> Result<(), String>;
+    /// 读取单个服务当前的三类代理设置（开启前快照用）。
+    fn service_snapshot(&self, service: &str) -> Result<ServiceSnapshot, String>;
+    /// 按快照还原单个服务设置。
+    fn restore_service(&self, service: &str, snap: &ServiceSnapshot) -> Result<(), String>;
 }
 
 /// macOS `networksetup` 实现。
@@ -83,6 +88,39 @@ impl SysProxyBackend for NetworkSetup {
         }
         Ok(())
     }
+
+    fn service_snapshot(&self, service: &str) -> Result<ServiceSnapshot, String> {
+        Ok(ServiceSnapshot {
+            web: Self::run(&["-getwebproxy", service])
+                .ok()
+                .as_deref()
+                .and_then(parse_endpoint),
+            secure: Self::run(&["-getsecurewebproxy", service])
+                .ok()
+                .as_deref()
+                .and_then(parse_endpoint),
+            socks: Self::run(&["-getsocksfirewallproxy", service])
+                .ok()
+                .as_deref()
+                .and_then(parse_endpoint),
+        })
+    }
+
+    fn restore_service(&self, service: &str, snap: &ServiceSnapshot) -> Result<(), String> {
+        let apply = |setter: &str, ep: Option<&ProxyEndpoint>| -> Result<(), String> {
+            match ep {
+                Some(ep) => {
+                    Self::run(&[setter, service, &ep.host, &ep.port.to_string()])?;
+                    Ok(())
+                }
+                None => Self::run(&[setter, service, "off"]).map(|_| ()),
+            }
+        };
+        apply("-setwebproxy", snap.web.as_ref())?;
+        apply("-setsecurewebproxy", snap.secure.as_ref())?;
+        apply("-setsocksfirewallproxy", snap.socks.as_ref())?;
+        Ok(())
+    }
 }
 
 /// 非 macOS 平台桩：M1.5 接入 Windows 注册表实现；保持编译通过。
@@ -100,6 +138,12 @@ impl SysProxyBackend for UnsupportedBackend {
     fn disable_service(&self, _: &str) -> Result<(), String> {
         Err("sysproxy: platform backend not implemented yet".into())
     }
+    fn service_snapshot(&self, _: &str) -> Result<ServiceSnapshot, String> {
+        Err("sysproxy: platform backend not implemented yet".into())
+    }
+    fn restore_service(&self, _: &str, _: &ServiceSnapshot) -> Result<(), String> {
+        Err("sysproxy: platform backend not implemented yet".into())
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -113,11 +157,27 @@ pub struct SysProxyStatus {
     pub port: u16,
 }
 
+/// 单个代理槽位的原设置（HTTP/HTTPS/SOCKS 各一）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProxyEndpoint {
+    pub host: String,
+    pub port: u16,
+}
+
+/// 一个网络服务的代理设置快照；None = 该槽位原本关闭。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceSnapshot {
+    pub web: Option<ProxyEndpoint>,
+    pub secure: Option<ProxyEndpoint>,
+    pub socks: Option<ProxyEndpoint>,
+}
+
+/// journal v2：开启前的原设置快照，disable 时优先还原快照（保住第三方客户端
+/// 的配置），无快照才退回全量关闭。
 #[derive(Debug, Serialize, Deserialize)]
 struct Journal {
-    #[allow(dead_code)]
-    enabled: bool,
     port: u16,
+    snapshot: BTreeMap<String, ServiceSnapshot>,
 }
 
 pub struct SysProxyManager<B: SysProxyBackend = PlatformBackend> {
@@ -136,11 +196,19 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         }
     }
 
-    /// 对所有网络服务开启代理。逐服务尽力执行，全部失败才报错。
+    /// 对所有网络服务开启代理。开启前先快照原设置（崩溃兜底与还原都靠它）；
+    /// 逐服务尽力执行，全部失败才报错。
     pub fn enable(&self, port: u16) -> Result<(), String> {
         let services = self.backend.list_services()?;
         if services.is_empty() {
             return Err("no network services found".into());
+        }
+        // 先快照再动手
+        let mut snapshot = BTreeMap::new();
+        for svc in &services {
+            if let Ok(snap) = self.backend.service_snapshot(svc) {
+                snapshot.insert(svc.clone(), snap);
+            }
         }
         let mut ok = 0;
         let mut last_err = String::new();
@@ -154,13 +222,19 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             return Err(format!("failed on all services; last error: {last_err}"));
         }
         *self.state.lock().unwrap() = Some(port);
-        self.write_journal(port);
+        self.write_journal(port, &snapshot);
         Ok(())
     }
 
-    /// 还原所有服务的代理设置（幂等：未开启时也安全执行，用于退出兜底）。
+    /// 还原代理设置：优先按 journal 里的原设置快照逐服务恢复；无快照（老格式
+    /// 或快照失败）退回全量关闭。幂等，用于退出兜底。
     pub fn disable(&self) {
-        if let Ok(services) = self.backend.list_services() {
+        let journal = self.read_journal();
+        if let Some(snapshot) = journal.map(|j| j.snapshot).filter(|s| !s.is_empty()) {
+            for (svc, snap) in &snapshot {
+                let _ = self.backend.restore_service(svc, snap);
+            }
+        } else if let Ok(services) = self.backend.list_services() {
             for svc in &services {
                 let _ = self.backend.disable_service(svc);
             }
@@ -182,26 +256,32 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         }
     }
 
-    /// 启动时兜底：上次会话残留的开启状态 → 全量还原。返回是否发生了还原。
+    /// 启动时兜底：上次会话残留的开启状态 → 还原原设置。返回是否发生了还原。
     pub fn recover_stale(&self) -> bool {
-        let Ok(raw) = std::fs::read_to_string(&self.journal_path) else {
-            return false;
-        };
-        let stale = serde_json::from_str::<Journal>(&raw)
-            .ok()
-            .is_some_and(|j| j.enabled);
-        if stale {
+        self.read_journal().is_some_and(|_| {
             self.disable();
-        } else {
-            let _ = std::fs::remove_file(&self.journal_path);
-        }
-        stale
+            true
+        })
     }
 
-    fn write_journal(&self, port: u16) {
+    fn read_journal(&self) -> Option<Journal> {
+        let raw = std::fs::read_to_string(&self.journal_path).ok()?;
+        // 兼容 v1（enabled+port，无 snapshot）：退化到全量关闭路径。
+        if let Ok(j) = serde_json::from_str::<Journal>(&raw) {
+            return Some(j);
+        }
+        serde_json::from_str::<serde_json::Value>(&raw)
+            .ok()
+            .map(|_| Journal {
+                port: 0,
+                snapshot: BTreeMap::new(),
+            })
+    }
+
+    fn write_journal(&self, port: u16, snapshot: &BTreeMap<String, ServiceSnapshot>) {
         let j = Journal {
-            enabled: true,
             port,
+            snapshot: snapshot.clone(),
         };
         if let Some(parent) = self.journal_path.parent() {
             let _ = std::fs::create_dir_all(parent);
@@ -224,6 +304,24 @@ fn parse_services(output: &str) -> Vec<String> {
         .collect()
 }
 
+/// 解析 `-getwebproxy` 类输出为槽位设置；未启用返回 None。
+fn parse_endpoint(output: &str) -> Option<ProxyEndpoint> {
+    let mut enabled = false;
+    let mut host = String::new();
+    let mut port = 0u16;
+    for line in output.lines() {
+        let line = line.trim();
+        if let Some(v) = line.strip_prefix("Enabled:") {
+            enabled = v.trim() == "Yes";
+        } else if let Some(v) = line.strip_prefix("Server:") {
+            host = v.trim().to_string();
+        } else if let Some(v) = line.strip_prefix("Port:") {
+            port = v.trim().parse().unwrap_or(0);
+        }
+    }
+    (enabled && port > 0).then_some(ProxyEndpoint { host, port })
+}
+
 /// 解析 `-getwebproxy` 输出中的 Enabled 行。
 #[cfg(test)]
 fn parse_proxy_enabled(output: &str) -> bool {
@@ -237,6 +335,7 @@ fn parse_proxy_enabled(output: &str) -> bool {
 mod tests {
     use super::*;
     use std::collections::HashSet;
+    use std::sync::Arc;
 
     #[test]
     fn parses_service_list_skipping_disabled() {
@@ -255,35 +354,97 @@ mod tests {
         assert!(!parse_proxy_enabled("Enabled: No\nServer: \nPort: 0\n"));
     }
 
+    #[test]
+    fn parses_endpoint_from_getwebproxy_output() {
+        let ep = parse_endpoint(
+            "Enabled: Yes\nServer: 127.0.0.1\nPort: 7890\nAuthenticated Proxy Enabled: 0\n",
+        )
+        .unwrap();
+        assert_eq!(ep.host, "127.0.0.1");
+        assert_eq!(ep.port, 7890);
+        assert!(parse_endpoint("Enabled: No\nServer: \nPort: 0\n").is_none());
+    }
+
+    #[derive(Clone)]
     struct FakeBackend {
+        inner: Arc<FakeState>,
+    }
+
+    struct FakeState {
         services: Vec<String>,
         enabled: Mutex<HashSet<String>>,
-        fail_on: Vec<String>,
+        fail_on: Mutex<Vec<String>>,
+        /// 各服务 enable 前的原设置（模拟第三方客户端已配置的场景）。
+        presets: Mutex<BTreeMap<String, ServiceSnapshot>>,
+        /// restore_service 调用记录（断言还原内容用）。
+        restored: Mutex<BTreeMap<String, ServiceSnapshot>>,
     }
 
     impl FakeBackend {
         fn new(services: &[&str]) -> Self {
             Self {
-                services: services.iter().map(|s| s.to_string()).collect(),
-                enabled: Mutex::new(HashSet::new()),
-                fail_on: vec![],
+                inner: Arc::new(FakeState {
+                    services: services.iter().map(|s| s.to_string()).collect(),
+                    enabled: Mutex::new(HashSet::new()),
+                    fail_on: Mutex::new(vec![]),
+                    presets: Mutex::new(BTreeMap::new()),
+                    restored: Mutex::new(BTreeMap::new()),
+                }),
             }
+        }
+
+        fn with_preset(self, service: &str, snap: ServiceSnapshot) -> Self {
+            self.inner
+                .presets
+                .lock()
+                .unwrap()
+                .insert(service.to_string(), snap);
+            self
         }
     }
 
     impl SysProxyBackend for FakeBackend {
         fn list_services(&self) -> Result<Vec<String>, String> {
-            Ok(self.services.clone())
+            Ok(self.inner.services.clone())
         }
         fn enable_service(&self, service: &str, _port: u16) -> Result<(), String> {
-            if self.fail_on.iter().any(|s| s == service) {
+            if self
+                .inner
+                .fail_on
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|s| s == service)
+            {
                 return Err(format!("boom on {service}"));
             }
-            self.enabled.lock().unwrap().insert(service.to_string());
+            self.inner
+                .enabled
+                .lock()
+                .unwrap()
+                .insert(service.to_string());
             Ok(())
         }
         fn disable_service(&self, service: &str) -> Result<(), String> {
-            self.enabled.lock().unwrap().remove(service);
+            self.inner.enabled.lock().unwrap().remove(service);
+            Ok(())
+        }
+        fn service_snapshot(&self, service: &str) -> Result<ServiceSnapshot, String> {
+            Ok(self
+                .inner
+                .presets
+                .lock()
+                .unwrap()
+                .get(service)
+                .cloned()
+                .unwrap_or_default())
+        }
+        fn restore_service(&self, service: &str, snap: &ServiceSnapshot) -> Result<(), String> {
+            self.inner
+                .restored
+                .lock()
+                .unwrap()
+                .insert(service.to_string(), snap.clone());
             Ok(())
         }
     }
@@ -312,7 +473,7 @@ mod tests {
     fn enable_all_failed_is_error() {
         let dir = tempfile::tempdir().unwrap();
         let mut b = FakeBackend::new(&["Wi-Fi"]);
-        b.fail_on = vec!["Wi-Fi".into()];
+        b.inner.fail_on.lock().unwrap().push("Wi-Fi".into());
         let mgr = manager_with(b, &dir);
         assert!(mgr.enable(7897).is_err());
         assert!(!mgr.status().enabled);
@@ -331,6 +492,49 @@ mod tests {
         // 第二次会话启动：识别残留并还原。
         let mgr = manager_with(FakeBackend::new(&["Wi-Fi"]), &dir);
         assert!(mgr.recover_stale());
+        assert!(!dir.path().join("journal.json").exists());
+    }
+
+    /// 关闭时按快照还原第三方客户端的原设置（而不是一刀切关掉）。
+    #[test]
+    fn disable_restores_original_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let preset = ServiceSnapshot {
+            web: Some(ProxyEndpoint {
+                host: "127.0.0.1".into(),
+                port: 7890,
+            }),
+            secure: None,
+            socks: None,
+        };
+        let backend = FakeBackend::new(&["Wi-Fi"]).with_preset("Wi-Fi", preset.clone());
+        let mgr = manager_with(backend.clone(), &dir);
+        mgr.enable(7897).unwrap();
+        mgr.disable();
+
+        let restored = backend.inner.restored.lock().unwrap();
+        let snap = restored.get("Wi-Fi").expect("restore called");
+        assert_eq!(
+            snap.web,
+            Some(ProxyEndpoint {
+                host: "127.0.0.1".into(),
+                port: 7890,
+            })
+        );
+        assert_eq!(snap.secure, None);
+    }
+
+    /// 无原设置（原本全关）时，关闭走逐服务还原路径且各槽位归零（等价全关）。
+    #[test]
+    fn disable_with_empty_preset_restores_off() {
+        let dir = tempfile::tempdir().unwrap();
+        let backend = FakeBackend::new(&["Wi-Fi"]);
+        let mgr = manager_with(backend.clone(), &dir);
+        mgr.enable(7897).unwrap();
+        mgr.disable();
+        let restored = backend.inner.restored.lock().unwrap();
+        let snap = restored.get("Wi-Fi").expect("restore called");
+        assert_eq!(*snap, ServiceSnapshot::default());
         assert!(!dir.path().join("journal.json").exists());
     }
 
