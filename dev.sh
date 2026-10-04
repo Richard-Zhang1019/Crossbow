@@ -1,11 +1,16 @@
 #!/bin/sh
 # Crossbow 开发启动脚本：pnpm tauri dev 的包装。
 #
-# 本机若存在 CommandLineTools 与最新 macOS SDK 不匹配的问题（链接时报
-# unknown architecture arm64e.x1），自动回退到可用的旧 SDK；路径不存在时
-# 什么都不做，其他机器无副作用。
-SDK_DIR="/Library/Developer/CommandLineTools/SDKs"
-if [ -z "$SDKROOT" ] && [ -d "$SDK_DIR/MacOSX26.5.sdk" ]; then
-  export SDKROOT="$SDK_DIR/MacOSX26.5.sdk"
-fi
+# 仅当仍在使用 CommandLineTools（未装/未选完整 Xcode）且存在已知的
+# SDK 兼容问题时，才回退到旧 SDK（链接报 unknown architecture arm64e.x1）。
+# 已切换到完整 Xcode 的机器不受影响。
+SELECTED="$(xcode-select -p 2>/dev/null)"
+case "$SELECTED" in
+  *CommandLineTools*)
+    SDK_DIR="/Library/Developer/CommandLineTools/SDKs"
+    if [ -z "$SDKROOT" ] && [ -d "$SDK_DIR/MacOSX26.5.sdk" ]; then
+      export SDKROOT="$SDK_DIR/MacOSX26.5.sdk"
+    fi
+    ;;
+esac
 exec pnpm tauri dev

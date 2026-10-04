@@ -97,6 +97,8 @@ export const ipc = {
     invoke<Profile>("import_profile_url", { url, name: name ?? null }),
   importProfileContent: (name: string, content: string) =>
     invoke<Profile>("import_profile_content", { name, content }),
+  importProfileFile: (path: string) =>
+    invoke<Profile>("import_profile_file", { path }),
   updateProfile: (id: string) => invoke<Profile>("update_profile", { id }),
   setActiveProfile: (id: string) => invoke<void>("set_active_profile", { id }),
   removeProfile: (id: string) => invoke<void>("remove_profile", { id }),

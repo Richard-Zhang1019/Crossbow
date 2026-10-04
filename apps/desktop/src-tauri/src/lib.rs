@@ -120,20 +120,52 @@ fn import_profile_content(
     name: String,
     content: String,
 ) -> Result<Profile, String> {
+    let profile = import_content_blocking(&state, name, content)?;
+    refresh_tray(&app);
+    Ok(profile)
+}
+
+/// 从文件名推断 Profile 名称（取去扩展名的文件名）。
+fn profile_name_from_path(path: &str) -> String {
+    std::path::Path::new(path)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "本地配置".into())
+}
+
+/// 导入本地配置文件（文件选择器与拖拽导入共用）。
+#[tauri::command]
+fn import_profile_file(
+    app: AppHandle,
+    state: State<AppState>,
+    path: String,
+) -> Result<Profile, String> {
+    let content =
+        std::fs::read_to_string(&path).map_err(|e| format!("读取文件失败 {path}: {e}"))?;
+    let profile = import_content_blocking(&state, profile_name_from_path(&path), content)
+        .map_err(|e| format!("{path}: {e}"))?;
+    refresh_tray(&app);
+    Ok(profile)
+}
+
+/// 本地内容导入的共享实现。
+fn import_content_blocking(
+    state: &AppState,
+    name: String,
+    content: String,
+) -> Result<Profile, String> {
     validate_profile_content(&content).map_err(|e| e.to_string())?;
     let mut profile = make_profile(gen_id(), name, ProfileKind::Local, None);
     profile.content = content;
     profile.last_updated = Some(now_secs());
 
-    {
-        let mut store = state.store.lock().unwrap();
-        store
-            .data_mut()
-            .add_profile(profile.clone())
-            .map_err(|e| e.to_string())?;
-        store.save().map_err(|e| e.to_string())?;
-    }
-    refresh_tray(&app);
+    let mut store = state.store.lock().unwrap();
+    store
+        .data_mut()
+        .add_profile(profile.clone())
+        .map_err(|e| e.to_string())?;
+    store.save().map_err(|e| e.to_string())?;
     Ok(profile)
 }
 
@@ -768,6 +800,7 @@ pub fn run() {
             active_profile_id,
             import_profile_url,
             import_profile_content,
+            import_profile_file,
             update_profile,
             set_active_profile,
             remove_profile,
@@ -810,4 +843,17 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn profile_name_from_path_strips_extension() {
+        assert_eq!(profile_name_from_path("/a/b/my-config.yaml"), "my-config");
+        assert_eq!(profile_name_from_path("配置.yml"), "配置");
+        assert_eq!(profile_name_from_path("noext"), "noext");
+        assert_eq!(profile_name_from_path("/a/b/.hidden"), ".hidden");
+    }
 }

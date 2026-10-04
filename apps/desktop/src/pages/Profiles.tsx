@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { ipc, type Profile } from "../ipc";
 import { useT } from "../i18n";
 
@@ -26,6 +27,8 @@ export default function ProfilesPage() {
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
     setProfiles(await ipc.listProfiles().catch(() => []));
@@ -35,6 +38,33 @@ export default function ProfilesPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const importPaths = useCallback(
+    async (paths: string[]) => {
+      for (const p of paths) {
+        await run2(p, () => ipc.importProfileFile(p));
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    getCurrentWebview()
+      .onDragDropEvent((event) => {
+        if (event.payload.type === "enter" || event.payload.type === "over") {
+          setDragOver(true);
+        } else if (event.payload.type === "leave") {
+          setDragOver(false);
+        } else if (event.payload.type === "drop") {
+          setDragOver(false);
+          void importPaths(event.payload.paths);
+        }
+      })
+      .then((u) => (un = u));
+    return () => un?.();
+  }, [importPaths]);
 
   const run = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key);
@@ -48,12 +78,28 @@ export default function ProfilesPage() {
       setBusy(null);
     }
   };
+  const run2 = run;
+
+  const chosenFiles = async (files: FileList | null) => {
+    if (!files?.length) return;
+    for (const f of Array.from(files)) {
+      const text = await f.text();
+      const name = f.name.replace(/\.[^.]+$/, "");
+      await run(f.name, () => ipc.importProfileContent(name, text));
+    }
+  };
 
   return (
     <div className="mx-auto max-w-4xl space-y-5">
       <h1 className="text-lg font-semibold">{t("profiles.title")}</h1>
 
-      <div className="flex gap-2">
+      <div
+        className="flex gap-2 rounded-xl p-2 transition-colors"
+        style={{
+          background: "var(--cb-surface)",
+          border: `2px ${dragOver ? "dashed var(--cb-accent)" : "solid transparent"}`,
+        }}
+      >
         <input
           value={url}
           onChange={(e) => setUrl(e.target.value)}
@@ -82,6 +128,30 @@ export default function ProfilesPage() {
         >
           {busy === "import" ? t("profiles.importing") : t("profiles.import")}
         </button>
+        <button
+          disabled={busy !== null}
+          onClick={() => fileInputRef.current?.click()}
+          className="rounded-lg border px-3 py-2 text-xs disabled:opacity-40"
+          style={{ borderColor: "var(--cb-border)" }}
+        >
+          {busy?.endsWith(".yaml") || busy?.endsWith(".yml")
+            ? t("profiles.importing")
+            : t("profiles.importFile")}
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".yaml,.yml,.txt,.conf"
+          multiple
+          hidden
+          onChange={(e) => {
+            void chosenFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
+      </div>
+      <div className="text-[11px]" style={{ color: "var(--cb-text-dim)" }}>
+        {t("profiles.dropHint")}
       </div>
 
       {error && (
