@@ -1,22 +1,51 @@
 //! Crossbow 桌面壳层（macOS + Windows，Tauri 2）。
 //!
-//! M0-S2 职责：Store 领域操作（导入/更新/删除/激活 Profile）+ 内核生命周期
-//! （CoreManager）+ 状态事件推送。系统代理与托盘在 S3 加入。
+//! M0-S3 职责：系统代理（networksetup + 崩溃兜底 journal）、托盘菜单
+//! （总开关/模式/配置切换/退出还原）、关窗驻留托盘、任何退出路径全量清理。
 
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use crossbow_core::model::TrafficInfo;
 use crossbow_core::subscription::{fetch_subscription, now_secs, validate_profile_content};
-use crossbow_core::{Profile, ProfileKind, Store};
-use tauri::{Emitter, Manager, State};
+use crossbow_core::{Profile, ProfileKind, RuntimeConfig, Store};
+use tauri::menu::{CheckMenuItem, Menu, MenuBuilder, MenuItem, SubmenuBuilder};
+use tauri::tray::TrayIconBuilder;
+use tauri::{AppHandle, Emitter, Manager, State, Wry};
 
 mod core_manager;
+mod mihomo_api;
+mod sysproxy;
+
 use core_manager::{CoreManager, CoreStatus};
+use sysproxy::{SysProxyManager, SysProxyStatus};
 
 struct AppState {
     store: Mutex<Store>,
     core: CoreManager,
+    sysproxy: SysProxyManager,
+    /// 内核运行模式：direct / rule / global。
+    mode: Mutex<String>,
+    tray: Mutex<Option<tauri::tray::TrayIcon<Wry>>>,
+}
+
+// ---------- 内核与配置的公共操作（命令与托盘共用） ----------
+
+/// 渲染当前档案并启动内核；已在运行时报错（用 `restart_core`）。
+fn start_core(state: &AppState) -> Result<(), String> {
+    let store = state.store.lock().unwrap();
+    let rendered = crossbow_core::render_config(store.data()).map_err(|e| e.to_string())?;
+    let rt = RuntimeConfig {
+        mixed_port: store.data().engine.mixed_port,
+        allow_lan: store.data().engine.allow_lan,
+        ..RuntimeConfig::default()
+    };
+    state.core.start(&rendered.config, &rt)
+}
+
+/// 热重启：切换/更新配置后让新配置生效。
+fn restart_core(state: &AppState) -> Result<(), String> {
+    state.core.stop();
+    start_core(state)
 }
 
 fn make_profile(id: String, name: String, kind: ProfileKind, url: Option<String>) -> Profile {
@@ -37,9 +66,12 @@ fn gen_id() -> String {
     uuid::Uuid::new_v4().simple().to_string()
 }
 
+// ---------- Profile 命令 ----------
+
 /// 导入 URL 订阅：拉取 → 校验 → 落库。
 #[tauri::command]
 fn import_profile_url(
+    app: AppHandle,
     state: State<AppState>,
     url: String,
     name: Option<String>,
@@ -57,18 +89,22 @@ fn import_profile_url(
     profile.traffic = fetched.traffic;
     profile.last_updated = Some(now_secs());
 
-    let mut store = state.store.lock().unwrap();
-    store
-        .data_mut()
-        .add_profile(profile.clone())
-        .map_err(|e| e.to_string())?;
-    store.save().map_err(|e| e.to_string())?;
+    {
+        let mut store = state.store.lock().unwrap();
+        store
+            .data_mut()
+            .add_profile(profile.clone())
+            .map_err(|e| e.to_string())?;
+        store.save().map_err(|e| e.to_string())?;
+    }
+    refresh_tray(&app);
     Ok(profile)
 }
 
 /// 导入本地/粘贴的配置内容。
 #[tauri::command]
 fn import_profile_content(
+    app: AppHandle,
     state: State<AppState>,
     name: String,
     content: String,
@@ -78,18 +114,21 @@ fn import_profile_content(
     profile.content = content;
     profile.last_updated = Some(now_secs());
 
-    let mut store = state.store.lock().unwrap();
-    store
-        .data_mut()
-        .add_profile(profile.clone())
-        .map_err(|e| e.to_string())?;
-    store.save().map_err(|e| e.to_string())?;
+    {
+        let mut store = state.store.lock().unwrap();
+        store
+            .data_mut()
+            .add_profile(profile.clone())
+            .map_err(|e| e.to_string())?;
+        store.save().map_err(|e| e.to_string())?;
+    }
+    refresh_tray(&app);
     Ok(profile)
 }
 
-/// 刷新订阅并落库；若该档案正在运行则热重启内核以应用新配置。
+/// 刷新订阅并落库；正在运行则热重启应用新配置。
 #[tauri::command]
-fn update_profile(state: State<AppState>, id: String) -> Result<Profile, String> {
+fn update_profile(app: AppHandle, state: State<AppState>, id: String) -> Result<Profile, String> {
     let url = {
         let store = state.store.lock().unwrap();
         store
@@ -101,28 +140,29 @@ fn update_profile(state: State<AppState>, id: String) -> Result<Profile, String>
     let fetched = fetch_subscription(&url, 30).map_err(|e| e.to_string())?;
     validate_profile_content(&fetched.content).map_err(|e| e.to_string())?;
 
-    let is_active_and_running = {
+    let was_active_and_running = {
         let store = state.store.lock().unwrap();
         store.data().active_profile.as_deref() == Some(id.as_str())
             && state.core.status() == CoreStatus::Running
     };
-    {
+    let profile = {
         let mut store = state.store.lock().unwrap();
         store
             .data_mut()
             .update_profile_content(id.as_str(), fetched.content, now_secs(), fetched.traffic)
             .map_err(|e| e.to_string())?;
         store.save().map_err(|e| e.to_string())?;
-        let profile = store.data().profile(&id).cloned().unwrap();
-        if is_active_and_running {
-            start_core_locked(&state, &store)?;
-        }
-        Ok(profile)
+        store.data().profile(&id).cloned().unwrap()
+    };
+    if was_active_and_running {
+        restart_core(&state)?;
     }
+    refresh_tray(&app);
+    Ok(profile)
 }
 
 #[tauri::command]
-fn set_active_profile(state: State<AppState>, id: String) -> Result<(), String> {
+fn set_active_profile(app: AppHandle, state: State<AppState>, id: String) -> Result<(), String> {
     let running = state.core.status() == CoreStatus::Running;
     {
         let mut store = state.store.lock().unwrap();
@@ -130,17 +170,20 @@ fn set_active_profile(state: State<AppState>, id: String) -> Result<(), String> 
         store.save().map_err(|e| e.to_string())?;
     }
     if running {
-        let store = state.store.lock().unwrap();
-        start_core_locked(&state, &store)?;
+        restart_core(&state)?;
     }
+    refresh_tray(&app);
     Ok(())
 }
 
 #[tauri::command]
-fn remove_profile(state: State<AppState>, id: String) -> Result<(), String> {
-    let mut store = state.store.lock().unwrap();
-    store.data_mut().remove_profile(&id)?;
-    store.save().map_err(|e| e.to_string())?;
+fn remove_profile(app: AppHandle, state: State<AppState>, id: String) -> Result<(), String> {
+    {
+        let mut store = state.store.lock().unwrap();
+        store.data_mut().remove_profile(&id)?;
+        store.save().map_err(|e| e.to_string())?;
+    }
+    refresh_tray(&app);
     Ok(())
 }
 
@@ -154,21 +197,11 @@ fn active_profile_id(state: State<AppState>) -> Option<String> {
     state.store.lock().unwrap().data().active_profile.clone()
 }
 
-/// 启动内核：渲染当前档案（含覆写）→ 注入运行时 → sidecar。
-fn start_core_locked(state: &State<AppState>, store: &Store) -> Result<(), String> {
-    let rendered = crossbow_core::render_config(store.data()).map_err(|e| e.to_string())?;
-    let rt = crossbow_core::RuntimeConfig {
-        mixed_port: store.data().engine.mixed_port,
-        allow_lan: store.data().engine.allow_lan,
-        ..crossbow_core::RuntimeConfig::default()
-    };
-    state.core.start(&rendered.config, &rt)
-}
+// ---------- 内核与系统代理命令 ----------
 
 #[tauri::command]
 fn core_start(state: State<AppState>) -> Result<(), String> {
-    let store = state.store.lock().unwrap();
-    start_core_locked(&state, &store)
+    start_core(&state)
 }
 
 #[tauri::command]
@@ -181,6 +214,169 @@ fn core_stop(state: State<AppState>) -> Result<(), String> {
 fn core_status(state: State<AppState>) -> CoreStatus {
     state.core.status()
 }
+
+#[tauri::command]
+fn sysproxy_status(state: State<AppState>) -> SysProxyStatus {
+    state.sysproxy.status()
+}
+
+/// 总开关：开启 = 确保内核运行 + 设置系统代理；关闭 = 还原系统代理（内核保持）。
+#[tauri::command]
+fn sysproxy_toggle(app: AppHandle, state: State<AppState>) -> Result<(), String> {
+    if state.sysproxy.status().enabled {
+        state.sysproxy.disable();
+    } else {
+        let port = {
+            let store = state.store.lock().unwrap();
+            store.data().engine.mixed_port
+        };
+        if !matches!(state.core.status(), CoreStatus::Running) {
+            start_core(&state)?;
+        }
+        state.sysproxy.enable(port)?;
+    }
+    let _ = app.emit("sysproxy://status", state.sysproxy.status());
+    refresh_tray(&app);
+    Ok(())
+}
+
+#[tauri::command]
+fn core_mode(state: State<AppState>) -> String {
+    state.mode.lock().unwrap().clone()
+}
+
+/// 切换运行模式（经控制器 PATCH，运行时生效）。
+#[tauri::command]
+fn set_core_mode(app: AppHandle, state: State<AppState>, mode: String) -> Result<(), String> {
+    if let Some((port, secret)) = state.core.controller() {
+        mihomo_api::Controller { port, secret }.patch_mode(&mode)?;
+    }
+    *state.mode.lock().unwrap() = mode.clone();
+    let _ = app.emit("core://mode", mode);
+    refresh_tray(&app);
+    Ok(())
+}
+
+// ---------- 托盘 ----------
+
+fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
+    let state = app.state::<AppState>();
+
+    let sp = state.sysproxy.status();
+    let proxy_label = if sp.enabled {
+        format!("系统代理：已开启 :{}", sp.port)
+    } else {
+        "系统代理：已关闭".to_string()
+    };
+    let proxy = MenuItem::with_id(app, "toggle-proxy", &proxy_label, true, None::<&str>)?;
+
+    let mode = state.mode.lock().unwrap().clone();
+    let mk_check = |id: &str, label: &str, checked: bool| {
+        CheckMenuItem::with_id(app, id, label, true, checked, None::<&str>)
+    };
+    let mode_menu = SubmenuBuilder::new(app, "模式")
+        .item(&mk_check("mode-direct", "直连", mode == "direct")?)
+        .item(&mk_check("mode-rule", "规则", mode == "rule")?)
+        .item(&mk_check("mode-global", "全局", mode == "global")?)
+        .build()?;
+
+    let (profiles, active) = {
+        let store = state.store.lock().unwrap();
+        (
+            store.data().profiles.clone(),
+            store.data().active_profile.clone(),
+        )
+    };
+    let mut profile_builder = SubmenuBuilder::new(app, "配置");
+    for p in &profiles {
+        profile_builder = profile_builder.item(&mk_check(
+            &format!("profile-{}", p.id),
+            &p.name,
+            active.as_deref() == Some(p.id.as_str()),
+        )?);
+    }
+    let profile_menu = profile_builder.build()?;
+
+    let open = MenuItem::with_id(app, "open", "打开主窗口", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "退出（还原系统代理）", true, None::<&str>)?;
+
+    MenuBuilder::new(app)
+        .item(&proxy)
+        .separator()
+        .item(&mode_menu)
+        .item(&profile_menu)
+        .separator()
+        .item(&open)
+        .separator()
+        .item(&quit)
+        .build()
+}
+
+fn refresh_tray(app: &AppHandle) {
+    if let Some(tray) = app.state::<AppState>().tray.lock().unwrap().as_ref() {
+        match build_tray_menu(app) {
+            Ok(menu) => {
+                let _ = tray.set_menu(Some(menu));
+            }
+            Err(e) => eprintln!("rebuild tray menu: {e}"),
+        }
+    }
+}
+
+fn show_main_window(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+}
+
+/// 系统代理总开关（托盘与首页共用）。
+fn toggle_sysproxy(app: &AppHandle) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    if state.sysproxy.status().enabled {
+        state.sysproxy.disable();
+    } else {
+        let port = {
+            let store = state.store.lock().unwrap();
+            store.data().engine.mixed_port
+        };
+        if !matches!(state.core.status(), CoreStatus::Running) {
+            start_core(&state)?;
+        }
+        state.sysproxy.enable(port)?;
+    }
+    let _ = app.emit("sysproxy://status", state.sysproxy.status());
+    refresh_tray(app);
+    Ok(())
+}
+
+fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
+    let id = event.id().as_ref();
+    let result = match id {
+        "toggle-proxy" => toggle_sysproxy(app),
+        "mode-direct" | "mode-rule" | "mode-global" => {
+            let mode = id.strip_prefix("mode-").unwrap().to_string();
+            set_core_mode(app.clone(), app.state::<AppState>(), mode)
+        }
+        "open" => {
+            show_main_window(app);
+            Ok(())
+        }
+        "quit" => {
+            app.exit(0);
+            Ok(())
+        }
+        other => match other.strip_prefix("profile-") {
+            Some(pid) => set_active_profile(app.clone(), app.state::<AppState>(), pid.to_string()),
+            None => Ok(()),
+        },
+    };
+    if let Err(e) = result {
+        eprintln!("tray action {id}: {e}");
+    }
+}
+
+// ---------- 应用入口 ----------
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -201,11 +397,47 @@ pub fn run() {
                 let _ = handle.emit("core://status", status);
             }));
 
+            // 状态一致性守护：上次会话若异常退出（journal 残留），先全量还原系统代理。
+            #[cfg(target_os = "macos")]
+            let backend = sysproxy::NetworkSetup;
+            #[cfg(not(target_os = "macos"))]
+            let backend = sysproxy::UnsupportedBackend;
+            let sysproxy = SysProxyManager::new(backend, data_dir.join("sysproxy-journal.json"));
+            if sysproxy.recover_stale() {
+                eprintln!("recovered stale system proxy from previous session");
+            }
+
             app.manage(AppState {
                 store: Mutex::new(store),
                 core,
+                sysproxy,
+                mode: Mutex::new("rule".to_string()),
+                tray: Mutex::new(None),
             });
+
+            // 托盘
+            let menu = build_tray_menu(app.handle())?;
+            let tray = TrayIconBuilder::new()
+                .icon(
+                    app.default_window_icon()
+                        .expect("missing bundle icon")
+                        .clone(),
+                )
+                .menu(&menu)
+                .show_menu_on_left_click(true)
+                .tooltip("Crossbow")
+                .on_menu_event(handle_menu)
+                .build(app)?;
+            *app.state::<AppState>().tray.lock().unwrap() = Some(tray);
+
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // 关窗驻留托盘，不退出。
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let _ = window.hide();
+                api.prevent_close();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             list_profiles,
@@ -218,19 +450,20 @@ pub fn run() {
             core_start,
             core_stop,
             core_status,
+            sysproxy_status,
+            sysproxy_toggle,
+            core_mode,
+            set_core_mode,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app, event| {
-            // 任何退出路径都先收内核，避免残留进程。
+        .run(|app, event| {
+            // 任何退出路径都先还原系统代理、收内核（托盘退出/app.exit/Cmd+Q）。
             if let tauri::RunEvent::Exit = event {
-                if let Some(state) = _app.try_state::<AppState>() {
+                if let Some(state) = app.try_state::<AppState>() {
+                    state.sysproxy.disable();
                     state.core.stop();
                 }
             }
         });
 }
-
-// TrafficInfo 引用占位：导出给后续命令复用（更新间隔设置等）。
-#[allow(dead_code)]
-type _Traffic = TrafficInfo;

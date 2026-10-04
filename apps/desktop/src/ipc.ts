@@ -27,6 +27,19 @@ export interface CoreStatus {
   message?: string;
 }
 
+export interface SysProxyStatus {
+  enabled: boolean;
+  port: number;
+}
+
+export const CORE_MODES = [
+  { id: "direct", label: "直连" },
+  { id: "rule", label: "规则" },
+  { id: "global", label: "全局" },
+] as const;
+
+export type CoreMode = (typeof CORE_MODES)[number]["id"];
+
 export const ipc = {
   listProfiles: () => invoke<Profile[]>("list_profiles"),
   activeProfileId: () => invoke<string | null>("active_profile_id"),
@@ -40,6 +53,14 @@ export const ipc = {
   coreStart: () => invoke<void>("core_start"),
   coreStop: () => invoke<void>("core_stop"),
   coreStatus: () => invoke<CoreStatus>("core_status"),
+  sysproxyStatus: () => invoke<SysProxyStatus>("sysproxy_status"),
+  sysproxyToggle: () => invoke<void>("sysproxy_toggle"),
+  coreMode: () => invoke<CoreMode>("core_mode"),
+  setCoreMode: (mode: CoreMode) => invoke<void>("set_core_mode", { mode }),
   onCoreStatus: (cb: (s: CoreStatus) => void) =>
     listen<CoreStatus>("core://status", (e) => cb(e.payload)),
+  onSysproxyStatus: (cb: (s: SysProxyStatus) => void) =>
+    listen<SysProxyStatus>("sysproxy://status", (e) => cb(e.payload)),
+  onCoreMode: (cb: (m: CoreMode) => void) =>
+    listen<CoreMode>("core://mode", (e) => cb(e.payload)),
 };
