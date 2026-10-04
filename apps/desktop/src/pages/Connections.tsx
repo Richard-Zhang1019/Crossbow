@@ -53,7 +53,10 @@ export default function ConnectionsPage() {
       <div className="flex items-center gap-3">
         <h1 className="text-lg font-semibold">{t("conn.title")}</h1>
         <span className="text-xs" style={{ color: "var(--cb-text-dim)" }}>
-          {rows.length} 条 · ↑{fmtBytes(snapshot.upload_total)} ↓
+          {snapshot.truncated
+            ? `${snapshot.truncated} 条（显示前 ${rows.length}）`
+            : `${rows.length} 条`}{" "}
+          · ↑{fmtBytes(snapshot.upload_total)} ↓
           {fmtBytes(snapshot.download_total)} · {t("conn.mem")} {fmtBytes(snapshot.memory)}
         </span>
         <div className="flex-1" />

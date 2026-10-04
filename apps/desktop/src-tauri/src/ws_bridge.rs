@@ -17,8 +17,11 @@ pub const EV_TRAFFIC: &str = "traffic://data";
 pub const EV_CONNECTIONS: &str = "connections://data";
 pub const EV_LOGS: &str = "logs://data";
 
-/// connections 快照推送间隔下限（mihomo 原生 1Hz，留出节流空间）。
-const CONN_MIN_INTERVAL: Duration = Duration::from_millis(500);
+/// connections 快照推送间隔下限（mihomo 原生 1Hz）。
+const CONN_MIN_INTERVAL: Duration = Duration::from_millis(1000);
+/// 单次快照推送的最大行数：系统代理全开时连接可达数千上万，
+/// 超限部分截断（前端按 totals 展示全量），避免巨型 IPC 载荷。
+const CONN_MAX_ROWS: usize = 1000;
 /// 日志批量 flush：间隔或条数任一达到即发。
 const LOG_FLUSH_INTERVAL: Duration = Duration::from_millis(300);
 const LOG_FLUSH_COUNT: usize = 20;
@@ -186,6 +189,9 @@ struct ConnPayload {
     upload_total: u64,
     download_total: u64,
     memory: u64,
+    /// 超过 CONN_MAX_ROWS 被截断时的原始总行数。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    truncated: Option<usize>,
 }
 
 /// mihomo connections 快照 → 紧凑行集合（字段裁剪让 5000 连接的 payload 可控）。
@@ -249,10 +255,17 @@ fn compact_connections(raw: &str) -> Option<String> {
             });
         }
     }
+    let total_rows = rows.len();
+    rows.truncate(CONN_MAX_ROWS);
     let payload = ConnPayload {
         upload_total: v.get("uploadTotal").and_then(|x| x.as_u64()).unwrap_or(0),
         download_total: v.get("downloadTotal").and_then(|x| x.as_u64()).unwrap_or(0),
         memory: v.get("memory").and_then(|x| x.as_u64()).unwrap_or(0),
+        truncated: if total_rows > CONN_MAX_ROWS {
+            Some(total_rows)
+        } else {
+            None
+        },
         rows,
     };
     serde_json::to_string(&payload).ok()

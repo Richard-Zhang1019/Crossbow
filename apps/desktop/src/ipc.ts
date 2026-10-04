@@ -61,6 +61,7 @@ export interface ConnSnapshot {
   upload_total: number;
   download_total: number;
   memory: number;
+  truncated?: number;
 }
 
 export interface LogEntry {

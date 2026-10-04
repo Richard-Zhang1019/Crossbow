@@ -329,6 +329,25 @@ fn unsubscribe_logs(state: State<AppState>) -> Result<(), String> {
     Ok(())
 }
 
+// ---------- 诊断 ----------
+
+/// 前端黑匣子：全局错误/心跳落盘，用于定位 webview 白屏类问题。
+#[tauri::command]
+fn diag_log(state: State<AppState>, line: String) {
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(state.data_dir.join("webview.log"))
+    {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let _ = writeln!(f, "{ts} {line}");
+    }
+}
+
 // ---------- 内核安装命令 ----------
 
 #[tauri::command]
@@ -923,6 +942,7 @@ pub fn run() {
             core_version,
             core_binary_info,
             core_install,
+            diag_log,
             proxies_snapshot,
             select_proxy,
             test_group_delay,
