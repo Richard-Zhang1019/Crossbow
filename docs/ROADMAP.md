@@ -8,12 +8,14 @@
 
 ## M1 · macOS 完整版（约 4–6 周）
 
-### M1.0 正式打包与自更新（~1 周）
+### M1.0 正式打包与自更新（~1 周）✅ 2026-10-04
 *目标：摆脱终端，像正式产品一样安装使用。*
-- `tauri build` 产出 .app（本机自用先不签名，双击运行）
-- Tauri updater 基础设施：签名密钥、更新清单、应用内「检查更新」（先指向 GitHub Releases，签名后启用强校验）
-- 图标/名称/Dock 表现打磨
-- 验收：双击 .app 日用一整天，无终端依赖
+- ✅ `tauri build` 产出 .app（62MB，mihomo sidecar 随包分发），打包版启动冒烟通过
+- ✅ 内核缺失自动下载（gh-proxy 镜像优先，锁定 v1.19.32，大小校验）
+- ✅ updater 基础设施：签名密钥对、createUpdaterArtifacts、应用内「检查更新」（端点待发布渠道）
+- ⏭ 待办：bundle identifier 从 com.crossbow.app 迁移（.app 后缀冲突告警，需同步迁移数据目录）
+- ⏭ 待办：dmg 打包（无公证环境的 bundle_dmg.sh 问题）与发布渠道（GitHub Releases + latest.json）
+- 验收：双击 .app 日用一整天，无终端依赖 ← *请用户验收*
 
 ### M1.1 订阅生命周期完善（~1 周）
 *目标：订阅不再是「导入一次就不管」。*
