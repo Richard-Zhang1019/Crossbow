@@ -357,14 +357,24 @@ impl ControllerProbe {
 }
 
 /// GeoIP/GeoSite 数据源：镜像优先，直连 GitHub 兜底。
-pub const GEO_FILES: &[(&str, &[&str])] = &[
+/// 镜像失效时调整此列表即可（均为数据文件，不参与代码构建）。
+pub const GEO_FILES: &[(&str, bool, &[&str])] = &[
     (
         "geoip.metadb",
-        &["https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geoip.metadb"],
+        true,
+        &[
+            // 2026-10 在 CN 网络实测可用
+            "https://gh-proxy.com/https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geoip.metadb",
+            "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geoip.metadb",
+        ],
     ),
     (
         "geosite.dat",
-        &["https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geosite.dat"],
+        false, // 尽力而为：仅当规则用到 GEOSITE 时内核才需要
+        &[
+            "https://gh-proxy.com/https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geosite.dat",
+            "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geosite.dat",
+        ],
     ),
 ];
 
@@ -377,15 +387,27 @@ fn ensure_geo_files(work_dir: &std::path::Path) -> Result<(), String> {
 
 fn ensure_geo_files_with(
     work_dir: &std::path::Path,
-    files: &[(&str, &[&str])],
+    files: &[(&str, bool, &[&str])],
     download: impl Fn(&str, &std::path::Path) -> Result<(), String>,
 ) -> Result<(), String> {
-    for (name, _) in files {
+    for (name, required, _) in files {
         let dest = work_dir.join(name);
         if dest.exists() && dest.metadata().map(|m| m.len()).unwrap_or(0) >= GEO_MIN_BYTES {
             continue;
         }
-        download(name, &dest)?;
+        match download(name, &dest) {
+            Ok(()) => {}
+            Err(e) if !required => {
+                // 尽力而为的文件（geosite）：失败时清掉残留的坏文件——
+                // 留着会让内核解析规则时直接失败；缺失时内核会自行下载。
+                let _ = std::fs::remove_file(&dest);
+                append_core_log(
+                    work_dir,
+                    &format!("{name} download failed (non-fatal): {e}"),
+                );
+            }
+            Err(e) => return Err(format!("{name}: {e}")),
+        }
     }
     Ok(())
 }
@@ -394,8 +416,8 @@ fn ensure_geo_files_with(
 fn download_to(name: &str, dest: &std::path::Path) -> Result<(), String> {
     let urls = GEO_FILES
         .iter()
-        .find(|(n, _)| *n == name)
-        .map(|(_, urls)| *urls)
+        .find(|(n, _, _)| *n == name)
+        .map(|(_, _, urls)| *urls)
         .ok_or_else(|| format!("unknown geo file {name}"))?;
     let agent = ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(90))
