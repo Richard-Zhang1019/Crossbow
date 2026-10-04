@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 use std::io::Write;
 use std::net::TcpListener;
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -28,6 +28,7 @@ pub enum CoreStatus {
 #[derive(Debug, Clone)]
 pub struct CoreOptions {
     /// 就绪探测超时（秒）；超时视为启动失败（不自动重启，直接上报）。
+    /// 30s：首次启动要下载 GeoIP 数据库，国内网络可能较慢。
     pub readiness_timeout_secs: u64,
     /// 崩溃重启的统计窗口（秒）。
     pub restart_window_secs: u64,
@@ -38,7 +39,7 @@ pub struct CoreOptions {
 impl Default for CoreOptions {
     fn default() -> Self {
         Self {
-            readiness_timeout_secs: 15,
+            readiness_timeout_secs: 30,
             restart_window_secs: 60,
             max_restarts: 3,
         }
@@ -82,7 +83,17 @@ impl Shared {
             .arg(&self.work_dir)
             .arg("-f")
             .arg(&config_path);
-        cmd.stdout(Stdio::null()).stderr(Stdio::null());
+        // 内核输出落到文件：崩溃诊断（yaml 错误等）靠它，不再丢弃。
+        let log_file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(self.work_dir.join("core-stdio.log"))
+            .map_err(|e| format!("open core log: {e}"))?;
+        let log_err = log_file
+            .try_clone()
+            .map_err(|e| format!("clone core log: {e}"))?;
+        cmd.stdout(log_file).stderr(log_err);
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
@@ -201,7 +212,11 @@ impl CoreManager {
 
     /// 优雅停止：标记后杀进程，watch 线程随之退出。
     pub fn stop(&self) {
-        self.shared.inner.lock().unwrap().stopping = true;
+        {
+            let mut inner = self.shared.inner.lock().unwrap();
+            inner.stopping = true;
+            inner.controller = None;
+        }
         self.shared.kill_child();
         self.shared.notify(CoreStatus::Stopped);
     }
@@ -214,7 +229,10 @@ fn spawn_and_watch(shared: Arc<Shared>) {
         shared.notify(CoreStatus::Crashed(e));
         return;
     }
-    let (port, secret) = shared.inner.lock().unwrap().controller.clone().unwrap();
+    let Some((port, secret)) = shared.inner.lock().unwrap().controller.clone() else {
+        shared.notify(CoreStatus::Crashed("controller state missing".into()));
+        return;
+    };
     std::thread::spawn(move || watch(shared, port, secret));
 }
 
@@ -230,7 +248,10 @@ fn watch(shared: Arc<Shared>, port: u16, secret: String) {
     let probe = ControllerProbe { port, secret };
     if !probe.wait_ready(Duration::from_secs(opts.readiness_timeout_secs)) {
         shared.kill_child();
-        shared.notify(CoreStatus::Crashed("readiness timeout".into()));
+        shared.notify(CoreStatus::Crashed(format!(
+            "内核启动失败/超时：{}",
+            core_log_tail(&shared.work_dir, 400)
+        )));
         return;
     }
     shared.notify(CoreStatus::Running);
@@ -252,8 +273,11 @@ fn watch(shared: Arc<Shared>, port: u16, secret: String) {
             return; // stop() 负责上报 Stopped
         }
         let reason = match exit.code() {
-            Some(code) => format!("core exited with code {code}"),
-            None => "core terminated by signal".into(),
+            Some(code) => format!(
+                "内核异常退出（code {code}）：{}",
+                core_log_tail(&shared.work_dir, 400)
+            ),
+            None => format!("内核被信号终止：{}", core_log_tail(&shared.work_dir, 400)),
         };
         shared.notify(CoreStatus::Crashed(reason));
 
@@ -314,6 +338,24 @@ impl ControllerProbe {
         }
         false
     }
+}
+
+/// 读取内核输出日志的尾部（崩溃原因展示用）。
+fn core_log_tail(work_dir: &std::path::Path, max_chars: usize) -> String {
+    let path = work_dir.join("core-stdio.log");
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        return "（无内核输出）".into();
+    };
+    let trimmed: String = raw.trim().to_string();
+    if trimmed.is_empty() {
+        return "（内核无输出）".into();
+    }
+    let char_count = trimmed.chars().count();
+    if char_count <= max_chars {
+        return trimmed;
+    }
+    let skip = char_count - max_chars;
+    format!("…{}", trimmed.chars().skip(skip).collect::<String>())
 }
 
 /// 分配一个空闲 TCP 端口（先绑定 0 拿端口再释放，存在极小竞态，S2 可接受）。
