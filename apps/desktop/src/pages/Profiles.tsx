@@ -91,13 +91,15 @@ export default function ProfilesPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-5">
-      <h1 className="text-lg font-semibold">{t("profiles.title")}</h1>
+      <h1 className="text-[15px] font-semibold tracking-tight">{t("profiles.title")}</h1>
 
       <div
-        className="flex gap-2 rounded-xl p-2 transition-colors"
+        className="cb-card flex gap-2 p-2 transition-colors"
         style={{
-          background: "var(--cb-surface)",
-          border: `2px ${dragOver ? "dashed var(--cb-accent)" : "solid transparent"}`,
+          border: dragOver
+            ? "1px dashed var(--cb-accent-line)"
+            : "1px solid transparent",
+          background: dragOver ? "var(--cb-accent-soft)" : undefined,
         }}
       >
         <input
@@ -112,8 +114,7 @@ export default function ProfilesPage() {
             }
           }}
           placeholder={t("profiles.urlPlaceholder")}
-          className="cb-selectable flex-1 rounded-lg border px-3 py-2 text-sm outline-none focus:border-[var(--cb-accent)]"
-          style={{ borderColor: "var(--cb-border)", background: "var(--cb-surface)" }}
+          className="cb-input cb-selectable flex-1 px-3 py-2"
         />
         <button
           disabled={!url || busy === "import"}
@@ -123,16 +124,14 @@ export default function ProfilesPage() {
               setUrl("");
             })
           }
-          className="rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-          style={{ background: "var(--cb-accent)" }}
+          className="cb-btn acc px-4 py-2"
         >
           {busy === "import" ? t("profiles.importing") : t("profiles.import")}
         </button>
         <button
           disabled={busy !== null}
           onClick={() => fileInputRef.current?.click()}
-          className="rounded-lg border px-3 py-2 text-xs disabled:opacity-40"
-          style={{ borderColor: "var(--cb-border)" }}
+          className="cb-btn px-3 py-2"
         >
           {busy?.endsWith(".yaml") || busy?.endsWith(".yml")
             ? t("profiles.importing")
@@ -156,14 +155,17 @@ export default function ProfilesPage() {
 
       {error && (
         <div className="rounded-lg border px-3 py-2 text-xs"
-          style={{ borderColor: "#e0524c", color: "#e0524c" }}>
+          style={{
+            borderColor: "color-mix(in srgb, var(--cb-bad) 40%, transparent)",
+            color: "var(--cb-bad)",
+          }}>
           {error}
         </div>
       )}
 
       {profiles.length === 0 ? (
-        <div className="flex h-48 items-center justify-center rounded-xl border text-sm"
-          style={{ background: "var(--cb-surface)", borderColor: "var(--cb-border)", color: "var(--cb-text-dim)" }}>
+        <div className="cb-card flex h-48 items-center justify-center text-sm"
+          style={{ color: "var(--cb-text-dim)" }}>
           {t("profiles.empty")}
         </div>
       ) : (
@@ -207,11 +209,12 @@ function ProfileCard({
 
   return (
     <section
-      className="rounded-xl border p-4"
+      className="cb-card p-4"
       style={{
-        background: "var(--cb-surface)",
-        borderColor: active ? "var(--cb-accent)" : "var(--cb-border)",
-        borderWidth: active ? 2 : 1,
+        borderColor: active ? "var(--cb-accent-line)" : "var(--cb-line)",
+        background: active
+          ? "linear-gradient(180deg, var(--cb-accent-soft), transparent), var(--cb-surface)"
+          : undefined,
       }}
     >
       <div className="flex items-start justify-between gap-4">
@@ -219,10 +222,7 @@ function ProfileCard({
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium cb-selectable">{profile.name}</span>
             {active && (
-              <span className="rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
-                style={{ background: "var(--cb-accent)" }}>
-                {t("profiles.current")}
-              </span>
+              <span className="cb-badge">{t("profiles.current")}</span>
             )}
           </div>
           <div className="mt-1 text-xs" style={{ color: "var(--cb-text-dim)" }}>
@@ -232,10 +232,10 @@ function ProfileCard({
 
           {traffic && traffic.total > 0 && (
             <div className="mt-2">
-              <div className="h-1.5 w-full overflow-hidden rounded-full"
-                style={{ background: "var(--cb-border)" }}>
+              <div className="h-[3px] w-full overflow-hidden rounded-full"
+                style={{ background: "color-mix(in srgb, var(--cb-text) 7%, transparent)" }}>
                 <div className="h-full rounded-full"
-                  style={{ width: `${pct}%`, background: pct > 90 ? "#e0524c" : "var(--cb-accent)" }} />
+                  style={{ width: `${pct}%`, background: pct > 90 ? "var(--cb-bad)" : "linear-gradient(90deg, var(--cb-accent), #9d8cff)" }} />
               </div>
               <div className="mt-1 text-[11px]" style={{ color: "var(--cb-text-dim)" }}>
                 ↑{fmtBytesLocal(traffic.upload)} ↓{fmtBytesLocal(traffic.download)} / {fmtBytesLocal(traffic.total)}
@@ -246,22 +246,17 @@ function ProfileCard({
 
         <div className="flex shrink-0 gap-2 text-xs">
           {profile.kind === "remote" && (
-            <button disabled={busy} onClick={onUpdate}
-              className="rounded-lg border px-3 py-1.5 disabled:opacity-40"
-              style={{ borderColor: "var(--cb-border)" }}>
+            <button disabled={busy} onClick={onUpdate} className="cb-btn py-1.5">
               {busy ? "…" : t("profiles.update")}
             </button>
           )}
           {!active && (
-            <button disabled={busy} onClick={onActivate}
-              className="rounded-lg border px-3 py-1.5 disabled:opacity-40"
-              style={{ borderColor: "var(--cb-border)" }}>
+            <button disabled={busy} onClick={onActivate} className="cb-btn py-1.5">
               {t("profiles.setActive")}
             </button>
           )}
-          <button disabled={busy} onClick={onRemove}
-            className="rounded-lg border px-3 py-1.5 disabled:opacity-40"
-            style={{ borderColor: "var(--cb-border)", color: "#e0524c" }}>
+          <button disabled={busy} onClick={onRemove} className="cb-btn py-1.5"
+            style={{ color: "var(--cb-bad)" }}>
             {t("profiles.remove")}
           </button>
         </div>

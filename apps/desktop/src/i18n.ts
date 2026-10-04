@@ -5,6 +5,8 @@ export type Lang = "zh" | "en";
 
 const dict: Record<Lang, Record<string, string>> = {
   zh: {
+    "section.proxy": "代理",
+    "section.general": "一般",
     "nav.home": "首页",
     "nav.proxies": "代理",
     "nav.profiles": "配置",
@@ -15,6 +17,10 @@ const dict: Record<Lang, Record<string, string>> = {
     "common.off": "关闭",
     "common.retry": "重试",
     "home.sysproxy": "系统代理",
+    "home.sysproxyOn": "系统代理运行中",
+    "home.sysproxyOff": "系统代理已关闭",
+    "home.viaRule": "流量经 mihomo 规则分流 · 局域网未开放",
+    "home.lanOn": "流量经 mihomo 规则分流 · 局域网已开放",
     "home.core": "内核",
     "home.coreRunning": "运行中",
     "home.coreStarting": "启动中…",
@@ -115,6 +121,8 @@ const dict: Record<Lang, Record<string, string>> = {
     "toast.importFailed": "导入失败：{msg}",
   },
   en: {
+    "section.proxy": "Proxy",
+    "section.general": "General",
     "nav.home": "Home",
     "nav.proxies": "Proxies",
     "nav.profiles": "Profiles",
@@ -125,6 +133,10 @@ const dict: Record<Lang, Record<string, string>> = {
     "common.off": "Off",
     "common.retry": "Retry",
     "home.sysproxy": "System Proxy",
+    "home.sysproxyOn": "System proxy running",
+    "home.sysproxyOff": "System proxy off",
+    "home.viaRule": "Traffic routed by mihomo rules · LAN off",
+    "home.lanOn": "Traffic routed by mihomo rules · LAN on",
     "home.core": "Core",
     "home.coreRunning": "running",
     "home.coreStarting": "starting…",

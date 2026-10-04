@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { ipc, type GroupView } from "../ipc";
 import { useT } from "../i18n";
+import { PageHead, ErrorBar } from "./Home";
+import { Icon } from "../components/Icon";
 
-/** 代理页：策略组 + 节点测速/选择（选择由内核 store-selected 持久化）。 */
+/** 代理组页（v2）：组卡片 + 节点网格，点状态灯分色。 */
 export default function ProxiesPage() {
   const t = useT();
   const [groups, setGroups] = useState<GroupView[]>([]);
@@ -59,9 +61,7 @@ export default function ProxiesPage() {
     setError(null);
     try {
       await ipc.selectProxy(group, node);
-      setGroups((gs) =>
-        gs.map((g) => (g.name === group ? { ...g, now: node } : g)),
-      );
+      setGroups((gs) => gs.map((g) => (g.name === group ? { ...g, now: node } : g)));
     } catch (e) {
       setError(String(e));
       load();
@@ -71,52 +71,37 @@ export default function ProxiesPage() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-5">
-      <div className="flex items-center gap-3">
-        <h1 className="text-lg font-semibold">{t("proxies.title")}</h1>
-        <span className="text-[11px]" style={{ color: "var(--cb-text-dim)" }}>
-          {t("proxies.selectHint")}
-        </span>
-        <div className="flex-1" />
-        {error && (
-          <span className="text-xs" style={{ color: "#e0524c" }}>
-            {error}
+    <div className="mx-auto max-w-4xl space-y-3.5">
+      <PageHead title={t("proxies.title")}>
+        <button className="cb-btn acc" onClick={load}>
+          <span className="inline-flex items-center gap-1.5">
+            <Icon name="refresh" size={12} stroke="currentColor" />
+            {t("proxies.refresh")}
           </span>
-        )}
-        <button
-          onClick={load}
-          className="rounded-lg border px-3 py-1.5 text-xs"
-          style={{ borderColor: "var(--cb-border)", color: "var(--cb-text-dim)" }}
-        >
-          {t("proxies.refresh")}
         </button>
-      </div>
+      </PageHead>
+
+      {error && <ErrorBar msg={error} />}
 
       {groups.length === 0 ? (
         <div
-          className="flex h-64 flex-col items-center justify-center gap-2 rounded-xl border text-sm"
-          style={{
-            background: "var(--cb-surface)",
-            borderColor: "var(--cb-border)",
-            color: "var(--cb-text-dim)",
-          }}
+          className="cb-card flex h-64 flex-col items-center justify-center gap-2 text-sm"
+          style={{ color: "var(--cb-text-dim)" }}
         >
           <span>{t("proxies.noCore")}</span>
           <span className="text-xs">{error ? String(error) : t("proxies.noCoreHint")}</span>
         </div>
       ) : (
-        <div className="space-y-4">
-          {groups.map((g) => (
-            <GroupCard
-              key={g.name}
-              group={g}
-              testing={testing === g.name}
-              selecting={selecting}
-              onTest={() => testGroup(g.name)}
-              onSelect={(n) => select(g.name, n)}
-            />
-          ))}
-        </div>
+        groups.map((g) => (
+          <GroupCard
+            key={g.name}
+            group={g}
+            testing={testing === g.name}
+            selecting={selecting}
+            onTest={() => testGroup(g.name)}
+            onSelect={(n) => select(g.name, n)}
+          />
+        ))
       )}
     </div>
   );
@@ -137,52 +122,55 @@ function GroupCard({
 }) {
   const t = useT();
   return (
-    <section className="rounded-xl border p-4"
-      style={{ background: "var(--cb-surface)", borderColor: "var(--cb-border)" }}>
-      <div className="mb-3 flex items-center gap-2">
-        <span className="text-sm font-medium">{group.name}</span>
-        <span className="rounded-full px-2 py-0.5 text-[10px]"
-          style={{ background: "var(--cb-border)", color: "var(--cb-text-dim)" }}>
-          {group.kind}
+    <section className="cb-card px-[18px] py-4">
+      <div className="mb-2.5 flex items-baseline gap-2.5">
+        <b className="text-[13px] font-semibold">{group.name}</b>
+        <span className="cb-micro">{group.kind}</span>
+        <span className="cb-mono ml-auto text-[11px]" style={{ color: "var(--cb-accent)" }}>
+          {t("proxies.now")} → {group.now ?? "—"}
         </span>
-        {group.now && (
-          <span className="text-[11px]" style={{ color: "var(--cb-text-dim)" }}>
-            {t("proxies.now")}: {group.now}
-          </span>
-        )}
-        <div className="flex-1" />
-        <button
-          onClick={onTest}
-          disabled={testing}
-          className="rounded-lg border px-3 py-1 text-xs disabled:opacity-40"
-          style={{ borderColor: "var(--cb-border)" }}
-        >
+        <button className="cb-btn" onClick={onTest} disabled={testing}>
           {testing ? t("proxies.testing") : t("proxies.testAll")}
         </button>
       </div>
-
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-6 gap-2">
         {group.nodes.map((n) => {
-          const selected = group.now === n.name;
-          const busy = selecting === `${group.name}:${n.name}`;
+          const sel = group.now === n.name;
+          const cls = delayClass(n.delay_ms);
           return (
             <button
               key={n.name}
               onClick={() => onSelect(n.name)}
-              disabled={busy}
-              className="rounded-lg border p-2.5 text-left transition-colors disabled:opacity-60"
+              disabled={selecting === `${group.name}:${n.name}`}
+              className="rounded-[10px] px-3 py-2.5 text-left disabled:opacity-60"
               style={{
-                borderColor: selected ? "var(--cb-accent)" : "var(--cb-border)",
-                borderWidth: selected ? 2 : 1,
-                background: selected ? "var(--cb-bg)" : "transparent",
+                border: `1px solid ${sel ? "var(--cb-accent-line)" : "var(--cb-line)"}`,
+                background: sel
+                  ? "linear-gradient(180deg, var(--cb-accent-soft), color-mix(in srgb, var(--cb-accent) 3%, transparent))"
+                  : "var(--cb-surface-2)",
               }}
               title={n.kind}
             >
-              <div className="truncate text-xs font-medium" title={n.name}>
+              <div className="truncate text-[12px] font-medium" title={n.name}>
                 {n.name}
               </div>
-              <div className="mt-1 text-[11px]" style={{ color: delayColor(n.delay_ms) }}>
-                {delayText(n.delay_ms)}
+              <div className="mt-1.5 flex items-center gap-1.5">
+                <i
+                  className="h-[5px] w-[5px] flex-none rounded-full"
+                  style={{
+                    background:
+                      n.delay_ms == null
+                        ? "var(--cb-faint)"
+                        : cls === "g"
+                          ? "var(--cb-ok)"
+                          : cls === "y"
+                            ? "var(--cb-warn)"
+                            : "var(--cb-bad)",
+                  }}
+                />
+                <span className="cb-mono text-[10.5px]" style={{ color: "var(--cb-text-dim)" }}>
+                  {delayText(n.delay_ms)}
+                </span>
               </div>
             </button>
           );
@@ -194,13 +182,13 @@ function GroupCard({
 
 function delayText(ms: number | null): string {
   if (ms == null) return "—";
-  if (ms === 0) return "✕";
-  return `${ms}ms`;
+  if (ms === 0) return "超时";
+  return `${ms} ms`;
 }
 
-function delayColor(ms: number | null): string {
-  if (ms == null || ms === 0) return "var(--cb-text-dim)";
-  if (ms <= 200) return "#34c759";
-  if (ms <= 500) return "#d6a02b";
-  return "#e0524c";
+function delayClass(ms: number | null): "g" | "y" | "r" | "" {
+  if (ms == null || ms === 0) return "";
+  if (ms <= 200) return "g";
+  if (ms <= 500) return "y";
+  return "r";
 }

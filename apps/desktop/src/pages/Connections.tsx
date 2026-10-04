@@ -77,14 +77,16 @@ export default function ConnectionsPage() {
         </button>
       </div>
 
-      <div className="rounded-xl border text-xs"
-        style={{ background: "var(--cb-surface)", borderColor: "var(--cb-border)" }}>
+      <div className="cb-card grow overflow-hidden text-xs" style={{ padding: 0 }}>
         <div
-          className="grid px-3 py-2 font-medium"
+          className="grid px-3 py-2.5"
           style={{
             gridTemplateColumns: "minmax(220px,2fr) minmax(120px,1fr) minmax(150px,1.2fr) 90px 90px 90px 70px",
-            color: "var(--cb-text-dim)",
-            borderBottom: "1px solid var(--cb-border)",
+            color: "var(--cb-faint)",
+            borderBottom: "1px solid var(--cb-line)",
+            fontSize: 10,
+            letterSpacing: ".1em",
+            textTransform: "uppercase",
           }}
         >
           <span>{t("col.target")}</span>
@@ -118,15 +120,17 @@ export default function ConnectionsPage() {
 function Row({ row }: { row: ConnRow }) {
   return (
     <div
-      className="cb-selectable grid items-center px-3 font-mono"
+      className="cb-selectable cb-mono grid items-center px-3"
       style={{
         height: ROW_H,
         gridTemplateColumns: "minmax(220px,2fr) minmax(120px,1fr) minmax(150px,1.2fr) 90px 90px 90px 70px",
-        borderBottom: "1px solid var(--cb-border)",
+        borderBottom: "1px solid rgba(255,255,255,.035)",
+        fontSize: 11.5,
+        color: "var(--cb-text-dim)",
       }}
     >
-      <span className="truncate" title={row.host}>
-        {row.network && <span style={{ color: "var(--cb-accent)" }}>[{row.network}] </span>}
+      <span className="truncate" title={row.host} style={{ color: "var(--cb-text)" }}>
+        {row.network && <span style={{ color: "var(--cb-faint)", marginRight: 6 }}>{row.network.toUpperCase()}</span>}
         {row.host}
       </span>
       <span className="truncate" title={row.rule}>{row.rule}</span>
@@ -134,7 +138,7 @@ function Row({ row }: { row: ConnRow }) {
       <span className="truncate">{row.process}</span>
       <span className="text-right">{fmtBytes(row.up)}</span>
       <span className="text-right">{fmtBytes(row.down)}</span>
-      <span className="text-right" style={{ color: "var(--cb-text-dim)" }}>
+      <span className="text-right">
         {fmtDuration(row.elapsed_ms)}
       </span>
     </div>

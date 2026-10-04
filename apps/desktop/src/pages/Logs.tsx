@@ -96,12 +96,10 @@ export default function LogsPage() {
           const el = e.currentTarget;
           pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
-        className="cb-selectable rounded-xl border font-mono text-[11px] leading-5"
+        className="cb-card cb-selectable cb-mono grow text-[11px] leading-5"
         style={{
           height: 480,
           overflowY: "auto",
-          background: "var(--cb-surface)",
-          borderColor: "var(--cb-border)",
         }}
       >
         {shown.length === 0 ? (
@@ -111,7 +109,7 @@ export default function LogsPage() {
           </div>
         ) : (
           shown.map((l, i) => (
-            <div key={i} className="px-3" style={{ color: LEVEL_COLOR[l.type] ?? "var(--cb-text)" }}>
+            <div key={i} className="px-3" style={{ color: LEVEL_COLOR[l.type] ?? "var(--cb-text-dim)" }}>
               {l.payload}
             </div>
           ))

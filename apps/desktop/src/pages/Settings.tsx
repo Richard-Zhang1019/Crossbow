@@ -87,8 +87,7 @@ export default function SettingsPage() {
                   setInstalling(null);
                 }
               }}
-              className="rounded-lg px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40"
-              style={{ background: "var(--cb-accent)" }}
+              className="cb-btn acc px-3 py-1.5"
             >
               {installing ?? t("settings.downloadCore")}
             </button>
@@ -105,8 +104,7 @@ export default function SettingsPage() {
             onChange={(e) => setPortDraft(e.target.value)}
             onBlur={applyPort}
             onKeyDown={(e) => e.key === "Enter" && applyPort()}
-            className="cb-selectable w-24 rounded-lg border px-2 py-1 text-sm outline-none focus:border-[var(--cb-accent)]"
-            style={{ borderColor: "var(--cb-border)", background: "var(--cb-bg)" }}
+            className="cb-input cb-selectable w-24 px-2 py-1"
           />
         </Row>
         <Row label={t("settings.lan")} hint={t("settings.lanHint")}>
@@ -130,8 +128,7 @@ export default function SettingsPage() {
               await ipc.setTheme(t);
               setTheme(t);
             }}
-            className="rounded-lg border px-2 py-1 text-sm"
-            style={{ borderColor: "var(--cb-border)", background: "var(--cb-bg)" }}
+            className="cb-input"
           >
             <option value="system">{t("theme.system")}</option>
             <option value="light">{t("theme.light")}</option>
@@ -146,8 +143,7 @@ export default function SettingsPage() {
               await ipc.setLang(l).catch((e) => flash(false, String(e)));
               setLangState(l);
             }}
-            className="rounded-lg border px-2 py-1 text-sm"
-            style={{ borderColor: "var(--cb-border)", background: "var(--cb-bg)" }}
+            className="cb-input"
           >
             <option value="zh">简体中文</option>
             <option value="en">English</option>
@@ -184,8 +180,7 @@ export default function SettingsPage() {
                 flash(false, t("settings.updateFailed"));
               }
             }}
-            className="rounded-lg border px-3 py-1.5 text-xs"
-            style={{ borderColor: "var(--cb-border)" }}
+            className="cb-btn py-1.5"
           >
             Go
           </button>
@@ -197,13 +192,12 @@ export default function SettingsPage() {
 
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border"
-      style={{ background: "var(--cb-surface)", borderColor: "var(--cb-border)" }}>
-      <div className="border-b px-4 py-2.5 text-xs font-medium"
-        style={{ borderColor: "var(--cb-border)", color: "var(--cb-text-dim)" }}>
+    <section className="cb-card overflow-hidden">
+      <div className="border-b px-4 py-2.5 cb-micro"
+        style={{ borderColor: "var(--cb-line)" }}>
         {title}
       </div>
-      <div className="divide-y" style={{ borderColor: "var(--cb-border)" }}>
+      <div className="divide-y" style={{ borderColor: "var(--cb-line)" }}>
         {children}
       </div>
     </section>
@@ -230,13 +224,7 @@ function Switch({ checked, onChange }: { checked: boolean; onChange: (v: boolean
   return (
     <button
       onClick={() => onChange(!checked)}
-      className="relative h-6 w-11 rounded-full transition-colors"
-      style={{ background: checked ? "var(--cb-accent)" : "#8e8e93" }}
-    >
-      <span
-        className="absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all"
-        style={{ left: checked ? 22 : 2 }}
-      />
-    </button>
+      className={`cb-toggle ${checked ? "on" : ""}`}
+    />
   );
 }

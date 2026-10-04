@@ -1,22 +1,75 @@
 @import "tailwindcss";
 
-/* 主题变量：明暗双套 + 可换强调色（设置页接入后由 JS 切换 class） */
+/* ============================================================
+   Crossbow 设计令牌 — v2「克制的深色仪表盘」
+   层次靠发丝线与双层面板，强调色只点睛，不发光。
+   浅色主题用同一套语言（同结构、同字重、同密度）。
+   ============================================================ */
+
 :root {
-  --cb-bg: #f5f5f7;
-  --cb-surface: #ffffff;
-  --cb-border: #e5e5ea;
-  --cb-text: #1d1d1f;
-  --cb-text-dim: #6e6e73;
-  --cb-accent: #d6482b; /* crossbow red */
+  /* 表面层次 */
+  --cb-bg: #0a0c10;
+  --cb-surface: #101319;
+  --cb-surface-2: #151a22;
+  /* 发丝线 */
+  --cb-line: rgba(255, 255, 255, 0.065);
+  --cb-line-strong: rgba(255, 255, 255, 0.12);
+  /* 文字 */
+  --cb-text: #e8eaf0;
+  --cb-text-dim: #9aa3b2;
+  --cb-faint: #5d6675;
+  /* 强调（点睛用） */
+  --cb-accent: #7aa2ff;
+  --cb-accent-soft: rgba(122, 162, 255, 0.14);
+  --cb-accent-line: rgba(122, 162, 255, 0.35);
+  /* 语义 */
+  --cb-ok: #4ade80;
+  --cb-warn: #fbbf24;
+  --cb-bad: #f87171;
+  /* 图表双色 */
+  --cb-up: #8bb8ff;
+  --cb-down: #b7a6f8;
+  /* 字体 */
+  --cb-mono: "SF Mono", ui-monospace, Menlo, monospace;
+
+  /* 兼容旧变量名的映射（渐删） */
+  --cb-border: var(--cb-line);
 }
 
 .dark {
-  --cb-bg: #161618;
-  --cb-surface: #1f1f22;
-  --cb-border: #2c2c30;
-  --cb-text: #f5f5f7;
-  --cb-text-dim: #98989d;
-  --cb-accent: #ff6b4a;
+  --cb-bg: #0a0c10;
+  --cb-surface: #101319;
+  --cb-surface-2: #151a22;
+  --cb-line: rgba(255, 255, 255, 0.065);
+  --cb-line-strong: rgba(255, 255, 255, 0.12);
+  --cb-text: #e8eaf0;
+  --cb-text-dim: #9aa3b2;
+  --cb-faint: #5d6675;
+  --cb-accent: #7aa2ff;
+  --cb-accent-soft: rgba(122, 162, 255, 0.14);
+  --cb-accent-line: rgba(122, 162, 255, 0.35);
+  --cb-border: var(--cb-line);
+}
+
+/* 浅色：同一设计语言的白昼版 */
+:root:not(.dark) {
+  --cb-bg: #f6f7f9;
+  --cb-surface: #ffffff;
+  --cb-surface-2: #f1f3f7;
+  --cb-line: rgba(17, 24, 39, 0.08);
+  --cb-line-strong: rgba(17, 24, 39, 0.16);
+  --cb-text: #1a1d23;
+  --cb-text-dim: #5b6472;
+  --cb-faint: #8a93a3;
+  --cb-accent: #3b66e0;
+  --cb-accent-soft: rgba(59, 102, 224, 0.1);
+  --cb-accent-line: rgba(59, 102, 224, 0.32);
+  --cb-ok: #16a34a;
+  --cb-warn: #d97706;
+  --cb-bad: #dc2626;
+  --cb-up: #3b66e0;
+  --cb-down: #8b5cf6;
+  --cb-border: var(--cb-line);
 }
 
 html,
@@ -28,10 +81,195 @@ body,
   color: var(--cb-text);
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC",
     "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
   user-select: none;
 }
 
-/* 等宽区域（日志/连接）恢复可选中文本 */
+/* 等宽区域（日志/连接/数据）恢复可选中 */
 .cb-selectable {
   user-select: text;
+}
+
+/* ---------- 通用组件类 ---------- */
+
+/* 卡片：双层渐变 + 发丝线 + 顶缘高光 */
+.cb-card {
+  background: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.018),
+      rgba(255, 255, 255, 0) 42%
+    ),
+    var(--cb-surface);
+  border: 1px solid var(--cb-line);
+  border-radius: 12px;
+  box-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+:root:not(.dark) .cb-card {
+  background: var(--cb-surface);
+  box-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+/* 大写微标签（区块标题） */
+.cb-micro {
+  font-size: 10px;
+  color: var(--cb-faint);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+/* 等宽数据 */
+.cb-mono {
+  font-family: var(--cb-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* 状态点 */
+.cb-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+}
+.cb-dot.ok {
+  background: var(--cb-ok);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--cb-ok) 55%, transparent);
+}
+.cb-dot.bad {
+  background: var(--cb-bad);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--cb-bad) 55%, transparent);
+}
+.cb-dot.idle {
+  background: var(--cb-faint);
+}
+
+/* 徽标 */
+.cb-badge {
+  font-size: 10px;
+  border-radius: 5px;
+  padding: 2px 7px;
+  color: var(--cb-accent);
+  background: var(--cb-accent-soft);
+}
+.cb-badge.gray {
+  color: var(--cb-text-dim);
+  background: color-mix(in srgb, var(--cb-text) 6%, transparent);
+}
+
+/* 分段控件 */
+.cb-seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--cb-surface-2);
+  border: 1px solid var(--cb-line);
+  border-radius: 8px;
+}
+.cb-seg button {
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: var(--cb-text-dim);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+.cb-seg button.on {
+  color: var(--cb-text);
+  background: color-mix(in srgb, var(--cb-text) 6%, transparent);
+  box-shadow: inset 0 0 0 1px var(--cb-line-strong);
+}
+
+/* 输入框 */
+.cb-input {
+  background: var(--cb-surface-2);
+  border: 1px solid var(--cb-line);
+  border-radius: 8px;
+  color: var(--cb-text);
+  font-size: 12px;
+  padding: 6px 11px;
+  outline: none;
+}
+.cb-input::placeholder {
+  color: var(--cb-faint);
+}
+.cb-input:focus {
+  border-color: var(--cb-accent-line);
+}
+
+/* 按钮 */
+.cb-btn {
+  background: var(--cb-surface-2);
+  color: var(--cb-text);
+  border: 1px solid var(--cb-line-strong);
+  border-radius: 8px;
+  font-size: 12px;
+  padding: 6px 13px;
+  cursor: pointer;
+}
+.cb-btn.acc {
+  background: var(--cb-accent-soft);
+  color: var(--cb-accent);
+  border-color: var(--cb-accent-line);
+}
+.cb-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* pill 开关 */
+.cb-toggle {
+  width: 40px;
+  height: 22px;
+  border-radius: 99px;
+  position: relative;
+  cursor: pointer;
+  border: none;
+  background: var(--cb-surface-2);
+  box-shadow: inset 0 0 0 1px var(--cb-line-strong);
+  transition: background 0.15s;
+}
+.cb-toggle::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--cb-text-dim);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  transition:
+    left 0.15s,
+    background 0.15s;
+}
+.cb-toggle.on {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--cb-accent) 90%, white),
+    var(--cb-accent)
+  );
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+.cb-toggle.on::after {
+  left: 20px;
+  background: #fff;
+}
+
+/* 滚动条弱化 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--cb-line-strong);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }

@@ -9,10 +9,11 @@ import {
 } from "../ipc";
 import { fmtBytes } from "../format";
 import { useT } from "../i18n";
+import { Icon } from "../components/Icon";
 
 const POINTS = 120;
 
-/** 首页仪表盘：系统代理总开关 + 模式 + 实时速率曲线 + 累计统计。 */
+/** 首页（v2）：状态卡 + KPI + 平滑速率曲线 + 配置档案。 */
 export default function HomePage() {
   const t = useT();
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -75,104 +76,234 @@ export default function HomePage() {
 
   const active = profiles.find((p) => p.id === activeId);
   const latest = rates[rates.length - 1];
+  const running = core.state === "Running" || core.state === "Starting";
 
   return (
-    <div className="mx-auto max-w-4xl space-y-5">
-      <h1 className="text-lg font-semibold">{t("nav.home")}</h1>
+    <div className="mx-auto max-w-4xl space-y-3.5">
+      <PageHead title={t("nav.home")} meta={`mixed :${proxy.port || 7897} · ${mode}`} />
 
-      <section className="rounded-xl border p-5"
-        style={{ background: "var(--cb-surface)", borderColor: "var(--cb-border)" }}>
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-sm font-medium">
-              {t("home.sysproxy")}
-              {proxy.enabled ? ` :${proxy.port}` : ""}
-            </div>
-            <div className="mt-0.5 text-xs" style={{ color: "var(--cb-text-dim)" }}>
-              {t("home.core")} {coreStatusText(t, core)} · {t("home.activeProfile")}{" "}
-              {active ? active.name : t("home.none")}            </div>
+      {error && <ErrorBar msg={error} />}
+
+      {/* 状态卡 */}
+      <section className="cb-card flex items-center gap-4 px-5 py-[18px]">
+        <span className={`cb-dot ${proxy.enabled ? "ok" : running ? "ok" : "idle"}`} />
+        <div className="flex-1">
+          <div className="text-[14px] font-semibold">
+            {proxy.enabled ? t("home.sysproxyOn") : t("home.sysproxyOff")}
           </div>
-          <button
-            onClick={toggleProxy}
-            disabled={busy || !activeId}
-            title={activeId ? undefined : t("home.noProfiles")}
-            className="rounded-full px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40"
-            style={{ background: proxy.enabled ? "var(--cb-accent)" : "#8e8e93" }}
-          >
-            {busy ? "…" : proxy.enabled ? t("common.off") : t("common.on")}
-          </button>
+          <div className="mt-0.5 text-[11.5px]" style={{ color: "var(--cb-text-dim)" }}>
+            {coreText(t, core)} · {t("home.activeProfile")}{" "}
+            {active ? active.name : t("home.none")}
+          </div>
         </div>
-
-        <div className="mt-4 flex items-center gap-1">
+        <div className="cb-seg">
           {CORE_MODES.map((m) => (
             <button
               key={m.id}
+              className={mode === m.id ? "on" : ""}
               onClick={() => ipc.setCoreMode(m.id).catch((e) => setError(String(e)))}
-              className="rounded-lg px-3 py-1 text-xs"
-              style={
-                mode === m.id
-                  ? { background: "var(--cb-accent)", color: "#fff" }
-                  : { color: "var(--cb-text-dim)", border: "1px solid var(--cb-border)" }
-              }
             >
               {t(`mode.${m.id}` as const)}
             </button>
           ))}
-          <span className="ml-2 text-[11px]" style={{ color: "var(--cb-text-dim)" }}>
-            {t("home.modeHint")}
-          </span>
+        </div>
+        <button
+          className={`cb-toggle ${proxy.enabled ? "on" : ""}`}
+          onClick={toggleProxy}
+          disabled={busy || !activeId}
+          title={activeId ? undefined : t("home.noProfiles")}
+        />
+        <div className="h-10 w-px" style={{ background: "var(--cb-line)" }} />
+        <div className="min-w-[170px] text-right">
+          <div className="cb-micro">{t("home.outbound")}</div>
+          <div className="cb-mono mt-0.5 text-[13.5px] font-semibold">
+            — <span style={{ color: "var(--cb-ok)" }}>M1</span>
+          </div>
+          <div className="cb-mono mt-0.5 text-[11px]" style={{ color: "var(--cb-faint)" }}>
+            {t("home.comingM1")}
+          </div>
         </div>
       </section>
 
-      {error && (
-        <div className="rounded-lg border px-3 py-2 text-xs"
-          style={{ borderColor: "#e0524c", color: "#e0524c" }}>
-          {error}
-        </div>
-      )}
-
-      <div className="grid grid-cols-3 gap-4">
-        <Card title={t("home.outbound")}>
-          <div className="text-sm">— {t("home.comingM1")} —</div>
-        </Card>
-        <Card title={t("home.traffic")}>
-          <div className="text-sm cb-selectable">
-            ↑ {fmtBytes(totals.up)} · ↓ {fmtBytes(totals.down)}
-          </div>
-        </Card>
-        <Card title={t("home.connections")}>
-          <div className="text-sm">{connCount ?? "—"}</div>
-        </Card>
+      {/* KPI */}
+      <div className="grid grid-cols-3 gap-3">
+        <Kpi
+          micro="↑ 上行速率"
+          value={fmtBytes(latest?.up ?? 0)}
+          delta={`累计 ${fmtBytes(totals.up)}`}
+        />
+        <Kpi
+          micro="↓ 下行速率"
+          value={fmtBytes(latest?.down ?? 0)}
+          delta={`累计 ${fmtBytes(totals.down)}`}
+        />
+        <Kpi micro={t("home.connections")} value={connCount != null ? String(connCount) : "—"} delta="" />
       </div>
 
-      <Card title={`${t("home.rate")}　↑ ${fmtBytes(latest?.up ?? 0)}/s · ↓ ${fmtBytes(latest?.down ?? 0)}/s`}>
+      {/* 速率曲线 */}
+      <section className="cb-card grow px-4 pb-2 pt-4">
+        <div className="flex items-baseline">
+          <span className="cb-micro flex-1">{t("home.rate")}</span>
+          <span className="cb-mono text-[12px]" style={{ color: "var(--cb-up)" }}>
+            ↑ {fmtBytes(latest?.up ?? 0)}/s
+          </span>
+          <span className="cb-mono ml-3 text-[12px]" style={{ color: "var(--cb-down)" }}>
+            ↓ {fmtBytes(latest?.down ?? 0)}/s
+          </span>
+        </div>
         <Sparkline rates={rates} />
-      </Card>
+      </section>
 
-      <Card title={t("home.profiles")}>
-        {profiles.length === 0 ? (
-          <div className="text-xs" style={{ color: "var(--cb-text-dim)" }}>
-            {t("home.noProfiles")}
-          </div>
-        ) : (
-          <ul className="space-y-1 text-sm">
-            {profiles.map((p) => (
-              <li key={p.id} className="cb-selectable">
-                {p.id === activeId ? "● " : "○ "}
-                {p.kind === "remote" ? "☁" : "☰"} {p.name}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+      {/* 配置档案 */}
+      <section className="cb-card px-4 pb-4 pt-[14px]">
+        <div className="cb-micro">{t("home.profiles")}</div>
+        <div className="mt-2.5 flex flex-col gap-2">
+          {profiles.length === 0 ? (
+            <div className="text-xs" style={{ color: "var(--cb-text-dim)" }}>
+              {t("home.noProfiles")}
+            </div>
+          ) : (
+            profiles.map((p) => {
+              const on = p.id === activeId;
+              const tr = p.traffic;
+              const used = tr ? tr.upload + tr.download : 0;
+              const pct = tr && tr.total > 0 ? Math.min(100, (used / tr.total) * 100) : 0;
+              return (
+                <div
+                  key={p.id}
+                  className="flex items-center gap-3 rounded-[10px] px-3.5 py-2.5"
+                  style={{
+                    border: `1px solid ${on ? "var(--cb-accent-line)" : "var(--cb-line)"}`,
+                    background: on
+                      ? "linear-gradient(180deg, var(--cb-accent-soft), transparent)"
+                      : "var(--cb-surface-2)",
+                  }}
+                >
+                  <span className={on ? "cb-badge" : "cb-badge gray"}>
+                    {on ? "当前" : p.kind === "remote" ? "订阅" : "本地"}
+                  </span>
+                  <b className="text-[12.5px] font-medium">{p.name}</b>
+                  {tr && tr.total > 0 && (
+                    <>
+                      <div
+                        className="h-[3px] flex-1 overflow-hidden rounded-full"
+                        style={{ background: "color-mix(in srgb, var(--cb-text) 7%, transparent)" }}
+                      >
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${pct}%`,
+                            background: "linear-gradient(90deg, var(--cb-accent), #9d8cff)",
+                          }}
+                        />
+                      </div>
+                      <span className="cb-mono text-[11px]" style={{ color: "var(--cb-faint)" }}>
+                        {fmtBytes(used)} / {fmtBytes(tr.total)}
+                      </span>
+                    </>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </section>
     </div>
   );
 }
 
-function coreStatusText(
-  t: ReturnType<typeof useT>,
-  s: CoreStatus,
-): string {
+export function PageHead({ title, meta, children }: { title: string; meta?: string; children?: React.ReactNode }) {
+  return (
+    <div className="mb-1 flex items-center gap-3">
+      <h1 className="text-[15px] font-semibold tracking-tight">{title}</h1>
+      {meta && (
+        <span className="cb-mono text-[11px]" style={{ color: "var(--cb-faint)" }}>
+          {meta}
+        </span>
+      )}
+      <span className="flex-1" />
+      {children}
+    </div>
+  );
+}
+
+export function ErrorBar({ msg }: { msg: string }) {
+  return (
+    <div
+      className="rounded-lg border px-3 py-2 text-xs"
+      style={{ borderColor: "color-mix(in srgb, var(--cb-bad) 40%, transparent)", color: "var(--cb-bad)" }}
+    >
+      {msg}
+    </div>
+  );
+}
+
+function Kpi({ micro, value, delta }: { micro: string; value: string; delta: string }) {
+  return (
+    <section className="cb-card px-4 py-3.5">
+      <div className="cb-micro">{micro}</div>
+      <div className="cb-mono mt-1 text-[21px] font-semibold tracking-tight">
+        {value}
+      </div>
+      {delta && (
+        <div className="cb-mono mt-1 text-[10.5px]" style={{ color: "var(--cb-faint)" }}>
+          {delta}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** 平滑贝塞尔双线 sparkline（对齐设计稿 v2）。 */
+function Sparkline({ rates }: { rates: { up: number; down: number }[] }) {
+  const W = 640;
+  const H = 120;
+  const max = Math.max(1, ...rates.map((r) => Math.max(r.up, r.down)));
+  const smooth = (key: "up" | "down") => {
+    if (rates.length < 2) return "";
+    const step = W / (POINTS - 1);
+    const offset = POINTS - rates.length;
+    const pts = rates.map((r, i) => ({
+      x: (i + offset) * step,
+      y: H - (r[key] / max) * (H - 10) - 4,
+    }));
+    let d = `M${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`;
+    for (let i = 1; i < pts.length; i++) {
+      const p0 = pts[i - 1];
+      const p1 = pts[i];
+      const mx = ((p0.x + p1.x) / 2).toFixed(1);
+      d += ` C${mx},${p0.y.toFixed(1)} ${mx},${p1.y.toFixed(1)} ${p1.x.toFixed(1)},${p1.y.toFixed(1)}`;
+    }
+    return d;
+  };
+  const upLine = smooth("up");
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="mt-2 w-full" style={{ height: 120 }}>
+      <defs>
+        <linearGradient id="au" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#8bb8ff" stopOpacity=".16" />
+          <stop offset="1" stopColor="#8bb8ff" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <g stroke="rgba(255,255,255,.05)">
+        <line x1="0" y1="30" x2={W} y2="30" />
+        <line x1="0" y1="60" x2={W} y2="60" />
+        <line x1="0" y1="90" x2={W} y2="90" />
+      </g>
+      {upLine && (
+        <>
+          <path d={`${upLine} L${W},${H} L0,${H} Z`} fill="url(#au)" />
+          <path d={upLine} fill="none" stroke="#8bb8ff" strokeWidth="1.6" />
+        </>
+      )}
+      {smooth("down") && (
+        <path d={smooth("down")} fill="none" stroke="#b7a6f8" strokeWidth="1.4" opacity=".9" />
+      )}
+    </svg>
+  );
+}
+
+function coreText(t: ReturnType<typeof useT>, s: CoreStatus): string {
   switch (s.state) {
     case "Running":
       return t("home.coreRunning");
@@ -185,38 +316,5 @@ function coreStatusText(
   }
 }
 
-function Sparkline({ rates }: { rates: { up: number; down: number }[] }) {
-  const W = 860;
-  const H = 96;
-  const max = Math.max(1, ...rates.map((r) => Math.max(r.up, r.down)));
-  const path = (key: "up" | "down") => {
-    if (rates.length < 2) return "";
-    const step = W / (POINTS - 1);
-    const offset = POINTS - rates.length;
-    return rates
-      .map((r, i) => {
-        const x = (i + offset) * step;
-        const y = H - (r[key] / max) * (H - 6) - 3;
-        return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
-      })
-      .join(" ");
-  };
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 96 }}>
-      <path d={path("down")} fill="none" stroke="#4a9df8" strokeWidth="1.5" />
-      <path d={path("up")} fill="none" stroke="var(--cb-accent)" strokeWidth="1.5" />
-    </svg>
-  );
-}
-
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-xl border p-4"
-      style={{ background: "var(--cb-surface)", borderColor: "var(--cb-border)" }}>
-      <div className="mb-2 text-xs font-medium" style={{ color: "var(--cb-text-dim)" }}>
-        {title}
-      </div>
-      {children}
-    </section>
-  );
-}
+// Icon 供 KPI 卡未来扩展使用，避免未用告警
+void Icon;

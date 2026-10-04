@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Crossbow UI v2 · refined dark</title>
+<style>
+:root {
+  --bg: #0a0c10;
+  --surface: #101319;
+  --surface-2: #151a22;
+  --line: rgba(255,255,255,.065);
+  --line-strong: rgba(255,255,255,.12);
+  --text: #e8eaf0;
+  --dim: #9aa3b2;
+  --faint: #5d6675;
+  --accent: #7aa2ff;
+  --accent-soft: rgba(122,162,255,.14);
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --bad: #f87171;
+  --up: #8bb8ff;
+  --down: #b7a6f8;
+  --mono: "SF Mono", ui-monospace, Menlo, monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #060709;
+  color: var(--text);
+  font: 13px/1.55 -apple-system, "PingFang SC", "Inter", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  padding: 36px;
+  display: flex; flex-direction: column; gap: 44px;
+}
+h2 { color: var(--faint); font-size: 11px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; }
+
+.app {
+  width: 1100px; height: 680px;
+  border-radius: 12px; border: 1px solid var(--line-strong);
+  display: flex; overflow: hidden; position: relative;
+  background:
+    radial-gradient(900px 420px at 75% -8%, rgba(122,162,255,.055), transparent 60%),
+    var(--bg);
+}
+/* 发丝线质感：顶部内侧高光 */
+.app::before {
+  content: ""; position: absolute; inset: 0; border-radius: 12px; pointer-events: none;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+}
+
+/* ---------- sidebar ---------- */
+.nav {
+  width: 216px; padding: 20px 12px 14px;
+  border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 1px;
+  background: linear-gradient(180deg, rgba(255,255,255,.015), transparent 30%);
+}
+.logo { display: flex; align-items: center; gap: 10px; padding: 2px 10px 20px; }
+.logo .mark {
+  width: 24px; height: 24px; border-radius: 6.5px;
+  background: linear-gradient(135deg, #7aa2ff, #9d8cff);
+  display: grid; place-items: center;
+}
+.logo b { font-size: 13.5px; font-weight: 600; letter-spacing: -.01em; }
+.nav .sec {
+  font-size: 10px; color: var(--faint); letter-spacing: .12em;
+  padding: 14px 10px 6px; text-transform: uppercase;
+}
+.nav a {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px; border-radius: 7px; color: var(--dim);
+  text-decoration: none; font-weight: 450;
+}
+.nav a.on { color: var(--text); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); }
+.nav a.on svg { stroke: var(--accent); }
+.nav a svg { width: 15px; height: 15px; stroke: var(--faint); stroke-width: 1.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.nav .foot {
+  margin-top: auto; padding: 10px 10px 2px; border-top: 1px solid var(--line);
+  font-size: 10.5px; color: var(--faint); display: flex; align-items: center; gap: 7px;
+}
+.nav .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 5px rgba(74,222,128,.5); }
+.nav .foot span { font-family: var(--mono); }
+
+/* ---------- main ---------- */
+.main { flex: 1; padding: 24px 28px; display: flex; flex-direction: column; gap: 14px; overflow: hidden; }
+.pagehead { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.pagehead h1 { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+.pagehead .meta { font-size: 11.5px; color: var(--faint); font-family: var(--mono); }
+.pagehead .sp { flex: 1; }
+
+.card {
+  background: linear-gradient(180deg, rgba(255,255,255,.018), rgba(255,255,255,0) 42%), var(--surface);
+  border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 1px 0 rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.03);
+}
+.row { display: flex; gap: 12px; }
+.grow { flex: 1; }
+
+.micro { font-size: 10px; color: var(--faint); letter-spacing: .12em; text-transform: uppercase; }
+
+/* status card */
+.status { display: flex; align-items: center; padding: 18px 20px; gap: 16px; }
+.sdot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px rgba(74,222,128,.55); }
+.status .ttl { font-size: 14px; font-weight: 600; }
+.status .sub { font-size: 11.5px; color: var(--dim); margin-top: 2px; }
+.seg {
+  display: flex; background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 2px; gap: 2px; font-size: 11.5px;
+}
+.seg span { padding: 4px 12px; border-radius: 6px; color: var(--dim); }
+.seg span.on { color: var(--text); background: rgba(255,255,255,.06); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.toggle {
+  width: 40px; height: 22px; border-radius: 99px; margin-left: auto;
+  background: linear-gradient(180deg, rgba(122,162,255,.9), rgba(122,162,255,.7));
+  position: relative; box-shadow: inset 0 0 0 1px rgba(255,255,255,.14);
+}
+.toggle::after {
+  content: ""; position: absolute; top: 2px; right: 2px; width: 18px; height: 18px;
+  border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.4);
+}
+.outbound { text-align: right; min-width: 180px; }
+.outbound .o { font-size: 13.5px; font-weight: 600; font-family: var(--mono); letter-spacing: -.01em; }
+.outbound .o em { font-style: normal; color: var(--ok); font-size: 11px; margin-left: 6px; }
+.outbound .chain { font-size: 11px; color: var(--faint); margin-top: 2px; font-family: var(--mono); }
+.vline { width: 1px; height: 40px; background: var(--line); }
+
+/* KPI */
+.kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.kpi { padding: 14px 16px; }
+.kpi .v { font: 600 21px var(--mono); letter-spacing: -.03em; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.kpi .v small { font-size: 11px; color: var(--dim); font-weight: 450; margin-left: 3px; letter-spacing: 0; }
+.kpi .delta { font: 10.5px var(--mono); color: var(--dim); margin-top: 4px; }
+.kpi .delta b { color: var(--ok); font-weight: 500; }
+
+/* chart */
+.chart { padding: 16px 16px 8px; position: relative; }
+.chart .head { display: flex; align-items: baseline; }
+.chart .head .micro { flex: 1; }
+.chart .head .now { font: 12px var(--mono); color: var(--up); }
+.chart .head .now.i2 { color: var(--down); margin-left: 12px; }
+.chart svg { width: 100%; height: 128px; display: block; margin-top: 8px; }
+
+/* profiles */
+.plist { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.p {
+  display: flex; align-items: center; gap: 12px; padding: 11px 14px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2);
+}
+.p.on { border-color: rgba(122,162,255,.35); background: linear-gradient(180deg, rgba(122,162,255,.05), transparent); }
+.p b { font-size: 12.5px; font-weight: 550; }
+.bar { height: 3px; border-radius: 99px; background: rgba(255,255,255,.07); overflow: hidden; flex: 1; }
+.bar i { display: block; height: 100%; width: 29%; background: linear-gradient(90deg, var(--accent), #9d8cff); }
+.p .q { font: 11px var(--mono); color: var(--faint); }
+.badge { font-size: 10px; color: var(--accent); background: var(--accent-soft); border-radius: 5px; padding: 2px 7px; }
+.badge.g { color: var(--dim); background: rgba(255,255,255,.05); }
+
+/* ---------- proxies ---------- */
+.group { padding: 16px 18px; margin-bottom: 0; }
+.group .head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.group .head b { font-size: 13px; font-weight: 600; }
+.group .head .kind { font-size: 10px; color: var(--faint); letter-spacing: .1em; text-transform: uppercase; }
+.group .head .now { font: 11px var(--mono); color: var(--accent); margin-left: auto; }
+.nodes { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.node {
+  border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px;
+  background: var(--surface-2);
+}
+.node.sel { border-color: rgba(122,162,255,.5); background: linear-gradient(180deg, rgba(122,162,255,.07), rgba(122,162,255,.02)); }
+.node .nm { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.node .lat { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.node .lat i { width: 5px; height: 5px; border-radius: 50%; }
+.node .ms { font: 10.5px var(--mono); color: var(--dim); }
+.g .lat i { background: var(--ok); } .y .lat i { background: var(--warn); } .r .lat i { background: var(--bad); }
+.btn {
+  background: var(--surface-2); color: var(--text); border: 1px solid var(--line-strong);
+  border-radius: 8px; font-size: 12px; padding: 6px 13px;
+}
+.btn.acc { background: var(--accent-soft); color: var(--accent); border-color: rgba(122,162,255,.3); }
+input.q {
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;
+  color: var(--text); font: 12px var(--mono); padding: 6px 11px; width: 250px; outline: none;
+}
+input.q::placeholder { color: var(--faint); }
+input.q:focus { border-color: rgba(122,162,255,.4); }
+
+/* ---------- connections ---------- */
+table { width: 100%; border-collapse: collapse; }
+th {
+  text-align: left; color: var(--faint); font-weight: 500; font-size: 10px;
+  letter-spacing: .1em; text-transform: uppercase; padding: 12px 12px;
+  border-bottom: 1px solid var(--line);
+}
+td { padding: 9px 12px; border-bottom: 1px solid rgba(255,255,255,.035); white-space: nowrap; font-size: 12px; }
+th:nth-child(1), td:nth-child(1) { width: 26%; }
+.mono, td.mono { letter-spacing: -.01em; }
+td.mono { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+td.host { font-family: var(--mono); font-size: 11.5px; }
+td.host .net { color: var(--faint); margin-right: 6px; }
+tr:hover td { background: rgba(255,255,255,.02); }
+.r { text-align: right; }
+</style>
+</head>
+<body>
+
+<!-- ============ 首页 ============ -->
+<div>
+<h2>v2 · 首页</h2>
+<div class="app">
+  <aside class="nav">
+    <div class="logo">
+      <div class="mark"><svg width="13" height="13" viewBox="0 0 24 24" stroke="#0a0c10" stroke-width="2.4" fill="none"><path d="M5 19 L19 5 M5 5 L12 12"/></svg></div>
+      <b>Crossbow</b>
+    </div>
+    <div class="sec">代理</div>
+    <a class="on"><svg viewBox="0 0 24 24"><path d="M3 12 L10 12 L13 5 L17 19 L20 12 L21 12"/></svg> 概览</a>
+    <a><svg viewBox="0 0 24 24"><path d="M13 2 L5 13 L11 13 L9 22 L19 9 L13 9 Z"/></svg> 代理组</a>
+    <a><svg viewBox="0 0 24 24"><path d="M12 3 L20 7 L20 17 L12 21 L4 17 L4 7 Z M4 7 L12 11 L20 7 M12 11 L12 21"/></svg> 连接</a>
+    <a><svg viewBox="0 0 24 24"><path d="M4 6 L20 6 M4 12 L20 12 M4 18 L20 18"/></svg> 日志</a>
+    <div class="sec">一般</div>
+    <a><svg viewBox="0 0 24 24"><path d="M4 5 L16 5 L16 11 L4 11 Z M16 9 L20 9 L20 15 L16 15 M4 15 L12 15 L12 19 L4 19 Z"/></svg> 配置</a>
+    <a><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5 L12 5.5 M12 18.5 L12 21.5 M2.5 12 L5.5 12 M18.5 12 L21.5 12 M5 5 L7 7 M17 17 L19 19 M19 5 L17 7 M7 17 L5 19"/></svg> 设置</a>
+    <div class="foot"><span class="dot"></span>mihomo <span>v1.19.32</span></div>
+  </aside>
+  <section class="main">
+    <div class="pagehead">
+      <h1>概览</h1><span class="meta">mixed :7897 · rule</span><span class="sp"></span>
+      <span class="meta">更新于 18:02</span>
+    </div>
+
+    <div class="card status">
+      <span class="sdot"></span>
+      <div style="flex:1">
+        <div class="ttl">系统代理运行中</div>
+        <div class="sub">流量经 mihomo 规则分流 · 局域网未开放</div>
+      </div>
+      <div class="seg"><span>直连</span><span class="on">规则</span><span>全局</span></div>
+      <div class="toggle"></div>
+      <div class="vline"></div>
+      <div class="outbound">
+        <div class="micro">当前出口</div>
+        <div class="o">HK-01 <em>45ms</em></div>
+        <div class="chain">节点选择 → 香港自动</div>
+      </div>
+    </div>
+
+    <div class="kpis">
+      <div class="card kpi"><div class="micro">↑ 上行速率</div><div class="v">12.4<small>MB/s</small></div><div class="delta"><b>▲ 8%</b> 对比前一分钟</div></div>
+      <div class="card kpi"><div class="micro">↓ 下行速率</div><div class="v">3.1<small>MB/s</small></div><div class="delta"><b>▼ 2%</b> 对比前一分钟</div></div>
+      <div class="card kpi"><div class="micro">活动连接</div><div class="v">327<small>条</small></div><div class="delta"><b>▲ 12</b> 最近 60 秒</div></div>
+    </div>
+
+    <div class="card chart grow">
+      <div class="head">
+        <span class="micro">实时速率</span>
+        <span style="flex:1"></span>
+        <span class="now">↑ 12.4 MB/s</span><span class="now i2">↓ 3.1 MB/s</span>
+      </div>
+      <svg viewBox="0 0 640 120" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="au" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#8bb8ff" stop-opacity=".16"/><stop offset="1" stop-color="#8bb8ff" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <g stroke="rgba(255,255,255,.05)"><line x1="0" y1="30" x2="640" y2="30"/><line x1="0" y1="60" x2="640" y2="60"/><line x1="0" y1="90" x2="640" y2="90"/></g>
+        <path d="M0,86 C40,80 60,66 90,64 C120,62 140,74 170,70 C200,66 220,48 250,46 C280,44 300,60 330,58 C360,56 380,40 410,38 C440,36 460,50 490,48 C520,46 540,36 570,34 C600,32 620,36 640,34 L640,120 L0,120 Z" fill="url(#au)"/>
+        <path d="M0,86 C40,80 60,66 90,64 C120,62 140,74 170,70 C200,66 220,48 250,46 C280,44 300,60 330,58 C360,56 380,40 410,38 C440,36 460,50 490,48 C520,46 540,36 570,34 C600,32 620,36 640,34" fill="none" stroke="#8bb8ff" stroke-width="1.6"/>
+        <path d="M0,102 C50,98 80,94 120,93 C160,92 190,96 230,94 C270,92 300,88 340,89 C380,90 410,85 450,86 C490,87 520,82 560,83 C600,84 620,82 640,83" fill="none" stroke="#b7a6f8" stroke-width="1.4" opacity=".9"/>
+      </svg>
+    </div>
+
+    <div class="card" style="padding: 14px 16px 16px">
+      <div class="micro">配置档案</div>
+      <div class="plist">
+        <div class="p on"><span class="badge">当前</span><b>my-nodes</b><div class="bar"><i></i></div><span class="q">8.7 / 30 GB · 2026-11-30 到期</span></div>
+        <div class="p"><span class="badge g">本地</span><b>backup.yaml</b><span class="q">2 小时前更新</span></div>
+      </div>
+    </div>
+  </section>
+</div>
+</div>
+
+<!-- ============ 代理页 ============ -->
+<div>
+<h2>v2 · 代理组</h2>
+<div class="app">
+  <aside class="nav">
+    <div class="logo">
+      <div class="mark"><svg width="13" height="13" viewBox="0 0 24 24" stroke="#0a0c10" stroke-width="2.4" fill="none"><path d="M5 19 L19 5 M5 5 L12 12"/></svg></div>
+      <b>Crossbow</b>
+    </div>
+    <div class="sec">代理</div>
+    <a><svg viewBox="0 0 24 24"><path d="M3 12 L10 12 L13 5 L17 19 L20 12 L21 12"/></svg> 概览</a>
+    <a class="on"><svg viewBox="0 0 24 24"><path d="M13 2 L5 13 L11 13 L9 22 L19 9 L13 9 Z"/></svg> 代理组</a>
+    <a><svg viewBox="0 0 24 24"><path d="M12 3 L20 7 L20 17 L12 21 L4 17 L4 7 Z M4 7 L12 11 L20 7 M12 11 L12 21"/></svg> 连接</a>
+    <a><svg viewBox="0 0 24 24"><path d="M4 6 L20 6 M4 12 L20 12 M4 18 L20 18"/></svg> 日志</a>
+    <div class="sec">一般</div>
+    <a><svg viewBox="0 0 24 24"><path d="M4 5 L16 5 L16 11 L4 11 Z M16 9 L20 9 L20 15 L16 15 M4 15 L12 15 L12 19 L4 19 Z"/></svg> 配置</a>
+    <a><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5 L12 5.5 M12 18.5 L12 21.5 M2.5 12 L5.5 12 M18.5 12 L21.5 12 M5 5 L7 7 M17 17 L19 19 M19 5 L17 7 M7 17 L5 19"/></svg> 设置</a>
+    <div class="foot"><span class="dot"></span>mihomo <span>v1.19.32</span></div>
+  </aside>
+  <section class="main">
+    <div class="pagehead">
+      <h1>代理组</h1><span class="sp"></span>
+      <input class="q" placeholder="搜索节点…">
+      <button class="btn acc">测速全部</button>
+    </div>
+
+    <div class="card group">
+      <div class="head"><b>节点选择</b><span class="kind">Selector</span><span class="now">当前 → HK-01</span></div>
+      <div class="nodes">
+        <div class="node sel"><div class="nm">HK-01</div><div class="lat g"><i></i><span class="ms">45 ms</span></div></div>
+        <div class="node"><div class="nm">HK-02</div><div class="lat g"><i></i><span class="ms">62 ms</span></div></div>
+        <div class="node"><div class="nm">JP-01</div><div class="lat y"><i></i><span class="ms">120 ms</span></div></div>
+        <div class="node"><div class="nm">US-01</div><div class="lat y"><i></i><span class="ms">180 ms</span></div></div>
+        <div class="node"><div class="nm">SG-01</div><div class="lat g"><i></i><span class="ms">78 ms</span></div></div>
+        <div class="node"><div class="nm">DE-01</div><div class="lat r"><i></i><span class="ms">超时</span></div></div>
+      </div>
+    </div>
+
+    <div class="card group">
+      <div class="head"><b>香港自动</b><span class="kind">URLTest</span><span class="now">当前 → HK-01 · 最差 210ms</span></div>
+      <div class="nodes">
+        <div class="node sel"><div class="nm">HK-01</div><div class="lat g"><i></i><span class="ms">45 ms</span></div></div>
+        <div class="node"><div class="nm">HK-03</div><div class="lat g"><i></i><span class="ms">51 ms</span></div></div>
+        <div class="node"><div class="nm">HK-05</div><div class="lat g"><i></i><span class="ms">66 ms</span></div></div>
+        <div class="node"><div class="nm">HK-07</div><div class="lat y"><i></i><span class="ms">140 ms</span></div></div>
+        <div class="node"><div class="nm">HK-09</div><div class="lat y"><i></i><span class="ms">210 ms</span></div></div>
+        <div class="node"><div class="nm">HK-11</div><div class="lat"><i style="background:var(--faint)"></i><span class="ms">未测</span></div></div>
+      </div>
+    </div>
+  </section>
+</div>
+</div>
+
+<!-- ============ 连接页 ============ -->
+<div>
+<h2>v2 · 连接</h2>
+<div class="app">
+  <aside class="nav">
+    <div class="logo">
+      <div class="mark"><svg width="13" height="13" viewBox="0 0 24 24" stroke="#0a0c10" stroke-width="2.4" fill="none"><path d="M5 19 L19 5 M5 5 L12 12"/></svg></div>
+      <b>Crossbow</b>
+    </div>
+    <div class="sec">代理</div>
+    <a><svg viewBox="0 0 24 24"><path d="M3 12 L10 12 L13 5 L17 19 L20 12 L21 12"/></svg> 概览</a>
+    <a><svg viewBox="0 0 24 24"><path d="M13 2 L5 13 L11 13 L9 22 L19 9 L13 9 Z"/></svg> 代理组</a>
+    <a class="on"><svg viewBox="0 0 24 24"><path d="M12 3 L20 7 L20 17 L12 21 L4 17 L4 7 Z M4 7 L12 11 L20 7 M12 11 L12 21"/></svg> 连接</a>
+    <a><svg viewBox="0 0 24 24"><path d="M4 6 L20 6 M4 12 L20 12 M4 18 L20 18"/></svg> 日志</a>
+    <div class="sec">一般</div>
+    <a><svg viewBox="0 0 24 24"><path d="M4 5 L16 5 L16 11 L4 11 Z M16 9 L20 9 L20 15 L16 15 M4 15 L12 15 L12 19 L4 19 Z"/></svg> 配置</a>
+    <a><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5 L12 5.5 M12 18.5 L12 21.5 M2.5 12 L5.5 12 M18.5 12 L21.5 12 M5 5 L7 7 M17 17 L19 19 M19 5 L17 7 M7 17 L5 19"/></svg> 设置</a>
+    <div class="foot"><span class="dot"></span>mihomo <span>v1.19.32</span></div>
+  </aside>
+  <section class="main">
+    <div class="pagehead">
+      <h1>连接</h1><span class="meta">327 条 · 内存 48 MB</span><span class="sp"></span>
+      <input class="q" placeholder="过滤：主机 / 规则 / 进程">
+      <button class="btn">暂停</button>
+    </div>
+    <div class="card grow" style="padding: 0; overflow: hidden">
+      <table>
+        <tr><th>目标</th><th>规则</th><th>链路</th><th>进程</th><th class="r">↑ 上行</th><th class="r">↓ 下行</th><th class="r">耗时</th></tr>
+        <tr><td class="host"><span class="net">TCP</span>api.twitter.com:443</td><td class="mono">DOMAIN-SUFFIX twitter.com</td><td class="mono">节点选择 → HK-01</td><td class="mono">Comet</td><td class="r mono">1.2 MB</td><td class="r mono">8.4 MB</td><td class="r mono">2m41s</td></tr>
+        <tr><td class="host"><span class="net">TCP</span>pbs.twimg.com:443</td><td class="mono">DOMAIN-SUFFIX twimg.com</td><td class="mono">节点选择 → HK-01</td><td class="mono">Comet</td><td class="r mono">210 KB</td><td class="r mono">4.2 MB</td><td class="r mono">1m08s</td></tr>
+        <tr><td class="host"><span class="net">UDP</span>8.8.8.8:53</td><td class="mono">GEOIP private</td><td class="mono">DIRECT</td><td class="mono">mDNSResponder</td><td class="r mono">120 B</td><td class="r mono">240 B</td><td class="r mono">3s</td></tr>
+        <tr><td class="host"><span class="net">TCP</span>s.youtube.com:443</td><td class="mono">DOMAIN-SUFFIX youtube.com</td><td class="mono">节点选择 → US-01</td><td class="mono">Safari</td><td class="r mono">88 KB</td><td class="r mono">1.1 MB</td><td class="r mono">44s</td></tr>
+        <tr><td class="host"><span class="net">TCP</span>gateway.icloud.com:443</td><td class="mono">DOMAIN-SUFFIX icloud.com</td><td class="mono">DIRECT</td><td class="mono">cloudd</td><td class="r mono">52 KB</td><td class="r mono">310 KB</td><td class="r mono">12s</td></tr>
+        <tr><td class="host"><span class="net">TCP</span>cdn.jsdelivr.net:443</td><td class="mono">DOMAIN-SUFFIX jsdelivr.net</td><td class="mono">节点选择 → HK-01</td><td class="mono">curl</td><td class="r mono">4 KB</td><td class="r mono">64 KB</td><td class="r mono">2s</td></tr>
+      </table>
+    </div>
+  </section>
+</div>
+</div>
+
+</body>
+</html>
