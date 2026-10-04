@@ -101,7 +101,7 @@
           │ sidecar 子进程                 │ sidecar 子进程                 │ 进程内 (libbox)
           ▼                               ▼                               ▼
 ┌──────────────────┐  普通模式    ┌──────────────────┐  普通模式   ┌────────────────────────────┐
-│ mihomo / sing-box │            │ mihomo / sing-box │           │ NetworkExtension            │
+│ mihomo / sing-box │            │ mihomo / sing-box │           │ NetworkExtension (M2 iOS)   │
 │  (GUI 直接拉起)    │            │  (GUI 直接拉起)    │           │  PacketTunnelProvider (Swift)│
 └─────┬────────────┘            └─────┬────────────┘           │  内嵌 libbox (sing-box 核心库) │
       │ TUN: NE 系统扩展+libbox        │ TUN: wintun 驱动        └────────────────────────────┘
@@ -132,8 +132,8 @@
 |---|---|---|
 | macOS / Windows 普通模式（系统代理） | mihomo sidecar（默认） | Clash 生态事实标准、订阅兼容性最好 |
 | macOS / Windows 备选引擎 | sing-box sidecar | 新协议快、与 iOS 同构 |
-| macOS TUN（M1） | NE 系统扩展 + libbox | 与 iOS 共用隧道代码；原生权限模型 |
-| Windows TUN（M1.5） | mihomo/sing-box + wintun 驱动 | 两内核都原生支持 wintun；驱动由内核托管 |
+| macOS TUN | **暂缓**（2026-10-04 决策：先用系统代理验证真实需求，再评估）原方案 NE 系统扩展 + libbox | 与 iOS 共用隧道代码；原生权限模型 |
+| Windows TUN | **暂缓**（同上）原方案 mihomo/sing-box + wintun 驱动 | 两内核都原生支持 wintun；驱动由内核托管 |
 | iOS | libbox（唯一） | 平台限制 |
 
 - `CoreAdapter` 抽象：启动参数、配置转换、API 探测、日志归一化，GUI 不与内核强耦合。
@@ -215,7 +215,7 @@ Diagnostics    诊断报告: 步骤、结果、修复动作
 - **全程 CI 守护 Windows 可编译**（不写破坏 Windows 的平台代码）
 
 **M1 · macOS 完整版（口碑线）**
-- TUN：NetworkExtension 系统扩展 + libbox（含 entitlement 申请流程）
+- ~~TUN~~（暂缓，见 §3.3；真实使用反馈确认需求后再评估）
 - JS 脚本覆写、覆写示例市场；WebDAV + 本地快照备份
 - 轻量模式（GUI 退出留核）；连接页完整交互（断开、进程聚合）
 - 网络诊断向导；sing-box 引擎切换；图表完整版
@@ -223,7 +223,7 @@ Diagnostics    诊断报告: 步骤、结果、修复动作
 **M1.5 · Windows 版**
 - Windows 打包链路：NSIS 安装包 + 签名 + updater
 - 系统代理（注册表 + WinINet 刷新）、深链接、自启、凭据管理器
-- TUN：wintun + 加固服务模式（§3.4 安全细则全套落地）
+- ~~TUN：wintun + 加固服务模式~~（暂缓，随 macOS TUN 一并评估）
 - 与 macOS 共享全部核心测试；双平台 QA 走查（高分屏/DPI、杀软误报抽测）
 
 **M2 · iOS 版（差异化线）**
@@ -285,7 +285,7 @@ crossbow/
 
 | 风险 | 等级 | 对策 |
 |---|---|---|
-| NE entitlement 审批不确定 | 高 | M0/M1.5 不依赖它；并行提审；降级方案为最小特权 helper |
+| NE entitlement 审批不确定 | ~~高~~ 已缓解 | **TUN 暂缓（2026-10-04）**，不提审；重启 TUN 时再启动申请流程 |
 | Windows 服务模式被披露 LPE | 高 | 最小动词面 + pipe DACL + 调用方签名校验 + 内核哈希校验 + 上线前外部审计 |
 | wintun 驱动安装/兼容（旧 Win10、杀软拦截） | 中 | 内核托管驱动加载；安装器预装驱动；杀软误报白名单指引文档 |
 | Windows SmartScreen / 无签名分发劝退 | 中 | 尽早购买代码签名证书；发布页提供 SHA256 校验 |
@@ -323,7 +323,7 @@ crossbow/
 | 4b. Profile 导入/更新/激活/删除 + 订阅流量头解析 + 运行时配置注入 | ✅ S2 完成 |
 | 3. Spike：macOS 系统代理设置/还原 + 崩溃兜底（networksetup） | ⏭ S3 |
 | 4c. 托盘（模式切换/总开关）+ traffic/logs/connections WS 节流转发 | ⏭ S3/S4 |
-| 5. NE entitlement 向 Apple 提交申请（M1 前置，审批周期长，尽早启动） | ⏭ 需开发者账号 |
+| 5. NE entitlement 申请 | ⏸ **随 TUN 一起暂缓**（2026-10-04 决策） |
 | 6. Windows 前置：Windows CI job、icon.ico | ✅ 已完成；NSIS 打包试跑 ⏭ M1.5 |
 | 7. M1.5 Spike：Windows 服务模式 named pipe + 签名校验（在 Windows 机器上验证） | ⏭ M1 后 |
 | 8. M2 前置：UniFFI 绑定 spike、libbox SPM 集成 spike（需完整 Xcode） | ⏭ M1 后 |
