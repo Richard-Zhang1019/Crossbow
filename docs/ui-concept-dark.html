@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Crossbow UI 概念稿 · 深色仪表盘风</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --panel: #131a23;
+  --panel2: #1a2330;
+  --line: #233041;
+  --text: #e6edf3;
+  --dim: #8b98a9;
+  --accent: #22d3ee;
+  --accent-glow: rgba(34, 211, 238, .35);
+  --up: #22d3ee;
+  --down: #a78bfa;
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --bad: #f87171;
+  --mono: "SF Mono", ui-monospace, Menlo, monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.5 -apple-system, "PingFang SC", sans-serif;
+  padding: 32px;
+  display: flex; flex-direction: column; gap: 40px;
+}
+h2 { color: var(--dim); font-size: 12px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; }
+.app {
+  width: 1080px; height: 660px;
+  border: 1px solid var(--line); border-radius: 10px;
+  display: flex; overflow: hidden;
+  background:
+    radial-gradient(1200px 500px at 80% -10%, rgba(34,211,238,.05), transparent),
+    var(--bg);
+}
+/* ---------- sidebar ---------- */
+.nav {
+  width: 200px; background: rgba(19,26,35,.7); border-right: 1px solid var(--line);
+  padding: 18px 14px; display: flex; flex-direction: column; gap: 2px;
+}
+.logo { display: flex; align-items: center; gap: 10px; padding: 4px 10px 18px; }
+.logo .mark {
+  width: 26px; height: 26px; border-radius: 7px;
+  background: linear-gradient(135deg, #22d3ee, #6366f1);
+  display: grid; place-items: center; font-size: 14px; color: #04121a; font-weight: 800;
+  box-shadow: 0 0 18px var(--accent-glow);
+}
+.logo b { font-size: 14px; letter-spacing: .02em; }
+.nav a {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 8px; color: var(--dim); text-decoration: none;
+  border: 1px solid transparent; margin-bottom: 2px;
+}
+.nav a.on {
+  color: var(--accent); background: rgba(34,211,238,.08);
+  border-color: rgba(34,211,238,.25);
+}
+.nav a.on .ico { filter: drop-shadow(0 0 6px var(--accent-glow)); }
+.nav .ico { width: 16px; text-align: center; opacity: .9; }
+.nav .foot { margin-top: auto; padding: 10px; font: 10px var(--mono); color: #55637a; }
+.nav .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); margin-right: 6px; box-shadow: 0 0 6px var(--ok); }
+/* ---------- main ---------- */
+.main { flex: 1; padding: 22px 26px; display: flex; flex-direction: column; gap: 16px; overflow: hidden; }
+.main h1 { font-size: 17px; font-weight: 600; }
+.row { display: flex; gap: 14px; }
+.card {
+  background: linear-gradient(180deg, var(--panel), rgba(19,26,35,.6));
+  border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px;
+}
+.card .k { font-size: 11px; color: var(--dim); letter-spacing: .06em; margin-bottom: 8px; }
+.grow { flex: 1; }
+
+/* master switch */
+.master { display: flex; align-items: center; gap: 18px; }
+.switch-big {
+  width: 84px; height: 84px; border-radius: 50%;
+  border: 1px solid rgba(34,211,238,.4);
+  background: radial-gradient(circle at 50% 40%, rgba(34,211,238,.18), rgba(34,211,238,.04));
+  color: var(--accent); display: grid; place-items: center;
+  font-size: 13px; letter-spacing: .2em; text-indent: .2em;
+  box-shadow: 0 0 24px var(--accent-glow), inset 0 0 24px rgba(34,211,238,.12);
+}
+.master .st { font-size: 15px; font-weight: 600; color: var(--accent); text-shadow: 0 0 12px var(--accent-glow); }
+.master .sub { color: var(--dim); font-size: 12px; margin-top: 4px; }
+.pills { display: flex; gap: 6px; margin-top: 12px; }
+.pill {
+  font: 11px var(--mono); padding: 4px 10px; border-radius: 99px;
+  border: 1px solid var(--line); color: var(--dim);
+}
+.pill.on { color: var(--accent); border-color: rgba(34,211,238,.4); background: rgba(34,211,238,.08); }
+.kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.kpi b { font: 600 22px var(--mono); letter-spacing: -.02em; }
+.kpi .unit { color: var(--dim); font-size: 12px; }
+.kpi.up b { color: var(--up); } .kpi.down b { color: var(--down); }
+.chart { position: relative; height: 120px; }
+.chart svg { width: 100%; height: 100%; display: block; }
+.chart .legend { position: absolute; top: 0; right: 0; display: flex; gap: 12px; font: 11px var(--mono); }
+.chart .legend i { display: inline-block; width: 8px; height: 2px; margin-right: 5px; vertical-align: middle; }
+.profiles .p {
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 10px; margin-top: 8px;
+  background: rgba(26,35,48,.5);
+}
+.profiles .p.on { border-color: rgba(34,211,238,.35); }
+.bar { height: 4px; border-radius: 99px; background: var(--line); overflow: hidden; flex: 1; }
+.bar i { display: block; height: 100%; width: 29%; background: linear-gradient(90deg, var(--accent), #6366f1); }
+.tag { font: 10px var(--mono); color: var(--dim); border: 1px solid var(--line); border-radius: 5px; padding: 2px 6px; }
+.tag.on { color: var(--accent); border-color: rgba(34,211,238,.4); }
+/* ---------- proxies page ---------- */
+.group { margin-bottom: 14px; }
+.group .head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.group .head b { font-size: 13px; }
+.group .head .kind { font: 10px var(--mono); color: var(--dim); }
+.group .head .now { font: 11px var(--mono); color: var(--accent); }
+.nodes { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.node {
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  background: rgba(26,35,48,.5); position: relative;
+}
+.node.sel { border-color: var(--accent); box-shadow: 0 0 14px var(--accent-glow); }
+.node .nm { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.node .ms { font: 11px var(--mono); margin-top: 4px; color: var(--dim); }
+.node .ms.g { color: var(--ok); } .node .ms.y { color: var(--warn); } .node .ms.r { color: var(--bad); }
+.spark { position: absolute; right: 10px; top: 10px; opacity: .7; }
+/* ---------- connections ---------- */
+table { width: 100%; border-collapse: collapse; font: 11.5px var(--mono); }
+th { text-align: left; color: var(--dim); font-weight: 500; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+td { padding: 7px 10px; border-bottom: 1px solid rgba(35,48,65,.5); white-space: nowrap; }
+td.host { color: var(--text); } td .net { color: var(--accent); }
+tr:hover td { background: rgba(34,211,238,.03); }
+.r { text-align: right; }
+input.q {
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
+  color: var(--text); font: 12px var(--mono); padding: 6px 10px; width: 260px; outline: none;
+}
+input.q:focus { border-color: rgba(34,211,238,.5); box-shadow: 0 0 0 3px rgba(34,211,238,.12); }
+button.btn {
+  background: rgba(34,211,238,.1); color: var(--accent); border: 1px solid rgba(34,211,238,.35);
+  border-radius: 8px; font-size: 12px; padding: 6px 12px;
+}
+</style>
+</head>
+<body>
+
+<!-- ============ 首页 ============ -->
+<div>
+<h2>概念 A · 首页</h2>
+<div class="app">
+  <aside class="nav">
+    <div class="logo"><div class="mark">⌖</div><b>Crossbow</b></div>
+    <a class="on"><span class="ico">◈</span> 首页</a>
+    <a><span class="ico">⚡</span> 代理</a>
+    <a><span class="ico">▤</span> 配置</a>
+    <a><span class="ico">⇄</span> 连接</a>
+    <a><span class="ico">☰</span> 日志</a>
+    <a><span class="ico">⚙</span> 设置</a>
+    <div class="foot"><span class="dot"></span>CORE v1.19.32 · 7897</div>
+  </aside>
+  <section class="main">
+    <h1>概览</h1>
+    <div class="card master">
+      <div class="switch-big">OPEN</div>
+      <div style="flex:1">
+        <div class="st">系统代理 · 运行中</div>
+        <div class="sub">mihomo v1.19.32 · 混合端口 7897 · 规则模式</div>
+        <div class="pills">
+          <span class="pill on">RULE</span><span class="pill">DIRECT</span><span class="pill">GLOBAL</span>
+          <span class="pill">TUN —</span>
+        </div>
+      </div>
+      <div style="text-align:right">
+        <div class="k">当前出口</div>
+        <div style="font:600 16px var(--mono); color:var(--ok)">HK-01 · 45ms</div>
+        <div class="sub">节点选择 → 香港自动</div>
+      </div>
+    </div>
+    <div class="kpis">
+      <div class="card kpi up"><div class="k">↑ 上行</div><b>12.4</b> <span class="unit">MB/s</span></div>
+      <div class="card kpi down"><div class="k">↓ 下行</div><b>3.1</b> <span class="unit">MB/s</span></div>
+      <div class="card kpi"><div class="k">活动连接</div><b>327</b> <span class="unit">条</span></div>
+    </div>
+    <div class="card grow">
+      <div class="k">实时速率
+        <span class="legend" style="float:right">
+          <span style="color:var(--up)"><i style="background:var(--up)"></i>UP</span>
+          <span style="color:var(--down)"><i style="background:var(--down)"></i>DOWN</span>
+        </span>
+      </div>
+      <div class="chart">
+        <svg viewBox="0 0 600 120" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="gu" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#22d3ee" stop-opacity=".35"/><stop offset="1" stop-color="#22d3ee" stop-opacity="0"/>
+            </linearGradient>
+            <linearGradient id="gd" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#a78bfa" stop-opacity=".35"/><stop offset="1" stop-color="#a78bfa" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <path d="M0,90 L40,82 L80,60 L120,70 L160,40 L200,55 L240,30 L280,45 L320,25 L360,38 L400,20 L440,35 L480,18 L520,30 L560,22 L600,28 L600,120 L0,120 Z" fill="url(#gu)"/>
+          <path d="M0,90 L40,82 L80,60 L120,70 L160,40 L200,55 L240,30 L280,45 L320,25 L360,38 L400,20 L440,35 L480,18 L520,30 L560,22 L600,28" fill="none" stroke="#22d3ee" stroke-width="1.5"/>
+          <path d="M0,104 L40,100 L80,92 L120,96 L160,86 L200,92 L240,80 L280,88 L320,78 L360,84 L400,76 L440,82 L480,74 L520,80 L560,72 L600,76 L600,120 L0,120 Z" fill="url(#gd)"/>
+          <path d="M0,104 L40,100 L80,92 L120,96 L160,86 L200,92 L240,80 L280,88 L320,78 L360,84 L400,76 L440,82 L480,74 L520,80 L560,72 L600,76" fill="none" stroke="#a78bfa" stroke-width="1.5"/>
+        </svg>
+      </div>
+    </div>
+    <div class="card profiles">
+      <div class="k">配置档案</div>
+      <div class="p on">
+        <span class="tag on">CURRENT</span><b style="font-size:12.5px">my-nodes</b>
+        <div class="bar"><i></i></div>
+        <span style="font:11px var(--mono); color:var(--dim)">8.7 / 30 GB</span>
+      </div>
+      <div class="p">
+        <span class="tag">LOCAL</span><b style="font-size:12.5px">backup.yaml</b>
+        <span style="font:11px var(--mono); color:var(--dim)">2 小时前更新</span>
+      </div>
+    </div>
+  </section>
+</div>
+</div>
+
+<!-- ============ 代理页 ============ -->
+<div>
+<h2>概念 A · 代理</h2>
+<div class="app">
+  <aside class="nav">
+    <div class="logo"><div class="mark">⌖</div><b>Crossbow</b></div>
+    <a><span class="ico">◈</span> 首页</a>
+    <a class="on"><span class="ico">⚡</span> 代理</a>
+    <a><span class="ico">▤</span> 配置</a>
+    <a><span class="ico">⇄</span> 连接</a>
+    <a><span class="ico">☰</span> 日志</a>
+    <a><span class="ico">⚙</span> 设置</a>
+    <div class="foot"><span class="dot"></span>CORE v1.19.32 · 7897</div>
+  </aside>
+  <section class="main">
+    <div style="display:flex; align-items:center; gap:12px">
+      <h1 style="flex:1">代理</h1>
+      <input class="q" placeholder="搜索节点…">
+      <button class="btn">⚡ 测速全部</button>
+    </div>
+    <div class="card group">
+      <div class="head"><b>节点选择</b><span class="kind">Selector</span><span class="now">→ HK-01</span></div>
+      <div class="nodes">
+        <div class="node sel"><div class="nm">HK-01</div><div class="ms g">45 ms</div><svg class="spark" width="20" height="12"><path d="M0,10 L5,7 L10,8 L15,3 L20,5" stroke="#34d399" fill="none"/></svg></div>
+        <div class="node"><div class="nm">HK-02</div><div class="ms g">62 ms</div></div>
+        <div class="node"><div class="nm">US-01</div><div class="ms y">180 ms</div></div>
+        <div class="node"><div class="nm">JP-01</div><div class="ms y">120 ms</div></div>
+        <div class="node"><div class="nm">SG-01</div><div class="ms g">78 ms</div></div>
+        <div class="node"><div class="nm">DE-01</div><div class="ms r">timeout</div></div>
+      </div>
+    </div>
+    <div class="card group">
+      <div class="head"><b>香港自动</b><span class="kind">URLTest</span><span class="now">→ HK-01 · 最差 210ms</span></div>
+      <div class="nodes">
+        <div class="node sel"><div class="nm">HK-01</div><div class="ms g">45 ms</div></div>
+        <div class="node"><div class="nm">HK-03</div><div class="ms g">51 ms</div></div>
+        <div class="node"><div class="nm">HK-05</div><div class="ms g">66 ms</div></div>
+        <div class="node"><div class="nm">HK-07</div><div class="ms y">140 ms</div></div>
+        <div class="node"><div class="nm">HK-09</div><div class="ms y">210 ms</div></div>
+        <div class="node"><div class="nm">HK-11</div><div class="ms">—</div></div>
+      </div>
+    </div>
+  </section>
+</div>
+</div>
+
+<!-- ============ 连接页 ============ -->
+<div>
+<h2>概念 A · 连接</h2>
+<div class="app">
+  <aside class="nav">
+    <div class="logo"><div class="mark">⌖</div><b>Crossbow</b></div>
+    <a><span class="ico">◈</span> 首页</a>
+    <a><span class="ico">⚡</span> 代理</a>
+    <a><span class="ico">▤</span> 配置</a>
+    <a class="on"><span class="ico">⇄</span> 连接</a>
+    <a><span class="ico">☰</span> 日志</a>
+    <a><span class="ico">⚙</span> 设置</a>
+    <div class="foot"><span class="dot"></span>CORE v1.19.32 · 7897</div>
+  </aside>
+  <section class="main">
+    <div style="display:flex; align-items:center; gap:12px">
+      <h1 style="flex:1">连接 <span style="font:11px var(--mono); color:var(--dim)">327 条 · 内存 48 MB</span></h1>
+      <input class="q" placeholder="过滤：主机 / 规则 / 进程">
+      <button class="btn">⏸ 暂停</button>
+    </div>
+    <div class="card grow" style="padding: 4px 0 0">
+      <table>
+        <tr><th>目标</th><th>规则</th><th>链路</th><th>进程</th><th class="r">↑ 上行</th><th class="r">↓ 下行</th><th class="r">耗时</th></tr>
+        <tr><td class="host"><span class="net">[tcp]</span> api.twitter.com:443</td><td>DOMAIN-SUFFIX twitter.com</td><td>节点选择 → HK-01</td><td>Comet</td><td class="r">1.2 MB</td><td class="r">8.4 MB</td><td class="r">2m41s</td></tr>
+        <tr><td class="host"><span class="net">[tcp]</span> pbs.twimg.com:443</td><td>DOMAIN-SUFFIX twimg.com</td><td>节点选择 → HK-01</td><td>Comet</td><td class="r">210 KB</td><td class="r">4.2 MB</td><td class="r">1m08s</td></tr>
+        <tr><td class="host"><span class="net">[udp]</span> 8.8.8.8:53</td><td>GEOIP private</td><td>DIRECT</td><td>mDNSResponder</td><td class="r">120 B</td><td class="r">240 B</td><td class="r">3s</td></tr>
+        <tr><td class="host"><span class="net">[tcp]</span> s.youtube.com:443</td><td>DOMAIN-SUFFIX youtube.com</td><td>节点选择 → US-01</td><td>Safari</td><td class="r">88 KB</td><td class="r">1.1 MB</td><td class="r">44s</td></tr>
+        <tr><td class="host"><span class="net">[tcp]</span> gateway.icloud.com:443</td><td>DOMAIN-SUFFIX icloud.com</td><td>DIRECT</td><td>cloudd</td><td class="r">52 KB</td><td class="r">310 KB</td><td class="r">12s</td></tr>
+        <tr><td class="host"><span class="net">[tcp]</span> cdn.jsdelivr.net:443</td><td>DOMAIN-SUFFIX jsdelivr.net</td><td>节点选择 → HK-01</td><td>curl</td><td class="r">4 KB</td><td class="r">64 KB</td><td class="r">2s</td></tr>
+      </table>
+    </div>
+  </section>
+</div>
+</div>
+
+</body>
+</html>
