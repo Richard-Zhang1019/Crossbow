@@ -20,9 +20,11 @@ serde_json.workspace = true
 ureq = "2"
 uuid = { version = "1", features = ["v4"] }
 tungstenite = "0.30"
+flate2 = "1"
 url = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-deep-link = "2"
+tauri-plugin-updater = "2"
 tauri-plugin-single-instance = "2"
 crossbow-core = { path = "../../../crates/crossbow-core" }
 

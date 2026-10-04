@@ -21,18 +21,31 @@ mod mihomo_api;
 mod sysproxy;
 mod ws_bridge;
 
+mod core_download;
+
+use core_download::{resolve_core_binary, CoreBinaryInfo, InstallProgress};
 use core_manager::{CoreManager, CoreStatus};
 use sysproxy::{SysProxyManager, SysProxyStatus};
 use ws_bridge::WsHub;
 
 struct AppState {
     store: Mutex<Store>,
-    core: CoreManager,
+    /// 当前内核管理器；内核安装后整体替换（core_slot）。
+    core_slot: Mutex<CoreManager>,
     sysproxy: SysProxyManager,
     /// 内核运行模式：direct / rule / global。
     mode: Mutex<String>,
     tray: Mutex<Option<tauri::tray::TrayIcon<Wry>>>,
     ws: WsHub,
+    app: AppHandle,
+    data_dir: PathBuf,
+}
+
+impl AppState {
+    /// 当前内核管理器快照（clone 便宜：内部是 Arc）。
+    fn core(&self) -> CoreManager {
+        self.core_slot.lock().unwrap().clone()
+    }
 }
 
 // ---------- 内核与配置的公共操作（命令与托盘共用） ----------
@@ -46,12 +59,12 @@ fn start_core(state: &AppState) -> Result<(), String> {
         allow_lan: store.data().engine.allow_lan,
         ..RuntimeConfig::default()
     };
-    state.core.start(&rendered.config, &rt)
+    state.core().start(&rendered.config, &rt)
 }
 
 /// 热重启：切换/更新配置后让新配置生效。
 fn restart_core(state: &AppState) -> Result<(), String> {
-    state.core.stop();
+    state.core().stop();
     start_core(state)
 }
 
@@ -186,7 +199,7 @@ fn update_profile(app: AppHandle, state: State<AppState>, id: String) -> Result<
     let was_active_and_running = {
         let store = state.store.lock().unwrap();
         store.data().active_profile.as_deref() == Some(id.as_str())
-            && state.core.status() == CoreStatus::Running
+            && state.core().status() == CoreStatus::Running
     };
     let profile = {
         let mut store = state.store.lock().unwrap();
@@ -206,7 +219,7 @@ fn update_profile(app: AppHandle, state: State<AppState>, id: String) -> Result<
 
 #[tauri::command]
 fn set_active_profile(app: AppHandle, state: State<AppState>, id: String) -> Result<(), String> {
-    let running = state.core.status() == CoreStatus::Running;
+    let running = state.core().status() == CoreStatus::Running;
     {
         let mut store = state.store.lock().unwrap();
         store.data_mut().set_active_profile(&id)?;
@@ -249,20 +262,20 @@ fn core_start(state: State<AppState>) -> Result<(), String> {
 
 #[tauri::command]
 fn core_stop(state: State<AppState>) -> Result<(), String> {
-    state.core.stop();
+    state.core().stop();
     Ok(())
 }
 
 #[tauri::command]
 fn core_status(state: State<AppState>) -> CoreStatus {
-    state.core.status()
+    state.core().status()
 }
 
 // ---------- WS 数据桥命令（页面挂载订阅、卸载退订） ----------
 
 fn require_controller(state: &AppState) -> Result<(u16, String), String> {
     state
-        .core
+        .core()
         .controller()
         .ok_or_else(|| "内核未运行".to_string())
 }
@@ -316,11 +329,76 @@ fn unsubscribe_logs(state: State<AppState>) -> Result<(), String> {
     Ok(())
 }
 
+// ---------- 内核安装命令 ----------
+
+#[tauri::command]
+fn core_binary_info(state: State<AppState>) -> CoreBinaryInfo {
+    let resolved = resolve_core_binary(&state.app, &state.data_dir);
+    let path = resolved
+        .as_ref()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    let source = match &resolved {
+        None => "missing",
+        Some(p) if p.starts_with(&state.data_dir) => "data",
+        Some(_) => "builtin",
+    };
+    let version = resolved
+        .as_ref()
+        .and_then(core_version_of)
+        .unwrap_or_default();
+    CoreBinaryInfo {
+        path,
+        source: source.into(),
+        version,
+    }
+}
+
+/// 下载安装内核（前端用 invoke 阻塞调用，期间显示进度提示）。
+#[tauri::command]
+fn core_install(app: AppHandle) -> Result<CoreBinaryInfo, String> {
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let h = app.clone();
+    let info = core_download::install_core(&data_dir, &move |p: InstallProgress| {
+        let _ = h.emit("core://install-progress", p);
+    })?;
+    // 安装后重新装载 CoreManager 的二进制路径：直接替换状态里的管理器。
+    let state = app.state::<AppState>();
+    let new_core = CoreManager::new(info.clone(), data_dir.join("runtime"));
+    state.core().stop();
+    *state.core_slot.lock().unwrap() = new_core;
+    let resolved = resolve_core_binary(&app, &data_dir);
+    let source = match &resolved {
+        None => "missing",
+        Some(p) if p.starts_with(&data_dir) => "data",
+        Some(_) => "builtin",
+    };
+    Ok(CoreBinaryInfo {
+        path: info.display().to_string(),
+        source: source.into(),
+        version: resolved
+            .as_ref()
+            .and_then(core_version_of)
+            .unwrap_or_default(),
+    })
+}
+
+fn core_version_of(bin: &PathBuf) -> Option<String> {
+    let out = std::process::Command::new(bin).arg("-v").output().ok()?;
+    Some(
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .next()?
+            .trim()
+            .to_string(),
+    )
+}
+
 // ---------- 代理组命令（代理页） ----------
 
 fn controller_client(state: &AppState) -> Result<mihomo_api::Controller, String> {
     let (port, secret) = state
-        .core
+        .core()
         .controller()
         .ok_or_else(|| "内核未运行".to_string())?;
     Ok(mihomo_api::Controller { port, secret })
@@ -417,7 +495,7 @@ fn set_mixed_port(app: AppHandle, state: State<AppState>, port: u16) -> Result<(
         store.data_mut().engine.mixed_port = port;
         store.save().map_err(|e| e.to_string())?;
     }
-    if state.core.status() == CoreStatus::Running {
+    if state.core().status() == CoreStatus::Running {
         restart_core(&state)?;
     }
     if proxy_was_on {
@@ -434,7 +512,7 @@ fn set_allow_lan(state: State<AppState>, enabled: bool) -> Result<(), String> {
         store.data_mut().engine.allow_lan = enabled;
         store.save().map_err(|e| e.to_string())?;
     }
-    if state.core.status() == CoreStatus::Running {
+    if state.core().status() == CoreStatus::Running {
         restart_core(&state)?;
     }
     Ok(())
@@ -458,7 +536,7 @@ fn autostart_set(app: AppHandle, enable: bool) -> Result<(), String> {
 /// 内核版本（执行 `<bin> -v` 首行）。
 #[tauri::command]
 fn core_version(state: State<AppState>) -> Result<String, String> {
-    let bin = state.core.binary_path();
+    let bin = state.core().binary_path();
     if !bin.exists() {
         return Err("内核未安装".into());
     }
@@ -525,7 +603,7 @@ fn sysproxy_toggle(app: AppHandle, state: State<AppState>) -> Result<(), String>
             let store = state.store.lock().unwrap();
             store.data().engine.mixed_port
         };
-        if !matches!(state.core.status(), CoreStatus::Running) {
+        if !matches!(state.core().status(), CoreStatus::Running) {
             start_core(&state)?;
         }
         state.sysproxy.enable(port)?;
@@ -543,7 +621,7 @@ fn core_mode(state: State<AppState>) -> String {
 /// 切换运行模式（经控制器 PATCH，运行时生效）。
 #[tauri::command]
 fn set_core_mode(app: AppHandle, state: State<AppState>, mode: String) -> Result<(), String> {
-    if let Some((port, secret)) = state.core.controller() {
+    if let Some((port, secret)) = state.core().controller() {
         mihomo_api::Controller { port, secret }.patch_mode(&mode)?;
     }
     *state.mode.lock().unwrap() = mode.clone();
@@ -673,7 +751,7 @@ fn toggle_sysproxy(app: &AppHandle) -> Result<(), String> {
             let store = state.store.lock().unwrap();
             store.data().engine.mixed_port
         };
-        if !matches!(state.core.status(), CoreStatus::Running) {
+        if !matches!(state.core().status(), CoreStatus::Running) {
             start_core(&state)?;
         }
         state.sysproxy.enable(port)?;
@@ -726,16 +804,19 @@ pub fn run() {
             None,
         ))
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let store = Store::open(&data_dir)
                 .map_err(|e| std::io::Error::other(format!("open store: {e}")))?;
 
-            // 内核二进制定位：环境变量优先（开发），其次应用目录 binaries/mihomo。
-            let bin = std::env::var_os("CROSSBOW_MIHOMO_BIN")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| data_dir.join("binaries").join("mihomo"));
-            let core = CoreManager::new(bin, data_dir.join("runtime"));
+            // 内核二进制定位（按序）：
+            // 1. CROSSBOW_MIHOMO_BIN 环境变量（开发/调试）
+            // 2. 打包 .app 内置 sidecar（与可执行文件同目录）
+            // 3. 数据目录缓存 binaries/mihomo（此前手动安装/下载的）
+            // 都没有时为空——由「下载内核」命令补齐后再启动。
+            let bin = resolve_core_binary(app.handle(), &data_dir);
+            let core = CoreManager::new(bin.unwrap_or_default(), data_dir.join("runtime"));
 
             let handle = app.handle().clone();
             core.set_callback(std::sync::Arc::new(move |status| {
@@ -763,13 +844,16 @@ pub fn run() {
                 eprintln!("recovered stale system proxy from previous session");
             }
 
+            let handle = app.handle().clone();
             app.manage(AppState {
                 store: Mutex::new(store),
-                core,
+                core_slot: Mutex::new(core),
                 sysproxy,
                 mode: Mutex::new("rule".to_string()),
                 tray: Mutex::new(None),
                 ws: WsHub::default(),
+                app: handle,
+                data_dir: data_dir.clone(),
             });
 
             // 深链接：crossbow://import?url=...
@@ -837,6 +921,8 @@ pub fn run() {
             autostart_status,
             autostart_set,
             core_version,
+            core_binary_info,
+            core_install,
             proxies_snapshot,
             select_proxy,
             test_group_delay,
@@ -850,7 +936,7 @@ pub fn run() {
                 if let Some(state) = app.try_state::<AppState>() {
                     state.ws.unsubscribe_all();
                     state.sysproxy.disable();
-                    state.core.stop();
+                    state.core().stop();
                 }
             }
         });

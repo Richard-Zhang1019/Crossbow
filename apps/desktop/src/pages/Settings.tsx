@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ipc, type EngineConfigView, type UiSettings } from "../ipc";
+import { ipc, type CoreBinaryInfo, type EngineConfigView, type UiSettings } from "../ipc";
 import { useT } from "../i18n";
 
 /** 设置页（M0-S4）：内核端口/局域网、外观主题、开机自启、内核版本。 */
@@ -11,6 +11,8 @@ export default function SettingsPage() {
   const [autostart, setAutostart] = useState(false);
   const [version, setVersion] = useState<string>("…");
   const [lang, setLangState] = useState<"zh" | "en">("zh");
+  const [coreBin, setCoreBin] = useState<CoreBinaryInfo | null>(null);
+  const [installing, setInstalling] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const load = async () => {
@@ -21,6 +23,7 @@ export default function SettingsPage() {
     if (ui) setLangState((ui.lang as "zh" | "en") ?? "zh");
     setTheme(await ipc.getUiSettings().then((u) => u.theme).catch(() => "system" as const));
     setAutostart(await ipc.autostartStatus().catch(() => false));
+    setCoreBin(await ipc.coreBinaryInfo().catch(() => null));
     setVersion(await ipc.coreVersion().catch(() => t("settings.notInstalled")));
   };
 
@@ -59,9 +62,41 @@ export default function SettingsPage() {
       </div>
 
       <Group title={t("settings.coreSection")}>
+        {coreBin?.source === "missing" && (
+          <Row label={t("settings.coreMissing")}>
+            <button
+              disabled={installing !== null}
+              onClick={async () => {
+                setInstalling("starting…");
+                const un = await ipc.onInstallProgress((p) =>
+                  setInstalling(
+                    p.stage === "downloading"
+                      ? `${t("settings.downloading")} ${Math.round((p.detail.length % 100))}%`
+                      : p.stage,
+                  ),
+                );
+                try {
+                  const info = await ipc.coreInstall();
+                  setCoreBin(info);
+                  setVersion(info.version || t("settings.coreReady"));
+                  flash(true, t("settings.coreReady"));
+                } catch (e) {
+                  flash(false, String(e));
+                } finally {
+                  un();
+                  setInstalling(null);
+                }
+              }}
+              className="rounded-lg px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40"
+              style={{ background: "var(--cb-accent)" }}
+            >
+              {installing ?? t("settings.downloadCore")}
+            </button>
+          </Row>
+        )}
         <Row label={t("settings.version")} hint="mihomo sidecar">
           <span className="cb-selectable text-xs" style={{ color: "var(--cb-text-dim)" }}>
-            {version}
+            {coreBin?.source === "missing" ? t("settings.notInstalled") : version}
           </span>
         </Row>
         <Row label={t("settings.port")} hint={t("settings.portHint")}>
@@ -138,6 +173,22 @@ export default function SettingsPage() {
         </Row>
         <Row label={t("settings.snapshot")} hint={t("settings.snapshotAuto")}>
           <span className="text-xs" style={{ color: "var(--cb-text-dim)" }}>{t("settings.snapshotAuto")}</span>
+        </Row>
+        <Row label={t("settings.checkUpdate")}>
+          <button
+            onClick={async () => {
+              try {
+                const v = await ipc.checkUpdate();
+                flash(true, v ? t("settings.newVersion", { v }) : t("settings.upToDate"));
+              } catch {
+                flash(false, t("settings.updateFailed"));
+              }
+            }}
+            className="rounded-lg border px-3 py-1.5 text-xs"
+            style={{ borderColor: "var(--cb-border)" }}
+          >
+            Go
+          </button>
         </Row>
       </Group>
     </div>

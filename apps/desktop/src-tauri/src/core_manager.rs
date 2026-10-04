@@ -72,6 +72,14 @@ struct Shared {
     inner: Mutex<Inner>,
 }
 
+impl Drop for Shared {
+    fn drop(&mut self) {
+        // 兜底防孤儿：最后一个管理器句柄丢弃（含 panic 路径）时收走内核进程。
+        self.inner.lock().unwrap().stopping = true;
+        self.kill_child();
+    }
+}
+
 impl Shared {
     fn notify(&self, status: CoreStatus) {
         self.inner.lock().unwrap().status = status.clone();
@@ -117,6 +125,7 @@ impl Shared {
     }
 }
 
+#[derive(Clone)]
 pub struct CoreManager {
     shared: Arc<Shared>,
 }
@@ -238,13 +247,6 @@ fn spawn_and_watch(shared: Arc<Shared>) {
         return;
     };
     std::thread::spawn(move || watch(shared, port, secret));
-}
-
-impl Drop for CoreManager {
-    fn drop(&mut self) {
-        // 兜底防孤儿：管理器被丢弃（含 panic 路径）时必须收走内核进程。
-        self.stop();
-    }
 }
 
 fn watch(shared: Arc<Shared>, port: u16, secret: String) {

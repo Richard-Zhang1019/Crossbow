@@ -14,5 +14,8 @@
     "onlyBuiltDependencies": [
       "esbuild"
     ]
+  },
+  "dependencies": {
+    "@tauri-apps/plugin-process": "^2.4.0"
   }
 }

@@ -1,6 +1,11 @@
 {
   "identifier": "default",
-  "description": "主窗口默认能力；后续按需追加插件权限。",
-  "windows": ["main"],
-  "permissions": ["core:default"]
+  "description": "\u4e3b\u7a97\u53e3\u9ed8\u8ba4\u80fd\u529b\uff1b\u540e\u7eed\u6309\u9700\u8ffd\u52a0\u63d2\u4ef6\u6743\u9650\u3002",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "updater:default"
+  ]
 }

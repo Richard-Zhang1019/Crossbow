@@ -90,7 +90,37 @@ export const CORE_MODES = [
 
 export type CoreMode = (typeof CORE_MODES)[number]["id"];
 
+export interface CoreBinaryInfo {
+  path: string;
+  source: "builtin" | "data" | "missing";
+  version: string;
+}
+
+export interface InstallProgress {
+  stage: string;
+  detail: string;
+}
+
 export const ipc = {
+  checkUpdate: async (): Promise<string | null> => {
+    const { check } = await import("@tauri-apps/plugin-updater");
+    const update = await check();
+    return update?.version ?? null;
+  },
+  applyUpdate: async () => {
+    const { check } = await import("@tauri-apps/plugin-updater");
+    const update = await check();
+    if (update) {
+      await update.downloadAndInstall();
+      await import("@tauri-apps/plugin-process").then((m) => m.relaunch()).catch(() => {});
+    }
+  },
+
+  coreBinaryInfo: () => invoke<CoreBinaryInfo>("core_binary_info"),
+  coreInstall: () => invoke<CoreBinaryInfo>("core_install"),
+  onInstallProgress: (cb: (p: InstallProgress) => void) =>
+    listen<InstallProgress>("core://install-progress", (e) => cb(e.payload)),
+
   listProfiles: () => invoke<Profile[]>("list_profiles"),
   activeProfileId: () => invoke<string | null>("active_profile_id"),
   importProfileUrl: (url: string, name?: string) =>
