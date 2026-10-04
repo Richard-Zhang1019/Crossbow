@@ -1,23 +1,28 @@
 //! Crossbow 桌面壳层（macOS + Windows，Tauri 2）。
 //!
-//! M0-S3 职责：系统代理（networksetup + 崩溃兜底 journal）、托盘菜单
-//! （总开关/模式/配置切换/退出还原）、关窗驻留托盘、任何退出路径全量清理。
+//! M0-S4 职责：在 S3（系统代理/托盘/关窗驻留）之上加入 WS 数据桥
+//! （traffic/connections/logs 节流聚合）、设置（端口/局域网/主题/自启/
+//! 内核版本）、深链接导入与单实例。
 
 use std::path::PathBuf;
 use std::sync::Mutex;
 
 use crossbow_core::subscription::{fetch_subscription, now_secs, validate_profile_content};
-use crossbow_core::{Profile, ProfileKind, RuntimeConfig, Store};
+use crossbow_core::{Profile, ProfileKind, RuntimeConfig, Store, UiSettings};
 use tauri::menu::{CheckMenuItem, Menu, MenuBuilder, MenuItem, SubmenuBuilder};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, State, Wry};
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt as _};
+use tauri_plugin_deep_link::DeepLinkExt as _;
 
 mod core_manager;
 mod mihomo_api;
 mod sysproxy;
+mod ws_bridge;
 
 use core_manager::{CoreManager, CoreStatus};
 use sysproxy::{SysProxyManager, SysProxyStatus};
+use ws_bridge::WsHub;
 
 struct AppState {
     store: Mutex<Store>,
@@ -26,6 +31,7 @@ struct AppState {
     /// 内核运行模式：direct / rule / global。
     mode: Mutex<String>,
     tray: Mutex<Option<tauri::tray::TrayIcon<Wry>>>,
+    ws: WsHub,
 }
 
 // ---------- 内核与配置的公共操作（命令与托盘共用） ----------
@@ -68,6 +74,30 @@ fn gen_id() -> String {
 
 // ---------- Profile 命令 ----------
 
+/// 导入 URL 订阅的共享实现（命令与深链接共用）。
+fn import_url_blocking(state: &AppState, url: &str, name: Option<&str>) -> Result<Profile, String> {
+    let fetched = fetch_subscription(url, 30).map_err(|e| e.to_string())?;
+    validate_profile_content(&fetched.content).map_err(|e| e.to_string())?;
+    let fallback = url.split('/').next_back().unwrap_or("订阅").to_string();
+    let mut profile = make_profile(
+        gen_id(),
+        name.unwrap_or(&fallback).to_string(),
+        ProfileKind::Remote,
+        Some(url.to_string()),
+    );
+    profile.content = fetched.content;
+    profile.traffic = fetched.traffic;
+    profile.last_updated = Some(now_secs());
+
+    let mut store = state.store.lock().unwrap();
+    store
+        .data_mut()
+        .add_profile(profile.clone())
+        .map_err(|e| e.to_string())?;
+    store.save().map_err(|e| e.to_string())?;
+    Ok(profile)
+}
+
 /// 导入 URL 订阅：拉取 → 校验 → 落库。
 #[tauri::command]
 fn import_profile_url(
@@ -76,27 +106,7 @@ fn import_profile_url(
     url: String,
     name: Option<String>,
 ) -> Result<Profile, String> {
-    let fetched = fetch_subscription(&url, 30).map_err(|e| e.to_string())?;
-    validate_profile_content(&fetched.content).map_err(|e| e.to_string())?;
-    let fallback = url.split('/').next_back().unwrap_or("订阅").to_string();
-    let mut profile = make_profile(
-        gen_id(),
-        name.unwrap_or(fallback),
-        ProfileKind::Remote,
-        Some(url),
-    );
-    profile.content = fetched.content;
-    profile.traffic = fetched.traffic;
-    profile.last_updated = Some(now_secs());
-
-    {
-        let mut store = state.store.lock().unwrap();
-        store
-            .data_mut()
-            .add_profile(profile.clone())
-            .map_err(|e| e.to_string())?;
-        store.save().map_err(|e| e.to_string())?;
-    }
+    let profile = import_url_blocking(&state, &url, name.as_deref())?;
     refresh_tray(&app);
     Ok(profile)
 }
@@ -213,6 +223,210 @@ fn core_stop(state: State<AppState>) -> Result<(), String> {
 #[tauri::command]
 fn core_status(state: State<AppState>) -> CoreStatus {
     state.core.status()
+}
+
+// ---------- WS 数据桥命令（页面挂载订阅、卸载退订） ----------
+
+fn require_controller(state: &AppState) -> Result<(u16, String), String> {
+    state
+        .core
+        .controller()
+        .ok_or_else(|| "内核未运行".to_string())
+}
+
+#[tauri::command]
+fn subscribe_traffic(app: AppHandle, state: State<AppState>) -> Result<(), String> {
+    let (port, secret) = require_controller(&state)?;
+    let h = app.clone();
+    state
+        .ws
+        .subscribe_traffic(port, &secret, move |ev, payload| {
+            let _ = h.emit(ev, payload);
+        })
+}
+
+#[tauri::command]
+fn unsubscribe_traffic(state: State<AppState>) -> Result<(), String> {
+    state.ws.unsubscribe("traffic");
+    Ok(())
+}
+
+#[tauri::command]
+fn subscribe_connections(app: AppHandle, state: State<AppState>) -> Result<(), String> {
+    let (port, secret) = require_controller(&state)?;
+    let h = app.clone();
+    state
+        .ws
+        .subscribe_connections(port, &secret, move |ev, payload| {
+            let _ = h.emit(ev, payload);
+        })
+}
+
+#[tauri::command]
+fn unsubscribe_connections(state: State<AppState>) -> Result<(), String> {
+    state.ws.unsubscribe("connections");
+    Ok(())
+}
+
+#[tauri::command]
+fn subscribe_logs(app: AppHandle, state: State<AppState>) -> Result<(), String> {
+    let (port, secret) = require_controller(&state)?;
+    let h = app.clone();
+    state.ws.subscribe_logs(port, &secret, move |ev, payload| {
+        let _ = h.emit(ev, payload);
+    })
+}
+
+#[tauri::command]
+fn unsubscribe_logs(state: State<AppState>) -> Result<(), String> {
+    state.ws.unsubscribe("logs");
+    Ok(())
+}
+
+// ---------- 设置命令 ----------
+
+#[tauri::command]
+fn get_ui_settings(state: State<AppState>) -> UiSettings {
+    state.store.lock().unwrap().data().ui.clone()
+}
+
+#[derive(serde::Serialize)]
+struct EngineView {
+    engine: String,
+    mixed_port: u16,
+    allow_lan: bool,
+}
+
+#[tauri::command]
+fn get_engine_config(state: State<AppState>) -> EngineView {
+    let store = state.store.lock().unwrap();
+    EngineView {
+        engine: format!("{:?}", store.data().engine.engine).to_lowercase(),
+        mixed_port: store.data().engine.mixed_port,
+        allow_lan: store.data().engine.allow_lan,
+    }
+}
+
+#[tauri::command]
+fn set_theme(app: AppHandle, state: State<AppState>, theme: String) -> Result<(), String> {
+    if !["system", "light", "dark"].contains(&theme.as_str()) {
+        return Err(format!("invalid theme: {theme}"));
+    }
+    {
+        let mut store = state.store.lock().unwrap();
+        store.data_mut().ui.theme = theme.clone();
+        store.save().map_err(|e| e.to_string())?;
+    }
+    let _ = app.emit("ui://theme", theme);
+    Ok(())
+}
+
+/// 修改混合端口：持久化 → 运行中则热重启 → 系统代理开启则跟随换端口。
+#[tauri::command]
+fn set_mixed_port(app: AppHandle, state: State<AppState>, port: u16) -> Result<(), String> {
+    if port < 1024 {
+        return Err("端口不能小于 1024".into());
+    }
+    let proxy_was_on = state.sysproxy.status().enabled;
+    if proxy_was_on {
+        state.sysproxy.disable();
+    }
+    {
+        let mut store = state.store.lock().unwrap();
+        store.data_mut().engine.mixed_port = port;
+        store.save().map_err(|e| e.to_string())?;
+    }
+    if state.core.status() == CoreStatus::Running {
+        restart_core(&state)?;
+    }
+    if proxy_was_on {
+        state.sysproxy.enable(port)?;
+        let _ = app.emit("sysproxy://status", state.sysproxy.status());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn set_allow_lan(state: State<AppState>, enabled: bool) -> Result<(), String> {
+    {
+        let mut store = state.store.lock().unwrap();
+        store.data_mut().engine.allow_lan = enabled;
+        store.save().map_err(|e| e.to_string())?;
+    }
+    if state.core.status() == CoreStatus::Running {
+        restart_core(&state)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn autostart_status(app: AppHandle) -> Result<bool, String> {
+    app.autolaunch().is_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn autostart_set(app: AppHandle, enable: bool) -> Result<(), String> {
+    let mgr = app.autolaunch();
+    if enable {
+        mgr.enable().map_err(|e| e.to_string())
+    } else {
+        mgr.disable().map_err(|e| e.to_string())
+    }
+}
+
+/// 内核版本（执行 `<bin> -v` 首行）。
+#[tauri::command]
+fn core_version(state: State<AppState>) -> Result<String, String> {
+    let bin = state.core.binary_path();
+    if !bin.exists() {
+        return Err("内核未安装".into());
+    }
+    let out = std::process::Command::new(&bin)
+        .arg("-v")
+        .output()
+        .map_err(|e| e.to_string())?;
+    let first = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if first.is_empty() {
+        Err("无法读取内核版本".into())
+    } else {
+        Ok(first)
+    }
+}
+
+// ---------- 深链接 ----------
+
+/// `crossbow://import?url=<订阅地址>`：后台导入并通知前端。
+fn handle_crossbow_url(app: &AppHandle, raw: &str) {
+    let Ok(u) = url::Url::parse(raw) else { return };
+    if u.host_str() != Some("import") {
+        return;
+    }
+    let Some(target) = u
+        .query_pairs()
+        .find(|(k, _)| k == "url")
+        .map(|(_, v)| v.to_string())
+    else {
+        return;
+    };
+    let app = app.clone();
+    std::thread::spawn(move || {
+        show_main_window(&app);
+        let state = app.state::<AppState>();
+        match import_url_blocking(&state, &target, None) {
+            Ok(_) => {
+                let _ = app.emit("profile://imported", target);
+                refresh_tray(&app);
+            }
+            Err(e) => {
+                let _ = app.emit("profile://import-failed", format!("{target}: {e}"));
+            }
+        }
+    });
 }
 
 #[tauri::command]
@@ -381,6 +595,18 @@ fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // 单实例必须最先注册：二次启动的 argv 里可能带 crossbow:// 深链接。
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            show_main_window(app);
+            if let Some(url) = argv.iter().find(|a| a.starts_with("crossbow://")) {
+                handle_crossbow_url(app, url);
+            }
+        }))
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            None,
+        ))
+        .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let store = Store::open(&data_dir)
@@ -413,7 +639,18 @@ pub fn run() {
                 sysproxy,
                 mode: Mutex::new("rule".to_string()),
                 tray: Mutex::new(None),
+                ws: WsHub::default(),
             });
+
+            // 深链接：crossbow://import?url=...
+            {
+                let handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    for url in event.urls() {
+                        handle_crossbow_url(&handle, url.as_str());
+                    }
+                });
+            }
 
             // 托盘
             let menu = build_tray_menu(app.handle())?;
@@ -454,13 +691,28 @@ pub fn run() {
             sysproxy_toggle,
             core_mode,
             set_core_mode,
+            subscribe_traffic,
+            unsubscribe_traffic,
+            subscribe_connections,
+            unsubscribe_connections,
+            subscribe_logs,
+            unsubscribe_logs,
+            get_ui_settings,
+            get_engine_config,
+            set_theme,
+            set_mixed_port,
+            set_allow_lan,
+            autostart_status,
+            autostart_set,
+            core_version,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
-            // 任何退出路径都先还原系统代理、收内核（托盘退出/app.exit/Cmd+Q）。
+            // 任何退出路径都先停 WS 桥、还原系统代理、收内核。
             if let tauri::RunEvent::Exit = event {
                 if let Some(state) = app.try_state::<AppState>() {
+                    state.ws.unsubscribe_all();
                     state.sysproxy.disable();
                     state.core.stop();
                 }

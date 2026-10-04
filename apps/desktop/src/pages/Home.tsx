@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CORE_MODES,
   ipc,
@@ -7,8 +7,11 @@ import {
   type Profile,
   type SysProxyStatus,
 } from "../ipc";
+import { fmtBytes } from "../format";
 
-/** 首页仪表盘（M0-S3）：系统代理总开关 + 运行模式 + 配置概览。 */
+const POINTS = 120;
+
+/** 首页仪表盘（M0-S4）：系统代理总开关 + 模式 + 实时速率曲线 + 累计统计。 */
 export default function HomePage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -17,8 +20,13 @@ export default function HomePage() {
   const [mode, setMode] = useState<CoreMode>("rule");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rates, setRates] = useState<{ up: number; down: number }[]>([]);
+  const [totals, setTotals] = useState({ up: 0, down: 0 });
+  const [connCount, setConnCount] = useState<number | null>(null);
+  const mounted = useRef(true);
 
   const refresh = useCallback(async () => {
+    if (!mounted.current) return;
     setProfiles(await ipc.listProfiles().catch(() => []));
     setActiveId(await ipc.activeProfileId().catch(() => null));
     setCore(await ipc.coreStatus().catch(() => ({ state: "Stopped" as const })));
@@ -27,12 +35,28 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
+    mounted.current = true;
     refresh();
     const un1 = ipc.onCoreStatus(setCore);
     const un2 = ipc.onSysproxyStatus(setProxy);
     const un3 = ipc.onCoreMode(setMode);
+    // 订阅 traffic（内核运行时每秒一条）驱动曲线与累计值
+    ipc.subscribeTraffic().catch(() => {});
+    const un4 = ipc.onTraffic(({ up, down }) => {
+      if (!mounted.current) return;
+      setRates((prev) => [...prev.slice(-(POINTS - 1)), { up, down }]);
+      setTotals((t) => ({ up: t.up + up, down: t.down + down }));
+    });
+    // 连接数：仅取 rows 长度做展示（也顺带触发 Rust 侧订阅）
+    ipc.subscribeConnections().catch(() => {});
+    const un5 = ipc.onConnections((s) => {
+      if (mounted.current) setConnCount(s.rows.length);
+    });
     return () => {
-      for (const un of [un1, un2, un3]) void un.then((f) => f());
+      mounted.current = false;
+      for (const un of [un1, un2, un3, un4, un5]) void un.then((f) => f());
+      ipc.unsubscribeTraffic().catch(() => {});
+      ipc.unsubscribeConnections().catch(() => {});
     };
   }, [refresh]);
 
@@ -50,6 +74,7 @@ export default function HomePage() {
   };
 
   const active = profiles.find((p) => p.id === activeId);
+  const latest = rates[rates.length - 1];
 
   return (
     <div className="mx-auto max-w-4xl space-y-5">
@@ -107,15 +132,21 @@ export default function HomePage() {
 
       <div className="grid grid-cols-3 gap-4">
         <Card title="当前出口">
-          <div className="text-sm">— 未连接 —</div>
+          <div className="text-sm">— M1 接入 —</div>
         </Card>
-        <Card title="今日流量">
-          <div className="text-sm">↑ 0 B　↓ 0 B</div>
+        <Card title="累计流量（本次内核运行）">
+          <div className="text-sm cb-selectable">
+            ↑ {fmtBytes(totals.up)} · ↓ {fmtBytes(totals.down)}
+          </div>
         </Card>
         <Card title="活动连接">
-          <div className="text-sm">0</div>
+          <div className="text-sm">{connCount ?? "—"}</div>
         </Card>
       </div>
+
+      <Card title={`实时速率　↑ ${fmtBytes(latest?.up ?? 0)}/s · ↓ ${fmtBytes(latest?.down ?? 0)}/s`}>
+        <Sparkline rates={rates} />
+      </Card>
 
       <Card title="配置档案">
         {profiles.length === 0 ? (
@@ -134,6 +165,31 @@ export default function HomePage() {
         )}
       </Card>
     </div>
+  );
+}
+
+/** 纯 SVG 双线 sparkline，无图表库依赖。 */
+function Sparkline({ rates }: { rates: { up: number; down: number }[] }) {
+  const W = 860;
+  const H = 96;
+  const max = Math.max(1, ...rates.map((r) => Math.max(r.up, r.down)));
+  const path = (key: "up" | "down") => {
+    if (rates.length < 2) return "";
+    const step = W / (POINTS - 1);
+    const offset = POINTS - rates.length; // 右对齐
+    return rates
+      .map((r, i) => {
+        const x = (i + offset) * step;
+        const y = H - (r[key] / max) * (H - 6) - 3;
+        return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(" ");
+  };
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 96 }}>
+      <path d={path("down")} fill="none" stroke="#4a9df8" strokeWidth="1.5" />
+      <path d={path("up")} fill="none" stroke="var(--cb-accent)" strokeWidth="1.5" />
+    </svg>
   );
 }
 

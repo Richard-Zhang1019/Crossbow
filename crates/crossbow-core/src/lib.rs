@@ -12,7 +12,8 @@ pub mod store;
 pub mod subscription;
 
 pub use model::{
-    Engine, EngineConfig, OverrideDef, OverrideKind, Profile, ProfileKind, StoreSchema, TrafficInfo,
+    Engine, EngineConfig, OverrideDef, OverrideKind, Profile, ProfileKind, StoreSchema,
+    TrafficInfo, UiSettings,
 };
 pub use render::render_config;
 pub use runtime::{apply_runtime, RuntimeConfig};

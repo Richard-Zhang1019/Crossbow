@@ -144,6 +144,11 @@ impl CoreManager {
         self.shared.inner.lock().unwrap().controller.clone()
     }
 
+    /// 内核二进制路径（诊断与版本查询用）。
+    pub fn binary_path(&self) -> PathBuf {
+        self.shared.binary_path.clone()
+    }
+
     /// 内核子进程 PID；诊断信息展示与测试用。
     #[allow(dead_code)]
     pub fn pid(&self) -> Option<u32> {

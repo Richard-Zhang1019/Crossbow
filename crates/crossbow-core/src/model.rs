@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 
 /// 当前存储 schema 版本。每次不兼容变更 +1，并在 `migrate` 中补一条迁移。
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -80,6 +80,7 @@ pub enum Engine {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EngineConfig {
+    #[serde(default = "default_engine")]
     pub engine: Engine,
     /// stable / alpha 通道（M1 引入双通道下载）。
     #[serde(default)]
@@ -88,6 +89,10 @@ pub struct EngineConfig {
     pub mixed_port: u16,
     #[serde(default)]
     pub allow_lan: bool,
+}
+
+fn default_engine() -> Engine {
+    Engine::Mihomo
 }
 
 fn default_mixed_port() -> u16 {
@@ -118,6 +123,37 @@ pub struct StoreSchema {
     /// 当前激活的 profile id。
     #[serde(default)]
     pub active_profile: Option<String>,
+    /// v2：界面设置（主题/语言）。
+    #[serde(default)]
+    pub ui: UiSettings,
+}
+
+/// 界面设置（v2 加入）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UiSettings {
+    /// system / light / dark
+    #[serde(default = "default_theme")]
+    pub theme: String,
+    /// zh / en
+    #[serde(default = "default_lang")]
+    pub lang: String,
+}
+
+fn default_theme() -> String {
+    "system".into()
+}
+
+fn default_lang() -> String {
+    "zh".into()
+}
+
+impl Default for UiSettings {
+    fn default() -> Self {
+        Self {
+            theme: default_theme(),
+            lang: default_lang(),
+        }
+    }
 }
 
 impl Default for StoreSchema {
@@ -128,6 +164,7 @@ impl Default for StoreSchema {
             overrides: Vec::new(),
             engine: EngineConfig::default(),
             active_profile: None,
+            ui: UiSettings::default(),
         }
     }
 }
@@ -139,6 +176,10 @@ impl StoreSchema {
         if self.schema_version < 1 {
             // 首个版本：补齐 engine 默认值即可（serde default 已兜底）。
             self.schema_version = 1;
+        }
+        // v1 → v2：新增 ui 设置（serde default 已兜底，仅需推进版本号）。
+        if self.schema_version < 2 {
+            self.schema_version = 2;
         }
     }
 
@@ -226,6 +267,18 @@ mod tests {
         data.migrate();
         assert_eq!(data.schema_version, SCHEMA_VERSION);
         assert_eq!(data.engine.mixed_port, 7897);
+        assert_eq!(data.ui.theme, "system");
+    }
+
+    #[test]
+    fn v1_store_migrates_to_v2() {
+        let mut data: StoreSchema = serde_json::from_str(
+            r#"{"schema_version":1,"profiles":[],"overrides":[],"engine":{},"active_profile":null}"#,
+        )
+        .unwrap();
+        data.migrate();
+        assert_eq!(data.schema_version, 2);
+        assert_eq!(data.ui, UiSettings::default());
     }
 
     #[test]
