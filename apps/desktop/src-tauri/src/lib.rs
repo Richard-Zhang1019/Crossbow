@@ -739,7 +739,18 @@ pub fn run() {
 
             let handle = app.handle().clone();
             core.set_callback(std::sync::Arc::new(move |status| {
-                let _ = handle.emit("core://status", status);
+                let _ = handle.emit("core://status", status.clone());
+                // 状态一致性守护：内核崩溃时若系统代理还开着，立即还原，
+                // 避免系统流量指向已死的代理端口导致用户断网。
+                if matches!(status, CoreStatus::Crashed(_)) {
+                    if let Some(state) = handle.try_state::<AppState>() {
+                        if state.sysproxy.status().enabled {
+                            state.sysproxy.disable();
+                            let _ = handle.emit("sysproxy://status", state.sysproxy.status());
+                            refresh_tray(&handle);
+                        }
+                    }
+                }
             }));
 
             // 状态一致性守护：上次会话若异常退出（journal 残留），先全量还原系统代理。

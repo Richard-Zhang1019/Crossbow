@@ -28,20 +28,24 @@ pub enum CoreStatus {
 #[derive(Debug, Clone)]
 pub struct CoreOptions {
     /// 就绪探测超时（秒）；超时视为启动失败（不自动重启，直接上报）。
-    /// 30s：首次启动要下载 GeoIP 数据库，国内网络可能较慢。
+    /// 120s：首次启动 mihomo 要自行下载 GeoIP 数据库（数 MB），
+    /// 我们的应用侧镜像下载失败时它是最慢的兜底路径。
     pub readiness_timeout_secs: u64,
     /// 崩溃重启的统计窗口（秒）。
     pub restart_window_secs: u64,
     /// 窗口内最大重启次数，超过后放弃并保持 Crashed。
     pub max_restarts: u32,
+    /// 启动前确保 GeoIP/GeoSite 数据文件（真实环境 true；测试 false）。
+    pub ensure_geo_files: bool,
 }
 
 impl Default for CoreOptions {
     fn default() -> Self {
         Self {
-            readiness_timeout_secs: 30,
+            readiness_timeout_secs: 120,
             restart_window_secs: 60,
             max_restarts: 3,
+            ensure_geo_files: true,
         }
     }
 }
@@ -245,6 +249,18 @@ impl Drop for CoreManager {
 
 fn watch(shared: Arc<Shared>, port: u16, secret: String) {
     let opts = shared.opts.lock().unwrap().clone();
+
+    // 首次启动：GeoIP 数据库缺失/过小时先从镜像下载（mihomo 自带的
+    // 直连 GitHub 下载在国内网络极易超时，且被旧版就绪窗口误杀形成
+    // 「半截文件」死循环）。
+    if opts.ensure_geo_files {
+        if let Err(e) = ensure_geo_files(&shared.work_dir) {
+            shared.kill_child();
+            shared.notify(CoreStatus::Crashed(format!("GeoIP 数据库准备失败：{e}")));
+            return;
+        }
+    }
+
     let probe = ControllerProbe { port, secret };
     if !probe.wait_ready(Duration::from_secs(opts.readiness_timeout_secs)) {
         shared.kill_child();
@@ -340,6 +356,115 @@ impl ControllerProbe {
     }
 }
 
+/// GeoIP/GeoSite 数据源：镜像优先，直连 GitHub 兜底。
+pub const GEO_FILES: &[(&str, &[&str])] = &[
+    (
+        "geoip.metadb",
+        &["https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geoip.metadb"],
+    ),
+    (
+        "geosite.dat",
+        &["https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geosite.dat"],
+    ),
+];
+
+const GEO_MIN_BYTES: u64 = 1_000_000;
+
+/// 确保内核工作目录里有可用的 geo 数据文件；缺失/过小时逐镜像下载。
+fn ensure_geo_files(work_dir: &std::path::Path) -> Result<(), String> {
+    ensure_geo_files_with(work_dir, GEO_FILES, download_to)
+}
+
+fn ensure_geo_files_with(
+    work_dir: &std::path::Path,
+    files: &[(&str, &[&str])],
+    download: impl Fn(&str, &std::path::Path) -> Result<(), String>,
+) -> Result<(), String> {
+    for (name, _) in files {
+        let dest = work_dir.join(name);
+        if dest.exists() && dest.metadata().map(|m| m.len()).unwrap_or(0) >= GEO_MIN_BYTES {
+            continue;
+        }
+        download(name, &dest)?;
+    }
+    Ok(())
+}
+
+/// 依次尝试 GeoFiles 里该文件的镜像源；下载后做最小健全性检查（大小 + metadb 头）。
+fn download_to(name: &str, dest: &std::path::Path) -> Result<(), String> {
+    let urls = GEO_FILES
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, urls)| *urls)
+        .ok_or_else(|| format!("unknown geo file {name}"))?;
+    let agent = ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(90))
+        .build();
+    let mut last_err = String::from("no source attempted");
+    for url in urls {
+        append_core_log(
+            dest.parent().unwrap_or(std::path::Path::new(".")),
+            &format!("Downloading {name} from {url}"),
+        );
+        match agent.get(url).call() {
+            Ok(resp) => {
+                if resp.status() >= 400 {
+                    last_err = format!("{url}: HTTP {}", resp.status());
+                    continue;
+                }
+                let mut reader = resp.into_reader();
+                let tmp = dest.with_extension("part");
+                let mut w = std::io::BufWriter::new(
+                    std::fs::File::create(&tmp).map_err(|e| e.to_string())?,
+                );
+                if let Err(e) = std::io::copy(&mut reader, &mut w) {
+                    last_err = format!("{url}: {e}");
+                    let _ = std::fs::remove_file(&tmp);
+                    continue;
+                }
+                // 健全性检查：足够大，且 metadb 头为 00 00 01 xx
+                let ok_size =
+                    std::fs::metadata(&tmp).map(|m| m.len()).unwrap_or(0) >= GEO_MIN_BYTES;
+                let head_ok = name.ends_with("metadb") && {
+                    let mut head = [0u8; 2];
+                    std::fs::File::open(&tmp)
+                        .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut head))
+                        .is_ok_and(|_| head[0] == 0 && head[1] == 0)
+                } || !name.ends_with("metadb");
+                if !ok_size || !head_ok {
+                    last_err = format!("{url}: downloaded file failed sanity check");
+                    let _ = std::fs::remove_file(&tmp);
+                    continue;
+                }
+                std::fs::rename(&tmp, dest).map_err(|e| e.to_string())?;
+                append_core_log(
+                    dest.parent().unwrap_or(std::path::Path::new(".")),
+                    &format!(
+                        "Downloaded {name} ({} bytes)",
+                        dest.metadata().map(|m| m.len()).unwrap_or(0)
+                    ),
+                );
+                return Ok(());
+            }
+            Err(e) => {
+                last_err = format!("{url}: {e}");
+            }
+        }
+    }
+    Err(format!("所有源均失败：{last_err}"))
+}
+
+fn append_core_log(work_dir: &std::path::Path, line: &str) {
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(work_dir.join("core-stdio.log"))
+    {
+        let _ = writeln!(f, "[crossbow] {line}");
+    }
+}
+
 /// 读取内核输出日志的尾部（崩溃原因展示用）。
 fn core_log_tail(work_dir: &std::path::Path, max_chars: usize) -> String {
     let path = work_dir.join("core-stdio.log");
@@ -393,6 +518,7 @@ mod tests {
         let mgr = CoreManager::new(PathBuf::from("/bin/sleep"), dir.path().to_path_buf());
         mgr.set_options(CoreOptions {
             readiness_timeout_secs: 1,
+            ensure_geo_files: false,
             ..CoreOptions::default()
         });
         let _ = mgr.start("", &RuntimeConfig::default());
@@ -415,6 +541,10 @@ mod tests {
         };
         let dir = tempfile::tempdir().unwrap();
         let mgr = CoreManager::new(PathBuf::from(bin), dir.path().to_path_buf());
+        mgr.set_options(CoreOptions {
+            ensure_geo_files: false,
+            ..CoreOptions::default()
+        });
         let port = free_port().unwrap();
         let base = "proxies: []\nrules:\n  - MATCH,DIRECT\n".to_string();
         mgr.start(
@@ -467,9 +597,11 @@ mod tests {
         };
         let dir = tempfile::tempdir().unwrap();
         let mgr = CoreManager::new(PathBuf::from(bin), dir.path().to_path_buf());
-        let mut o = CoreOptions::default();
-        o.readiness_timeout_secs = 10;
-        mgr.set_options(o);
+        mgr.set_options(CoreOptions {
+            readiness_timeout_secs: 10,
+            ensure_geo_files: false,
+            ..CoreOptions::default()
+        });
         mgr.start(
             "proxies: []\nrules:\n  - MATCH,DIRECT\n",
             &RuntimeConfig::default(),
