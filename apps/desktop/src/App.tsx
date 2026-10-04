@@ -50,15 +50,14 @@ export default function App() {
 
   // 深链接导入结果通知
   useEffect(() => {
-    const tt = useT();
     const un1 = ipc.onProfileImported((url) =>
-      setToast(tt("toast.imported", { url: url.slice(0, 60) })),
+      setToast(t("toast.imported", { url: url.slice(0, 60) })),
     );
-    const un2 = ipc.onProfileImportFailed((msg) => setToast(tt("toast.importFailed", { msg })));
+    const un2 = ipc.onProfileImportFailed((msg) => setToast(t("toast.importFailed", { msg })));
     return () => {
       for (const un of [un1, un2]) void un.then((f) => f());
     };
-  }, []);
+  }, [t]);
 
   return (
     <div className="flex h-full">
