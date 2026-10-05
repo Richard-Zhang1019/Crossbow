@@ -8,7 +8,7 @@
 
 ## M1 · macOS 完整版（约 4–6 周）
 
-### M1.0 正式打包与自更新（~1 周）✅ 2026-10-04
+### M1.0 正式打包与自更新（~1 周）✅ 2026-10-04 · 已发布 [v0.2.0](https://github.com/Richard-Zhang1019/Crossbow/releases/tag/v0.2.0)
 *目标：摆脱终端，像正式产品一样安装使用。*
 - ✅ `tauri build` 产出 .app（62MB，mihomo sidecar 随包分发），打包版启动冒烟通过
 - ✅ 内核缺失自动下载（gh-proxy 镜像优先，锁定 v1.19.32，大小校验）
