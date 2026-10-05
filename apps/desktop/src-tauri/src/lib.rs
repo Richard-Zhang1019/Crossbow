@@ -270,6 +270,130 @@ fn update_profile(app: AppHandle, state: State<AppState>, id: String) -> Result<
     Ok(profile)
 }
 
+/// 创建覆写（默认 Script 或 Merge）。
+/// 列出全部覆写。
+#[tauri::command]
+fn list_overrides(state: State<AppState>) -> Vec<crossbow_core::OverrideDef> {
+    state.store.lock().unwrap().data().overrides.clone()
+}
+
+#[tauri::command]
+fn create_override(
+    app: AppHandle,
+    state: State<AppState>,
+    name: String,
+    kind: String,
+) -> Result<crossbow_core::OverrideDef, String> {
+    let kind = match kind.as_str() {
+        "script" => crossbow_core::OverrideKind::Script,
+        "merge" => crossbow_core::OverrideKind::Merge,
+        _ => return Err(format!("unknown kind: {kind}")),
+    };
+    let def = crossbow_core::OverrideDef {
+        id: gen_id(),
+        name,
+        kind,
+        enabled: true,
+        content: if kind == crossbow_core::OverrideKind::Script {
+            "function main(config) {
+  // 在此编辑覆写脚本
+  return config;
+}"
+            .into()
+        } else {
+            "# merge 补丁示例：覆盖端口
+# mixed-port: 7897
+"
+            .into()
+        },
+    };
+    {
+        let mut store = state.store.lock().unwrap();
+        store.data_mut().overrides.push(def.clone());
+        store.save().map_err(|e| e.to_string())?;
+    }
+    refresh_tray(&app);
+    Ok(def)
+}
+
+/// 更新覆写内容/名称。
+#[tauri::command]
+fn update_override(
+    state: State<AppState>,
+    id: String,
+    content: Option<String>,
+    name: Option<String>,
+) -> Result<(), String> {
+    let mut store = state.store.lock().unwrap();
+    let o = store
+        .data_mut()
+        .overrides
+        .iter_mut()
+        .find(|o| o.id == id)
+        .ok_or("override not found")?;
+    if let Some(c) = content {
+        o.content = c;
+    }
+    if let Some(n) = name {
+        o.name = n;
+    }
+    store.save().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 删除覆写（并从所有 Profile 摘除引用）。
+#[tauri::command]
+fn remove_override(state: State<AppState>, id: String) -> Result<(), String> {
+    let mut store = state.store.lock().unwrap();
+    store.data_mut().overrides.retain(|o| o.id != id);
+    for p in store.data_mut().profiles.iter_mut() {
+        p.override_ids.retain(|oid| oid != &id);
+    }
+    store.save().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 绑定/解绑覆写到 Profile。
+#[tauri::command]
+fn toggle_override_binding(
+    state: State<AppState>,
+    profile_id: String,
+    override_id: String,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut store = state.store.lock().unwrap();
+    let p = store
+        .data_mut()
+        .profiles
+        .iter_mut()
+        .find(|p| p.id == profile_id)
+        .ok_or("profile not found")?;
+    if enabled {
+        if !p.override_ids.contains(&override_id) {
+            p.override_ids.push(override_id);
+        }
+    } else {
+        p.override_ids.retain(|oid| oid != &override_id);
+    }
+    store.save().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 切换覆写启用态。
+#[tauri::command]
+fn set_override_enabled(state: State<AppState>, id: String, enabled: bool) -> Result<(), String> {
+    let mut store = state.store.lock().unwrap();
+    let o = store
+        .data_mut()
+        .overrides
+        .iter_mut()
+        .find(|o| o.id == id)
+        .ok_or("override not found")?;
+    o.enabled = enabled;
+    store.save().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// 重命名 Profile。
 #[tauri::command]
 fn rename_profile(
@@ -1137,6 +1261,12 @@ pub fn run() {
             set_profile_interval,
             rename_profile,
             set_flag_emoji,
+            create_override,
+            update_override,
+            remove_override,
+            toggle_override_binding,
+            set_override_enabled,
+            list_overrides,
             set_active_profile,
             remove_profile,
             core_start,

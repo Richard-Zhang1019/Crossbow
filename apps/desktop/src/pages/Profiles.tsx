@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { ipc, type Profile } from "../ipc";
 import Select from "../components/Select";
+import OverridePanel from "./OverridePanel";
 import { useT } from "../i18n";
 import { PageHead, ErrorBar } from "./Home";
 
@@ -184,6 +185,12 @@ export default function ProfilesPage() {
           ))}
         </div>
       )}
+
+      <OverridePanel
+        profiles={profiles}
+        activeId={activeId}
+        onChanged={refresh}
+      />
     </div>
   );
 }

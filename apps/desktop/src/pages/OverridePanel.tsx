@@ -1,0 +1,203 @@
+import { useCallback, useEffect, useState } from "react";
+import {
+  ipc,
+  type OverrideDef,
+  type OverrideKind,
+  type Profile,
+} from "../ipc";
+import { useT } from "../i18n";
+
+/** 覆写面板：列表 + 新建 + 编辑器 + 绑定当前订阅。 */
+export default function OverridePanel({
+  profiles,
+  activeId,
+  onChanged,
+}: {
+  profiles: Profile[];
+  activeId: string | null;
+  onChanged: () => void;
+}) {
+  const t = useT();
+  const [overrides, setOverrides] = useState<OverrideDef[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const active = profiles.find((p) => p.id === activeId);
+
+  const refresh = useCallback(async () => {
+    setOverrides(await ipc.listOverrides().catch(() => []));
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const create = async (kind: OverrideKind) => {
+    try {
+      const def = await ipc.createOverride(
+        `${kind === "script" ? "脚本" : "Merge"}-${Date.now() % 10000}`,
+        kind,
+      );
+      await refresh();
+      setEditingId(def.id);
+      setDraft(def.content);
+      onChanged();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const save = async (id: string) => {
+    try {
+      await ipc.updateOverride(id, draft);
+      setEditingId(null);
+      await refresh();
+      onChanged();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const remove = async (id: string) => {
+    try {
+      await ipc.removeOverride(id);
+      setEditingId(null);
+      await refresh();
+      onChanged();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const toggleBind = async (oid: string, bound: boolean) => {
+    if (!activeId) return;
+    try {
+      await ipc.toggleOverrideBinding(activeId, oid, bound);
+      onChanged();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const bound = (oid: string) =>
+    active?.override_ids.includes(oid) ?? false;
+
+  return (
+    <section className="cb-card px-4 pb-4 pt-[14px]">
+      <div className="flex items-center">
+        <span className="cb-micro flex-1">{t("ov.title")}</span>
+        <button className="cb-btn py-1" onClick={() => create("script")}>
+          {t("ov.newScript")}
+        </button>
+        <button className="cb-btn ml-1.5 py-1" onClick={() => create("merge")}>
+          {t("ov.newMerge")}
+        </button>
+      </div>
+
+      {error && (
+        <div
+          className="mt-2 rounded-lg border px-3 py-2 text-xs"
+          style={{
+            borderColor: "color-mix(in srgb, var(--cb-bad) 40%, transparent)",
+            color: "var(--cb-bad)",
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      {overrides.length === 0 ? (
+        <div className="mt-2 text-xs" style={{ color: "var(--cb-text-dim)" }}>
+          {t("ov.empty")}
+        </div>
+      ) : (
+        <div className="mt-2 space-y-2">
+          {overrides.map((o) => {
+            const isBound = activeId ? bound(o.id) : false;
+            return (
+              <div
+                key={o.id}
+                className="rounded-[10px] border px-3 py-2.5"
+                style={{
+                  borderColor: o.enabled
+                    ? "var(--cb-line-strong)"
+                    : "var(--cb-line)",
+                  background: "var(--cb-surface-2)",
+                  opacity: o.enabled ? 1 : 0.55,
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={o.enabled}
+                    onChange={(e) =>
+                      ipc
+                        .setOverrideEnabled(o.id, e.target.checked)
+                        .then(onChanged)
+                    }
+                    title={t("ov.enabled")}
+                  />
+                  <span className="text-[12.5px] font-medium">{o.name}</span>
+                  <span className="cb-badge gray">
+                    {o.kind === "script" ? t("ov.kindScript") : t("ov.kindMerge")}
+                  </span>
+                  <div className="flex-1" />
+                  <label
+                    className="flex items-center gap-1 text-[11px]"
+                    style={{ color: isBound ? "var(--cb-accent)" : "var(--cb-faint)" }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isBound}
+                      disabled={!activeId}
+                      onChange={(e) => toggleBind(o.id, e.target.checked)}
+                    />
+                    {t("ov.bind")}
+                  </label>
+                  <button
+                    className="cb-btn py-0.5"
+                    onClick={() => {
+                      setEditingId(editingId === o.id ? null : o.id);
+                      setDraft(o.content);
+                    }}
+                  >
+                    {t("ov.edit")}
+                  </button>
+                  <button
+                    className="cb-btn py-0.5"
+                    style={{ color: "var(--cb-bad)" }}
+                    onClick={() => remove(o.id)}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {editingId === o.id && (
+                  <div className="mt-2">
+                    <textarea
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      spellCheck={false}
+                      className="cb-selectable w-full rounded-lg border p-2.5 font-mono text-[11.5px] leading-5 outline-none"
+                      style={{
+                        height: 180,
+                        borderColor: "var(--cb-line-strong)",
+                        background: "var(--cb-bg)",
+                        color: "var(--cb-text)",
+                      }}
+                    />
+                    <div className="mt-1.5 flex justify-end">
+                      <button className="cb-btn acc py-1" onClick={() => save(o.id)}>
+                        {t("ov.save")}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}

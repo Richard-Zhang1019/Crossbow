@@ -4,7 +4,6 @@
 //! 增加 YAML → JSON 的转换 target（见 DESIGN §3.3）。
 
 use crate::model::StoreSchema;
-use crate::override_patch::apply_chain;
 
 pub struct Rendered {
     /// 最终交给内核的配置文本。
@@ -26,15 +25,17 @@ pub fn render_config(store: &StoreSchema) -> Result<Rendered, RenderError> {
         .find(|p| p.id == profile_id)
         .ok_or_else(|| RenderError::MissingProfile(profile_id.to_string()))?;
 
-    let patches: Vec<String> = store
+    let active: Vec<&crate::OverrideDef> = store
         .overrides
         .iter()
         .filter(|o| o.enabled && profile.override_ids.contains(&o.id))
-        .map(|o| o.content.clone())
         .collect();
 
-    let mut config = apply_chain(&profile.content, &patches)
-        .map_err(|e| RenderError::InvalidYaml(e.to_string()))?;
+    let mut config = profile.content.clone();
+    for o in active {
+        config = crate::override_patch::run_override_kind(o.kind, &o.content, &config)
+            .map_err(|e| RenderError::InvalidYaml(e.to_string()))?;
+    }
     if store.engine.flag_emoji {
         config = crate::emoji::enrich_flags(&config)
             .map_err(|e| RenderError::InvalidYaml(e.to_string()))?;

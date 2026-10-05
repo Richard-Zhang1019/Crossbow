@@ -72,6 +72,8 @@ pub struct TrafficInfo {
 pub enum OverrideKind {
     /// YAML 顶层合并补丁。
     Merge,
+    /// JS 脚本覆写：`function main(config) { ...; return config; }`。
+    Script,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

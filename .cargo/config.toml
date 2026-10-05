@@ -1,0 +1,10 @@
+# 国内网络优化：crates 走 rsproxy 镜像（直连稳定）。
+# 若你本机有全局可用代理，可删除此文件恢复官方源。
+[source.crates-io]
+replace-with = 'rsproxy-sparse'
+
+[source.rsproxy-sparse]
+registry = "sparse+https://rsproxy.cn/index/"
+
+[registries.rsproxy]
+index = "sparse+https://rsproxy.cn/index/"

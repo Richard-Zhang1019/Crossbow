@@ -9,6 +9,7 @@ pub mod model;
 pub mod override_patch;
 pub mod render;
 pub mod runtime;
+pub mod script_override;
 pub mod store;
 pub mod subscription;
 

@@ -1,9 +1,25 @@
-//! 覆写补丁：YAML 顶层 merge（MVP）。
+//! 覆写补丁：YAML 顶层 merge 与 JS 脚本，按 OverrideKind 分派。
 //!
 //! 语义：补丁中的顶层键覆盖基础配置；`rules`/`proxy-groups` 等列表键支持
-//! `+key` 前缀表示「前置插入」。JS 脚本覆写在 M1 引入，届时走嵌入 JS runtime。
+//! `+key` 前缀表示「前置插入」。
 
 use serde_yaml::Value;
+
+use crate::model::OverrideKind;
+
+/// 按覆写类型执行单个覆写。
+pub fn run_override_kind(
+    kind: OverrideKind,
+    content: &str,
+    base_yaml: &str,
+) -> Result<String, String> {
+    match kind {
+        OverrideKind::Merge => apply_merge(base_yaml, content).map_err(|e| e.to_string()),
+        OverrideKind::Script => {
+            crate::script_override::run_script(content, base_yaml).map_err(|e| e.to_string())
+        }
+    }
+}
 
 /// 应用一个 merge 补丁，返回合并后的 YAML 字符串。
 pub fn apply_merge(base_yaml: &str, patch_yaml: &str) -> Result<String, serde_yaml::Error> {

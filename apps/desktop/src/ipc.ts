@@ -2,6 +2,16 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 /** 与 Rust 侧对齐的类型。 */
+export type OverrideKind = "merge" | "script";
+
+export interface OverrideDef {
+  id: string;
+  name: string;
+  kind: OverrideKind;
+  enabled: boolean;
+  content: string;
+}
+
 export interface UpdateOutcome {
   ok: boolean;
   detail?: string | null;
@@ -170,6 +180,16 @@ export const ipc = {
     invoke<void>("set_profile_interval", { id, intervalMin }),
   renameProfile: (id: string, name: string) =>
     invoke<void>("rename_profile", { id, name }),
+  listOverrides: () => invoke<OverrideDef[]>("list_overrides"),
+  createOverride: (name: string, kind: OverrideKind) =>
+    invoke<OverrideDef>("create_override", { name, kind }),
+  updateOverride: (id: string, content?: string, name?: string) =>
+    invoke<void>("update_override", { id, content: content ?? null, name: name ?? null }),
+  removeOverride: (id: string) => invoke<void>("remove_override", { id }),
+  toggleOverrideBinding: (profileId: string, overrideId: string, enabled: boolean) =>
+    invoke<void>("toggle_override_binding", { profileId, overrideId, enabled }),
+  setOverrideEnabled: (id: string, enabled: boolean) =>
+    invoke<void>("set_override_enabled", { id, enabled }),
   setFlagEmoji: (enabled: boolean) => invoke<void>("set_flag_emoji", { enabled }),
   onProfileUpdated: (cb: (id: string) => void) =>
     listen<string>("profile://updated", (e) => cb(e.payload)),

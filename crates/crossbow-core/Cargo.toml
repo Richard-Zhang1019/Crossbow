@@ -7,6 +7,7 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
+boa_engine = "0.22.0"
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
