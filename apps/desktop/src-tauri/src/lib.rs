@@ -18,6 +18,7 @@ use tauri_plugin_deep_link::DeepLinkExt as _;
 
 mod core_manager;
 mod mihomo_api;
+mod scheduler;
 mod sysproxy;
 mod ws_bridge;
 
@@ -28,8 +29,8 @@ use core_manager::{CoreManager, CoreStatus};
 use sysproxy::{SysProxyManager, SysProxyStatus};
 use ws_bridge::WsHub;
 
-struct AppState {
-    store: Mutex<Store>,
+pub struct AppState {
+    pub store: Mutex<Store>,
     /// 当前内核管理器；内核安装后整体替换（core_slot）。
     core_slot: Mutex<CoreManager>,
     sysproxy: SysProxyManager,
@@ -43,7 +44,7 @@ struct AppState {
 
 impl AppState {
     /// 当前内核管理器快照（clone 便宜：内部是 Arc）。
-    fn core(&self) -> CoreManager {
+    pub fn core(&self) -> CoreManager {
         self.core_slot.lock().unwrap().clone()
     }
 }
@@ -79,6 +80,7 @@ fn make_profile(id: String, name: String, kind: ProfileKind, url: Option<String>
         override_ids: Vec::new(),
         last_updated: None,
         traffic: None,
+        last_update: None,
     }
 }
 
@@ -182,39 +184,98 @@ fn import_content_blocking(
     Ok(profile)
 }
 
-/// 刷新订阅并落库；正在运行则热重启应用新配置。
-#[tauri::command]
-fn update_profile(app: AppHandle, state: State<AppState>, id: String) -> Result<Profile, String> {
+/// 刷新一次订阅（命令与调度器共用）：拉取 → 校验 → 落库（失败保留旧内容
+/// 并记录结果）→ 运行中热重启。网络请求不持有 store 锁。
+fn refresh_profile_blocking(state: &State<AppState>, id: &str) -> Result<Profile, String> {
     let url = {
         let store = state.store.lock().unwrap();
         store
             .data()
-            .profile(&id)
+            .profile(id)
             .and_then(|p| p.url.clone())
             .ok_or("profile not found or has no url")?
     };
-    let fetched = fetch_subscription(&url, 30).map_err(|e| e.to_string())?;
-    validate_profile_content(&fetched.content).map_err(|e| e.to_string())?;
+    let fetched = match fetch_subscription(&url, 30) {
+        Ok(f) => f,
+        Err(e) => {
+            let _ = state.store.lock().unwrap().data_mut().set_profile_outcome(
+                id,
+                crossbow_core::UpdateOutcome {
+                    ok: false,
+                    detail: Some(e.to_string()),
+                    at: now_secs(),
+                },
+            );
+            return Err(e.to_string());
+        }
+    };
+    if let Err(e) = validate_profile_content(&fetched.content) {
+        let _ = state.store.lock().unwrap().data_mut().set_profile_outcome(
+            id,
+            crossbow_core::UpdateOutcome {
+                ok: false,
+                detail: Some(e.to_string()),
+                at: now_secs(),
+            },
+        );
+        return Err(e.to_string());
+    }
 
     let was_active_and_running = {
         let store = state.store.lock().unwrap();
-        store.data().active_profile.as_deref() == Some(id.as_str())
+        store.data().active_profile.as_deref() == Some(id)
             && state.core().status() == CoreStatus::Running
     };
     let profile = {
         let mut store = state.store.lock().unwrap();
-        store
-            .data_mut()
-            .update_profile_content(id.as_str(), fetched.content, now_secs(), fetched.traffic)
-            .map_err(|e| e.to_string())?;
+        store.data_mut().update_profile_content(
+            id,
+            fetched.content.clone(),
+            now_secs(),
+            fetched.traffic,
+        )?;
+        let _ = store.data_mut().set_profile_outcome(
+            id,
+            crossbow_core::UpdateOutcome {
+                ok: true,
+                detail: None,
+                at: now_secs(),
+            },
+        );
         store.save().map_err(|e| e.to_string())?;
-        store.data().profile(&id).cloned().unwrap()
+        store.data().profile(id).cloned().unwrap()
     };
     if was_active_and_running {
-        restart_core(&state)?;
+        restart_core(state)?;
     }
+    Ok(profile)
+}
+
+/// 刷新订阅并落库；正在运行则热重启应用新配置。
+#[tauri::command]
+fn update_profile(app: AppHandle, state: State<AppState>, id: String) -> Result<Profile, String> {
+    let profile = refresh_profile_blocking(&state, &id)?;
     refresh_tray(&app);
     Ok(profile)
+}
+
+/// 设置订阅自动更新间隔（分钟，0 = 关闭）。
+#[tauri::command]
+fn set_profile_interval(
+    state: State<AppState>,
+    id: String,
+    interval_min: u32,
+) -> Result<(), String> {
+    let mut store = state.store.lock().unwrap();
+    let p = store
+        .data_mut()
+        .profiles
+        .iter_mut()
+        .find(|p| p.id == id)
+        .ok_or("profile not found")?;
+    p.update_interval_min = interval_min;
+    store.save().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -877,6 +938,9 @@ pub fn run() {
                 data_dir: data_dir.clone(),
             });
 
+            // 订阅自动更新调度器
+            scheduler::spawn(app.handle().clone());
+
             // 深链接：crossbow://import?url=...
             {
                 let handle = app.handle().clone();
@@ -918,6 +982,7 @@ pub fn run() {
             import_profile_content,
             import_profile_file,
             update_profile,
+            set_profile_interval,
             set_active_profile,
             remove_profile,
             core_start,

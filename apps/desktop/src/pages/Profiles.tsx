@@ -39,6 +39,12 @@ export default function ProfilesPage() {
     refresh();
   }, [refresh]);
 
+  // 后台调度器完成自动更新后刷新列表
+  useEffect(() => {
+    const un = ipc.onProfileUpdated(() => refresh());
+    return () => void un.then((f) => f());
+  }, [refresh]);
+
   const importPaths = useCallback(
     async (paths: string[]) => {
       for (const p of paths) {
@@ -179,12 +185,28 @@ export default function ProfilesPage() {
               onUpdate={() => run(p.id, () => ipc.updateProfile(p.id))}
               onActivate={() => run(p.id, () => ipc.setActiveProfile(p.id))}
               onRemove={() => run(p.id, () => ipc.removeProfile(p.id))}
+              onSetInterval={(min) => run(p.id, () => ipc.setProfileInterval(p.id, min))}
             />
           ))}
         </div>
       )}
     </div>
   );
+}
+
+function nextUpdateText(profile: Profile, t: ReturnType<typeof useT>): string {
+  const lu = profile.last_update;
+  if (lu && !lu.ok) {
+    return t("profiles.updateFailedAt", { detail: (lu.detail ?? "?").slice(0, 80) });
+  }
+  const interval = profile.update_interval_min * 60;
+  const last = profile.last_updated ?? 0;
+  const next = last + interval;
+  const time = new Date(next * 1000).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return t("profiles.nextAt", { time });
 }
 
 function ProfileCard({
@@ -194,6 +216,7 @@ function ProfileCard({
   onUpdate,
   onActivate,
   onRemove,
+  onSetInterval,
 }: {
   profile: Profile;
   active: boolean;
@@ -201,6 +224,7 @@ function ProfileCard({
   onUpdate: () => void;
   onActivate: () => void;
   onRemove: () => void;
+  onSetInterval: (min: number) => void;
 }) {
   const t = useT();
   const traffic = profile.traffic;
@@ -225,10 +249,28 @@ function ProfileCard({
               <span className="cb-badge">{t("profiles.current")}</span>
             )}
           </div>
-          <div className="mt-1 text-xs" style={{ color: "var(--cb-text-dim)" }}>
+          <div className="mt-1 flex items-center gap-2 text-xs" style={{ color: "var(--cb-text-dim)" }}>
             {profile.kind === "remote" ? t("profiles.remote") : t("profiles.local")} ·{" "}
             {t("profiles.updatedAt", { time: fmtTime(profile.last_updated, t) })}
+            {profile.kind === "remote" && (
+              <select
+                value={profile.update_interval_min}
+                onChange={(e) => onSetInterval(Number(e.target.value))}
+                className="cb-input !px-1.5 !py-0.5 text-[11px]"
+                style={{ width: "auto" }}
+              >
+                <option value={0}>{t("profiles.autoOff")}</option>
+                <option value={360}>{t("profiles.autoH", { n: 6 })}</option>
+                <option value={720}>{t("profiles.autoH", { n: 12 })}</option>
+                <option value={1440}>{t("profiles.autoH", { n: 24 })}</option>
+              </select>
+            )}
           </div>
+          {profile.kind === "remote" && profile.update_interval_min > 0 && (
+            <div className="mt-1 text-[11px]" style={{ color: "var(--cb-faint)" }}>
+              {nextUpdateText(profile, t)}
+            </div>
+          )}
 
           {traffic && traffic.total > 0 && (
             <div className="mt-2">

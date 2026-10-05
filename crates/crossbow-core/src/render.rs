@@ -68,6 +68,7 @@ mod tests {
             override_ids: vec!["o1".into()],
             last_updated: None,
             traffic: None,
+            last_update: None,
         });
         s.overrides.push(OverrideDef {
             id: "o1".into(),

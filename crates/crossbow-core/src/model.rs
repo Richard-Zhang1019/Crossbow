@@ -39,6 +39,20 @@ pub struct Profile {
     /// 订阅流量信息（来自 `subscription-userinfo` 响应头），本地配置为空。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub traffic: Option<TrafficInfo>,
+    /// 最近一次（含自动）订阅更新结果；旧数据无此字段，缺省 None。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_update: Option<UpdateOutcome>,
+}
+
+/// 一次订阅更新的结果（成功或失败）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UpdateOutcome {
+    pub ok: bool,
+    /// 失败原因等补充信息。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    /// Unix 秒。
+    pub at: u64,
 }
 
 /// 机场订阅的流量/到期信息。
@@ -221,6 +235,17 @@ impl StoreSchema {
         Ok(())
     }
 
+    /// 记录档案更新结果；不存在的 id 报错。
+    pub fn set_profile_outcome(&mut self, id: &str, outcome: UpdateOutcome) -> Result<(), String> {
+        let p = self
+            .profiles
+            .iter_mut()
+            .find(|p| p.id == id)
+            .ok_or_else(|| format!("profile {id} not found"))?;
+        p.last_update = Some(outcome);
+        Ok(())
+    }
+
     /// 更新档案内容（订阅刷新）。不存在的 id 报错。
     pub fn update_profile_content(
         &mut self,
@@ -256,6 +281,7 @@ mod tests {
             override_ids: Vec::new(),
             last_updated: None,
             traffic: None,
+            last_update: None,
         }
     }
 
@@ -268,6 +294,13 @@ mod tests {
         assert_eq!(data.schema_version, SCHEMA_VERSION);
         assert_eq!(data.engine.mixed_port, 7897);
         assert_eq!(data.ui.theme, "system");
+    }
+
+    #[test]
+    fn profile_without_last_update_field_loads() {
+        let raw = r#"{"id":"a","name":"n","kind":"remote","content":""}"#;
+        let p: Profile = serde_json::from_str(raw).unwrap();
+        assert!(p.last_update.is_none());
     }
 
     #[test]

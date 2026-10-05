@@ -2,6 +2,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 /** 与 Rust 侧对齐的类型。 */
+export interface UpdateOutcome {
+  ok: boolean;
+  detail?: string | null;
+  at: number;
+}
+
 export interface Profile {
   id: string;
   name: string;
@@ -11,6 +17,7 @@ export interface Profile {
   override_ids: string[];
   last_updated?: number | null;
   traffic?: TrafficInfo | null;
+  last_update?: UpdateOutcome | null;
 }
 
 export interface TrafficInfo {
@@ -143,6 +150,10 @@ export const ipc = {
   importProfileFile: (path: string) =>
     invoke<Profile>("import_profile_file", { path }),
   updateProfile: (id: string) => invoke<Profile>("update_profile", { id }),
+  setProfileInterval: (id: string, intervalMin: number) =>
+    invoke<void>("set_profile_interval", { id, intervalMin }),
+  onProfileUpdated: (cb: (id: string) => void) =>
+    listen<string>("profile://updated", (e) => cb(e.payload)),
   setActiveProfile: (id: string) => invoke<void>("set_active_profile", { id }),
   removeProfile: (id: string) => invoke<void>("remove_profile", { id }),
   coreStart: () => invoke<void>("core_start"),
