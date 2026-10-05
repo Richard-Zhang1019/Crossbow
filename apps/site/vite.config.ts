@@ -1,9 +1,13 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// GitHub Pages 项目站点：仓库 Crossbow → 子路径部署
+// 部署路径可配：
+// - GitHub Pages（默认）：/Crossbow/
+// - Netlify 等根路径托管：构建时设 VITE_BASE=/
+const base = process.env.VITE_BASE ?? "/Crossbow/";
+
 export default defineConfig({
-  base: "/Crossbow/",
+  base,
   plugins: [react()],
   build: {
     target: "es2020",

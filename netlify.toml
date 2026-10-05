@@ -1,0 +1,9 @@
+# Netlify 部署配置（站点链接到本仓库时自动生效）
+[build]
+  base = "apps/site"
+  command = "pnpm install --no-frozen-lockfile && pnpm build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+  VITE_BASE = "/"
