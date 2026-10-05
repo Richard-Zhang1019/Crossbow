@@ -452,6 +452,7 @@ async fn toggle_override_binding(
         p.override_ids.retain(|oid| oid != &override_id);
     }
     store.save().map_err(|e| e.to_string())?;
+    drop(store);
     if state.core().status() == CoreStatus::Running {
         restart_core(&state)?;
     }
@@ -474,6 +475,7 @@ async fn set_override_enabled(
         .ok_or("override not found")?;
     o.enabled = enabled;
     store.save().map_err(|e| e.to_string())?;
+    drop(store);
     if state.core().status() == CoreStatus::Running {
         restart_core(&state)?;
     }
