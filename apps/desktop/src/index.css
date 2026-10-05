@@ -269,6 +269,37 @@ body,
   background: #fff;
 }
 
+/* 悬停提示（设计系统风格，替代原生 title 灰框） */
+.cb-tip {
+  position: relative;
+  display: inline-flex;
+  outline: none;
+}
+.cb-tip .cb-tip-pop {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  width: max-content;
+  max-width: 460px;
+  white-space: pre-wrap;
+  text-align: left;
+  background: var(--cb-surface-2);
+  border: 1px solid var(--cb-line-strong);
+  color: var(--cb-text);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  font-family: var(--cb-mono);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.cb-tip:hover .cb-tip-pop,
+.cb-tip:focus-within .cb-tip-pop {
+  display: block;
+}
+
 /* 滚动条弱化 */
 ::-webkit-scrollbar {
   width: 8px;

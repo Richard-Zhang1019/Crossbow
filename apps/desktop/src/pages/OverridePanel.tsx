@@ -219,12 +219,9 @@ export default function OverridePanel({
                     </>
                   )}
                   {o.last_error && (
-                    <span
-                      className="cursor-help text-[12px]"
-                      style={{ color: "var(--cb-warn)" }}
-                      title={o.last_error}
-                    >
+                    <span className="cb-tip cursor-help text-[12px]" style={{ color: "var(--cb-warn)" }} tabIndex={0}>
                       ⚠
+                      <span className="cb-tip-pop">{o.last_error}</span>
                     </span>
                   )}
                   <span className="cb-badge gray">
