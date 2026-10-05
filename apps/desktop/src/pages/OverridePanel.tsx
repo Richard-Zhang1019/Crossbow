@@ -23,6 +23,8 @@ export default function OverridePanel({
   const [draft, setDraft] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState("");
+  const [newName, setNewName] = useState("");
+  const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const active = profiles.find((p) => p.id === activeId);
 
@@ -35,17 +37,19 @@ export default function OverridePanel({
   }, [refresh]);
 
   const create = async (kind: OverrideKind) => {
+    if (!newName.trim()) return;
+    setCreating(true);
     try {
-      const def = await ipc.createOverride(
-        `${kind === "script" ? "脚本" : "Merge"}-${Date.now() % 10000}`,
-        kind,
-      );
+      const def = await ipc.createOverride(newName.trim(), kind);
+      setNewName("");
       await refresh();
       setEditingId(def.id);
       setDraft(def.content);
       onChanged();
     } catch (e) {
       setError(String(e));
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -106,12 +110,29 @@ export default function OverridePanel({
 
   return (
     <section className="cb-card px-4 pb-4 pt-[14px]">
-      <div className="flex items-center">
+      <div className="flex items-center gap-2">
         <span className="cb-micro flex-1">{t("ov.title")}</span>
-        <button className="cb-btn py-1" onClick={() => create("script")}>
-          {t("ov.newScript")}
+        <input
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && newName.trim() && !creating) create("script");
+          }}
+          placeholder={t("ov.namePlaceholder")}
+          className="cb-input cb-selectable w-44"
+        />
+        <button
+          className="cb-btn acc py-1"
+          disabled={creating || !newName.trim()}
+          onClick={() => create("script")}
+        >
+          {creating ? "…" : t("ov.newScript")}
         </button>
-        <button className="cb-btn ml-1.5 py-1" onClick={() => create("merge")}>
+        <button
+          className="cb-btn py-1"
+          disabled={creating || !newName.trim()}
+          onClick={() => create("merge")}
+        >
           {t("ov.newMerge")}
         </button>
       </div>
@@ -174,16 +195,28 @@ export default function OverridePanel({
                       style={{ width: 180 }}
                     />
                   ) : (
-                    <span
-                      className="text-[12.5px] font-medium"
-                      onDoubleClick={() => {
-                        setNameDraft(o.name);
-                        setRenamingId(o.id);
-                      }}
-                      title={t("profiles.rename")}
-                    >
-                      {o.name}
-                    </span>
+                    <>
+                      <span
+                        className="text-[12.5px] font-medium"
+                        onDoubleClick={() => {
+                          setNameDraft(o.name);
+                          setRenamingId(o.id);
+                        }}
+                      >
+                        {o.name}
+                      </span>
+                      <button
+                        onClick={() => {
+                          setNameDraft(o.name);
+                          setRenamingId(o.id);
+                        }}
+                        title={t("profiles.rename")}
+                        className="text-[11px] leading-none hover:opacity-80"
+                        style={{ color: "var(--cb-faint)" }}
+                      >
+                        ✎
+                      </button>
+                    </>
                   )}
                   {o.last_error && (
                     <span

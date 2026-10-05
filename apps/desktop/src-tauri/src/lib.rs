@@ -300,14 +300,16 @@ fn update_profile(app: AppHandle, state: State<AppState>, id: String) -> Result<
 /// 创建覆写（默认 Script 或 Merge）。
 /// 列出全部覆写。
 #[tauri::command]
-fn list_overrides(state: State<AppState>) -> Vec<crossbow_core::OverrideDef> {
-    state.store.lock().unwrap().data().overrides.clone()
+async fn list_overrides(
+    state: State<'_, AppState>,
+) -> Result<Vec<crossbow_core::OverrideDef>, String> {
+    Ok(state.store.lock().unwrap().data().overrides.clone())
 }
 
 #[tauri::command]
-fn create_override(
+async fn create_override(
     app: AppHandle,
-    state: State<AppState>,
+    state: State<'_, AppState>,
     name: String,
     kind: String,
 ) -> Result<crossbow_core::OverrideDef, String> {
