@@ -1170,17 +1170,30 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
-            // 任何退出路径都先停 WS 桥、还原系统代理、收内核。
-            if let tauri::RunEvent::Exit = event {
-                if let Some(state) = app.try_state::<AppState>() {
-                    state.ws.unsubscribe_all();
-                    let handoff = state.handoff.load(std::sync::atomic::Ordering::SeqCst);
-                    if !handoff {
-                        state.sysproxy.disable();
-                        state.core().stop();
+            match event {
+                // 轻量待机：最后一个窗口销毁会触发 ExitRequested，
+                // handoff 时阻止退出（进程保留、托盘常驻、内核照跑）。
+                tauri::RunEvent::ExitRequested {
+                    code: None, api, ..
+                } => {
+                    if let Some(state) = app.try_state::<AppState>() {
+                        if state.handoff.load(std::sync::atomic::Ordering::SeqCst) {
+                            api.prevent_exit();
+                        }
                     }
-                    // handoff：内核与系统代理原样留给系统收养
                 }
+                // 真正退出：还原系统代理、收内核（handoff 之外的所有路径）。
+                tauri::RunEvent::Exit => {
+                    if let Some(state) = app.try_state::<AppState>() {
+                        state.ws.unsubscribe_all();
+                        let handoff = state.handoff.load(std::sync::atomic::Ordering::SeqCst);
+                        if !handoff {
+                            state.sysproxy.disable();
+                            state.core().stop();
+                        }
+                    }
+                }
+                _ => {}
             }
         });
 }
