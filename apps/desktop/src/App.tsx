@@ -64,8 +64,9 @@ export default function App() {
       setToast(t("toast.imported", { url: url.slice(0, 60) })),
     );
     const un2 = ipc.onProfileImportFailed((msg) => setToast(t("toast.importFailed", { msg })));
+    const un3 = ipc.onSafeMode((msg) => setToast(msg));
     return () => {
-      for (const un of [un1, un2]) void un.then((f) => f());
+      for (const un of [un1, un2, un3]) void un.then((f) => f());
     };
   }, [t]);
 

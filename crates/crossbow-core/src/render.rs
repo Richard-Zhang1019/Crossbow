@@ -15,6 +15,15 @@ pub struct Rendered {
 /// 渲染当前激活 Profile。无激活 Profile 或内容为空时返回错误，
 /// 由壳层决定是停用内核还是回落直连。
 pub fn render_config(store: &StoreSchema) -> Result<Rendered, RenderError> {
+    render_config_with(store, true)
+}
+
+/// `use_overrides=false` 为安全模式：跳过覆写链（坏覆写导致内核启动
+/// 失败时的自动降级路径）。
+pub fn render_config_with(
+    store: &StoreSchema,
+    use_overrides: bool,
+) -> Result<Rendered, RenderError> {
     let profile_id = store
         .active_profile
         .as_deref()
@@ -25,11 +34,15 @@ pub fn render_config(store: &StoreSchema) -> Result<Rendered, RenderError> {
         .find(|p| p.id == profile_id)
         .ok_or_else(|| RenderError::MissingProfile(profile_id.to_string()))?;
 
-    let active: Vec<&crate::OverrideDef> = store
-        .overrides
-        .iter()
-        .filter(|o| o.enabled && profile.override_ids.contains(&o.id))
-        .collect();
+    let active: Vec<&crate::OverrideDef> = if use_overrides {
+        store
+            .overrides
+            .iter()
+            .filter(|o| o.enabled && profile.override_ids.contains(&o.id))
+            .collect()
+    } else {
+        Vec::new()
+    };
 
     let mut config = profile.content.clone();
     for o in active {
@@ -48,6 +61,12 @@ pub fn render_config(store: &StoreSchema) -> Result<Rendered, RenderError> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum RenderError {
+    #[error("覆写「{name}」执行失败：{detail}")]
+    OverrideFailed {
+        id: String,
+        name: String,
+        detail: String,
+    },
     #[error("no active profile")]
     NoActiveProfile,
     #[error("active profile {0} missing")]
@@ -81,6 +100,7 @@ mod tests {
             kind: OverrideKind::Merge,
             enabled: true,
             content: "mixed-port: 7897\n".into(),
+            last_error: None,
         });
         s.active_profile = Some("p1".into());
         s

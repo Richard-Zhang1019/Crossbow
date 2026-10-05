@@ -33,6 +33,8 @@ use ws_bridge::WsHub;
 pub struct AppState {
     /// 轻量交接退出：RunEvent::Exit 时跳过清理（内核留给系统收养）。
     handoff: std::sync::atomic::AtomicBool,
+    /// 安全模式：坏覆写导致内核启动失败后，跳过覆写链启动一次。
+    safe_mode: std::sync::atomic::AtomicBool,
     pub store: Mutex<Store>,
     /// 当前内核管理器；内核安装后整体替换（core_slot）。
     core_slot: Mutex<CoreManager>,
@@ -54,10 +56,35 @@ impl AppState {
 
 // ---------- 内核与配置的公共操作（命令与托盘共用） ----------
 
+/// 渲染当前配置（记录覆写错误到 store，供 UI 展示）。
+fn render_current(
+    state: &AppState,
+    use_overrides: bool,
+) -> Result<crossbow_core::Rendered, String> {
+    let mut store = state.store.lock().unwrap();
+    match crossbow_core::render_config_with(store.data(), use_overrides) {
+        Ok(r) => {
+            store.data_mut().clear_override_errors();
+            let _ = store.save();
+            Ok(r)
+        }
+        Err(crossbow_core::RenderError::OverrideFailed { id, detail, .. }) => {
+            store
+                .data_mut()
+                .set_override_error(&id, Some(detail.clone()));
+            let _ = store.save();
+            Err(format!("覆写执行失败：{detail}"))
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 /// 渲染当前档案并启动内核；已在运行时报错（用 `restart_core`）。
+/// 安全模式（safe_mode）下跳过覆写链。
 fn start_core(state: &AppState) -> Result<(), String> {
+    let safe = state.safe_mode.load(std::sync::atomic::Ordering::SeqCst);
+    let rendered = render_current(state, !safe)?;
     let store = state.store.lock().unwrap();
-    let rendered = crossbow_core::render_config(store.data()).map_err(|e| e.to_string())?;
     let rt = RuntimeConfig {
         mixed_port: store.data().engine.mixed_port,
         allow_lan: store.data().engine.allow_lan,
@@ -293,6 +320,7 @@ fn create_override(
         id: gen_id(),
         name,
         kind,
+        last_error: None,
         enabled: true,
         content: if kind == crossbow_core::OverrideKind::Script {
             "function main(config) {
@@ -317,6 +345,13 @@ fn create_override(
 }
 
 /// 更新覆写内容/名称。
+/// 校验当前覆写链（渲染一遍，错误记录到对应覆写）。
+#[tauri::command]
+fn validate_overrides(state: State<AppState>) -> Result<(), String> {
+    let safe = state.safe_mode.load(std::sync::atomic::Ordering::SeqCst);
+    render_current(&state, !safe).map(|_| ())
+}
+
 #[tauri::command]
 fn update_override(
     state: State<AppState>,
@@ -1191,13 +1226,49 @@ pub fn run() {
                 let _ = handle.emit("core://status", status.clone());
                 // 状态一致性守护：内核崩溃时若系统代理还开着，立即还原，
                 // 避免系统流量指向已死的代理端口导致用户断网。
-                if matches!(status, CoreStatus::Crashed(_)) {
-                    if let Some(state) = handle.try_state::<AppState>() {
-                        if state.sysproxy.status().enabled {
-                            state.sysproxy.disable();
-                            let _ = handle.emit("sysproxy://status", state.sysproxy.status());
-                            refresh_tray(&handle);
+                if let CoreStatus::Crashed(msg) = status {
+                    let Some(state) = handle.try_state::<AppState>() else { return };
+                    // 状态一致性守护：内核崩溃时还原系统代理，避免断网。
+                    if state.sysproxy.status().enabled {
+                        state.sysproxy.disable();
+                        let _ = handle.emit("sysproxy://status", state.sysproxy.status());
+                        refresh_tray(&handle);
+                    }
+                    // 安全模式：覆写引发的配置解析错误 → 禁用全部覆写并重启一次。
+                    let config_err = msg.contains("Parse config error");
+                    let already = state
+                        .safe_mode
+                        .load(std::sync::atomic::Ordering::SeqCst);
+                    if config_err && !already {
+                        state
+                            .safe_mode
+                            .store(true, std::sync::atomic::Ordering::SeqCst);
+                        {
+                            let mut store = state.store.lock().unwrap();
+                            for o in store.data_mut().overrides.iter_mut() {
+                                o.enabled = false;
+                            }
+                            let _ = store.save();
                         }
+                        let port = state.store.lock().unwrap().data().engine.mixed_port;
+                        let _ = start_core(&state);
+                        // 等内核起来后恢复系统代理（最多 20s）
+                        for _ in 0..100 {
+                            if state.core().status() == CoreStatus::Running {
+                                let _ = state.sysproxy.enable(port);
+                                let _ = handle.emit(
+                                    "sysproxy://status",
+                                    state.sysproxy.status(),
+                                );
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(200));
+                        }
+                        let _ = handle.emit(
+                            "core://safe-mode",
+                            "覆写导致内核启动失败，已临时禁用全部覆写（安全模式）。修复覆写后保存即恢复正常。",
+                        );
+                        refresh_tray(&handle);
                     }
                 }
             }));
@@ -1224,6 +1295,7 @@ pub fn run() {
             let handle = app.handle().clone();
             app.manage(AppState {
                 handoff: std::sync::atomic::AtomicBool::new(false),
+                safe_mode: std::sync::atomic::AtomicBool::new(false),
                 store: Mutex::new(store),
                 core_slot: Mutex::new(core),
                 sysproxy,
@@ -1294,6 +1366,7 @@ pub fn run() {
             update_override,
             remove_override,
             toggle_override_binding,
+            validate_overrides,
             set_override_enabled,
             list_overrides,
             set_active_profile,

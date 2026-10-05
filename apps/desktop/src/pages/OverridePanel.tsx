@@ -21,6 +21,8 @@ export default function OverridePanel({
   const [overrides, setOverrides] = useState<OverrideDef[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [nameDraft, setNameDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const active = profiles.find((p) => p.id === activeId);
 
@@ -51,8 +53,20 @@ export default function OverridePanel({
     try {
       await ipc.updateOverride(id, draft);
       setEditingId(null);
+      await ipc.validateOverrides().catch(() => {});
       await refresh();
       onChanged();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const commitRename = async (id: string, name: string) => {
+    setRenamingId(null);
+    if (!name.trim()) return;
+    try {
+      await ipc.updateOverride(id, undefined, name.trim());
+      await refresh();
     } catch (e) {
       setError(String(e));
     }
@@ -137,7 +151,41 @@ export default function OverridePanel({
                     }
                     title={t("ov.enabled")}
                   />
-                  <span className="text-[12.5px] font-medium">{o.name}</span>
+                  {renamingId === o.id ? (
+                    <input
+                      autoFocus
+                      value={nameDraft}
+                      onChange={(e) => setNameDraft(e.target.value)}
+                      onBlur={() => commitRename(o.id, nameDraft)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter")
+                          commitRename(o.id, nameDraft);
+                        if (e.key === "Escape") setRenamingId(null);
+                      }}
+                      className="cb-input py-0.5 text-[12.5px]"
+                      style={{ width: 180 }}
+                    />
+                  ) : (
+                    <span
+                      className="text-[12.5px] font-medium"
+                      onDoubleClick={() => {
+                        setNameDraft(o.name);
+                        setRenamingId(o.id);
+                      }}
+                      title={t("profiles.rename")}
+                    >
+                      {o.name}
+                    </span>
+                  )}
+                  {o.last_error && (
+                    <span
+                      className="cursor-help text-[12px]"
+                      style={{ color: "var(--cb-warn)" }}
+                      title={o.last_error}
+                    >
+                      ⚠
+                    </span>
+                  )}
                   <span className="cb-badge gray">
                     {o.kind === "script" ? t("ov.kindScript") : t("ov.kindMerge")}
                   </span>

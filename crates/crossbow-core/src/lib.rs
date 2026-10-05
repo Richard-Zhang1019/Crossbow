@@ -18,7 +18,7 @@ pub use model::{
     Engine, EngineConfig, OverrideDef, OverrideKind, Profile, ProfileKind, StoreSchema,
     TrafficInfo, UiSettings, UpdateOutcome,
 };
-pub use render::render_config;
+pub use render::{render_config, render_config_with, RenderError, Rendered};
 pub use runtime::{apply_runtime, RuntimeConfig};
 pub use store::Store;
 

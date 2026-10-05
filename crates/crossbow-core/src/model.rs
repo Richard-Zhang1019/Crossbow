@@ -82,8 +82,11 @@ pub struct OverrideDef {
     pub name: String,
     pub kind: OverrideKind,
     pub enabled: bool,
-    /// merge 补丁内容（YAML）。
+    /// merge 补丁内容（YAML）；script 覆写为 JS 源码。
     pub content: String,
+    /// 最近一次执行失败的报错（渲染链记录）；旧数据缺省 None。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -244,6 +247,22 @@ impl StoreSchema {
             self.active_profile = self.profiles.first().map(|p| p.id.clone());
         }
         Ok(())
+    }
+
+    /// 记录覆写执行错误；不存在的 id 忽略。
+    pub fn set_override_error(&mut self, id: &str, error: Option<String>) {
+        for o in self.overrides.iter_mut() {
+            if o.id == id {
+                o.last_error = error.clone();
+            }
+        }
+    }
+
+    /// 清除全部覆写错误（渲染链成功后调用）。
+    pub fn clear_override_errors(&mut self) {
+        for o in self.overrides.iter_mut() {
+            o.last_error = None;
+        }
     }
 
     /// 记录档案更新结果；不存在的 id 报错。

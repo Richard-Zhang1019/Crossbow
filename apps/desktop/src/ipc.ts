@@ -10,6 +10,7 @@ export interface OverrideDef {
   kind: OverrideKind;
   enabled: boolean;
   content: string;
+  last_error?: string | null;
 }
 
 export interface UpdateOutcome {
@@ -190,9 +191,12 @@ export const ipc = {
     invoke<void>("toggle_override_binding", { profileId, overrideId, enabled }),
   setOverrideEnabled: (id: string, enabled: boolean) =>
     invoke<void>("set_override_enabled", { id, enabled }),
+  validateOverrides: () => invoke<void>("validate_overrides"),
   setFlagEmoji: (enabled: boolean) => invoke<void>("set_flag_emoji", { enabled }),
   onProfileUpdated: (cb: (id: string) => void) =>
     listen<string>("profile://updated", (e) => cb(e.payload)),
+  onSafeMode: (cb: (msg: string) => void) =>
+    listen<string>("core://safe-mode", (e) => cb(e.payload)),
   setActiveProfile: (id: string) => invoke<void>("set_active_profile", { id }),
   removeProfile: (id: string) => invoke<void>("remove_profile", { id }),
   coreStart: () => invoke<void>("core_start"),
