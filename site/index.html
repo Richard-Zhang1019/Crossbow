@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crossbow — 为 Apple 生态打造的开源代理客户端</title>
+<meta name="description" content="Crossbow 是一款开源代理客户端：mihomo 内核、订阅自动更新、网络诊断向导、JS 覆写、轻量模式。macOS · Apple Silicon。">
+<style>
+:root {
+  --bg: #0a0c10;
+  --surface: #101319;
+  --surface-2: #151a22;
+  --line: rgba(255,255,255,.065);
+  --line-strong: rgba(255,255,255,.12);
+  --text: #e8eaf0;
+  --dim: #9aa3b2;
+  --faint: #5d6675;
+  --accent: #7aa2ff;
+  --accent-soft: rgba(122,162,255,.12);
+  --accent-line: rgba(122,162,255,.35);
+  --ok: #4ade80;
+  --mono: "SF Mono", ui-monospace, Menlo, monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  background:
+    radial-gradient(1100px 500px at 70% -10%, rgba(122,162,255,.07), transparent 60%),
+    var(--bg);
+  color: var(--text);
+  font: 15px/1.7 -apple-system, "PingFang SC", "Inter", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; text-decoration: none; }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.micro { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); font-weight: 500; }
+
+/* ---------- nav ---------- */
+nav {
+  position: sticky; top: 0; z-index: 50;
+  backdrop-filter: blur(12px);
+  background: rgba(10,12,16,.75);
+  border-bottom: 1px solid var(--line);
+}
+.nav-in { max-width: 1080px; margin: 0 auto; padding: 0 24px; height: 60px; display: flex; align-items: center; gap: 26px; }
+.logo { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 15px; letter-spacing: -.01em; }
+.mark {
+  width: 24px; height: 24px; border-radius: 6.5px;
+  background: linear-gradient(135deg, #7aa2ff, #9d8cff);
+  display: grid; place-items: center;
+}
+.nav-links { display: flex; gap: 22px; margin-left: auto; align-items: center; }
+.nav-links a { color: var(--dim); font-size: 13px; transition: color .15s; }
+.nav-links a:hover { color: var(--text); }
+.nav-links a.gh { display: inline-flex; align-items: center; gap: 6px; }
+.nav-links svg { width: 15px; height: 15px; fill: var(--dim); }
+.nav-links a:hover svg { fill: var(--text); }
+
+/* ---------- hero ---------- */
+.hero { padding: 96px 0 56px; text-align: center; }
+.badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  font: 12px var(--mono); color: var(--dim);
+  border: 1px solid var(--line-strong); border-radius: 99px;
+  padding: 5px 14px; margin-bottom: 26px;
+}
+.badge .v { color: var(--accent); }
+.hero h1 {
+  font-size: 46px; line-height: 1.18; font-weight: 700; letter-spacing: -.025em;
+  max-width: 720px; margin: 0 auto 20px;
+}
+.hero h1 .grad {
+  background: linear-gradient(120deg, #7aa2ff 10%, #b79bff 60%, #8bb8ff);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.hero .sub { color: var(--dim); font-size: 17px; max-width: 560px; margin: 0 auto 34px; }
+.hero .sub .mono { font-size: 15px; }
+.cta { display: flex; gap: 12px; justify-content: center; align-items: center; flex-wrap: wrap; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  border-radius: 10px; padding: 12px 24px; font-size: 14.5px; font-weight: 600;
+  transition: transform .12s, box-shadow .12s, background .15s;
+}
+.btn:hover { transform: translateY(-1px); }
+.btn-primary {
+  background: linear-gradient(180deg, #85adff, #6d97ff); color: #06111f;
+  box-shadow: 0 4px 20px rgba(122,162,255,.3), inset 0 1px 0 rgba(255,255,255,.35);
+}
+.btn-ghost { background: var(--surface-2); color: var(--text); border: 1px solid var(--line-strong); }
+.meta-note { margin-top: 14px; font: 11.5px var(--mono); color: var(--faint); }
+
+/* hero shot */
+.shot {
+  max-width: 980px; margin: 56px auto 0; border-radius: 14px;
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 30px 80px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.03);
+  overflow: hidden;
+}
+.shot img { display: block; width: 100%; height: auto; }
+.shot-glow {
+  max-width: 980px; margin: -30px auto 0; height: 80px;
+  background: radial-gradient(50% 100% at 50% 0%, rgba(122,162,255,.14), transparent 70%);
+  filter: blur(10px);
+}
+
+/* ---------- sections ---------- */
+section { padding: 84px 0; }
+.sec-head { text-align: center; margin-bottom: 48px; }
+.sec-head .micro { display: block; margin-bottom: 12px; }
+.sec-head h2 { font-size: 30px; font-weight: 700; letter-spacing: -.02em; }
+.sec-head p { color: var(--dim); margin-top: 12px; font-size: 15px; }
+
+.features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.feat {
+  background: linear-gradient(180deg, rgba(255,255,255,.018), transparent 40%), var(--surface);
+  border: 1px solid var(--line); border-radius: 14px; padding: 24px 22px;
+  transition: border-color .15s, transform .15s;
+}
+.feat:hover { border-color: var(--line-strong); transform: translateY(-2px); }
+.feat .fi {
+  width: 38px; height: 38px; border-radius: 10px; margin-bottom: 16px;
+  display: grid; place-items: center;
+  background: var(--accent-soft);
+}
+.feat .fi svg { width: 18px; height: 18px; stroke: var(--accent); stroke-width: 1.7; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.feat h3 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+.feat p { color: var(--dim); font-size: 13.5px; }
+
+/* ---------- steps ---------- */
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; counter-reset: step; }
+.step {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+  padding: 26px 22px; position: relative;
+}
+.step::before {
+  counter-increment: step; content: counter(step, decimal-leading-zero);
+  font: 600 13px var(--mono); color: var(--accent);
+  display: block; margin-bottom: 14px;
+}
+.step h3 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+.step p { color: var(--dim); font-size: 13.5px; }
+.step code { font: 12px var(--mono); background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; color: var(--text); }
+
+/* ---------- download ---------- */
+.dl-card {
+  max-width: 720px; margin: 0 auto;
+  background: linear-gradient(180deg, rgba(255,255,255,.02), transparent 50%), var(--surface);
+  border: 1px solid var(--line-strong); border-radius: 16px; padding: 36px;
+  text-align: center;
+}
+.dl-card .ver { font: 600 13px var(--mono); color: var(--accent); }
+.dl-card h3 { font-size: 22px; font-weight: 700; margin: 10px 0 6px; }
+.dl-card .req { color: var(--dim); font-size: 13px; }
+.dl-btns { display: flex; gap: 12px; justify-content: center; margin: 26px 0 18px; flex-wrap: wrap; }
+.sha {
+  font: 11px var(--mono); color: var(--faint); word-break: break-all;
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px 12px; display: inline-block; cursor: pointer;
+}
+.sha:hover { color: var(--dim); border-color: var(--line-strong); }
+.dl-links { margin-top: 16px; font-size: 12.5px; }
+.dl-links a { color: var(--accent); margin: 0 8px; }
+.dl-links a:hover { text-decoration: underline; }
+
+/* ---------- faq ---------- */
+.faq { max-width: 720px; margin: 0 auto; }
+.faq details {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  padding: 0 20px; margin-bottom: 10px;
+}
+.faq details[open] { border-color: var(--line-strong); }
+.faq summary {
+  cursor: pointer; list-style: none; padding: 16px 0;
+  font-size: 14.5px; font-weight: 550; display: flex; justify-content: space-between; align-items: center;
+}
+.faq summary::after { content: "+"; color: var(--faint); font-size: 16px; }
+.faq details[open] summary::after { content: "−"; }
+.faq .a { color: var(--dim); font-size: 13.5px; padding-bottom: 18px; }
+.faq .a code { font: 12px var(--mono); background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; color: var(--text); user-select: all; }
+
+/* ---------- footer ---------- */
+footer { border-top: 1px solid var(--line); padding: 40px 0 48px; margin-top: 40px; }
+.foot-in { display: flex; align-items: flex-start; gap: 24px; flex-wrap: wrap; }
+.foot-in .l { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 13.5px; }
+.foot-cols { display: flex; gap: 48px; margin-left: auto; }
+.foot-cols a { display: block; color: var(--dim); font-size: 13px; margin-bottom: 8px; }
+.foot-cols a:hover { color: var(--text); }
+.foot-cols .micro { display: block; margin-bottom: 10px; }
+.disclaimer {
+  margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--line);
+  color: var(--faint); font-size: 11.5px; line-height: 1.7;
+}
+
+@media (max-width: 900px) {
+  .hero h1 { font-size: 34px; }
+  .features, .steps { grid-template-columns: 1fr; }
+  .nav-links a:not(.gh) { display: none; }
+  .foot-cols { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-in">
+    <a class="logo" href="#top">
+      <span class="mark"><svg width="12" height="12" viewBox="0 0 24 24" stroke="#0a0c10" stroke-width="2.6" fill="none"><path d="M5 19 L19 5 M5 5 L12 12"/></svg></span>
+      Crossbow
+    </a>
+    <div class="nav-links">
+      <a href="#features">特性</a>
+      <a href="#start">快速上手</a>
+      <a href="#download">下载</a>
+      <a href="#faq">FAQ</a>
+      <a class="gh" href="https://github.com/Richard-Zhang1019/Crossbow" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero wrap" id="top">
+  <div class="badge"><span class="v">v0.3.0</span><span>开源 · GPL-3.0</span><span>macOS · Apple Silicon</span></div>
+  <h1>轻量、克制、可靠的<br><span class="grad">开源代理客户端</span></h1>
+  <p class="sub">
+    Crossbow 以 <span class="mono">mihomo</span> 为内核，为 macOS 而生：
+    订阅自动更新、网络诊断向导、JS 覆写、轻量模式——
+    把「为什么上不了网」变成一键自检。
+  </p>
+  <div class="cta">
+    <a class="btn btn-primary" href="https://github.com/Richard-Zhang1019/Crossbow/releases/latest" target="_blank" rel="noopener">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v12M6 9l6 6 6-6M4 21h16"/></svg>
+      下载 v0.3.0
+    </a>
+    <a class="btn btn-ghost" href="https://github.com/Richard-Zhang1019/Crossbow" target="_blank" rel="noopener">查看源码</a>
+  </div>
+  <div class="meta-note">免费开源 · 安装包 31 MB · 无追踪 · macOS 11+ Apple Silicon</div>
+
+  <div class="shot"><img src="assets/hero-app.png" alt="Crossbow 主界面：仪表盘、实时速率曲线与配置档案"></div>
+  <div class="shot-glow"></div>
+</header>
+
+<section id="features" class="wrap">
+  <div class="sec-head">
+    <span class="micro">Features</span>
+    <h2>把复杂留给内核，把简单交给你</h2>
+    <p>每个特性都来自真实的日常使用反馈</p>
+  </div>
+  <div class="features">
+    <div class="feat">
+      <div class="fi"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M4 10h16M9 5v14"/></svg></div>
+      <h3>订阅管理</h3>
+      <p>URL / 粘贴 / 文件 / 拖拽 / 深链接导入，流量与到期一目了然；自动更新失败保留旧配置并指数退避重试。</p>
+    </div>
+    <div class="feat">
+      <div class="fi"><svg viewBox="0 0 24 24"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/></svg></div>
+      <h3>系统代理守护</h3>
+      <p>开启前快照原设置，退出/崩溃精确还原；内核异常自动降级恢复——告别「退出后断网」。</p>
+    </div>
+    <div class="feat">
+      <div class="fi"><svg viewBox="0 0 24 24"><path d="M3 12h4l2-6 4 12 2-6h6"/></svg></div>
+      <h3>网络诊断向导</h3>
+      <p>七项按依赖顺序自检：内核、控制器、配置、端口、系统代理指向、代理连通、DNS——失败项一键修复。</p>
+    </div>
+    <div class="feat">
+      <div class="fi"><svg viewBox="0 0 24 24"><path d="M8 9l-4 3 4 3M16 9l4 3-4 3M13 5l-2 14"/></svg></div>
+      <h3>JS 覆写</h3>
+      <p>用 <span class="mono">function main(config)</span> 改造订阅：过滤节点、改写规则。保存即校验，错误当场归因；沙箱执行无副作用。</p>
+    </div>
+    <div class="feat">
+      <div class="fi"><svg viewBox="0 0 24 24"><path d="M13 2L5 13h6l-2 9 8-13h-6z"/></svg></div>
+      <h3>轻量模式</h3>
+      <p>关闭窗口 = 内核与代理保留、界面内存归零。重新打开自动接管，状态无缝恢复；托盘一键切换。</p>
+    </div>
+    <div class="feat">
+      <div class="fi"><svg viewBox="0 0 24 24"><path d="M3 12h4l2-6 4 12 2-6h6" opacity="0"/><path d="M2 12h4l2-5 3 10 3-7 2 2h6"/><circle cx="19" cy="5" r="1.6"/></svg></div>
+      <h3>实时观测</h3>
+      <p>速率曲线、按进程聚合的流量排行、单连接断开、分级日志——运行状态尽收眼底。</p>
+    </div>
+  </div>
+</section>
+
+<section id="start" class="wrap">
+  <div class="sec-head">
+    <span class="micro">Get Started</span>
+    <h2>三步上手</h2>
+  </div>
+  <div class="steps">
+    <div class="step">
+      <h3>下载并安装</h3>
+      <p>下载 dmg 拖入「应用程序」。首次打开右键 → 打开，或执行 <code>xattr -dr com.apple.quarantine /Applications/Crossbow.app</code>。</p>
+    </div>
+    <div class="step">
+      <h3>导入订阅</h3>
+      <p>粘贴订阅链接回车，或直接把 <code>.yaml</code> 配置文件拖进窗口。设置自动更新间隔，流量与到期自动追踪。</p>
+    </div>
+    <div class="step">
+      <h3>一键开启</h3>
+      <p>首页点亮开关：内核自动拉起、系统代理即时生效。选个节点，或让诊断向导帮你确认链路。</p>
+    </div>
+  </div>
+</section>
+
+<section id="download" class="wrap">
+  <div class="sec-head">
+    <span class="micro">Download</span>
+    <h2>下载 Crossbow</h2>
+    <p>应用内也可一键检查更新（minisign 签名校验）</p>
+  </div>
+  <div class="dl-card">
+    <div class="ver">v0.3.0 · 2026-10-05</div>
+    <h3>Crossbow for macOS</h3>
+    <div class="req">Apple Silicon (M 系列) · macOS 11+ · 安装包 31 MB</div>
+    <div class="dl-btns">
+      <a class="btn btn-primary" href="https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.3.0/Crossbow_0.3.0_aarch64.dmg" target="_blank" rel="noopener">下载 dmg</a>
+      <a class="btn btn-ghost" href="https://github.com/Richard-Zhang1019/Crossbow/releases" target="_blank" rel="noopener">全部版本</a>
+    </div>
+    <div class="sha" id="sha" title="点击复制">SHA256 · 点击复制：<span id="sha-text">83cd07d40a115d3f2bae1c328b9a555deadd650503498702a58e170ec45a6102</span></div>
+    <div class="dl-links">
+      <a href="https://github.com/Richard-Zhang1019/Crossbow/releases" target="_blank" rel="noopener">历史版本</a> ·
+      <a href="https://github.com/Richard-Zhang1019/Crossbow/releases/latest/download/latest.json" target="_blank" rel="noopener">更新清单</a>
+    </div>
+  </div>
+</section>
+
+<section id="faq" class="wrap">
+  <div class="sec-head">
+    <span class="micro">FAQ</span>
+    <h2>常见问题</h2>
+  </div>
+  <div class="faq">
+    <details open>
+      <summary>打开提示「无法验证」或「已损坏」？</summary>
+      <div class="a">应用未做 Developer ID 公证。首次打开右键 → <b>打开</b>；或终端执行 <code>xattr -dr com.apple.quarantine /Applications/Crossbow.app</code> 后正常打开。</div>
+    </details>
+    <details>
+      <summary>支持哪些协议？</summary>
+      <div class="a">内核为 mihomo，支持 Shadowsocks / VMess / VLESS / Trojan / Hysteria2 / TUIC / WireGuard 等全部 mihomo 所支持的协议，兼容 Clash 订阅与配置格式。</div>
+    </details>
+    <details>
+      <summary>支持 TUN 模式吗？</summary>
+      <div class="a">暂缓评估中。当前通过系统代理覆盖浏览器与大部分应用；当你遇到「某应用流量不走代理」的真实需求时我们会重启 TUN 开发。</div>
+    </details>
+    <details>
+      <summary>有 Windows / iOS 版本吗？</summary>
+      <div class="a">在路线图中：Windows 为 M1.5，iOS 为 M2（复用同一套核心逻辑）。目前 macOS 版本已可日常使用。</div>
+    </details>
+    <details>
+      <summary>升级会丢配置吗？</summary>
+      <div class="a">不会。配置存储于 <code>~/Library/Application Support/com.crossbow.app/</code>，每次保存前自动快照（保留 5 份），升级自动继承；坏覆写会触发安全模式兜底。</div>
+    </details>
+    <details>
+      <summary>如何参与或反馈？</summary>
+      <div class="a">项目开源于 <a href="https://github.com/Richard-Zhang1019/Crossbow" target="_blank" rel="noopener" style="color:var(--accent)">GitHub</a>，Issue 与 PR 欢迎提交。日常使用中的每一条不便都是最高优先级的输入。</div>
+    </details>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-in">
+      <div class="l">
+        <span class="mark" style="width:20px;height:20px;border-radius:6px;background:linear-gradient(135deg,#7aa2ff,#9d8cff);display:grid;place-items:center;">
+          <svg width="10" height="10" viewBox="0 0 24 24" stroke="#0a0c10" stroke-width="2.6" fill="none"><path d="M5 19 L19 5 M5 5 L12 12"/></svg>
+        </span>
+        Crossbow
+      </div>
+      <div class="foot-cols">
+        <div>
+          <span class="micro">项目</span>
+          <a href="https://github.com/Richard-Zhang1019/Crossbow" target="_blank" rel="noopener">GitHub 仓库</a>
+          <a href="https://github.com/Richard-Zhang1019/Crossbow/releases" target="_blank" rel="noopener">Releases</a>
+          <a href="https://github.com/Richard-Zhang1019/Crossbow/issues" target="_blank" rel="noopener">反馈 Issue</a>
+        </div>
+        <div>
+          <span class="micro">资源</span>
+          <a href="#features">特性</a>
+          <a href="#download">下载</a>
+          <a href="#faq">FAQ</a>
+        </div>
+        <div>
+          <span class="micro">协议</span>
+          <a href="https://github.com/Richard-Zhang1019/Crossbow/blob/master/LICENSE" target="_blank" rel="noopener">GPL-3.0 License</a>
+        </div>
+      </div>
+    </div>
+    <div class="disclaimer">
+      Crossbow 基于 GPL-3.0 协议开源，仅供学习与研究使用，请遵守您所在地区的法律法规，勿用于任何非法用途。
+      本项目与 mihomo 项目相互独立；mihomo 版权归其原作者所有。<br>
+      © 2026 Crossbow Contributors
+    </div>
+  </div>
+</footer>
+
+<script>
+document.getElementById("sha")?.addEventListener("click", function () {
+  const t = document.getElementById("sha-text").textContent.trim();
+  navigator.clipboard?.writeText(t);
+});
+</script>
+</body>
+</html>
