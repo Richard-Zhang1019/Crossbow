@@ -350,8 +350,23 @@ async fn create_override(
 /// 校验当前覆写链（渲染一遍，错误记录到对应覆写）。
 #[tauri::command]
 async fn validate_overrides(state: State<'_, AppState>) -> Result<(), String> {
-    let safe = state.safe_mode.load(std::sync::atomic::Ordering::SeqCst);
-    render_current(&state, !safe).map(|_| ())
+    let mut store = state.store.lock().unwrap();
+    let failures = crossbow_core::validate_enabled_overrides(store.data());
+    for (id, err) in &failures {
+        store.data_mut().set_override_error(id, Some(err.clone()));
+    }
+    // 清除本次校验通过的启用覆写的错误；停用的保留原状
+    for o in store.data_mut().overrides.iter_mut() {
+        if o.enabled && !failures.iter().any(|(id, _)| id == &o.id) {
+            o.last_error = None;
+        }
+    }
+    store.save().map_err(|e| e.to_string())?;
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("{} 个覆写校验失败", failures.len()))
+    }
 }
 
 /// 校验通过后应用覆写：复位安全模式，运行中则热重启。

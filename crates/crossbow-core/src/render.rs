@@ -65,6 +65,26 @@ pub fn render_config_with(
     })
 }
 
+/// 校验全部启用的覆写：按列表顺序对当前档案内容逐个执行，
+/// 返回失败的 (id, 错误)。不要求绑定——编辑即反馈。
+pub fn validate_enabled_overrides(store: &StoreSchema) -> Vec<(String, String)> {
+    let base = store
+        .active_profile
+        .as_deref()
+        .and_then(|pid| store.profiles.iter().find(|p| p.id == pid))
+        .map(|p| p.content.clone())
+        .unwrap_or_else(|| "{}".into());
+    let mut config = base;
+    let mut failures = Vec::new();
+    for o in store.overrides.iter().filter(|o| o.enabled) {
+        match crate::override_patch::run_override_kind(o.kind, &o.content, &config) {
+            Ok(next) => config = next,
+            Err(e) => failures.push((o.id.clone(), e.to_string())),
+        }
+    }
+    failures
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum RenderError {
     #[error("覆写「{name}」执行失败：{detail}")]
@@ -85,6 +105,36 @@ pub enum RenderError {
 mod tests {
     use super::*;
     use crate::model::{OverrideDef, OverrideKind, Profile, ProfileKind};
+
+    #[test]
+    fn validate_flags_all_enabled_failures() {
+        let mut s = fixture();
+        s.overrides.push(OverrideDef {
+            id: "bad".into(),
+            name: "bad".into(),
+            kind: OverrideKind::Script,
+            enabled: true,
+            content: "function main(c) { return c.nope.total; }".into(),
+            last_error: None,
+        });
+        let fails = validate_enabled_overrides(&s);
+        assert_eq!(fails.len(), 1);
+        assert_eq!(fails[0].0, "bad");
+    }
+
+    #[test]
+    fn validate_skips_disabled() {
+        let mut s = fixture();
+        s.overrides.push(OverrideDef {
+            id: "bad-off".into(),
+            name: "bad-off".into(),
+            kind: OverrideKind::Script,
+            enabled: false,
+            content: "function main(c) { return c.nope.total; }".into(),
+            last_error: None,
+        });
+        assert!(validate_enabled_overrides(&s).is_empty());
+    }
 
     fn fixture() -> StoreSchema {
         let mut s = StoreSchema::default();
