@@ -325,6 +325,7 @@ fn update_override(
     name: Option<String>,
 ) -> Result<(), String> {
     let mut store = state.store.lock().unwrap();
+    let mut content_changed = false;
     let o = store
         .data_mut()
         .overrides
@@ -333,23 +334,45 @@ fn update_override(
         .ok_or("override not found")?;
     if let Some(c) = content {
         o.content = c;
+        content_changed = true;
     }
     if let Some(n) = name {
         o.name = n;
     }
+    let oid = id.clone();
     store.save().map_err(|e| e.to_string())?;
+    drop(store);
+    if content_changed {
+        let store = state.store.lock().unwrap();
+        let binds_active = store
+            .data()
+            .active_profile
+            .as_deref()
+            .and_then(|pid| store.data().profile(pid))
+            .map(|p| p.override_ids.contains(&oid))
+            .unwrap_or(false);
+        drop(store);
+        if binds_active && state.core().status() == CoreStatus::Running {
+            restart_core(&state)?;
+        }
+    }
     Ok(())
 }
 
 /// 删除覆写（并从所有 Profile 摘除引用）。
 #[tauri::command]
-fn remove_override(state: State<AppState>, id: String) -> Result<(), String> {
+fn remove_override(app: AppHandle, state: State<AppState>, id: String) -> Result<(), String> {
     let mut store = state.store.lock().unwrap();
     store.data_mut().overrides.retain(|o| o.id != id);
     for p in store.data_mut().profiles.iter_mut() {
         p.override_ids.retain(|oid| oid != &id);
     }
     store.save().map_err(|e| e.to_string())?;
+    drop(store);
+    if state.core().status() == CoreStatus::Running {
+        restart_core(&state)?;
+    }
+    refresh_tray(&app);
     Ok(())
 }
 
@@ -376,6 +399,9 @@ fn toggle_override_binding(
         p.override_ids.retain(|oid| oid != &override_id);
     }
     store.save().map_err(|e| e.to_string())?;
+    if state.core().status() == CoreStatus::Running {
+        restart_core(&state)?;
+    }
     Ok(())
 }
 
@@ -391,6 +417,9 @@ fn set_override_enabled(state: State<AppState>, id: String, enabled: bool) -> Re
         .ok_or("override not found")?;
     o.enabled = enabled;
     store.save().map_err(|e| e.to_string())?;
+    if state.core().status() == CoreStatus::Running {
+        restart_core(&state)?;
+    }
     Ok(())
 }
 
