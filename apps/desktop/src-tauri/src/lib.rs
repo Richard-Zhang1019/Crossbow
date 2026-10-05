@@ -1059,9 +1059,9 @@ fn show_main_window(app: &AppHandle) {
             .inner_size(1120.0, 720.0)
             .min_inner_size(880.0, 560.0)
             .center()
-            // 与 tauri.conf.json 的窗口 backgroundColor 对齐：
-            // 深色底，避免滚动合成时窗口默认底色在顶部外露成灰白边
-            .background_color("#0a0c10".parse().expect("valid window color"))
+            // 与 tauri.conf.json 一致：Overlay 去掉原生标题栏，内容延伸到窗口顶，
+            // 避免标题栏材质在深色 UI 下出现灰白边/白条（NSWindow.setBackgroundColor 会毁标题栏外观，勿用）
+            .title_bar_style(tauri::TitleBarStyle::Overlay)
             .build();
             // 内核仍是本进程的子进程（adopted/own），继续归我们管
             if let Some(state) = app.try_state::<AppState>() {

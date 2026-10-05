@@ -71,8 +71,10 @@ export default function App() {
 
   return (
     <div className="flex h-full">
+      {/* Overlay 标题栏：顶部 24px 拖拽区（内容区各页起始线 y≥24，不遮挡交互） */}
+      <div data-tauri-drag-region className="fixed inset-x-0 top-0 z-40 h-6" />
       <aside
-        className="flex w-52 shrink-0 flex-col gap-px border-r py-5 px-3"
+        className="flex w-52 shrink-0 flex-col gap-px border-r pb-5 pl-3 pr-3 pt-11"
         style={{ borderColor: "var(--cb-line)" }}
       >
         <div className="mb-5 flex items-center gap-2.5 px-2.5">
@@ -121,7 +123,7 @@ export default function App() {
       </aside>
 
       <main
-        className="relative flex-1 overflow-y-auto px-7 py-6"
+        className="relative flex-1 overflow-y-auto px-7 pb-6 pt-8"
         style={{
           background:
             "radial-gradient(900px 420px at 75% -8%, color-mix(in srgb, var(--cb-accent) 5%, transparent), transparent 60%)",
