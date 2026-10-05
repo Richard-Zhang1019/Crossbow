@@ -46,8 +46,14 @@ pub fn render_config_with(
 
     let mut config = profile.content.clone();
     for o in active {
-        config = crate::override_patch::run_override_kind(o.kind, &o.content, &config)
-            .map_err(|e| RenderError::InvalidYaml(e.to_string()))?;
+        config =
+            crate::override_patch::run_override_kind(o.kind, &o.content, &config).map_err(|e| {
+                RenderError::OverrideFailed {
+                    id: o.id.clone(),
+                    name: o.name.clone(),
+                    detail: e.to_string(),
+                }
+            })?;
     }
     if store.engine.flag_emoji {
         config = crate::emoji::enrich_flags(&config)
