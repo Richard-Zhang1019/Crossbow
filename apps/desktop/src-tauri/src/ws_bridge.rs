@@ -66,15 +66,17 @@ impl WsHub {
         &self,
         port: u16,
         secret: &str,
-        emit: impl Fn(&'static str, String) + Send + 'static,
+        emit: impl Fn(&'static str, serde_json::Value) + Send + 'static,
     ) -> Result<(), String> {
         let url = ws_url(port, secret, "/traffic");
         self.subscribe("traffic", move |flag| {
             std::thread::spawn(move || {
                 read_loop(&url, flag, |msg| {
-                    // 透传 {"up":..,"down":..}
                     if let Message::Text(txt) = msg {
-                        emit(EV_TRAFFIC, txt.to_string());
+                        // mihomo 原始 {"up":..,"down":..} → 结构化转发
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
+                            emit(EV_TRAFFIC, v);
+                        }
                     }
                 });
             });
@@ -85,7 +87,7 @@ impl WsHub {
         &self,
         port: u16,
         secret: &str,
-        emit: impl Fn(&'static str, String) + Send + 'static,
+        emit: impl Fn(&'static str, serde_json::Value) + Send + 'static,
     ) -> Result<(), String> {
         let url = ws_url(port, secret, "/connections");
         self.subscribe("connections", move |flag| {
@@ -110,28 +112,29 @@ impl WsHub {
         &self,
         port: u16,
         secret: &str,
-        emit: impl Fn(&'static str, String) + Send + 'static,
+        emit: impl Fn(&'static str, serde_json::Value) + Send + 'static,
     ) -> Result<(), String> {
         let url = ws_url(port, secret, "/logs?level=info");
         self.subscribe("logs", move |flag| {
             std::thread::spawn(move || {
-                let mut batch: Vec<String> = Vec::new();
+                let mut batch: Vec<serde_json::Value> = Vec::new();
                 let mut last_flush = Instant::now();
                 read_loop(&url, flag, |msg| {
                     if let Message::Text(txt) = msg {
-                        batch.push(txt.to_string());
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
+                            batch.push(v);
+                        }
                         if last_flush.elapsed() >= LOG_FLUSH_INTERVAL
                             || batch.len() >= LOG_FLUSH_COUNT
                         {
-                            let payload = format!("[{}]", batch.join(","));
+                            emit(EV_LOGS, serde_json::Value::Array(batch.clone()));
                             batch.clear();
                             last_flush = Instant::now();
-                            emit(EV_LOGS, payload);
                         }
                     }
                 });
                 if !batch.is_empty() {
-                    emit(EV_LOGS, format!("[{}]", batch.join(",")));
+                    emit(EV_LOGS, serde_json::Value::Array(batch));
                 }
             });
         })
@@ -194,8 +197,8 @@ struct ConnPayload {
     truncated: Option<usize>,
 }
 
-/// mihomo connections 快照 → 紧凑行集合（字段裁剪让 5000 连接的 payload 可控）。
-fn compact_connections(raw: &str) -> Option<String> {
+/// mihomo connections 快照 → 紧凑结构（字段裁剪让大快照的 IPC 载荷可控）。
+fn compact_connections(raw: &str) -> Option<serde_json::Value> {
     let v: serde_json::Value = serde_json::from_str(raw).ok()?;
     let now_ms = now_unix_ms();
     let mut rows = Vec::new();
@@ -268,7 +271,7 @@ fn compact_connections(raw: &str) -> Option<String> {
         },
         rows,
     };
-    serde_json::to_string(&payload).ok()
+    serde_json::to_value(&payload).ok()
 }
 
 fn now_unix_ms() -> u64 {
@@ -340,8 +343,7 @@ mod tests {
                           "destinationPort": "443", "processPath": "/Applications/Curl.app/x/curl" }
           }]
         }"#;
-        let out = compact_connections(raw).unwrap();
-        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let v: serde_json::Value = compact_connections(raw).unwrap();
         let row = &v["rows"][0];
         assert_eq!(row["host"], "example.com:443");
         assert_eq!(row["rule"], "DomainSuffix example.com");
@@ -354,9 +356,9 @@ mod tests {
 
     #[test]
     fn compact_connections_handles_empty() {
-        let out = compact_connections(r#"{"downloadTotal":0,"uploadTotal":0,"connections":null}"#)
-            .unwrap();
-        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let v: serde_json::Value =
+            compact_connections(r#"{"downloadTotal":0,"uploadTotal":0,"connections":null}"#)
+                .unwrap();
         assert_eq!(v["rows"].as_array().unwrap().len(), 0);
     }
 
@@ -408,7 +410,7 @@ mod tests {
         assert!(running);
 
         let (port, secret) = mgr.controller().unwrap();
-        let (tx, rx) = std::sync::mpsc::channel::<String>();
+        let (tx, rx) = std::sync::mpsc::channel::<serde_json::Value>();
         let hub = WsHub::default();
         hub.subscribe_traffic(port, &secret, move |_, payload| {
             let _ = tx.send(payload);
@@ -417,7 +419,7 @@ mod tests {
 
         let got = rx.recv_timeout(Duration::from_secs(8));
         assert!(got.is_ok(), "no traffic event within 8s");
-        let v: serde_json::Value = serde_json::from_str(&got.unwrap()).unwrap();
+        let v = got.unwrap();
         assert!(v.get("up").is_some() && v.get("down").is_some());
 
         hub.unsubscribe_all();

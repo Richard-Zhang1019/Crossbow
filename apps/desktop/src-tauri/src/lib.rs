@@ -303,7 +303,7 @@ fn subscribe_connections(app: AppHandle, state: State<AppState>) -> Result<(), S
     let h = app.clone();
     state
         .ws
-        .subscribe_connections(port, &secret, move |ev, payload| {
+        .subscribe_connections(port, &secret, move |ev, payload: serde_json::Value| {
             let _ = h.emit(ev, payload);
         })
 }
@@ -318,9 +318,11 @@ fn unsubscribe_connections(state: State<AppState>) -> Result<(), String> {
 fn subscribe_logs(app: AppHandle, state: State<AppState>) -> Result<(), String> {
     let (port, secret) = require_controller(&state)?;
     let h = app.clone();
-    state.ws.subscribe_logs(port, &secret, move |ev, payload| {
-        let _ = h.emit(ev, payload);
-    })
+    state
+        .ws
+        .subscribe_logs(port, &secret, move |ev, payload: serde_json::Value| {
+            let _ = h.emit(ev, payload);
+        })
 }
 
 #[tauri::command]

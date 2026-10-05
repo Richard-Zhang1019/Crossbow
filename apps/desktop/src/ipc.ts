@@ -102,6 +102,18 @@ export interface InstallProgress {
   detail: string;
 }
 
+/** 防御性解析：Tauri 事件载荷理论上是对象，若收到字符串则手动解析。 */
+function parsePayload<T>(raw: unknown): T {
+  if (typeof raw === "string") {
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      return raw as T;
+    }
+  }
+  return raw as T;
+}
+
 export const ipc = {
   checkUpdate: async (): Promise<string | null> => {
     const { check } = await import("@tauri-apps/plugin-updater");
@@ -168,11 +180,13 @@ export const ipc = {
   onCoreMode: (cb: (m: CoreMode) => void) =>
     listen<CoreMode>("core://mode", (e) => cb(e.payload)),
   onTraffic: (cb: (t: { up: number; down: number }) => void) =>
-    listen<{ up: number; down: number }>("traffic://data", (e) => cb(e.payload)),
+    listen("traffic://data", (e) =>
+      cb(parsePayload<{ up: number; down: number }>(e.payload)),
+    ),
   onConnections: (cb: (s: ConnSnapshot) => void) =>
-    listen<ConnSnapshot>("connections://data", (e) => cb(e.payload)),
+    listen("connections://data", (e) => cb(parsePayload<ConnSnapshot>(e.payload))),
   onLogs: (cb: (entries: LogEntry[]) => void) =>
-    listen<LogEntry[]>("logs://data", (e) => cb(e.payload)),
+    listen("logs://data", (e) => cb(parsePayload<LogEntry[]>(e.payload))),
   onTheme: (cb: (t: UiSettings["theme"]) => void) =>
     listen<UiSettings["theme"]>("ui://theme", (e) => cb(e.payload)),
   onLang: (cb: (l: string) => void) =>
