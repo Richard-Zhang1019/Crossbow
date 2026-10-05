@@ -913,6 +913,7 @@ fn show_main_window(app: &AppHandle) {
                     .handoff
                     .store(false, std::sync::atomic::Ordering::SeqCst);
             }
+            let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
         }
     }
 }
@@ -953,6 +954,8 @@ fn lightweight_quit(app: &AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.destroy(); // 直接销毁，绕过 CloseRequested 防递归
     }
+    // Dock 图标隐藏（仅剩顶部状态栏托盘）；cmd+tab 切换能力保留
+    let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 }
 
 fn show_no_more(app: &AppHandle) {

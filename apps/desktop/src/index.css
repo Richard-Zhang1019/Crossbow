@@ -31,27 +31,9 @@
   --cb-down: #b7a6f8;
   /* 字体 */
   --cb-mono: "SF Mono", ui-monospace, Menlo, monospace;
-
-  /* 兼容旧变量名的映射（渐删） */
-  --cb-border: var(--cb-line);
 }
 
-.dark {
-  --cb-bg: #0a0c10;
-  --cb-surface: #101319;
-  --cb-surface-2: #151a22;
-  --cb-line: rgba(255, 255, 255, 0.065);
-  --cb-line-strong: rgba(255, 255, 255, 0.12);
-  --cb-text: #e8eaf0;
-  --cb-text-dim: #9aa3b2;
-  --cb-faint: #5d6675;
-  --cb-accent: #7aa2ff;
-  --cb-accent-soft: rgba(122, 162, 255, 0.14);
-  --cb-accent-line: rgba(122, 162, 255, 0.35);
-  --cb-border: var(--cb-line);
-}
-
-/* 浅色：同一设计语言的白昼版 */
+/* 浅色：同一设计语言的白昼版（深色即 :root 默认值） */
 :root:not(.dark) {
   --cb-bg: #f6f7f9;
   --cb-surface: #ffffff;
@@ -69,7 +51,6 @@
   --cb-bad: #dc2626;
   --cb-up: #3b66e0;
   --cb-down: #8b5cf6;
-  --cb-border: var(--cb-line);
 }
 
 html,
@@ -120,6 +101,14 @@ body,
   letter-spacing: 0.12em;
   text-transform: uppercase;
   font-weight: 500;
+}
+
+/* 表格列头（连接页列表/聚合双视图共用） */
+.cb-th {
+  font-size: 10px;
+  color: var(--cb-faint);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 /* 等宽数据 */
