@@ -3,6 +3,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { ipc, type Profile } from "../ipc";
 import Select from "../components/Select";
 import { useT } from "../i18n";
+import { PageHead, ErrorBar } from "./Home";
 
 function fmtBytesLocal(n: number): string {
   if (n <= 0) return "0 B";
@@ -98,14 +99,13 @@ export default function ProfilesPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-5">
-      <h1 className="text-[15px] font-semibold tracking-tight">{t("profiles.title")}</h1>
+      <PageHead title={t("profiles.title")} />
 
       <div
         className="cb-card flex gap-2 p-2 transition-colors"
         style={{
-          border: dragOver
-            ? "1px dashed var(--cb-accent-line)"
-            : "1px solid transparent",
+          borderStyle: dragOver ? "dashed" : undefined,
+          borderColor: dragOver ? "var(--cb-accent-line)" : undefined,
           background: dragOver ? "var(--cb-accent-soft)" : undefined,
         }}
       >
@@ -160,15 +160,7 @@ export default function ProfilesPage() {
         {t("profiles.dropHint")}
       </div>
 
-      {error && (
-        <div className="rounded-lg border px-3 py-2 text-xs"
-          style={{
-            borderColor: "color-mix(in srgb, var(--cb-bad) 40%, transparent)",
-            color: "var(--cb-bad)",
-          }}>
-          {error}
-        </div>
-      )}
+      {error && <ErrorBar msg={error} />}
 
       {profiles.length === 0 ? (
         <div className="cb-card flex h-48 items-center justify-center text-sm"
@@ -317,7 +309,7 @@ function ProfileCard({
               <div className="h-[3px] w-full overflow-hidden rounded-full"
                 style={{ background: "color-mix(in srgb, var(--cb-text) 7%, transparent)" }}>
                 <div className="h-full rounded-full"
-                  style={{ width: `${pct}%`, background: pct > 90 ? "var(--cb-bad)" : "linear-gradient(90deg, var(--cb-accent), #9d8cff)" }} />
+                  style={{ width: `${pct}%`, background: pct > 90 ? "var(--cb-bad)" : "linear-gradient(90deg, var(--cb-accent), var(--cb-down))" }} />
               </div>
               <div className="mt-1 text-[11px]" style={{ color: "var(--cb-text-dim)" }}>
                 ↑{fmtBytesLocal(traffic.upload)} ↓{fmtBytesLocal(traffic.download)} / {fmtBytesLocal(traffic.total)}

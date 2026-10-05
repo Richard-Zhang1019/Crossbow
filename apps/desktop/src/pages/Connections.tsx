@@ -3,6 +3,7 @@ import VirtualList from "../components/VirtualList";
 import { fmtBytes, fmtDuration } from "../format";
 import { ipc, type ConnRow, type ConnSnapshot } from "../ipc";
 import { useT } from "../i18n";
+import { PageHead } from "./Home";
 
 const ROW_H = 30;
 const BODY_H = 480;
@@ -63,16 +64,10 @@ export default function ConnectionsPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-3">
-      <div className="flex items-center gap-3">
-        <h1 className="text-[15px] font-semibold tracking-tight">{t("conn.title")}</h1>
-        <span className="cb-mono text-[11px]" style={{ color: "var(--cb-faint)" }}>
-          {snapshot.truncated
-            ? `${snapshot.truncated} 条（显示前 ${rows.length}）`
-            : `${rows.length} 条`}{" "}
-          · ↑{fmtBytes(snapshot.upload_total)} ↓
-          {fmtBytes(snapshot.download_total)} · {t("conn.mem")} {fmtBytes(snapshot.memory)}
-        </span>
-        <div className="flex-1" />
+      <PageHead
+        title={t("conn.title")}
+        meta={`${snapshot.truncated ? `${snapshot.truncated} 条（显示前 ${rows.length}）` : `${rows.length} 条`} · ↑${fmtBytes(snapshot.upload_total)} ↓${fmtBytes(snapshot.download_total)} · ${t("conn.mem")} ${fmtBytes(snapshot.memory)}`}
+      >
         <div className="cb-seg">
           <button className={view === "list" ? "on" : ""} onClick={() => setView("list")}>
             {t("conn.viewList")}
@@ -90,21 +85,17 @@ export default function ConnectionsPage() {
         <button className="cb-btn" onClick={togglePause}>
           {paused ? t("conn.paused") : t("conn.pause")}
         </button>
-      </div>
+      </PageHead>
 
       <div className="cb-card grow overflow-hidden" style={{ padding: 0 }}>
         {view === "list" ? (
           <>
             <div
-              className="grid px-3 py-2.5"
+              className="cb-th grid px-3 py-2.5"
               style={{
                 gridTemplateColumns:
                   "minmax(220px,2fr) minmax(120px,1fr) minmax(150px,1.2fr) 110px 90px 90px 70px 24px",
-                color: "var(--cb-faint)",
                 borderBottom: "1px solid var(--cb-line)",
-                fontSize: 10,
-                letterSpacing: ".1em",
-                textTransform: "uppercase",
               }}
             >
               <span>{t("col.target")}</span>
@@ -132,14 +123,10 @@ export default function ConnectionsPage() {
         ) : (
           <>
             <div
-              className="grid px-3 py-2.5"
+              className="cb-th grid px-3 py-2.5"
               style={{
                 gridTemplateColumns: "minmax(200px,1.6fr) 90px 100px 100px 90px",
-                color: "var(--cb-faint)",
                 borderBottom: "1px solid var(--cb-line)",
-                fontSize: 10,
-                letterSpacing: ".1em",
-                textTransform: "uppercase",
               }}
             >
               <span>{t("col.process")}</span>

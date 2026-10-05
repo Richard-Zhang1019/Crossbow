@@ -234,7 +234,7 @@ export default function HomePage() {
                           className="h-full rounded-full"
                           style={{
                             width: `${pct}%`,
-                            background: "linear-gradient(90deg, var(--cb-accent), #9d8cff)",
+                            background: "linear-gradient(90deg, var(--cb-accent), var(--cb-down))",
                           }}
                         />
                       </div>
@@ -322,11 +322,11 @@ function Sparkline({ rates }: { rates: { up: number; down: number }[] }) {
     <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="mt-2 w-full" style={{ height: 120 }}>
       <defs>
         <linearGradient id="au" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#8bb8ff" stopOpacity=".16" />
-          <stop offset="1" stopColor="#8bb8ff" stopOpacity="0" />
+          <stop offset="0" style={{ stopColor: "var(--cb-up)", stopOpacity: 0.16 }} />
+          <stop offset="1" style={{ stopColor: "var(--cb-up)", stopOpacity: 0 }} />
         </linearGradient>
       </defs>
-      <g stroke="rgba(255,255,255,.05)">
+      <g style={{ stroke: "var(--cb-line)" }}>
         <line x1="0" y1="30" x2={W} y2="30" />
         <line x1="0" y1="60" x2={W} y2="60" />
         <line x1="0" y1="90" x2={W} y2="90" />
@@ -334,11 +334,11 @@ function Sparkline({ rates }: { rates: { up: number; down: number }[] }) {
       {upLine && (
         <>
           <path d={`${upLine} L${W},${H} L0,${H} Z`} fill="url(#au)" />
-          <path d={upLine} fill="none" stroke="#8bb8ff" strokeWidth="1.6" />
+          <path d={upLine} fill="none" style={{ stroke: "var(--cb-up)" }} strokeWidth="1.6" />
         </>
       )}
       {smooth("down") && (
-        <path d={smooth("down")} fill="none" stroke="#b7a6f8" strokeWidth="1.4" opacity=".9" />
+        <path d={smooth("down")} fill="none" style={{ stroke: "var(--cb-down)" }} strokeWidth="1.4" opacity=".9" />
       )}
     </svg>
   );

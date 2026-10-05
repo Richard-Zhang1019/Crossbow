@@ -9,10 +9,10 @@ const LEVELS = ["debug", "info", "warning", "error"] as const;
 type Level = (typeof LEVELS)[number];
 
 const LEVEL_COLOR: Record<string, string> = {
-  debug: "#98989d",
+  debug: "var(--cb-faint)",
   info: "var(--cb-text)",
-  warning: "#d6a02b",
-  error: "#e0524c",
+  warning: "var(--cb-warn)",
+  error: "var(--cb-bad)",
 };
 
 /** 日志页：内核日志实时滚动 + 级别过滤；缓冲上限 2000 行。 */
@@ -61,7 +61,7 @@ export default function LogsPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-3">
       <div className="flex items-center gap-3">
-        <h1 className="text-lg font-semibold">{t("logs.title")}</h1>
+        <h1 className="text-[15px] font-semibold tracking-tight">{t("logs.title")}</h1>
         {LEVELS.map((lv) => (
           <label key={lv} className="flex items-center gap-1 text-xs"
             style={{ color: "var(--cb-text-dim)" }}>
@@ -78,14 +78,9 @@ export default function LogsPage() {
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
           placeholder={t("logs.keyword")}
-          className="cb-selectable w-56 rounded-lg border px-3 py-1.5 text-xs outline-none focus:border-[var(--cb-accent)]"
-          style={{ borderColor: "var(--cb-border)", background: "var(--cb-surface)" }}
+          className="cb-input cb-selectable w-56"
         />
-        <button
-          onClick={() => setLines([])}
-          className="rounded-lg border px-3 py-1.5 text-xs"
-          style={{ borderColor: "var(--cb-border)", color: "var(--cb-text-dim)" }}
-        >
+        <button onClick={() => setLines([])} className="cb-btn">
           {t("logs.clear")}
         </button>
       </div>

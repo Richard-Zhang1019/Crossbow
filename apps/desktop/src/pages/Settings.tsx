@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ipc, type CoreBinaryInfo, type EngineConfigView, type UiSettings } from "../ipc";
 import Select from "../components/Select";
 import { useT } from "../i18n";
+import { PageHead } from "./Home";
 
 /** 设置页（M0-S4）：内核端口/局域网、外观主题、开机自启、内核版本。 */
 export default function SettingsPage() {
@@ -59,14 +60,13 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold">{t("settings.title")}</h1>
+      <PageHead title={t("settings.title")}>
         {msg && (
-          <span className="text-xs" style={{ color: msg.ok ? "#34c759" : "#e0524c" }}>
+          <span className="text-xs" style={{ color: msg.ok ? "var(--cb-ok)" : "var(--cb-bad)" }}>
             {msg.text}
           </span>
         )}
-      </div>
+      </PageHead>
 
       <Group title={t("settings.coreSection")}>
         {coreBin?.source === "missing" && (
@@ -194,9 +194,7 @@ export default function SettingsPage() {
             }}
           />
         </Row>
-        <Row label={t("settings.snapshot")} hint={t("settings.snapshotAuto")}>
-          <span className="text-xs" style={{ color: "var(--cb-text-dim)" }}>{t("settings.snapshotAuto")}</span>
-        </Row>
+        <Row label={t("settings.snapshot")} hint={t("settings.snapshotAuto")} />
         <Row label={t("settings.checkUpdate")}>
           <button
             onClick={async () => {
@@ -231,7 +229,7 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
-function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Row({ label, hint, children }: { label: string; hint?: string; children?: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between px-4 py-3">
       <div>

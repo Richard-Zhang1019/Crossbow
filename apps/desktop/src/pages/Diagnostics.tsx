@@ -63,15 +63,7 @@ export default function DiagnosticsPage() {
         <div className="space-y-2">
           {results.map((r) => (
             <section key={r.id} className="cb-card flex items-center gap-3 px-4 py-3">
-              <i
-                className="h-[7px] w-[7px] flex-none rounded-full"
-                style={{
-                  background: r.ok ? "var(--cb-ok)" : "var(--cb-bad)",
-                  boxShadow: r.ok
-                    ? "0 0 6px color-mix(in srgb, var(--cb-ok) 55%, transparent)"
-                    : "0 0 6px color-mix(in srgb, var(--cb-bad) 55%, transparent)",
-                }}
-              />
+              <i className={`cb-dot flex-none ${r.ok ? "ok" : "bad"}`} />
               <div className="min-w-0 flex-1">
                 <div className="text-[13px] font-medium">
                   {t(`check.${r.id}` as const)}

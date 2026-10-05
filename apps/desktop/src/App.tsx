@@ -93,11 +93,11 @@ export default function App() {
                 <button
                   key={item.id}
                   onClick={() => setPage(item.id)}
-                  className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-left text-[12.5px]"
+                  className="cb-nav-item flex w-full items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-left text-[12.5px]"
                   style={{
                     color: on ? "var(--cb-text)" : "var(--cb-text-dim)",
-                    background: on ? "var(--cb-surface-2)" : "transparent",
-                    boxShadow: on ? "inset 0 0 0 1px var(--cb-line)" : "none",
+                    background: on ? "var(--cb-surface-2)" : undefined,
+                    boxShadow: on ? "inset 0 0 0 1px var(--cb-line)" : undefined,
                   }}
                 >
                   <Icon

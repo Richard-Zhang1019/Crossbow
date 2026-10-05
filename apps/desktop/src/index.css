@@ -178,6 +178,9 @@ body,
   background: color-mix(in srgb, var(--cb-text) 6%, transparent);
   box-shadow: inset 0 0 0 1px var(--cb-line-strong);
 }
+.cb-seg button:hover:not(.on) {
+  color: var(--cb-text);
+}
 
 /* 输入框 */
 .cb-input {
@@ -211,9 +214,20 @@ body,
   color: var(--cb-accent);
   border-color: var(--cb-accent-line);
 }
+.cb-btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--cb-text) 24%, transparent);
+}
+.cb-btn.acc:hover:not(:disabled) {
+  border-color: var(--cb-accent);
+}
 .cb-btn:disabled {
   opacity: 0.4;
   cursor: default;
+}
+.cb-btn:focus-visible,
+.cb-seg button:focus-visible {
+  outline: 1px solid var(--cb-accent-line);
+  outline-offset: 1px;
 }
 
 /* pill 开关 */
@@ -266,4 +280,14 @@ body,
 }
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* 原生控件跟随主题 */
+input[type="checkbox"] {
+  accent-color: var(--cb-accent);
+}
+
+/* 侧栏导航项（未选中项的 hover 反馈；选中态由内联样式覆盖） */
+.cb-nav-item:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--cb-text) 4%, transparent);
 }
