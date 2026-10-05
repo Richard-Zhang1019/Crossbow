@@ -192,6 +192,7 @@ export const ipc = {
   setOverrideEnabled: (id: string, enabled: boolean) =>
     invoke<void>("set_override_enabled", { id, enabled }),
   validateOverrides: () => invoke<void>("validate_overrides"),
+  applyOverrides: () => invoke<void>("apply_overrides"),
   setFlagEmoji: (enabled: boolean) => invoke<void>("set_flag_emoji", { enabled }),
   onProfileUpdated: (cb: (id: string) => void) =>
     listen<string>("profile://updated", (e) => cb(e.payload)),

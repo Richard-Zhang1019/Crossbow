@@ -347,9 +347,21 @@ fn create_override(
 /// 更新覆写内容/名称。
 /// 校验当前覆写链（渲染一遍，错误记录到对应覆写）。
 #[tauri::command]
-fn validate_overrides(state: State<AppState>) -> Result<(), String> {
+async fn validate_overrides(state: State<'_, AppState>) -> Result<(), String> {
     let safe = state.safe_mode.load(std::sync::atomic::Ordering::SeqCst);
     render_current(&state, !safe).map(|_| ())
+}
+
+/// 校验通过后应用覆写：复位安全模式，运行中则热重启。
+#[tauri::command]
+async fn apply_overrides(state: State<'_, AppState>) -> Result<(), String> {
+    state
+        .safe_mode
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    if state.core().status() == CoreStatus::Running {
+        restart_core(&state)?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -396,7 +408,11 @@ fn update_override(
 
 /// 删除覆写（并从所有 Profile 摘除引用）。
 #[tauri::command]
-fn remove_override(app: AppHandle, state: State<AppState>, id: String) -> Result<(), String> {
+async fn remove_override(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
     let mut store = state.store.lock().unwrap();
     store.data_mut().overrides.retain(|o| o.id != id);
     for p in store.data_mut().profiles.iter_mut() {
@@ -413,8 +429,8 @@ fn remove_override(app: AppHandle, state: State<AppState>, id: String) -> Result
 
 /// 绑定/解绑覆写到 Profile。
 #[tauri::command]
-fn toggle_override_binding(
-    state: State<AppState>,
+async fn toggle_override_binding(
+    state: State<'_, AppState>,
     profile_id: String,
     override_id: String,
     enabled: bool,
@@ -442,7 +458,11 @@ fn toggle_override_binding(
 
 /// 切换覆写启用态。
 #[tauri::command]
-fn set_override_enabled(state: State<AppState>, id: String, enabled: bool) -> Result<(), String> {
+async fn set_override_enabled(
+    state: State<'_, AppState>,
+    id: String,
+    enabled: bool,
+) -> Result<(), String> {
     let mut store = state.store.lock().unwrap();
     let o = store
         .data_mut()
@@ -1367,6 +1387,7 @@ pub fn run() {
             remove_override,
             toggle_override_binding,
             validate_overrides,
+            apply_overrides,
             set_override_enabled,
             list_overrides,
             set_active_profile,

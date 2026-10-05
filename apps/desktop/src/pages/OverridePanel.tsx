@@ -49,15 +49,23 @@ export default function OverridePanel({
     }
   };
 
+  /**
+   * 保存流程（校验先行）：
+   * 1. 落库内容 → 2. 校验渲染 → 失败：⚠ 标注错误、内核不动
+   *                     → 成功：清除错误并热重启应用
+   */
   const save = async (id: string) => {
     try {
       await ipc.updateOverride(id, draft);
+      await ipc.validateOverrides();
+      await ipc.applyOverrides();
       setEditingId(null);
-      await ipc.validateOverrides().catch(() => {});
       await refresh();
       onChanged();
     } catch (e) {
       setError(String(e));
+      await refresh(); // 拉取 last_error 展示 ⚠
+      onChanged();
     }
   };
 
