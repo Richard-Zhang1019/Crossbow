@@ -217,7 +217,8 @@ export default function SettingsPage() {
 
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="cb-card overflow-hidden">
+    // 不能加 overflow-hidden：会把组内 Select 的绝对定位弹层在卡片边界裁掉
+    <section className="cb-card">
       <div className="border-b px-4 py-2.5 cb-micro"
         style={{ borderColor: "var(--cb-line)" }}>
         {title}
