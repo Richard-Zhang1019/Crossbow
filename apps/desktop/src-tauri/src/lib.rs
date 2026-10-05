@@ -906,6 +906,9 @@ fn show_main_window(app: &AppHandle) {
             .inner_size(1120.0, 720.0)
             .min_inner_size(880.0, 560.0)
             .center()
+            // 与 tauri.conf.json 的窗口 backgroundColor 对齐：
+            // 深色底，避免滚动合成时窗口默认底色在顶部外露成灰白边
+            .background_color("#0a0c10".parse().expect("valid window color"))
             .build();
             // 内核仍是本进程的子进程（adopted/own），继续归我们管
             if let Some(state) = app.try_state::<AppState>() {
