@@ -32,6 +32,16 @@ export default function ConnectionsPage() {
     };
   }, [paused]);
 
+  const closeOne = async (id: string) => {
+    try {
+      await ipc.closeConnection(id);
+      // 乐观移除，等待下个快照校正
+      setSnapshot((s) => ({ ...s, rows: s.rows.filter((r) => r.id !== id) }));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const togglePause = () => {
     if (paused) {
       // 恢复时立刻补上暂停期间的数据
@@ -84,7 +94,7 @@ export default function ConnectionsPage() {
         <div
           className="grid px-3 py-2.5"
           style={{
-            gridTemplateColumns: "minmax(220px,2fr) minmax(120px,1fr) minmax(150px,1.2fr) 90px 90px 90px 70px",
+            gridTemplateColumns: "minmax(220px,2fr) minmax(120px,1fr) minmax(150px,1.2fr) 90px 90px 90px 70px 24px",
             color: "var(--cb-faint)",
             borderBottom: "1px solid var(--cb-line)",
             fontSize: 10,
@@ -99,6 +109,7 @@ export default function ConnectionsPage() {
           <span className="text-right">{t("col.up")}</span>
           <span className="text-right">{t("col.down")}</span>
           <span className="text-right">{t("col.elapsed")}</span>
+          <span style={{ width: 24 }} />
         </div>
         {rows.length === 0 ? (
           <div
@@ -112,7 +123,7 @@ export default function ConnectionsPage() {
             items={rows}
             rowHeight={ROW_H}
             height={BODY_H}
-            render={(r: ConnRow) => <Row key={r.id} row={r} />}
+            render={(r: ConnRow) => <Row key={r.id} row={r} onClose={() => closeOne(r.id)} />}
           />
         )}
       </div>
@@ -120,13 +131,14 @@ export default function ConnectionsPage() {
   );
 }
 
-function Row({ row }: { row: ConnRow }) {
+function Row({ row, onClose }: { row: ConnRow; onClose: () => void }) {
+  const t = useT();
   return (
     <div
       className="cb-selectable cb-mono grid items-center px-3"
       style={{
         height: ROW_H,
-        gridTemplateColumns: "minmax(220px,2fr) minmax(120px,1fr) minmax(150px,1.2fr) 90px 90px 90px 70px",
+        gridTemplateColumns: "minmax(220px,2fr) minmax(120px,1fr) minmax(150px,1.2fr) 90px 90px 90px 70px 24px",
         borderBottom: "1px solid var(--cb-line)",
         fontSize: 11.5,
         color: "var(--cb-text-dim)",
@@ -141,9 +153,15 @@ function Row({ row }: { row: ConnRow }) {
       <span className="truncate">{row.process}</span>
       <span className="text-right">{fmtBytes(row.up)}</span>
       <span className="text-right">{fmtBytes(row.down)}</span>
-      <span className="text-right">
-        {fmtDuration(row.elapsed_ms)}
-      </span>
+      <span className="text-right">{fmtDuration(row.elapsed_ms)}</span>
+      <button
+        onClick={onClose}
+        title={t("conn.close")}
+        className="ml-2 text-[13px] leading-none hover:opacity-80"
+        style={{ color: "var(--cb-bad)" }}
+      >
+        ✕
+      </button>
     </div>
   );
 }

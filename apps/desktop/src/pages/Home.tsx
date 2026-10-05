@@ -4,6 +4,7 @@ import {
   ipc,
   type CoreMode,
   type CoreStatus,
+  type OutboundInfo,
   type Profile,
   type SysProxyStatus,
 } from "../ipc";
@@ -26,6 +27,7 @@ export default function HomePage() {
   const [rates, setRates] = useState<{ up: number; down: number }[]>([]);
   const [totals, setTotals] = useState({ up: 0, down: 0 });
   const [connCount, setConnCount] = useState<number | null>(null);
+  const [outbound, setOutbound] = useState<OutboundInfo | null>(null);
   const mounted = useRef(true);
 
   const refresh = useCallback(async () => {
@@ -35,6 +37,7 @@ export default function HomePage() {
     setCore(await ipc.coreStatus().catch(() => ({ state: "Stopped" as const })));
     setProxy(await ipc.sysproxyStatus().catch(() => ({ enabled: false, port: 0 })));
     setMode(await ipc.coreMode().catch(() => "rule" as const));
+    setOutbound(await ipc.currentOutbound().catch(() => null));
   }, []);
 
   useEffect(() => {
@@ -86,7 +89,15 @@ export default function HomePage() {
 
       {/* 状态卡 */}
       <section className="cb-card flex items-center gap-4 px-5 py-[18px]">
-        <span className={`cb-dot ${proxy.enabled ? "ok" : running ? "ok" : "idle"}`} />
+        <span
+          className={`cb-dot ${
+            core.state === "Crashed" || (proxy.enabled && !running)
+              ? "bad"
+              : proxy.enabled && running
+                ? "ok"
+                : "idle"
+          }`}
+        />
         <div className="flex-1">
           <div className="text-[14px] font-semibold">
             {proxy.enabled ? t("home.sysproxyOn") : t("home.sysproxyOff")}
@@ -116,12 +127,42 @@ export default function HomePage() {
         <div className="h-10 w-px" style={{ background: "var(--cb-line)" }} />
         <div className="min-w-[170px] text-right">
           <div className="cb-micro">{t("home.outbound")}</div>
-          <div className="cb-mono mt-0.5 text-[13.5px] font-semibold">
-            — <span style={{ color: "var(--cb-ok)" }}>M1</span>
-          </div>
-          <div className="cb-mono mt-0.5 text-[11px]" style={{ color: "var(--cb-faint)" }}>
-            {t("home.comingM1")}
-          </div>
+          {outbound ? (
+            <>
+              <div className="cb-mono mt-0.5 text-[13.5px] font-semibold">
+                {outbound.node}
+                {outbound.delay_ms != null && (
+                  <span
+                    className="ml-1.5 text-[11px] font-normal"
+                    style={{
+                      color:
+                        outbound.delay_ms <= 200
+                          ? "var(--cb-ok)"
+                          : outbound.delay_ms <= 500
+                            ? "var(--cb-warn)"
+                            : "var(--cb-bad)",
+                    }}
+                  >
+                    {outbound.delay_ms}ms
+                  </span>
+                )}
+              </div>
+              <div
+                className="cb-mono mt-0.5 truncate text-[11px]"
+                style={{ color: "var(--cb-faint)" }}
+                title={outbound.chain.join(" → ")}
+              >
+                {outbound.chain.join(" → ")} · {outbound.mode}
+              </div>
+            </>
+          ) : (
+            <div
+              className="cb-mono mt-0.5 text-[11px]"
+              style={{ color: "var(--cb-faint)" }}
+            >
+              内核未运行
+            </div>
+          )}
         </div>
       </section>
 

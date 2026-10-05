@@ -3,6 +3,7 @@ import HomePage from "./pages/Home";
 import ProxiesPage from "./pages/Proxies";
 import ProfilesPage from "./pages/Profiles";
 import ConnectionsPage from "./pages/Connections";
+import DiagnosticsPage from "./pages/Diagnostics";
 import LogsPage from "./pages/Logs";
 import SettingsPage from "./pages/Settings";
 import { initLang, useT } from "./i18n";
@@ -17,12 +18,14 @@ const NAV = [
       { id: "proxies", icon: "bolt", key: "nav.proxies" },
       { id: "connections", icon: "cube", key: "nav.connections" },
       { id: "logs", icon: "lines", key: "nav.logs" },
+      { id: "diagnostics", icon: "pulse", key: "nav.diagnostics" },
     ],
   },
   {
     section: "general",
     items: [
       { id: "profiles", icon: "grid", key: "nav.profiles" },
+
       { id: "settings", icon: "gear", key: "nav.settings" },
     ],
   },
@@ -128,6 +131,7 @@ export default function App() {
         {page === "proxies" && <ProxiesPage />}
         {page === "profiles" && <ProfilesPage />}
         {page === "connections" && <ConnectionsPage />}
+        {page === "diagnostics" && <DiagnosticsPage />}
         {page === "logs" && <LogsPage />}
         {page === "settings" && <SettingsPage />}
 

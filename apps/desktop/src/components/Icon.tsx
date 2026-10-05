@@ -31,6 +31,7 @@ export function Icon({
       </>
     ),
     crossbow: <path d="M5 19 L19 5 M5 5 L12 12" />,
+    pulse: <path d="M3 12 L7 12 L9 6 L12 18 L15 9 L17 12 L21 12" />,
     search: (
       <>
         <circle cx="11" cy="11" r="6" />

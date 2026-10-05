@@ -243,6 +243,25 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         let _ = std::fs::remove_file(&self.journal_path);
     }
 
+    /// 各服务当前生效的 HTTP/HTTPS 代理端点（含第三方设置的）。
+    /// 诊断用：判断系统代理是否指向本应用端口、是否存在第三方冲突。
+    pub fn external_endpoints(&self) -> Vec<(String, ProxyEndpoint)> {
+        let mut out = Vec::new();
+        if let Ok(services) = self.backend.list_services() {
+            for svc in &services {
+                if let Ok(snap) = self.backend.service_snapshot(svc) {
+                    if let Some(ep) = snap.web {
+                        out.push((svc.clone(), ep));
+                    }
+                    if let Some(ep) = snap.secure {
+                        out.push((svc.clone(), ep));
+                    }
+                }
+            }
+        }
+        out
+    }
+
     pub fn status(&self) -> SysProxyStatus {
         match *self.state.lock().unwrap() {
             Some(port) => SysProxyStatus {

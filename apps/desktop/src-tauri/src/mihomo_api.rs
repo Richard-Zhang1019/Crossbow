@@ -35,6 +35,17 @@ pub struct Controller {
     pub secret: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct OutboundInfo {
+    pub mode: String,
+    /// 最终出口节点名（组会解析到具体节点；DIRECT/REJECT 原样）。
+    pub node: String,
+    /// 出口节点最近一次测速延迟。
+    pub delay_ms: Option<u64>,
+    /// 决策链（规则目标组 → 出口）。
+    pub chain: Vec<String>,
+}
+
 impl Controller {
     fn agent() -> ureq::Agent {
         ureq::AgentBuilder::new()
@@ -203,6 +214,99 @@ impl Controller {
             }
         }
         Ok(out)
+    }
+
+    /// 控制器版本信息（就绪/诊断用）。
+    pub fn version(&self) -> Result<String, String> {
+        let v = self.get_json("/version")?;
+        Ok(v.get("version")
+            .and_then(|x| x.as_str())
+            .unwrap_or("unknown")
+            .to_string())
+    }
+
+    /// 当前出口：规则模式取最后一条 MATCH 规则的目标组并解析其当前节点；
+    /// 全局模式取 GLOBAL.now。
+    pub fn current_outbound(&self) -> Result<OutboundInfo, String> {
+        let configs = self.get_json("/configs")?;
+        let mode = configs
+            .get("mode")
+            .and_then(|m| m.as_str())
+            .unwrap_or("rule")
+            .to_string();
+        let proxies_v = self.get_json("/proxies")?;
+        let all = proxies_v
+            .get("proxies")
+            .and_then(|p| p.as_object())
+            .ok_or("malformed /proxies")?;
+
+        // 沿 now 链下钻到具体节点，附带其最新延迟
+        let resolve = |start: &str| -> (String, Option<u64>) {
+            let mut cur = start.to_string();
+            for _ in 0..6 {
+                let Some(node) = all.get(&cur) else { break };
+                match node.get("now").and_then(|n| n.as_str()) {
+                    Some(next) => cur = next.to_string(),
+                    None => {
+                        let delay = node
+                            .get("history")
+                            .and_then(|h| h.as_array())
+                            .and_then(|a| a.last())
+                            .and_then(|e| e.get("delay"))
+                            .and_then(|d| d.as_u64());
+                        return (cur, delay);
+                    }
+                }
+            }
+            (cur, None)
+        };
+
+        let (node, delay_ms, chain) = if mode == "global" {
+            let (n, d) = resolve("GLOBAL");
+            (n, d, vec!["GLOBAL".to_string()])
+        } else {
+            let rules = self.get_json("/rules")?;
+            let target = rules
+                .get("rules")
+                .and_then(|r| r.as_array())
+                .and_then(|arr| {
+                    arr.iter().rev().find(|r| {
+                        r.get("type")
+                            .and_then(|t| t.as_str())
+                            .map(|t| t.eq_ignore_ascii_case("Match"))
+                            .unwrap_or(false)
+                    })
+                })
+                .and_then(|r| r.get("proxy"))
+                .and_then(|p| p.as_str())
+                .unwrap_or("DIRECT")
+                .to_string();
+            if target == "DIRECT" || target == "REJECT" {
+                (target.clone(), None, vec![target])
+            } else {
+                let (n, d) = resolve(&target);
+                (n, d, vec![target])
+            }
+        };
+        Ok(OutboundInfo {
+            mode,
+            node,
+            delay_ms,
+            chain,
+        })
+    }
+
+    /// 断开单条连接。
+    pub fn close_connection(&self, id: &str) -> Result<(), String> {
+        let resp = self
+            .req("DELETE", &format!("/connections/{id}"))
+            .call()
+            .map_err(|e| format!("close connection: {e}"))?;
+        if resp.status() < 300 {
+            Ok(())
+        } else {
+            Err(format!("close connection: HTTP {}", resp.status()))
+        }
     }
 
     /// 单节点测速。

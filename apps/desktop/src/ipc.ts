@@ -77,6 +77,20 @@ export interface LogEntry {
   payload: string;
 }
 
+export interface CheckResult {
+  id: string;
+  ok: boolean;
+  detail: string;
+  fix: string | null;
+}
+
+export interface OutboundInfo {
+  mode: string;
+  node: string;
+  delay_ms: number | null;
+  chain: string[];
+}
+
 export interface NodeView {
   name: string;
   kind: string;
@@ -182,6 +196,9 @@ export const ipc = {
   testGroupDelay: (group: string) =>
     invoke<Record<string, number>>("test_group_delay", { group }),
   testNodeDelay: (node: string) => invoke<number>("test_node_delay", { node }),
+  runDiagnosis: () => invoke<CheckResult[]>("run_diagnosis"),
+  currentOutbound: () => invoke<OutboundInfo>("current_outbound"),
+  closeConnection: (id: string) => invoke<void>("close_connection", { id }),
   subscribeTraffic: () => invoke<void>("subscribe_traffic"),
   unsubscribeTraffic: () => invoke<void>("unsubscribe_traffic"),
   subscribeConnections: () => invoke<void>("subscribe_connections"),

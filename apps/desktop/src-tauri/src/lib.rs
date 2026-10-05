@@ -17,6 +17,7 @@ use tauri_plugin_autostart::{MacosLauncher, ManagerExt as _};
 use tauri_plugin_deep_link::DeepLinkExt as _;
 
 mod core_manager;
+mod diagnose;
 mod mihomo_api;
 mod scheduler;
 mod sysproxy;
@@ -437,6 +438,22 @@ fn unsubscribe_logs(state: State<AppState>) -> Result<(), String> {
 }
 
 // ---------- 诊断 ----------
+
+#[tauri::command]
+fn run_diagnosis(state: State<AppState>) -> Vec<diagnose::CheckResult> {
+    diagnose::run(&state)
+}
+
+#[tauri::command]
+fn current_outbound(state: State<AppState>) -> Result<mihomo_api::OutboundInfo, String> {
+    let c = controller_client(&state)?;
+    c.current_outbound()
+}
+
+#[tauri::command]
+fn close_connection(state: State<AppState>, id: String) -> Result<(), String> {
+    controller_client(&state)?.close_connection(&id)
+}
 
 /// 前端黑匣子：全局错误/心跳落盘，用于定位 webview 白屏类问题。
 #[tauri::command]
@@ -1058,6 +1075,9 @@ pub fn run() {
             core_binary_info,
             core_install,
             diag_log,
+            run_diagnosis,
+            current_outbound,
+            close_connection,
             proxies_snapshot,
             select_proxy,
             test_group_delay,
