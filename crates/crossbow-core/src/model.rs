@@ -156,6 +156,9 @@ pub struct UiSettings {
     /// zh / en
     #[serde(default = "default_lang")]
     pub lang: String,
+    /// 轻量模式：关窗即交接退出（保留内核与系统代理）。
+    #[serde(default)]
+    pub lightweight_close: bool,
 }
 
 fn default_theme() -> String {
@@ -171,6 +174,7 @@ impl Default for UiSettings {
         Self {
             theme: default_theme(),
             lang: default_lang(),
+            lightweight_close: false,
         }
     }
 }

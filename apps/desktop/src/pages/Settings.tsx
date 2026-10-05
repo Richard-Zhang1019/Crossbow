@@ -14,6 +14,7 @@ export default function SettingsPage() {
   const [lang, setLangState] = useState<"zh" | "en">("zh");
   const [coreBin, setCoreBin] = useState<CoreBinaryInfo | null>(null);
   const [flags, setFlags] = useState(true);
+  const [lightweight, setLightweight] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -22,7 +23,10 @@ export default function SettingsPage() {
     setEngine(e);
     setPortDraft(e ? String(e.mixed_port) : "");
     const ui = await ipc.getUiSettings().catch(() => null);
-    if (ui) setLangState((ui.lang as "zh" | "en") ?? "zh");
+    if (ui) {
+      setLangState((ui.lang as "zh" | "en") ?? "zh");
+      setLightweight(ui.lightweight_close);
+    }
     setTheme(await ipc.getUiSettings().then((u) => u.theme).catch(() => "system" as const));
     setAutostart(await ipc.autostartStatus().catch(() => false));
     if (e) setFlags(e.flag_emoji);
@@ -165,6 +169,16 @@ export default function SettingsPage() {
       </Group>
 
       <Group title={t("settings.systemSection")}>
+        <Row label={t("settings.lightweight")} hint={t("settings.lightweightHint")}>
+          <Switch
+            checked={lightweight}
+            onChange={async (v) => {
+              await ipc.setLightweightClose(v).catch((e) => flash(false, String(e)));
+              setLightweight(v);
+              flash(true, v ? "ON" : "OFF");
+            }}
+          />
+        </Row>
         <Row label={t("settings.autostart")} hint={t("settings.autostartHint")}>
           <Switch
             checked={autostart}

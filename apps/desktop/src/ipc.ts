@@ -42,6 +42,7 @@ export interface SysProxyStatus {
 export interface UiSettings {
   theme: "system" | "light" | "dark";
   lang: string;
+  lightweight_close: boolean;
 }
 
 export interface EngineConfigView {
@@ -185,6 +186,8 @@ export const ipc = {
   getEngineConfig: () => invoke<EngineConfigView>("get_engine_config"),
   setTheme: (theme: UiSettings["theme"]) => invoke<void>("set_theme", { theme }),
   setLang: (lang: string) => invoke<void>("set_lang", { lang }),
+  setLightweightClose: (enabled: boolean) =>
+    invoke<void>("set_lightweight_close", { enabled }),
   setMixedPort: (port: number) => invoke<void>("set_mixed_port", { port }),
   setAllowLan: (enabled: boolean) => invoke<void>("set_allow_lan", { enabled }),
   autostartStatus: () => invoke<boolean>("autostart_status"),

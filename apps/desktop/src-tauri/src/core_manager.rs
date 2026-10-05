@@ -6,7 +6,7 @@
 use std::collections::VecDeque;
 use std::io::Write;
 use std::net::TcpListener;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -60,6 +60,10 @@ struct Inner {
     restarts: VecDeque<Instant>,
     /// (port, secret)
     controller: Option<(u16, String)>,
+    /// 轻量交接中：内核不再归本进程所有（退出时不杀）。
+    detached: bool,
+    /// 收养的外部内核 pid（上一个 GUI 实例留下的）。
+    external_pid: Option<u32>,
 }
 
 /// 线程间共享状态；CoreManager 可 Clone。
@@ -75,12 +79,33 @@ struct Shared {
 impl Drop for Shared {
     fn drop(&mut self) {
         // 兜底防孤儿：最后一个管理器句柄丢弃（含 panic 路径）时收走内核进程。
-        self.inner.lock().unwrap().stopping = true;
+        // 轻量交接中例外：内核已有意留给系统收养。
+        {
+            let mut inner = self.inner.lock().unwrap();
+            inner.stopping = true;
+            if inner.detached {
+                return;
+            }
+        }
         self.kill_child();
     }
 }
 
 impl Shared {
+    fn descriptor_path(work_dir: &Path) -> PathBuf {
+        work_dir.join("core-descriptor.json")
+    }
+
+    /// 写轻量交接描述符（port/secret/pid），下次 GUI 启动据此收养。
+    /// 调用方必须已释放 inner 锁（本函数不再加锁）。
+    fn write_descriptor(&self, pid: u32, port: u16, secret: &str) {
+        let j = serde_json::json!({ "port": port, "secret": secret, "pid": pid });
+        let _ = std::fs::write(
+            Self::descriptor_path(&self.work_dir),
+            serde_json::to_vec(&j).unwrap_or_default(),
+        );
+    }
+
     fn notify(&self, status: CoreStatus) {
         self.inner.lock().unwrap().status = status.clone();
         if let Some(cb) = self.callback.lock().unwrap().clone() {
@@ -118,10 +143,14 @@ impl Shared {
     }
 
     fn kill_child(&self) {
-        if let Some(mut child) = self.inner.lock().unwrap().child.take() {
+        let mut inner = self.inner.lock().unwrap();
+        if let Some(mut child) = inner.child.take() {
             let _ = child.kill();
             let _ = child.wait();
+        } else if let Some(pid) = inner.external_pid.take() {
+            kill_pid(pid);
         }
+        let _ = std::fs::remove_file(Self::descriptor_path(&self.work_dir));
     }
 }
 
@@ -143,6 +172,8 @@ impl CoreManager {
                     stopping: false,
                     restarts: VecDeque::new(),
                     controller: None,
+                    detached: false,
+                    external_pid: None,
                 }),
             }),
         }
@@ -198,6 +229,12 @@ impl CoreManager {
             self.shared.notify(CoreStatus::Crashed(msg.clone()));
             return Err(msg);
         }
+        // 外部（上一实例轻量交接的）内核还活着：先收掉，避免端口冲突。
+        if let Some(pid) = self.read_external_pid() {
+            let _ = Command::new("kill").arg("-9").arg(pid.to_string()).output();
+            let _ = std::fs::remove_file(Shared::descriptor_path(&self.shared.work_dir));
+            std::thread::sleep(Duration::from_millis(400));
+        }
         std::fs::create_dir_all(&self.shared.work_dir).map_err(|e| e.to_string())?;
 
         let port = free_port().ok_or("no free port for controller")?;
@@ -221,6 +258,53 @@ impl CoreManager {
         }
         spawn_and_watch(self.shared.clone());
         Ok(())
+    }
+
+    /// 读取交接描述符中的外部内核 pid（不做活性探测）。
+    fn read_external_pid(&self) -> Option<u32> {
+        Shared::read_descriptor(&self.shared.work_dir).map(|d| d.pid)
+    }
+
+    /// 启动时收养上一实例轻量交接的内核：探测通过则标记为运行中的外部实例。
+    pub fn adopt_external(&self) -> bool {
+        let Some(d) = Shared::read_descriptor(&self.shared.work_dir) else {
+            return false;
+        };
+        let probe = ControllerProbe {
+            port: d.port,
+            secret: d.secret.clone(),
+        };
+        if !probe.wait_ready(Duration::from_secs(2)) {
+            let _ = std::fs::remove_file(Shared::descriptor_path(&self.shared.work_dir));
+            return false;
+        }
+        let mut inner = self.shared.inner.lock().unwrap();
+        inner.stopping = false;
+        inner.detached = true;
+        inner.external_pid = Some(d.pid);
+        inner.controller = Some((d.port, d.secret));
+        inner.status = CoreStatus::Running;
+        true
+    }
+
+    /// 轻量交接：标记 detached 并写描述符（内核继续由系统收养）。
+    pub fn detach(&self) -> Option<u32> {
+        let (pid, port, secret) = {
+            let mut inner = self.shared.inner.lock().unwrap();
+            if inner.status != CoreStatus::Running {
+                return None;
+            }
+            inner.detached = true;
+            let pid = inner
+                .child
+                .as_ref()
+                .map(|c| c.id())
+                .or(inner.external_pid)?;
+            let (port, secret) = inner.controller.clone()?;
+            (pid, port, secret)
+        }; // 锁在此释放
+        self.shared.write_descriptor(pid, port, &secret);
+        Some(pid)
     }
 
     /// 优雅停止：标记后杀进程，watch 线程随之退出。
@@ -247,6 +331,45 @@ fn spawn_and_watch(shared: Arc<Shared>) {
         return;
     };
     std::thread::spawn(move || watch(shared, port, secret));
+}
+
+/// 活性探测：进程是否存在（kill 0）。
+#[cfg(all(unix, test))]
+fn kill_pid_probe(pid: u32) -> bool {
+    unsafe { libc::kill(pid as i32, 0) == 0 }
+}
+
+#[cfg(all(not(unix), test))]
+fn kill_pid_probe(_pid: u32) -> bool {
+    false
+}
+
+/// 杀掉不属于本进程的内核 pid（收养场景）。unix 用 SIGKILL，其余平台降级。
+fn kill_pid(pid: u32) {
+    #[cfg(unix)]
+    unsafe {
+        let _ = libc::kill(pid as i32, libc::SIGKILL);
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/PID", &pid.to_string()])
+            .output();
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct CoreDescriptor {
+    port: u16,
+    secret: String,
+    pid: u32,
+}
+
+impl Shared {
+    fn read_descriptor(work_dir: &Path) -> Option<CoreDescriptor> {
+        let raw = std::fs::read_to_string(Self::descriptor_path(work_dir)).ok()?;
+        serde_json::from_str(&raw).ok()
+    }
 }
 
 fn watch(shared: Arc<Shared>, port: u16, secret: String) {
@@ -303,6 +426,11 @@ fn watch(shared: Arc<Shared>, port: u16, secret: String) {
         if allow_restart(&shared) {
             std::thread::sleep(Duration::from_millis(800));
             if !shared.inner.lock().unwrap().stopping {
+                {
+                    let mut inner = shared.inner.lock().unwrap();
+                    inner.detached = false;
+                    inner.external_pid = None;
+                }
                 spawn_and_watch(shared);
             }
         }
@@ -610,6 +738,69 @@ mod tests {
 
         mgr.stop();
         assert_eq!(mgr.status(), CoreStatus::Stopped);
+    }
+
+    /// 收养场景：无 Child 只有 external_pid，stop() 应能收走外部内核。
+    #[test]
+    fn stop_kills_adopted_external_core() {
+        let dir = tempfile::tempdir().unwrap();
+        let mgr = CoreManager::new(PathBuf::from("/bin/sleep"), dir.path().to_path_buf());
+        let mut sleeper = Command::new("/bin/sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawn sleeper");
+        {
+            let mut inner = mgr.shared.inner.lock().unwrap();
+            inner.detached = true;
+            inner.status = CoreStatus::Running;
+            inner.controller = Some((1, "x".into()));
+            inner.external_pid = Some(sleeper.id());
+        }
+        let pid = sleeper.id();
+        mgr.stop();
+        std::thread::sleep(Duration::from_millis(400));
+        // SIGKILL 已发出；僵尸态由 Child::wait 回收，回收后 kill -0 必失败
+        let _ = sleeper.wait();
+        assert!(!kill_pid_probe(pid), "external core should be dead");
+        assert!(!Shared::descriptor_path(&dir.path()).exists());
+    }
+
+    /// 交接语义：detached 后管理器 Drop 不得杀内核，且描述符已写。
+    #[test]
+    fn detach_survives_manager_drop() {
+        let dir = tempfile::tempdir().unwrap();
+        let mgr = CoreManager::new(PathBuf::from("/bin/sleep"), dir.path().to_path_buf());
+        let sleeper = Command::new("/bin/sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawn sleeper");
+        let child_pid = sleeper.id();
+        {
+            let mut inner = mgr.shared.inner.lock().unwrap();
+            inner.detached = true;
+            inner.status = CoreStatus::Running;
+            inner.controller = Some((19099, "sec".into()));
+            inner.child = Some(sleeper); // 所有权交给管理器
+        }
+        mgr.detach();
+        drop(mgr); // 触发 Shared::Drop
+        std::thread::sleep(Duration::from_millis(300));
+        let alive = Command::new("kill")
+            .arg("-0")
+            .arg(child_pid.to_string())
+            .output();
+        assert!(
+            alive.unwrap().status.success(),
+            "detached core must survive drop"
+        );
+        assert!(
+            Shared::descriptor_path(&dir.path()).exists(),
+            "descriptor written"
+        );
+        let _ = Command::new("kill")
+            .arg("-9")
+            .arg(child_pid.to_string())
+            .output();
     }
 
     /// 真实内核崩溃自动恢复：Running 中强杀子进程 → 应自动回到 Running。

@@ -275,6 +275,18 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         }
     }
 
+    /// 收养场景：轻量交接退出时系统代理保持开启（journal 留存），
+    /// 本次启动若内核被成功收养，则从 journal 恢复内存状态而不是还原设置。
+    /// 返回收养的端口。
+    pub fn adopt_from_journal(&self) -> Option<u16> {
+        let j = self.read_journal()?;
+        if j.port == 0 {
+            return None; // v1 兼容格式无端口信息，走 recover_stale 路径
+        }
+        *self.state.lock().unwrap() = Some(j.port);
+        Some(j.port)
+    }
+
     /// 启动时兜底：上次会话残留的开启状态 → 还原原设置。返回是否发生了还原。
     pub fn recover_stale(&self) -> bool {
         self.read_journal().is_some_and(|_| {

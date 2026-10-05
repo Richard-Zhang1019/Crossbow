@@ -31,6 +31,8 @@ use sysproxy::{SysProxyManager, SysProxyStatus};
 use ws_bridge::WsHub;
 
 pub struct AppState {
+    /// 轻量交接退出：RunEvent::Exit 时跳过清理（内核留给系统收养）。
+    handoff: std::sync::atomic::AtomicBool,
     pub store: Mutex<Store>,
     /// 当前内核管理器；内核安装后整体替换（core_slot）。
     core_slot: Mutex<CoreManager>,
@@ -611,6 +613,14 @@ fn set_theme(app: AppHandle, state: State<AppState>, theme: String) -> Result<()
 }
 
 #[tauri::command]
+fn set_lightweight_close(state: State<AppState>, enabled: bool) -> Result<(), String> {
+    let mut store = state.store.lock().unwrap();
+    store.data_mut().ui.lightweight_close = enabled;
+    store.save().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 fn set_lang(app: AppHandle, state: State<AppState>, lang: String) -> Result<(), String> {
     if !["zh", "en"].contains(&lang.as_str()) {
         return Err(format!("invalid lang: {lang}"));
@@ -906,6 +916,20 @@ fn toggle_sysproxy(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// 轻量交接退出：留核（写描述符）→ 跳过清理 → 退出进程。
+fn lightweight_quit(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let pid = state.core().detach();
+    if pid.is_some() {
+        state
+            .handoff
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+    // 未运行内核时与普通退出等价（handoff=false → 正常清理路径）
+    let _ = pid;
+    app.exit(0);
+}
+
 fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
     let id = event.id().as_ref();
     let result = match id {
@@ -920,6 +944,10 @@ fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
         }
         "quit" => {
             app.exit(0);
+            Ok(())
+        }
+        "lightweight-quit" => {
+            lightweight_quit(app);
             Ok(())
         }
         other => match other.strip_prefix("profile-") {
@@ -979,18 +1007,28 @@ pub fn run() {
                 }
             }));
 
-            // 状态一致性守护：上次会话若异常退出（journal 残留），先全量还原系统代理。
+            // 状态一致性守护：
+            // 1) 尝试收养上一实例轻量交接的内核（描述符 + 控制器探测）
+            // 2) 收养成功 → 系统代理状态从 journal 恢复（不还原设置）
+            // 3) 收养失败 → 按异常退出处理：全量还原系统代理
             #[cfg(target_os = "macos")]
             let backend = sysproxy::NetworkSetup;
             #[cfg(not(target_os = "macos"))]
             let backend = sysproxy::UnsupportedBackend;
             let sysproxy = SysProxyManager::new(backend, data_dir.join("sysproxy-journal.json"));
-            if sysproxy.recover_stale() {
+            let adopted = core.adopt_external();
+            if adopted {
+                eprintln!("adopted detached core from previous lightweight session");
+                if let Some(port) = sysproxy.adopt_from_journal() {
+                    eprintln!("system proxy state restored :{port}");
+                }
+            } else if sysproxy.recover_stale() {
                 eprintln!("recovered stale system proxy from previous session");
             }
 
             let handle = app.handle().clone();
             app.manage(AppState {
+                handoff: std::sync::atomic::AtomicBool::new(false),
                 store: Mutex::new(store),
                 core_slot: Mutex::new(core),
                 sysproxy,
@@ -1032,9 +1070,18 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // 关窗驻留托盘，不退出。
+            // 关窗：默认驻留托盘；开启「轻量模式」时交接退出（留核）。
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let _ = window.hide();
+                let app = window.app_handle();
+                let lightweight = app
+                    .try_state::<AppState>()
+                    .map(|s| s.store.lock().unwrap().data().ui.lightweight_close)
+                    .unwrap_or(false);
+                if lightweight {
+                    lightweight_quit(app);
+                } else {
+                    let _ = window.hide();
+                }
                 api.prevent_close();
             }
         })
@@ -1067,6 +1114,7 @@ pub fn run() {
             get_engine_config,
             set_theme,
             set_lang,
+            set_lightweight_close,
             set_mixed_port,
             set_allow_lan,
             autostart_status,
@@ -1090,8 +1138,12 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 if let Some(state) = app.try_state::<AppState>() {
                     state.ws.unsubscribe_all();
-                    state.sysproxy.disable();
-                    state.core().stop();
+                    let handoff = state.handoff.load(std::sync::atomic::Ordering::SeqCst);
+                    if !handoff {
+                        state.sysproxy.disable();
+                        state.core().stop();
+                    }
+                    // handoff：内核与系统代理原样留给系统收养
                 }
             }
         });

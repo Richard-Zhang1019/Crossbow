@@ -686,6 +686,7 @@ version = "0.2.0"
 dependencies = [
  "crossbow-core",
  "flate2",
+ "libc",
  "serde",
  "serde_json",
  "tauri",
