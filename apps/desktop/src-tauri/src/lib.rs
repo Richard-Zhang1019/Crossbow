@@ -890,9 +890,30 @@ fn refresh_tray(app: &AppHandle) {
 }
 
 fn show_main_window(app: &AppHandle) {
-    if let Some(win) = app.get_webview_window("main") {
-        let _ = win.show();
-        let _ = win.set_focus();
+    match app.get_webview_window("main") {
+        Some(win) => {
+            let _ = win.show();
+            let _ = win.set_focus();
+        }
+        None => {
+            // 轻量待机中窗口已销毁：重建
+            let _ = tauri::WebviewWindowBuilder::new(
+                app,
+                "main",
+                tauri::WebviewUrl::App("index.html".into()),
+            )
+            .title("Crossbow")
+            .inner_size(1120.0, 720.0)
+            .min_inner_size(880.0, 560.0)
+            .center()
+            .build();
+            // 内核仍是本进程的子进程（adopted/own），继续归我们管
+            if let Some(state) = app.try_state::<AppState>() {
+                state
+                    .handoff
+                    .store(false, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
     }
 }
 
@@ -916,18 +937,28 @@ fn toggle_sysproxy(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 轻量交接退出：留核（写描述符）→ 跳过清理 → 退出进程。
+/// 轻量模式关窗：内核交接留核（GUI 进程保留，托盘常驻可唤醒）。
+/// 主窗口销毁以释放 webview 内存；ws 订阅随窗口销毁一并退订。
 fn lightweight_quit(app: &AppHandle) {
     let state = app.state::<AppState>();
-    let pid = state.core().detach();
-    if pid.is_some() {
-        state
-            .handoff
-            .store(true, std::sync::atomic::Ordering::SeqCst);
+    let Some(_pid) = state.core().detach() else {
+        // 内核未运行：没有可交接的东西，等价于普通关窗（隐藏到托盘）
+        show_no_more(app);
+        return;
+    };
+    state
+        .handoff
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    state.ws.unsubscribe_all();
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.destroy(); // 直接销毁，绕过 CloseRequested 防递归
     }
-    // 未运行内核时与普通退出等价（handoff=false → 正常清理路径）
-    let _ = pid;
-    app.exit(0);
+}
+
+fn show_no_more(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.hide();
+    }
 }
 
 fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
@@ -943,6 +974,11 @@ fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
             Ok(())
         }
         "quit" => {
+            if let Some(state) = app.try_state::<AppState>() {
+                state
+                    .handoff
+                    .store(false, std::sync::atomic::Ordering::SeqCst);
+            }
             app.exit(0);
             Ok(())
         }
