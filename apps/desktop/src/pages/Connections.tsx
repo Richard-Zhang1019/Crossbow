@@ -127,7 +127,7 @@ function Row({ row }: { row: ConnRow }) {
       style={{
         height: ROW_H,
         gridTemplateColumns: "minmax(220px,2fr) minmax(120px,1fr) minmax(150px,1.2fr) 90px 90px 90px 70px",
-        borderBottom: "1px solid rgba(255,255,255,.035)",
+        borderBottom: "1px solid var(--cb-line)",
         fontSize: 11.5,
         color: "var(--cb-text-dim)",
       }}

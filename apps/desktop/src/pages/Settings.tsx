@@ -197,7 +197,7 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
         style={{ borderColor: "var(--cb-line)" }}>
         {title}
       </div>
-      <div className="divide-y" style={{ borderColor: "var(--cb-line)" }}>
+      <div className="cb-rows">
         {children}
       </div>
     </section>

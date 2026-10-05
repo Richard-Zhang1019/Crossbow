@@ -148,6 +148,11 @@ body,
   background: var(--cb-faint);
 }
 
+/* 设置页行分割（token 化发丝线） */
+.cb-rows > * + * {
+  border-top: 1px solid var(--cb-line);
+}
+
 /* 徽标 */
 .cb-badge {
   font-size: 10px;
