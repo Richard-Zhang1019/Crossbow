@@ -4,6 +4,7 @@
 //! 1. 任何 schema 变更必须带 `migrate` 分支与迁移测试；
 //! 2. 旧 schema 写入前自动快照（见 `store::Store::save`）。
 
+use crate::emoji::default_flag_emoji;
 use serde::{Deserialize, Serialize};
 
 /// 当前存储 schema 版本。每次不兼容变更 +1，并在 `migrate` 中补一条迁移。
@@ -103,6 +104,9 @@ pub struct EngineConfig {
     pub mixed_port: u16,
     #[serde(default)]
     pub allow_lan: bool,
+    /// 节点旗帜补全（按地区关键词给节点名加国旗前缀）。
+    #[serde(default = "default_flag_emoji")]
+    pub flag_emoji: bool,
 }
 
 fn default_engine() -> Engine {
@@ -120,6 +124,7 @@ impl Default for EngineConfig {
             channel: "stable".into(),
             mixed_port: default_mixed_port(),
             allow_lan: false,
+            flag_emoji: default_flag_emoji(),
         }
     }
 }

@@ -4,6 +4,7 @@
 //! Profile/订阅管理、覆写链、配置渲染（→ mihomo YAML）、存储快照与迁移。
 //! 平台相关能力（进程管理、系统代理、NE 隧道）不在这里，由各壳实现。
 
+pub mod emoji;
 pub mod model;
 pub mod override_patch;
 pub mod render;
@@ -11,6 +12,7 @@ pub mod runtime;
 pub mod store;
 pub mod subscription;
 
+pub use emoji::enrich_flags;
 pub use model::{
     Engine, EngineConfig, OverrideDef, OverrideKind, Profile, ProfileKind, StoreSchema,
     TrafficInfo, UiSettings, UpdateOutcome,

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { ipc, type Profile } from "../ipc";
+import Select from "../components/Select";
 import { useT } from "../i18n";
 
 function fmtBytesLocal(n: number): string {
@@ -186,6 +187,7 @@ export default function ProfilesPage() {
               onActivate={() => run(p.id, () => ipc.setActiveProfile(p.id))}
               onRemove={() => run(p.id, () => ipc.removeProfile(p.id))}
               onSetInterval={(min) => run(p.id, () => ipc.setProfileInterval(p.id, min))}
+              onRename={(name) => run(p.id, () => ipc.renameProfile(p.id, name))}
             />
           ))}
         </div>
@@ -217,6 +219,7 @@ function ProfileCard({
   onActivate,
   onRemove,
   onSetInterval,
+  onRename,
 }: {
   profile: Profile;
   active: boolean;
@@ -225,8 +228,11 @@ function ProfileCard({
   onActivate: () => void;
   onRemove: () => void;
   onSetInterval: (min: number) => void;
+  onRename: (name: string) => void;
 }) {
   const t = useT();
+  const [editing, setEditing] = useState(false);
+  const [nameDraft, setNameDraft] = useState(profile.name);
   const traffic = profile.traffic;
   const used = traffic ? traffic.upload + traffic.download : 0;
   const pct = traffic && traffic.total > 0 ? Math.min(100, (used / traffic.total) * 100) : 0;
@@ -244,7 +250,42 @@ function ProfileCard({
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium cb-selectable">{profile.name}</span>
+            {editing ? (
+              <input
+                autoFocus
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                onBlur={() => {
+                  setEditing(false);
+                  if (nameDraft.trim() && nameDraft !== profile.name) {
+                    onRename(nameDraft.trim());
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                  if (e.key === "Escape") {
+                    setNameDraft(profile.name);
+                    setEditing(false);
+                  }
+                }}
+                placeholder={t("profiles.namePlaceholder")}
+                className="cb-input cb-selectable py-0.5 text-sm"
+                style={{ width: 260 }}
+              />
+            ) : (
+              <span className="text-sm font-medium cb-selectable">{profile.name}</span>
+            )}
+            <button
+              onClick={() => {
+                setNameDraft(profile.name);
+                setEditing(true);
+              }}
+              title={t("profiles.rename")}
+              className="text-[11px]"
+              style={{ color: "var(--cb-faint)" }}
+            >
+              ✎
+            </button>
             {active && (
               <span className="cb-badge">{t("profiles.current")}</span>
             )}
@@ -253,17 +294,16 @@ function ProfileCard({
             {profile.kind === "remote" ? t("profiles.remote") : t("profiles.local")} ·{" "}
             {t("profiles.updatedAt", { time: fmtTime(profile.last_updated, t) })}
             {profile.kind === "remote" && (
-              <select
+              <Select
                 value={profile.update_interval_min}
-                onChange={(e) => onSetInterval(Number(e.target.value))}
-                className="cb-input !px-1.5 !py-0.5 text-[11px]"
-                style={{ width: "auto" }}
-              >
-                <option value={0}>{t("profiles.autoOff")}</option>
-                <option value={360}>{t("profiles.autoH", { n: 6 })}</option>
-                <option value={720}>{t("profiles.autoH", { n: 12 })}</option>
-                <option value={1440}>{t("profiles.autoH", { n: 24 })}</option>
-              </select>
+                options={[
+                  { value: 0, label: t("profiles.autoOff") },
+                  { value: 360, label: t("profiles.autoH", { n: 6 }) },
+                  { value: 720, label: t("profiles.autoH", { n: 12 }) },
+                  { value: 1440, label: t("profiles.autoH", { n: 24 }) },
+                ]}
+                onChange={(v) => onSetInterval(Number(v))}
+              />
             )}
           </div>
           {profile.kind === "remote" && profile.update_interval_min > 0 && (

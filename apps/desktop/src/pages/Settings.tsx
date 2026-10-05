@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ipc, type CoreBinaryInfo, type EngineConfigView, type UiSettings } from "../ipc";
+import Select from "../components/Select";
 import { useT } from "../i18n";
 
 /** 设置页（M0-S4）：内核端口/局域网、外观主题、开机自启、内核版本。 */
@@ -12,6 +13,7 @@ export default function SettingsPage() {
   const [version, setVersion] = useState<string>("…");
   const [lang, setLangState] = useState<"zh" | "en">("zh");
   const [coreBin, setCoreBin] = useState<CoreBinaryInfo | null>(null);
+  const [flags, setFlags] = useState(true);
   const [installing, setInstalling] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -23,6 +25,7 @@ export default function SettingsPage() {
     if (ui) setLangState((ui.lang as "zh" | "en") ?? "zh");
     setTheme(await ipc.getUiSettings().then((u) => u.theme).catch(() => "system" as const));
     setAutostart(await ipc.autostartStatus().catch(() => false));
+    if (e) setFlags(e.flag_emoji);
     setCoreBin(await ipc.coreBinaryInfo().catch(() => null));
     setVersion(await ipc.coreVersion().catch(() => t("settings.notInstalled")));
   };
@@ -107,6 +110,16 @@ export default function SettingsPage() {
             className="cb-input cb-selectable w-24 px-2 py-1"
           />
         </Row>
+        <Row label={t("settings.flags")} hint={t("settings.flagsHint")}>
+          <Switch
+            checked={flags}
+            onChange={async (v) => {
+              await ipc.setFlagEmoji(v).catch((e) => flash(false, String(e)));
+              setFlags(v);
+              flash(true, v ? "ON" : "OFF");
+            }}
+          />
+        </Row>
         <Row label={t("settings.lan")} hint={t("settings.lanHint")}>
           <Switch
             checked={engine?.allow_lan ?? false}
@@ -121,33 +134,33 @@ export default function SettingsPage() {
 
       <Group title={t("settings.appearance")}>
         <Row label={t("settings.theme")}>
-          <select
+          <Select
             value={theme}
-            onChange={async (e) => {
-              const t = e.target.value as UiSettings["theme"];
+            options={[
+              { value: "system", label: t("theme.system") },
+              { value: "light", label: t("theme.light") },
+              { value: "dark", label: t("theme.dark") },
+            ]}
+            onChange={async (v) => {
+              const t = v as UiSettings["theme"];
               await ipc.setTheme(t);
               setTheme(t);
             }}
-            className="cb-input"
-          >
-            <option value="system">{t("theme.system")}</option>
-            <option value="light">{t("theme.light")}</option>
-            <option value="dark">{t("theme.dark")}</option>
-          </select>
+          />
         </Row>
         <Row label={t("settings.lang")}>
-          <select
+          <Select
             value={lang}
-            onChange={async (e) => {
-              const l = e.target.value as "zh" | "en";
+            options={[
+              { value: "zh", label: "简体中文" },
+              { value: "en", label: "English" },
+            ]}
+            onChange={async (v) => {
+              const l = v as "zh" | "en";
               await ipc.setLang(l).catch((e) => flash(false, String(e)));
               setLangState(l);
             }}
-            className="cb-input"
-          >
-            <option value="zh">简体中文</option>
-            <option value="en">English</option>
-          </select>
+          />
         </Row>
       </Group>
 

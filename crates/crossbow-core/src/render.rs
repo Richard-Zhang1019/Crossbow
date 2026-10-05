@@ -33,8 +33,12 @@ pub fn render_config(store: &StoreSchema) -> Result<Rendered, RenderError> {
         .map(|o| o.content.clone())
         .collect();
 
-    let config = apply_chain(&profile.content, &patches)
+    let mut config = apply_chain(&profile.content, &patches)
         .map_err(|e| RenderError::InvalidYaml(e.to_string()))?;
+    if store.engine.flag_emoji {
+        config = crate::emoji::enrich_flags(&config)
+            .map_err(|e| RenderError::InvalidYaml(e.to_string()))?;
+    }
     Ok(Rendered {
         config,
         profile_id: profile_id.to_string(),

@@ -48,6 +48,7 @@ export interface EngineConfigView {
   engine: string;
   mixed_port: number;
   allow_lan: boolean;
+  flag_emoji: boolean;
 }
 
 export interface ConnRow {
@@ -152,6 +153,9 @@ export const ipc = {
   updateProfile: (id: string) => invoke<Profile>("update_profile", { id }),
   setProfileInterval: (id: string, intervalMin: number) =>
     invoke<void>("set_profile_interval", { id, intervalMin }),
+  renameProfile: (id: string, name: string) =>
+    invoke<void>("rename_profile", { id, name }),
+  setFlagEmoji: (enabled: boolean) => invoke<void>("set_flag_emoji", { enabled }),
   onProfileUpdated: (cb: (id: string) => void) =>
     listen<string>("profile://updated", (e) => cb(e.payload)),
   setActiveProfile: (id: string) => invoke<void>("set_active_profile", { id }),

@@ -94,7 +94,15 @@ fn gen_id() -> String {
 fn import_url_blocking(state: &AppState, url: &str, name: Option<&str>) -> Result<Profile, String> {
     let fetched = fetch_subscription(url, 30).map_err(|e| e.to_string())?;
     validate_profile_content(&fetched.content).map_err(|e| e.to_string())?;
-    let fallback = url.split('/').next_back().unwrap_or("订阅").to_string();
+    let fallback = url
+        .split('/')
+        .next_back()
+        .unwrap_or("订阅")
+        .split('?')
+        .next()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("订阅")
+        .to_string();
     let mut profile = make_profile(
         gen_id(),
         name.unwrap_or(&fallback).to_string(),
@@ -257,6 +265,42 @@ fn update_profile(app: AppHandle, state: State<AppState>, id: String) -> Result<
     let profile = refresh_profile_blocking(&state, &id)?;
     refresh_tray(&app);
     Ok(profile)
+}
+
+/// 重命名 Profile。
+#[tauri::command]
+fn rename_profile(
+    app: AppHandle,
+    state: State<AppState>,
+    id: String,
+    name: String,
+) -> Result<(), String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("名称不能为空".into());
+    }
+    {
+        let mut store = state.store.lock().unwrap();
+        let p = store
+            .data_mut()
+            .profiles
+            .iter_mut()
+            .find(|p| p.id == id)
+            .ok_or("profile not found")?;
+        p.name = name.to_string();
+        store.save().map_err(|e| e.to_string())?;
+    }
+    refresh_tray(&app);
+    Ok(())
+}
+
+/// 节点旗帜补全开关。
+#[tauri::command]
+fn set_flag_emoji(state: State<AppState>, enabled: bool) -> Result<(), String> {
+    let mut store = state.store.lock().unwrap();
+    store.data_mut().engine.flag_emoji = enabled;
+    store.save().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// 设置订阅自动更新间隔（分钟，0 = 关闭）。
@@ -521,6 +565,7 @@ struct EngineView {
     engine: String,
     mixed_port: u16,
     allow_lan: bool,
+    flag_emoji: bool,
 }
 
 #[tauri::command]
@@ -530,6 +575,7 @@ fn get_engine_config(state: State<AppState>) -> EngineView {
         engine: format!("{:?}", store.data().engine.engine).to_lowercase(),
         mixed_port: store.data().engine.mixed_port,
         allow_lan: store.data().engine.allow_lan,
+        flag_emoji: store.data().engine.flag_emoji,
     }
 }
 
@@ -983,6 +1029,8 @@ pub fn run() {
             import_profile_file,
             update_profile,
             set_profile_interval,
+            rename_profile,
+            set_flag_emoji,
             set_active_profile,
             remove_profile,
             core_start,
