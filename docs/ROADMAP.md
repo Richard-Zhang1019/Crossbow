@@ -47,16 +47,17 @@
 - 导出/导入完整配置包（为跨设备迁移铺路）
 - 验收：换机场景 10 分钟内恢复全部配置
 
-## 样式专项 · 独立任务（与 M1.3 余项并行，只动样式不动逻辑）
+## 样式专项 · 独立任务（与 M1.3 余项并行，只动样式不动逻辑）✅ 2026-10-05
 
 > 单独开的任务：全 UI 对齐 v2 设计令牌，清理硬编码色与控件漂移。不碰功能逻辑与文案 i18n。
 
-- 硬编码色收敛到令牌：Sparkline 线/网格线（浅色主题下图表配色错误是真 bug）、日志级别色、设置页状态色、流量条渐变第二色
-- 页面标题统一 PageHead/15px（Logs、Settings 的 text-lg 是漂移）；连接页表头内联样式抽 `.cb-th`
-- 手写控件回归设计系统：日志页搜索框/清空按钮 → `cb-input`/`cb-btn`；Profiles 错误条复用 ErrorBar
-- 真实视觉修复：订阅导入卡常态丢发丝线边框、设置页快照行提示文案显示两遍
-- index.css 清理：删除与 `:root` 完全重复的 `.dark` 块、无使用者的 `--cb-border` 兼容映射；补 hover/focus-visible、checkbox accent-color
-- ⏭ 范围外另开任务：硬编码中文未走 i18n（首页 KPI/出口卡、代理页「超时」）
+- ✅ 硬编码色收敛到令牌：Sparkline 线/网格线（修复浅色主题下图表配色错误与白色网格线隐形两个真 bug）、日志级别色、设置页状态色、流量条渐变第二色
+- ✅ 页面标题统一 PageHead/15px（Logs、Settings 的 text-lg 漂移归位）；连接页表头内联样式抽 `.cb-th`
+- ✅ 手写控件回归设计系统：日志页搜索框/清空按钮 → `cb-input`/`cb-btn`；Profiles 错误条复用 ErrorBar；诊断页状态点复用 cb-dot
+- ✅ 真实视觉修复：订阅导入卡常态丢发丝线边框、设置页快照行提示文案显示两遍
+- ✅ index.css 清理：删除与 `:root` 完全重复的 `.dark` 块、无使用者的 `--cb-border` 兼容映射；补 hover/focus-visible、checkbox accent-color、侧栏导航 hover
+- 验收：tsc+vite 构建通过；浏览器目检首页/连接/日志/设置/配置双主题（浅色图表网格线恢复可见、标题字号一致、checkbox 跟随主题）
+- ⏭ 范围外另开任务：硬编码中文未走 i18n（首页 KPI/出口卡/配置徽标、代理页「超时」）；浏览器目检中发现 Profiles 页 `getCurrentWebview()` 在无 Tauri 环境裸崩（真机不受影响，可加 catch 降级，随下次顺手修）
 
 ## M1.5 · Windows 版（约 3–4 周）
 
