@@ -100,8 +100,11 @@ pub fn resolve_core_binary(data_dir: &Path) -> Option<PathBuf> {
 
 /// 按引擎严格解析内核路径：不存在跨引擎回退——查不到就是未安装。
 pub fn resolve_core_for(data_dir: &Path, engine: Option<&str>) -> Option<PathBuf> {
+    // 引擎键两种写法：前端下拉框 "singbox"，启动链二进制名 "sing-box"——都接受。
+    // （曾因启动链传 "sing-box" 落入默认分支，换核永远换到 mihomo：
+    //   首次启动被「管理器已就位早退」掩盖，二次切换必现。）
     let name = match engine {
-        Some("singbox") => "sing-box",
+        Some("singbox" | "sing-box") => "sing-box",
         _ => "mihomo",
     };
     resolve_exact(data_dir, name)
@@ -276,6 +279,28 @@ fn unpack(download_path: &Path, dest: &Path, kind: CoreKind) -> Result<(), Strin
 
 #[cfg(test)]
 mod tests {
+
+    /// 回归：ensure_engine_binary 传二进制名 "sing-box"，前端传键名 "singbox"，
+    /// 两种写法都必须解析到 sing-box（曾有 "sing-box" 落入默认分支换到 mihomo，
+    /// 首次启动被「管理器已就位早退」掩盖，二次切换必现）。
+    #[test]
+    fn resolve_accepts_both_engine_spellings() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin_dir = dir.path().join("binaries");
+        std::fs::create_dir_all(&bin_dir).unwrap();
+        std::fs::write(bin_dir.join("sing-box"), b"fake").unwrap();
+        std::fs::write(bin_dir.join("mihomo"), b"fake").unwrap();
+        for key in ["singbox", "sing-box"] {
+            let p = resolve_core_for(dir.path(), Some(key))
+                .unwrap_or_else(|| panic!("engine {key} should resolve"));
+            assert!(
+                p.file_name().map(|f| f == "sing-box").unwrap_or(false),
+                "engine {key} resolved to {}",
+                p.display()
+            );
+        }
+    }
+
     use super::*;
 
     #[test]
