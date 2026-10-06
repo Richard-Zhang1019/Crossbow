@@ -74,6 +74,9 @@ struct Shared {
     opts: Mutex<CoreOptions>,
     callback: Mutex<Option<Callback>>,
     inner: Mutex<Inner>,
+    /// 本次启动链的最终配置内容；spawn（含崩溃重启）每次都据此重写
+    /// config.yaml，避免换引擎后旧管理器复用新引擎的配置文件。
+    config_cache: Mutex<Option<String>>,
 }
 
 impl Drop for Shared {
@@ -115,6 +118,17 @@ impl Shared {
 
     fn spawn_child(&self) -> Result<(), String> {
         let config_path = self.work_dir.join("config.yaml");
+        // 每次拉起（含崩溃自动重启）都重写配置：内容来自本次启动链的缓存，
+        // 保证磁盘文件与当前管理的内核/引擎严格一致。
+        {
+            let cached = self.config_cache.lock().unwrap();
+            let Some(content) = cached.as_ref() else {
+                return Err("no config cached for this start chain".into());
+            };
+            std::fs::File::create(&config_path)
+                .and_then(|mut f| f.write_all(content.as_bytes()))
+                .map_err(|e| format!("write config: {e}"))?;
+        }
         let mut cmd = Command::new(&self.binary_path);
         // 两内核 CLI 不同：mihomo `-d workdir -f config`；sing-box `run -D workdir -c config`
         if self.binary_path.file_name().and_then(|f| f.to_str()) == Some("sing-box") {
@@ -168,6 +182,7 @@ impl CoreManager {
                 work_dir,
                 opts: Mutex::new(CoreOptions::default()),
                 callback: Mutex::new(None),
+                config_cache: Mutex::new(None),
                 inner: Mutex::new(Inner {
                     child: None,
                     status: CoreStatus::Stopped,
@@ -220,6 +235,11 @@ impl CoreManager {
 
     /// 启动内核。`base_config` 是渲染后的订阅配置（未经运行时注入）。
     pub fn start(&self, base_config: &str, engine_rt: &RuntimeConfig) -> Result<(), String> {
+        // 上一次尝试还在探测中（Starting）：先收掉再启动，避免新配置写入后
+        // 被旧探测超时路径误杀/误报。
+        if self.status() == CoreStatus::Starting {
+            self.stop();
+        }
         if !matches!(self.status(), CoreStatus::Stopped | CoreStatus::Crashed(_)) {
             return Err(format!("core is {:?}, stop it first", self.status()));
         }
@@ -246,11 +266,9 @@ impl CoreManager {
             controller_secret: secret.clone(),
             ..engine_rt.clone()
         };
-        let final_config = apply_runtime(base_config, &rt).map_err(|e| e.to_string())?;
-        let config_path = self.shared.work_dir.join("config.yaml");
-        std::fs::File::create(&config_path)
-            .and_then(|mut f| f.write_all(final_config.as_bytes()))
-            .map_err(|e| format!("write config: {e}"))?;
+        let final_config = apply_runtime(base_config, &rt)?;
+        // 配置随启动链缓存：崩溃自动重启也重写文件，杜绝旧内核配新配置
+        *self.shared.config_cache.lock().unwrap() = Some(final_config);
 
         {
             let mut inner = self.shared.inner.lock().unwrap();
@@ -276,7 +294,7 @@ impl CoreManager {
             port: d.port,
             secret: d.secret.clone(),
         };
-        if !probe.wait_ready(Duration::from_secs(2)) {
+        if !probe.wait_ready(Duration::from_secs(2), || false) {
             let _ = std::fs::remove_file(Shared::descriptor_path(&self.shared.work_dir));
             return false;
         }
@@ -389,7 +407,13 @@ fn watch(shared: Arc<Shared>, port: u16, secret: String) {
     }
 
     let probe = ControllerProbe { port, secret };
-    if !probe.wait_ready(Duration::from_secs(opts.readiness_timeout_secs)) {
+    if !probe.wait_ready(Duration::from_secs(opts.readiness_timeout_secs), || {
+        shared.inner.lock().unwrap().stopping
+    }) {
+        // stop() 打断了探测：收尾已由 stop() 上报，这里静默退出
+        if shared.inner.lock().unwrap().stopping {
+            return;
+        }
         shared.kill_child();
         shared.notify(CoreStatus::Crashed(format!(
             "内核启动失败/超时：{}",
@@ -465,14 +489,18 @@ struct ControllerProbe {
 }
 
 impl ControllerProbe {
-    /// 轮询 `/version` 直到就绪或超时。
-    fn wait_ready(&self, timeout: Duration) -> bool {
+    /// 轮询 `/version` 直到就绪或超时；`cancelled` 返回 true 时立即放弃
+    /// （stop() 已接管收尾，本探测不再上报）。
+    fn wait_ready(&self, timeout: Duration, cancelled: impl Fn() -> bool) -> bool {
         let agent = ureq::AgentBuilder::new()
             .timeout(Duration::from_millis(800))
             .build();
         let url = format!("http://127.0.0.1:{}/version", self.port);
         let deadline = Instant::now() + timeout;
         while Instant::now() < deadline {
+            if cancelled() {
+                return false;
+            }
             if let Ok(resp) = agent
                 .get(&url)
                 .set("Authorization", &format!("Bearer {}", self.secret))
@@ -482,7 +510,13 @@ impl ControllerProbe {
                     return true;
                 }
             }
-            std::thread::sleep(Duration::from_millis(300));
+            // 短睡眠分片，保证 stop() 能及时打断长探测
+            for _ in 0..6 {
+                if cancelled() {
+                    return false;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
         }
         false
     }
@@ -654,8 +688,11 @@ pub fn free_port() -> Option<u16> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    /// 真内核测试共享网络与端口，必须串行执行（跨模块共享同一把锁）。
+    pub(crate) static REAL_CORE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn free_port_returns_usable_port() {
@@ -699,6 +736,7 @@ mod tests {
     /// 验证 启动 → Running → 混合端口可代理 → 停止 → Stopped。
     #[test]
     fn real_core_lifecycle_and_proxy_roundtrip() {
+        let _serial = REAL_CORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let Ok(bin) = std::env::var("CROSSBOW_CORE_BIN") else {
             eprintln!("skip: CROSSBOW_CORE_BIN not set");
             return;
@@ -748,6 +786,72 @@ mod tests {
         let code = String::from_utf8_lossy(&out.stdout).to_string();
         assert_eq!(code, "204", "proxy roundtrip failed: {code}");
 
+        mgr.stop();
+        assert_eq!(mgr.status(), CoreStatus::Stopped);
+    }
+
+    /// 回归：崩溃自动重启必须用本启动链缓存的内容重写 config.yaml。
+    /// 旧实现重启时原样复用磁盘文件——换引擎交错时会把新引擎的配置
+    /// 喂给旧内核（mihomo 拿到 sing-box JSON，控制器永不就绪）。
+    #[test]
+    fn real_core_crash_restart_rewrites_config() {
+        let _serial = REAL_CORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let Ok(bin) = std::env::var("CROSSBOW_CORE_BIN") else {
+            eprintln!("skip: CROSSBOW_CORE_BIN not set");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let mgr = CoreManager::new(PathBuf::from(bin), dir.path().to_path_buf());
+        mgr.set_options(CoreOptions {
+            ensure_geo_files: false,
+            ..CoreOptions::default()
+        });
+        let port = free_port().unwrap();
+        let base = "proxies: []\nrules:\n  - MATCH,DIRECT\n".to_string();
+        mgr.start(
+            &base,
+            &RuntimeConfig {
+                mixed_port: port,
+                ..RuntimeConfig::default()
+            },
+        )
+        .unwrap();
+        let mut running = false;
+        for _ in 0..100 {
+            if mgr.status() == CoreStatus::Running {
+                running = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert!(running, "core never reached Running: {:?}", mgr.status());
+
+        // 杀内核触发崩溃重启，再把磁盘配置篡改成垃圾——重启必须重写
+        {
+            let mut inner = mgr.shared.inner.lock().unwrap();
+            if let Some(c) = inner.child.as_mut() {
+                let _ = c.kill();
+            }
+        }
+        let cfg_path = dir.path().join("config.yaml");
+        std::fs::write(&cfg_path, "# TAMPERED\n").unwrap();
+
+        let mut ok = false;
+        for _ in 0..200 {
+            let rewritten = std::fs::read_to_string(&cfg_path)
+                .map(|c| c.contains("mixed-port") && !c.contains("TAMPERED"))
+                .unwrap_or(false);
+            if mgr.status() == CoreStatus::Running && rewritten {
+                ok = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert!(
+            ok,
+            "restart should rewrite config and reach Running: {:?}",
+            mgr.status()
+        );
         mgr.stop();
         assert_eq!(mgr.status(), CoreStatus::Stopped);
     }

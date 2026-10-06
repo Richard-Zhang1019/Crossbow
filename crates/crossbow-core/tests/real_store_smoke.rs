@@ -13,20 +13,29 @@ fn real_store_singbox_e2e() {
     store.data_mut().engine.engine = Engine::SingBox;
     let rendered = render_config_with(store.data(), true).expect("render");
     let secret = "smoke-secret-123";
+    // 动态取空闲端口：app 本体运行时会占用 7897，固定端口必然撞车
+    let free = |s: &str| {
+        std::net::TcpListener::bind(("127.0.0.1", 0))
+            .and_then(|l| l.local_addr())
+            .map(|a| a.port())
+            .unwrap_or_else(|_| panic!("no free port for {s}"))
+    };
+    let (mixed, ctrl) = (free("mixed"), free("controller"));
     let final_cfg = apply_runtime(
         &rendered.config,
         &RuntimeConfig {
             engine: Engine::SingBox,
-            mixed_port: 7897,
+            mixed_port: mixed,
             allow_lan: false,
-            controller_port: 19091,
+            controller_port: ctrl,
             controller_secret: secret.into(),
             log_level: "info".into(),
         },
     )
     .expect("apply_runtime");
     let work = std::path::Path::new("/tmp/cb-smoke-work");
-    let _ = std::fs::remove_dir_all(work);
+    // 保留目录以复用 cache.db 里缓存的 remote 规则集（真实二次启动场景）；
+    // 首次运行要经 gh-proxy 下载，可能显著超过常规启动时间
     std::fs::create_dir_all(work).unwrap();
     std::fs::write(work.join("config.yaml"), &final_cfg).unwrap();
 
@@ -37,12 +46,12 @@ fn real_store_singbox_e2e() {
         .stderr(std::fs::File::create("/tmp/cb-smoke-err.log").unwrap())
         .spawn()
         .expect("spawn sing-box");
-    // 最多 5s 探测 clash api /version
+    // 最多 60s 探测 clash api /version（首启含规则集下载）
     let mut ok = false;
-    for _ in 0..25 {
+    for _ in 0..300 {
         if let Ok(out) = std::process::Command::new("curl")
             .args(["-s", "-m", "1", "-H", &format!("Authorization: Bearer {secret}"),
-                   "http://127.0.0.1:19091/version"])
+                   &format!("http://127.0.0.1:{ctrl}/version")])
             .output()
         {
             let body = String::from_utf8_lossy(&out.stdout).to_string();
@@ -52,5 +61,5 @@ fn real_store_singbox_e2e() {
     }
     let _ = child.kill();
     let _ = child.wait();
-    assert!(ok, "sing-box clash api 5s 内未就绪");
+    assert!(ok, "sing-box clash api 60s 内未就绪（首启含规则集下载）");
 }

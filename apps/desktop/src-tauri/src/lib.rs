@@ -573,7 +573,11 @@ async fn set_engine(
         store.data_mut().engine.engine = target;
         store.save().map_err(|e| e.to_string())?;
     }
-    if state.core().status() == CoreStatus::Running {
+    // Running 热重启；Starting（上次尝试还在探测）也要收掉后按新引擎拉起
+    if matches!(
+        state.core().status(),
+        CoreStatus::Running | CoreStatus::Starting
+    ) {
         restart_core(&state)?;
     }
     refresh_tray(&app);
