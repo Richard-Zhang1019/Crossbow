@@ -47,9 +47,13 @@ jobs:
 
       - uses: swatinem/rust-cache@v2
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+          cache: pnpm
 
       # 内核侧载二进制不入库（.gitignore），构建前按平台下载
       # 版本必须与 core_download.rs 的 CORE_VERSION 保持一致
@@ -61,6 +65,7 @@ jobs:
             || curl -fsSL -o mihomo.gz \
             "https://gh-proxy.com/https://github.com/MetaCubeX/mihomo/releases/download/v1.19.32/${{ matrix.mihomo_asset }}"
           gunzip -f mihomo.gz
+          mkdir -p apps/desktop/src-tauri/binaries
           mv mihomo apps/desktop/src-tauri/binaries/${{ matrix.sidecar }}
           chmod +x apps/desktop/src-tauri/binaries/${{ matrix.sidecar }}
 
@@ -82,8 +87,7 @@ jobs:
           Copy-Item $exe.FullName apps/desktop/src-tauri/binaries/${{ matrix.sidecar }}
 
       - name: Install frontend deps
-        working-directory: apps/desktop
-        run: npm install
+        run: pnpm install --frozen-lockfile
 
       - name: Build (unsigned)
         working-directory: apps/desktop
