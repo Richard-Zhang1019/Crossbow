@@ -91,6 +91,7 @@ fn start_core(state: &AppState) -> Result<(), String> {
     let rendered = render_current(state, !safe)?;
     let store = state.store.lock().unwrap();
     let rt = RuntimeConfig {
+        engine: store.data().engine.engine,
         mixed_port: store.data().engine.mixed_port,
         allow_lan: store.data().engine.allow_lan,
         ..RuntimeConfig::default()

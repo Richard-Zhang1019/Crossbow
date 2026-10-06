@@ -125,22 +125,48 @@ pub fn convert_to_singbox(
             route_rules.push(rule);
         }
     }
+    // MATCH 规则只有两段（MATCH,策略），取 nth(1)；无 MATCH 回退 DIRECT。
     let final_out = rules
         .iter()
         .rev()
         .find(|r| r.to_lowercase().starts_with("match,"))
-        .and_then(|r| r.split(',').nth(2).map(String::from))
+        .and_then(|r| r.split(',').nth(1).map(|s| s.trim().to_string()))
+        .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "DIRECT".into());
+
+    // 引用到的规则集 → remote 定义：sing-box 自行下载、缓存进 cache.db 并周期更新。
+    // URL 走 gh-proxy 镜像（CN 直连 raw.githubusercontent 不可达）；下载绕行
+    // 跟随 MATCH 主出站（DIRECT 时省略 = 直连）。
+    let mut seen_sets = std::collections::BTreeSet::new();
+    let rule_set_defs: Vec<Value> = route_rules
+        .iter()
+        .flat_map(|r| {
+            r.get("rule_set")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default()
+        })
+        .filter_map(|t| t.as_str().map(String::from))
+        .filter(|t| seen_sets.insert(t.clone()))
+        .map(|tag| srs_def(&tag, &final_out))
+        .collect();
 
     // ---- 组装 ----
     let bind = if allow_lan { "::" } else { "127.0.0.1" };
-    let cfg = json!({
+    // 代理解析的 DNS 出口跟随 MATCH 主出站；指向 DIRECT 或省略 detour 都等于
+    // 直连解析（sing-box 拒绝「detour 到空 direct 出站」）。
+    let mut dns_servers = vec![
+        json!({ "type": "https", "tag": "proxy-dns", "server": "8.8.8.8" }),
+        // 不带 detour：默认直连拨号；显式指向空 DIRECT 出站会被 sing-box 拒绝
+        json!({ "type": "udp", "tag": "local-dns", "server": "223.5.5.5" }),
+    ];
+    if final_out != "DIRECT" {
+        dns_servers[0]["detour"] = json!(&final_out);
+    }
+    let mut cfg = json!({
         "log": { "level": "info", "timestamp": true },
         "dns": {
-            "servers": [
-                { "type": "https", "tag": "proxy-dns", "server": "8.8.8.8", "detour": "AUTO" },
-                { "type": "udp", "tag": "local-dns", "server": "223.5.5.5", "detour": "DIRECT" }
-            ],
+            "servers": dns_servers,
             "final": "proxy-dns",
             "strategy": "prefer_ipv4"
         },
@@ -164,7 +190,33 @@ pub fn convert_to_singbox(
             "cache_file": { "enabled": true, "store_fakeip": false }
         }
     });
+    if !rule_set_defs.is_empty() {
+        cfg["route"]["rule_set"] = json!(rule_set_defs);
+    }
     Ok(serde_json::to_string_pretty(&cfg)?)
+}
+
+/// 规则集 tag → sing-box remote 规则集定义；geoip-*/geosite-* 映射到
+/// meta-rules-dat 的 sing 分支，其余 tag 保持 local（不代下载）。
+fn srs_def(tag: &str, detour: &str) -> Value {
+    let rel = tag
+        .strip_prefix("geoip-")
+        .map(|c| format!("geo/geoip/{c}.srs"))
+        .or_else(|| tag.strip_prefix("geosite-").map(|n| format!("geo/geosite/{n}.srs")));
+    let Some(rel) = rel else {
+        return json!({"type": "local", "tag": tag, "format": "binary", "path": format!("{tag}.srs")});
+    };
+    let mut def = json!({
+        "type": "remote",
+        "tag": tag,
+        "format": "binary",
+        "url": format!("https://gh-proxy.com/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/{rel}"),
+        "update_interval": "24h"
+    });
+    if detour != "DIRECT" {
+        def["download_detour"] = json!(detour);
+    }
+    def
 }
 
 fn convert_proxy(p: &ClashProxy) -> Result<Value, ConvertError> {
@@ -416,7 +468,8 @@ rules:
             .as_array()
             .map(|a| a[0] == "geoip-cn")
             .unwrap_or(false)));
-        assert_eq!(v["route"]["final"], "DIRECT");
+        // MATCH,节点选择（两段）→ route.final = 节点选择
+        assert_eq!(v["route"]["final"], "节点选择");
     }
 
     #[test]
@@ -450,5 +503,32 @@ rules:
         let v: Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["dns"]["rules"], Value::Null, "不应生成 outbound:any DNS 规则");
         assert_eq!(v["route"]["default_domain_resolver"], "local-dns");
+    }
+
+    // GEOIP/GEOSITE 规则引用的规则集必须带定义；默认 remote（sing-box 自下载），
+    // URL 走 gh-proxy 镜像；MATCH 主出站非 DIRECT 时作为 download_detour。
+    #[test]
+    fn rule_set_refs_get_remote_defs() {
+        let out = convert_to_singbox(SAMPLE, 7897, false).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        let defs = v["route"]["rule_set"].as_array().expect("应有 rule_set 定义");
+        assert!(defs.iter().any(|d| d["tag"] == "geoip-cn"
+            && d["type"] == "remote"
+            && d["format"] == "binary"
+            && d["url"].as_str().map(|u| u.contains("gh-proxy.com") && u.ends_with("/geo/geoip/cn.srs")).unwrap_or(false)));
+        // SAMPLE 的 MATCH → 节点选择（非 DIRECT）→ download_detour 跟随
+        assert!(defs[0].get("download_detour").map(|d| d == "节点选择").unwrap_or(false));
+        assert_eq!(defs.len(), 1, "SAMPLE 只引用 geoip-cn");
+    }
+
+    // MATCH → DIRECT 时：DNS 不带 detour（空 direct 出站会被 sing-box 拒绝），
+    // 规则集 download_detour 也省略。
+    #[test]
+    fn direct_final_omits_detours() {
+        let yaml = "proxies:\n  - name: a\n    type: ss\n    server: s\n    port: 1\n    cipher: aes-128-gcm\n    password: p\nrules:\n  - GEOIP,CN,DIRECT\n  - MATCH,DIRECT\n";
+        let out = convert_to_singbox(yaml, 7897, false).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert!(v["dns"]["servers"][0].get("detour").is_none());
+        assert!(v["route"]["rule_set"][0].get("download_detour").is_none());
     }
 }

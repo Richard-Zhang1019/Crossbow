@@ -116,10 +116,12 @@ impl Shared {
     fn spawn_child(&self) -> Result<(), String> {
         let config_path = self.work_dir.join("config.yaml");
         let mut cmd = Command::new(&self.binary_path);
-        cmd.arg("-d")
-            .arg(&self.work_dir)
-            .arg("-f")
-            .arg(&config_path);
+        // 两内核 CLI 不同：mihomo `-d workdir -f config`；sing-box `run -D workdir -c config`
+        if self.binary_path.file_name().and_then(|f| f.to_str()) == Some("sing-box") {
+            cmd.arg("run").arg("-D").arg(&self.work_dir).arg("-c").arg(&config_path);
+        } else {
+            cmd.arg("-d").arg(&self.work_dir).arg("-f").arg(&config_path);
+        }
         // 内核输出落到文件：崩溃诊断（yaml 错误等）靠它，不再丢弃。
         let log_file = std::fs::OpenOptions::new()
             .create(true)
@@ -549,6 +551,16 @@ fn download_to(name: &str, dest: &std::path::Path) -> Result<(), String> {
         .find(|(n, _, _)| *n == name)
         .map(|(_, _, urls)| *urls)
         .ok_or_else(|| format!("unknown geo file {name}"))?;
+    fetch_first_ok(name, urls, dest, GEO_MIN_BYTES)
+}
+
+/// 依次尝试镜像源下载；下载后做最小健全性检查（大小下限；metadb 另查文件头）。
+fn fetch_first_ok(
+    name: &str,
+    urls: &[&str],
+    dest: &std::path::Path,
+    min_bytes: u64,
+) -> Result<(), String> {
     let agent = ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(90))
         .build();
@@ -576,7 +588,7 @@ fn download_to(name: &str, dest: &std::path::Path) -> Result<(), String> {
                 }
                 // 健全性检查：足够大，且 metadb 头为 00 00 01 xx
                 let ok_size =
-                    std::fs::metadata(&tmp).map(|m| m.len()).unwrap_or(0) >= GEO_MIN_BYTES;
+                    std::fs::metadata(&tmp).map(|m| m.len()).unwrap_or(0) >= min_bytes;
                 let head_ok = name.ends_with("metadb") && {
                     let mut head = [0u8; 2];
                     std::fs::File::open(&tmp)

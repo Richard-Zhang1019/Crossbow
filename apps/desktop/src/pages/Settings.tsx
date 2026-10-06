@@ -14,9 +14,11 @@ export default function SettingsPage() {
   const [version, setVersion] = useState<string>("…");
   const [lang, setLangState] = useState<"zh" | "en">("zh");
   const [engineBin, setEngineBin] = useState<CoreBinaryInfo | null>(null);
-  // 下拉框的本地选择（与持久化 engine 解耦：未安装的引擎也可选中）
+  // 下拉框的本地选择（与持久化 engine 解耦：未安装的引擎也可选中）；
+  // touched 前重挂载一律回显持久化引擎，避免切页后假显示另一引擎
   const [selectedEngine, setSelectedEngine] = useState<"mihomo" | "singbox">("mihomo");
   const selectedEngineRef = useRef<"mihomo" | "singbox">("mihomo");
+  const engineTouched = useRef(false);
   selectedEngineRef.current = selectedEngine;
   const [flags, setFlags] = useState(true);
   const [lightweight, setLightweight] = useState(false);
@@ -35,9 +37,13 @@ export default function SettingsPage() {
     setTheme(await ipc.getUiSettings().then((u) => u.theme).catch(() => "system" as const));
     setAutostart(await ipc.autostartStatus().catch(() => false));
     if (e) setFlags(e.flag_emoji);
-    // engineBin 始终跟随本地选择的引擎（失败/成功状态归一）；
-    // 持久化引擎由 set_engine 成功后才变
-    const target = selectedEngineRef.current ?? (e?.engine as "mihomo" | "singbox") ?? "mihomo";
+    // engineBin 始终跟随目标引擎（失败/成功状态归一）；
+    // 用户没动过下拉框时回显持久化引擎，动过则保留本地选择
+    const target = engineTouched.current
+      ? selectedEngineRef.current
+      : ((e?.engine as "mihomo" | "singbox") ?? "mihomo");
+    setSelectedEngine(target);
+    selectedEngineRef.current = target;
     const info = await ipc.coreBinaryInfoFor(target).catch(() => null);
     setEngineBin(info);
     setVersion(info?.version || t("settings.notInstalled"));
@@ -88,10 +94,14 @@ export default function SettingsPage() {
               // 仅更新本地选择：安装状态随所选引擎显示；
               // 已安装的引擎在下载行位置出现「启用」按钮
               const v = e.target.value as "mihomo" | "singbox";
+              engineTouched.current = true;
               setSelectedEngine(v);
               void ipc
                 .coreBinaryInfoFor(v)
-                .then(setEngineBin)
+                .then((info) => {
+                  setEngineBin(info);
+                  setVersion(info?.version || t("settings.notInstalled"));
+                })
                 .catch(() => {});
             }}
             className="cb-input"

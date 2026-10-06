@@ -33,6 +33,16 @@ const NAV = [
 
 type PageId = (typeof NAV)[number]["items"][number]["id"];
 
+/// 从版本串提取短版本：mihomo「… v1.19.32 …」→ v1.19.32；sing-box「sing-box version 1.14.2」→ 1.14.2
+function shortVersion(version: string | undefined): string {
+  const v = version ?? "";
+  const vTok = v.match(/v\d+\.\d+\.\d+/);
+  if (vTok) return vTok[0];
+  const i = v.indexOf("version ");
+  if (i >= 0) return v.slice(i + 8).trim().split(/\s+/)[0] || v;
+  return v.split(/\s+/).slice(0, 1).join(" ");
+}
+
 function applyTheme(theme: UiSettings["theme"]) {
   const dark =
     theme === "dark" ||
@@ -45,6 +55,19 @@ export default function App() {
   const t = useT();
   const [page, setPage] = useState<PageId>("home");
   const [toast, setToast] = useState<string | null>(null);
+  const [coreLabel, setCoreLabel] = useState<string>("");
+
+  useEffect(() => {
+    // 侧栏底部的内核标识：跟随持久化引擎与其二进制版本
+    ipc
+      .getEngineConfig()
+      .then((e) =>
+        ipc
+          .coreBinaryInfoFor(e.engine)
+          .then((info) => setCoreLabel(`${e.engine === "singbox" ? "sing-box" : "mihomo"} ${shortVersion(info?.version)}`)),
+      )
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     initLang();
@@ -119,7 +142,7 @@ export default function App() {
           style={{ borderColor: "var(--cb-line)", color: "var(--cb-faint)" }}
         >
           <span className="cb-dot idle" />
-          mihomo <span className="cb-mono">v1.19.32</span>
+          {coreLabel || t("settings.notInstalled")}
         </div>
       </aside>
 
