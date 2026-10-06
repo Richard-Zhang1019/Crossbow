@@ -226,8 +226,9 @@ impl Controller {
     }
 
     /// 当前出口：规则模式取最后一条 MATCH 规则的目标组并解析其当前节点；
-    /// 全局模式取 GLOBAL.now。
-    pub fn current_outbound(&self) -> Result<OutboundInfo, String> {
+    /// 全局模式取 GLOBAL.now。`final_fallback` 用于 /rules 里没有 MATCH
+    /// 规则的内核（sing-box clash api 不合成 MATCH）：读配置的 route.final。
+    pub fn current_outbound(&self, final_fallback: Option<&str>) -> Result<OutboundInfo, String> {
         let configs = self.get_json("/configs")?;
         let mode = configs
             .get("mode")
@@ -240,13 +241,15 @@ impl Controller {
             .and_then(|p| p.as_object())
             .ok_or("malformed /proxies")?;
 
-        // 沿 now 链下钻到具体节点，附带其最新延迟
+        // 沿 now 链下钻到具体节点，附带其最新延迟。now 为空串（如测速未完成
+        // 的 urltest）时停在当前层，不能把链路截断成空名。
         let resolve = |start: &str| -> (String, Option<u64>) {
             let mut cur = start.to_string();
             for _ in 0..6 {
                 let Some(node) = all.get(&cur) else { break };
                 match node.get("now").and_then(|n| n.as_str()) {
-                    Some(next) => cur = next.to_string(),
+                    Some(next) if !next.is_empty() => cur = next.to_string(),
+                    Some(_) => break,
                     None => {
                         let delay = node
                             .get("history")
@@ -266,7 +269,7 @@ impl Controller {
             (n, d, vec!["GLOBAL".to_string()])
         } else {
             let rules = self.get_json("/rules")?;
-            let target = rules
+            let match_target = rules
                 .get("rules")
                 .and_then(|r| r.as_array())
                 .and_then(|arr| {
@@ -279,8 +282,10 @@ impl Controller {
                 })
                 .and_then(|r| r.get("proxy"))
                 .and_then(|p| p.as_str())
-                .unwrap_or("DIRECT")
-                .to_string();
+                .map(String::from);
+            let target = match_target
+                .or_else(|| final_fallback.map(String::from))
+                .unwrap_or_else(|| "DIRECT".to_string());
             if target == "DIRECT" || target == "REJECT" {
                 (target.clone(), None, vec![target])
             } else {
@@ -393,6 +398,10 @@ pub(crate) mod tests {
             std::path::PathBuf::from(bin),
             dir.path().to_path_buf(),
         );
+        mgr.set_options(crate::core_manager::CoreOptions {
+            ensure_geo_files: false,
+            ..crate::core_manager::CoreOptions::default()
+        });
         let config = "proxies:\n  - name: OUT-DIRECT\n    type: direct\nproxy-groups:\n  - name: \u{8282}\u{70b9}\u{9009}\u{62e9}\n    type: select\n    proxies:\n      - OUT-DIRECT\nrules:\n  - MATCH,DIRECT\n";
         mgr.start(
             config,

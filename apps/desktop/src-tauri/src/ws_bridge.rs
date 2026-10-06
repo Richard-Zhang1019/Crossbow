@@ -395,6 +395,11 @@ pub(crate) mod tests {
             std::path::PathBuf::from(bin),
             dir.path().to_path_buf(),
         );
+        // 关掉 geo 下载：全新临时目录会先拉 8MB geoip.metadb，慢网下拖垮就绪窗口
+        mgr.set_options(crate::core_manager::CoreOptions {
+            ensure_geo_files: false,
+            ..crate::core_manager::CoreOptions::default()
+        });
         mgr.start(
             "proxies: []\nrules:\n  - MATCH,DIRECT\n",
             &crossbow_core::RuntimeConfig {

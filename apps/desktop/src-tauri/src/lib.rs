@@ -38,6 +38,10 @@ pub struct AppState {
     pub store: Mutex<Store>,
     /// 当前内核管理器；内核安装后整体替换（core_slot）。
     core_slot: Mutex<CoreManager>,
+    /// 启动链操作锁：引擎换核(ensure)+渲染+启动必须整体串行，否则两个并发
+    /// start_core（连接开关 vs 引擎切换）会交错出「A 换好的核被 B 换走，
+    /// A 拿 B 的管理器启动 A 的配置」——即 mihomo 进程配 sing-box JSON。
+    core_op: Mutex<()>,
     sysproxy: SysProxyManager,
     /// 内核运行模式：direct / rule / global。
     mode: Mutex<String>,
@@ -81,6 +85,12 @@ fn render_current(
 /// 渲染当前档案并启动内核；已在运行时报错（用 `restart_core`）。
 /// 安全模式（safe_mode）下跳过覆写链。
 fn start_core(state: &AppState) -> Result<(), String> {
+    let _op = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
+    start_core_locked(state)
+}
+
+/// 调用方必须已持有 core_op（start_core / restart_core 入口）。
+fn start_core_locked(state: &AppState) -> Result<(), String> {
     let safe = state.safe_mode.load(std::sync::atomic::Ordering::SeqCst);
     let is_singbox = {
         let store = state.store.lock().unwrap();
@@ -103,6 +113,11 @@ fn start_core(state: &AppState) -> Result<(), String> {
 /// 返回换核后实际使用的二进制路径。
 fn ensure_engine_binary(state: &AppState, need: &str) -> Result<PathBuf, String> {
     let cur = state.core().binary_path();
+    state.core().log_decision(&format!(
+        "ensure: need={need} cur={} cur_exists={}",
+        cur.display(),
+        cur.exists()
+    ));
     if cur.exists() && cur.file_name().map(|f| f == need).unwrap_or(false) {
         return Ok(cur);
     }
@@ -114,13 +129,15 @@ fn ensure_engine_binary(state: &AppState, need: &str) -> Result<PathBuf, String>
     state.core().stop();
     *state.core_slot.lock().unwrap() =
         CoreManager::new(p.clone(), state.data_dir.join("runtime"));
+    state.core().log_decision(&format!("ensure: swapped to {}", p.display()));
     Ok(p)
 }
 
 /// 热重启：切换/更新配置后让新配置生效。
 fn restart_core(state: &AppState) -> Result<(), String> {
+    let _op = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
     state.core().stop();
-    start_core(state)
+    start_core_locked(state)
 }
 
 fn make_profile(id: String, name: String, kind: ProfileKind, url: Option<String>) -> Profile {
@@ -573,6 +590,10 @@ async fn set_engine(
         store.data_mut().engine.engine = target;
         store.save().map_err(|e| e.to_string())?;
     }
+    state.core().log_decision(&format!(
+        "set_engine: -> {engine} status={:?}",
+        state.core().status()
+    ));
     // Running 热重启；Starting（上次尝试还在探测）也要收掉后按新引擎拉起
     if matches!(
         state.core().status(),
@@ -581,6 +602,8 @@ async fn set_engine(
         restart_core(&state)?;
     }
     refresh_tray(&app);
+    // 通知侧栏 footer 等跟随引擎的 UI 重新取标识
+    let _ = app.emit("engine://changed", engine.clone());
     Ok(())
 }
 
@@ -734,8 +757,25 @@ fn run_diagnosis(state: State<AppState>) -> Vec<diagnose::CheckResult> {
 
 #[tauri::command]
 fn current_outbound(state: State<AppState>) -> Result<mihomo_api::OutboundInfo, String> {
+    let fallback = state.core().current_config().and_then(|c| extract_final_outbound(&c));
     let c = controller_client(&state)?;
-    c.current_outbound()
+    c.current_outbound(fallback.as_deref())
+}
+
+/// 从最终配置提取兜底出口目标：mihomo YAML 取 MATCH 行的 target；
+/// sing-box JSON 取 route.final。/rules 无 MATCH 规则时（sing-box）用它。
+fn extract_final_outbound(cfg: &str) -> Option<String> {
+    if cfg.trim_start().starts_with('{') {
+        let v: serde_json::Value = serde_json::from_str(cfg).ok()?;
+        v.get("route")?.get("final")?.as_str().map(String::from)
+    } else {
+        cfg.lines()
+            .rev()
+            .find(|l| l.trim_start().to_lowercase().starts_with("match,"))
+            .and_then(|l| l.split(',').nth(1))
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    }
 }
 
 #[tauri::command]
@@ -826,6 +866,8 @@ async fn core_install(app: AppHandle, engine: Option<String>) -> Result<CoreBina
     })?;
     // 安装后重新装载 CoreManager 的二进制路径：直接替换状态里的管理器。
     let state = app.state::<AppState>();
+    // 与启动链互斥：换核期间不允许并发的 start_core 拿到半新半旧的槽位
+    let _op = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
     let new_core = CoreManager::new(info.clone(), data_dir.join("runtime"));
     state.core().stop();
     *state.core_slot.lock().unwrap() = new_core;
@@ -1253,6 +1295,11 @@ fn show_main_window(app: &AppHandle) {
 /// 系统代理总开关（托盘与首页共用）。
 fn toggle_sysproxy(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<AppState>();
+    state.core().log_decision(&format!(
+        "toggle_sysproxy: enabled={} status={:?}",
+        state.sysproxy.status().enabled,
+        state.core().status()
+    ));
     if state.sysproxy.status().enabled {
         state.sysproxy.disable();
     } else {
@@ -1351,6 +1398,23 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
+
+            // 双实例保险：single-instance 插件依赖对端实例的事件循环还活着
+            // （主线程卡死/退出被误拦的旧实例接不住通知）。pidfile 不依赖对方，
+            // 只要 pid 存活就拒绝第二个实例，避免两实例互杀内核。
+            let lock_path = data_dir.join("app.pid");
+            if let Ok(old) = std::fs::read_to_string(&lock_path) {
+                if let Ok(pid) = old.trim().parse::<i32>() {
+                    if unsafe { libc::kill(pid, 0) } == 0 {
+                        return Err(format!(
+                            "另一个 Crossbow 实例正在运行 (pid {pid})，退出它后再启动"
+                        )
+                        .into());
+                    }
+                }
+            }
+            std::fs::write(&lock_path, std::process::id().to_string())?;
+
             let store = Store::open(&data_dir)
                 .map_err(|e| std::io::Error::other(format!("open store: {e}")))?;
 
@@ -1440,6 +1504,7 @@ pub fn run() {
                 safe_mode: std::sync::atomic::AtomicBool::new(false),
                 store: Mutex::new(store),
                 core_slot: Mutex::new(core),
+                core_op: Mutex::new(()),
                 sysproxy,
                 mode: Mutex::new("rule".to_string()),
                 tray: Mutex::new(None),
@@ -1555,11 +1620,16 @@ pub fn run() {
             match event {
                 // 轻量待机：最后一个窗口销毁会触发 ExitRequested，
                 // handoff 时阻止退出（进程保留、托盘常驻、内核照跑）。
+                // swap 一次性消费：只拦截「轻量关窗」这一次请求，用完即复位，
+                // 否则粘性标志会连后续 cmd-Q / quit 事件一起拦死，进程永远杀不掉。
                 tauri::RunEvent::ExitRequested {
                     code: None, api, ..
                 } => {
                     if let Some(state) = app.try_state::<AppState>() {
-                        if state.handoff.load(std::sync::atomic::Ordering::SeqCst) {
+                        if state
+                            .handoff
+                            .swap(false, std::sync::atomic::Ordering::SeqCst)
+                        {
                             api.prevent_exit();
                         }
                     }
@@ -1568,6 +1638,7 @@ pub fn run() {
                 tauri::RunEvent::Exit => {
                     if let Some(state) = app.try_state::<AppState>() {
                         state.ws.unsubscribe_all();
+                        let _ = std::fs::remove_file(state.data_dir.join("app.pid"));
                         let handoff = state.handoff.load(std::sync::atomic::Ordering::SeqCst);
                         if !handoff {
                             state.sysproxy.disable();

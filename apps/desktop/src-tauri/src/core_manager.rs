@@ -154,7 +154,18 @@ impl Shared {
             cmd.creation_flags(CREATE_NO_WINDOW);
         }
         let child = cmd.spawn().map_err(|e| format!("spawn core: {e}"))?;
+        let pid = child.id();
         self.inner.lock().unwrap().child = Some(child);
+        append_decision(
+            &self.work_dir,
+            &format!(
+                "spawned: pid={pid} bin={} cfg_head={:?}",
+                self.binary_path.display(),
+                std::fs::read_to_string(&config_path)
+                    .map(|c| c.chars().take(40).collect::<String>())
+                    .unwrap_or_default(),
+            ),
+        );
         Ok(())
     }
 
@@ -221,6 +232,16 @@ impl CoreManager {
         self.shared.binary_path.clone()
     }
 
+    /// 本次启动链的最终配置内容（当前出口解析等用途）；未启动过返回 None。
+    pub fn current_config(&self) -> Option<String> {
+        self.shared.config_cache.lock().unwrap().clone()
+    }
+
+    /// 启动链决策日志（独立文件 core-decision.log），排查引擎切换竞态。
+    pub fn log_decision(&self, line: &str) {
+        append_decision(&self.shared.work_dir, line);
+    }
+
     /// 内核子进程 PID；诊断信息展示与测试用。
     #[allow(dead_code)]
     pub fn pid(&self) -> Option<u32> {
@@ -285,7 +306,18 @@ impl CoreManager {
         };
         let final_config = apply_runtime(base_config, &rt)?;
         // 配置随启动链缓存：崩溃自动重启也重写文件，杜绝旧内核配新配置
-        *self.shared.config_cache.lock().unwrap() = Some(final_config);
+        *self.shared.config_cache.lock().unwrap() = Some(final_config.clone());
+        append_decision(
+            &self.shared.work_dir,
+            &format!(
+                "start: bin={} engine={:?} mixed={} ctrl={} cfg_head={:?}",
+                self.shared.binary_path.display(),
+                rt.engine,
+                rt.mixed_port,
+                port,
+                final_config.chars().take(48).collect::<String>(),
+            ),
+        );
 
         {
             let mut inner = self.shared.inner.lock().unwrap();
@@ -684,6 +716,23 @@ fn fetch_first_ok(
         }
     }
     Err(format!("所有源均失败：{last_err}"))
+}
+
+/// 启动链决策日志：独立追加文件，spawn 的日志截断碰不到它。
+/// 每行带 epoch 毫秒，用于离线还原「谁在什么时候用哪个二进制/配置启动」。
+pub fn append_decision(work_dir: &std::path::Path, line: &str) {
+    use std::io::Write;
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(work_dir.join("core-decision.log"))
+    {
+        let _ = writeln!(f, "{ms} {line}");
+    }
 }
 
 fn append_core_log(work_dir: &std::path::Path, line: &str) {
