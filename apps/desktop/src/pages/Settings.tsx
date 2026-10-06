@@ -14,6 +14,8 @@ export default function SettingsPage() {
   const [version, setVersion] = useState<string>("…");
   const [lang, setLangState] = useState<"zh" | "en">("zh");
   const [engineBin, setEngineBin] = useState<CoreBinaryInfo | null>(null);
+  // 下拉框的本地选择（与持久化 engine 解耦：未安装的引擎也可选中）
+  const [selectedEngine, setSelectedEngine] = useState<"mihomo" | "singbox">("mihomo");
   const [flags, setFlags] = useState(true);
   const [lightweight, setLightweight] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null);
@@ -31,10 +33,9 @@ export default function SettingsPage() {
     setTheme(await ipc.getUiSettings().then((u) => u.theme).catch(() => "system" as const));
     setAutostart(await ipc.autostartStatus().catch(() => false));
     if (e) setFlags(e.flag_emoji);
+    const persisted = (e?.engine as "mihomo" | "singbox") ?? "mihomo";
     setEngineBin(
-      await ipc
-        .coreBinaryInfoFor((e?.engine as "mihomo" | "singbox") ?? "mihomo")
-        .catch(() => null),
+      await ipc.coreBinaryInfoFor(persisted).catch(() => null),
     );
     setVersion(await ipc.coreVersion().catch(() => t("settings.notInstalled")));
   };
@@ -75,16 +76,16 @@ export default function SettingsPage() {
       <Group title={t("settings.coreSection")}>
         <Row label={t("settings.engine")} hint={t("settings.engineHint")}>
           <select
-            value={engine?.engine ?? "mihomo"}
-            onChange={async (e) => {
+            value={selectedEngine}
+            onChange={(e) => {
+              // 仅更新本地选择：安装状态随所选引擎显示；
+              // 已安装的引擎在下载行位置出现「启用」按钮
               const v = e.target.value as "mihomo" | "singbox";
-              try {
-                await ipc.setEngine(v);
-                await load();
-                flash(true, `engine: ${v}`);
-              } catch (err) {
-                flash(false, String(err));
-              }
+              setSelectedEngine(v);
+              void ipc
+                .coreBinaryInfoFor(v)
+                .then(setEngineBin)
+                .catch(() => {});
             }}
             className="cb-input"
           >
@@ -92,11 +93,9 @@ export default function SettingsPage() {
             <option value="singbox">sing-box</option>
           </select>
         </Row>
-        {engineBin?.source === "missing" && (
+        {engineBin?.source === "missing" ? (
           <Row
-            label={t("settings.coreMissingEngine", {
-              engine: engine?.engine ?? "mihomo",
-            })}
+            label={t("settings.coreMissingEngine", { engine: selectedEngine })}
           >
             <button
               disabled={installing !== null}
@@ -110,11 +109,14 @@ export default function SettingsPage() {
                   ),
                 );
                 try {
-                  const eng = (engine?.engine ?? "mihomo") as "mihomo" | "singbox";
-                  const info = await ipc.coreInstall(eng);
+                  const info = await ipc.coreInstall(selectedEngine);
                   setEngineBin(info);
                   setVersion(info.version || t("settings.coreReady"));
                   flash(true, t("settings.coreReady"));
+                  // 下载完成 → 应用切换
+                  await ipc.setEngine(selectedEngine);
+                  await load();
+                  flash(true, `engine: ${selectedEngine}`);
                 } catch (e) {
                   flash(false, String(e));
                 } finally {
@@ -128,8 +130,27 @@ export default function SettingsPage() {
               {installing ?? t("settings.downloadCore")}
             </button>
           </Row>
+        ) : (
+          selectedEngine !== (engine?.engine ?? "mihomo") && (
+            <Row label={t("settings.engineApply", { engine: selectedEngine })}>
+              <button
+                className="cb-btn acc px-3 py-1.5"
+                onClick={async () => {
+                  try {
+                    await ipc.setEngine(selectedEngine);
+                    await load();
+                    flash(true, `engine: ${selectedEngine}`);
+                  } catch (e) {
+                    flash(false, String(e));
+                  }
+                }}
+              >
+                启用
+              </button>
+            </Row>
+          )
         )}
-        <Row label={t("settings.version")} hint={engine?.engine ?? "mihomo"}>
+        <Row label={t("settings.version")} hint={selectedEngine}>
           <span className="cb-selectable text-xs" style={{ color: "var(--cb-text-dim)" }}>
             {engineBin?.source === "missing"
               ? t("settings.notInstalled")
