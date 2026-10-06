@@ -69,8 +69,27 @@ export default function SettingsPage() {
       </PageHead>
 
       <Group title={t("settings.coreSection")}>
+        <Row label={t("settings.engine")} hint={t("settings.engineHint")}>
+          <select
+            value={engine?.engine ?? "mihomo"}
+            onChange={async (e) => {
+              const v = e.target.value as "mihomo" | "singbox";
+              try {
+                await ipc.setEngine(v);
+                await load();
+                flash(true, `engine: ${v}`);
+              } catch (err) {
+                flash(false, String(err));
+              }
+            }}
+            className="cb-input"
+          >
+            <option value="mihomo">mihomo (Clash Meta)</option>
+            <option value="singbox">sing-box</option>
+          </select>
+        </Row>
         {coreBin?.source === "missing" && (
-          <Row label={t("settings.coreMissing")}>
+          <Row label={t("settings.coreMissingEngine", { engine: engine?.engine ?? "mihomo" })}>
             <button
               disabled={installing !== null}
               onClick={async () => {
@@ -83,7 +102,7 @@ export default function SettingsPage() {
                   ),
                 );
                 try {
-                  const info = await ipc.coreInstall();
+                  const info = await ipc.coreInstall(engine?.engine ?? "mihomo");
                   setCoreBin(info);
                   setVersion(info.version || t("settings.coreReady"));
                   flash(true, t("settings.coreReady"));
@@ -100,7 +119,7 @@ export default function SettingsPage() {
             </button>
           </Row>
         )}
-        <Row label={t("settings.version")} hint="mihomo sidecar">
+        <Row label={t("settings.version")} hint={engine?.engine ?? "mihomo"}>
           <span className="cb-selectable text-xs" style={{ color: "var(--cb-text-dim)" }}>
             {coreBin?.source === "missing" ? t("settings.notInstalled") : version}
           </span>

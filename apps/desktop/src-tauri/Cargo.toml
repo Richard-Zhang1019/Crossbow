@@ -20,6 +20,7 @@ serde_json.workspace = true
 ureq = "2"
 uuid = { version = "1", features = ["v4"] }
 tungstenite = "0.30"
+tar = "0.4"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

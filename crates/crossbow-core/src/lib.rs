@@ -10,6 +10,7 @@ pub mod override_patch;
 pub mod render;
 pub mod runtime;
 pub mod script_override;
+pub mod singbox_convert;
 pub mod store;
 pub mod subscription;
 
@@ -22,6 +23,7 @@ pub use render::{
     render_config, render_config_with, validate_enabled_overrides, RenderError, Rendered,
 };
 pub use runtime::{apply_runtime, RuntimeConfig};
+pub use singbox_convert::{convert_to_singbox, SINGBOX_VERSION};
 pub use store::Store;
 
 /// 统一错误类型。

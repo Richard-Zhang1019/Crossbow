@@ -57,7 +57,7 @@ export interface UiSettings {
 }
 
 export interface EngineConfigView {
-  engine: string;
+  engine: "mihomo" | "singbox";
   mixed_port: number;
   allow_lan: boolean;
   flag_emoji: boolean;
@@ -164,7 +164,6 @@ export const ipc = {
   },
 
   coreBinaryInfo: () => invoke<CoreBinaryInfo>("core_binary_info"),
-  coreInstall: () => invoke<CoreBinaryInfo>("core_install"),
   onInstallProgress: (cb: (p: InstallProgress) => void) =>
     listen<InstallProgress>("core://install-progress", (e) => cb(e.payload)),
 
@@ -194,6 +193,9 @@ export const ipc = {
   validateOverrides: () => invoke<void>("validate_overrides"),
   applyOverrides: () => invoke<void>("apply_overrides"),
   setFlagEmoji: (enabled: boolean) => invoke<void>("set_flag_emoji", { enabled }),
+  setEngine: (engine: "mihomo" | "singbox") => invoke<void>("set_engine", { engine }),
+  coreInstall: (engine: "mihomo" | "singbox") =>
+    invoke<CoreBinaryInfo>("core_install", { engine }),
   onProfileUpdated: (cb: (id: string) => void) =>
     listen<string>("profile://updated", (e) => cb(e.payload)),
   onSafeMode: (cb: (msg: string) => void) =>

@@ -83,6 +83,17 @@ fn render_current(
 /// 安全模式（safe_mode）下跳过覆写链。
 fn start_core(state: &AppState) -> Result<(), String> {
     let safe = state.safe_mode.load(std::sync::atomic::Ordering::SeqCst);
+    let is_singbox = {
+        let store = state.store.lock().unwrap();
+        store.data().engine.engine == crossbow_core::Engine::SingBox
+    };
+    let need = if is_singbox { "sing-box" } else { "mihomo" };
+    let bin = state.core().binary_path();
+    if !bin.exists() || bin.file_name().map(|f| f != need).unwrap_or(true) {
+        return Err(format!(
+            "内核「{need}」未安装 — 到设置页下载对应内核后再启动"
+        ));
+    }
     let rendered = render_current(state, !safe)?;
     let store = state.store.lock().unwrap();
     let rt = RuntimeConfig {
@@ -525,6 +536,41 @@ fn rename_profile(
 }
 
 /// 节点旗帜补全开关。
+/// 切换内核引擎（mihomo / singbox）。运行中则热重启；切换目标未安装则报错。
+#[tauri::command]
+async fn set_engine(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    engine: String,
+) -> Result<(), String> {
+    let target = match engine.as_str() {
+        "mihomo" => crossbow_core::Engine::Mihomo,
+        "singbox" => crossbow_core::Engine::SingBox,
+        _ => return Err(format!("unknown engine: {engine}")),
+    };
+    let need_bin = match target {
+        crossbow_core::Engine::SingBox => "sing-box",
+        crossbow_core::Engine::Mihomo => "mihomo",
+    };
+    let resolved = core_download::resolve_core_binary(&app, &state.data_dir);
+    let have = resolved
+        .map(|p| p.file_name().map(|f| f == need_bin).unwrap_or(false))
+        .unwrap_or(false);
+    if !have {
+        return Err(format!("内核 {need_bin} 未安装，请先在设置页下载"));
+    }
+    {
+        let mut store = state.store.lock().unwrap();
+        store.data_mut().engine.engine = target;
+        store.save().map_err(|e| e.to_string())?;
+    }
+    if state.core().status() == CoreStatus::Running {
+        restart_core(&state)?;
+    }
+    refresh_tray(&app);
+    Ok(())
+}
+
 #[tauri::command]
 fn set_flag_emoji(state: State<AppState>, enabled: bool) -> Result<(), String> {
     let mut store = state.store.lock().unwrap();
@@ -728,10 +774,14 @@ fn core_binary_info(state: State<AppState>) -> CoreBinaryInfo {
 
 /// 下载安装内核（前端用 invoke 阻塞调用，期间显示进度提示）。
 #[tauri::command]
-fn core_install(app: AppHandle) -> Result<CoreBinaryInfo, String> {
+async fn core_install(app: AppHandle, engine: Option<String>) -> Result<CoreBinaryInfo, String> {
     let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let kind = match engine.as_deref() {
+        Some("singbox") => core_download::CoreKind::SingBox,
+        _ => core_download::CoreKind::Mihomo,
+    };
     let h = app.clone();
-    let info = core_download::install_core(&data_dir, &move |p: InstallProgress| {
+    let info = core_download::install_core(&data_dir, kind, &move |p: InstallProgress| {
         let _ = h.emit("core://install-progress", p);
     })?;
     // 安装后重新装载 CoreManager 的二进制路径：直接替换状态里的管理器。
@@ -1436,6 +1486,7 @@ pub fn run() {
             core_version,
             core_binary_info,
             core_install,
+            set_engine,
             diag_log,
             run_diagnosis,
             current_outbound,

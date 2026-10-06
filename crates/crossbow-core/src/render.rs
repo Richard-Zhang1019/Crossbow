@@ -59,6 +59,16 @@ pub fn render_config_with(
         config = crate::emoji::enrich_flags(&config)
             .map_err(|e| RenderError::InvalidYaml(e.to_string()))?;
     }
+    // 引擎目标格式：sing-box 输出 JSON；mihomo 输出 YAML
+    let config = match store.engine.engine {
+        crate::model::Engine::SingBox => crate::singbox_convert::convert_to_singbox(
+            &config,
+            store.engine.mixed_port,
+            store.engine.allow_lan,
+        )
+        .map_err(|e| RenderError::InvalidYaml(e.to_string()))?,
+        crate::model::Engine::Mihomo => config,
+    };
     Ok(Rendered {
         config,
         profile_id: profile_id.to_string(),
