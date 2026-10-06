@@ -91,9 +91,7 @@ jobs:
 
       - name: Build (unsigned)
         working-directory: apps/desktop
-        env:
-          TAURI_CONFIG: '{"bundle":{"createUpdaterArtifacts":false}}'
-        run: npm run tauri build
+        run: pnpm tauri build --config tauri.ci.conf.json
 
       - name: Upload artifacts (macOS)
         if: matrix.os == 'macos-latest'

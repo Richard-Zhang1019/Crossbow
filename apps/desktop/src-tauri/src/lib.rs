@@ -1509,7 +1509,9 @@ pub fn run() {
             // 3) 收养失败 → 按异常退出处理：全量还原系统代理
             #[cfg(target_os = "macos")]
             let backend = sysproxy::NetworkSetup;
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(windows)]
+            let backend = sysproxy::WinInet;
+            #[cfg(not(any(target_os = "macos", windows)))]
             let backend = sysproxy::UnsupportedBackend;
             let sysproxy = SysProxyManager::new(backend, data_dir.join("sysproxy-journal.json"));
             let adopted = core.adopt_external();
