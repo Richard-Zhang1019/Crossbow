@@ -76,6 +76,24 @@ pub struct CoreBinaryInfo {
 
 /// 按定位链解析内核路径；找不到返回 None（前端引导下载）。
 pub fn resolve_core_binary(_app: &tauri::AppHandle, data_dir: &Path) -> Option<PathBuf> {
+    resolve_core_for(_app, data_dir, None)
+}
+
+/// 按引擎解析内核路径；None 时按 mihomo → sing-box 顺序探测。
+pub fn resolve_core_for(
+    _app: &tauri::AppHandle,
+    data_dir: &Path,
+    engine: Option<&str>,
+) -> Option<PathBuf> {
+    let preferred: &[&str] = match engine {
+        Some("singbox") => &["sing-box", "mihomo"],
+        Some("mihomo") | None => &["mihomo", "sing-box"],
+        Some(_) => &["mihomo", "sing-box"],
+    };
+    resolve_preferred(_app, data_dir, preferred)
+}
+
+fn resolve_preferred(_app: &tauri::AppHandle, data_dir: &Path, names: &[&str]) -> Option<PathBuf> {
     if let Some(env) = std::env::var_os("CROSSBOW_MIHOMO_BIN") {
         let p = PathBuf::from(env);
         if p.exists() {
@@ -84,14 +102,14 @@ pub fn resolve_core_binary(_app: &tauri::AppHandle, data_dir: &Path) -> Option<P
     }
     // sidecar：与主可执行文件同目录（.app/Contents/MacOS/{mihomo,sing-box}）
     if let Ok(exe) = std::env::current_exe() {
-        for name in ["mihomo", "sing-box"] {
+        for name in names {
             let sibling = exe.parent()?.join(name);
             if sibling.exists() {
                 return Some(sibling);
             }
         }
     }
-    for name in ["mihomo", "sing-box"] {
+    for name in names {
         let cached = data_dir.join("binaries").join(name);
         if cached.exists() {
             return Some(cached);

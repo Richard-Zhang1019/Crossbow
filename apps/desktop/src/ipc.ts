@@ -61,6 +61,7 @@ export interface EngineConfigView {
   mixed_port: number;
   allow_lan: boolean;
   flag_emoji: boolean;
+  core_installed: boolean;
 }
 
 export interface ConnRow {
@@ -196,6 +197,8 @@ export const ipc = {
   setEngine: (engine: "mihomo" | "singbox") => invoke<void>("set_engine", { engine }),
   coreInstall: (engine: "mihomo" | "singbox") =>
     invoke<CoreBinaryInfo>("core_install", { engine }),
+  coreBinaryInfoFor: (engine: "mihomo" | "singbox") =>
+    invoke<CoreBinaryInfo>("core_binary_info_for", { engine }),
   onProfileUpdated: (cb: (id: string) => void) =>
     listen<string>("profile://updated", (e) => cb(e.payload)),
   onSafeMode: (cb: (msg: string) => void) =>

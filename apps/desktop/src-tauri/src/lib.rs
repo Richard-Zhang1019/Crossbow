@@ -749,6 +749,34 @@ fn diag_log(state: State<AppState>, line: String) {
 
 // ---------- 内核安装命令 ----------
 
+/// 按引擎查询内核安装状态。
+#[tauri::command]
+async fn core_binary_info_for(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    engine: String,
+) -> Result<CoreBinaryInfo, String> {
+    let resolved = core_download::resolve_core_for(&app, &state.data_dir, Some(&engine));
+    let path = resolved
+        .as_ref()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    let source = match &resolved {
+        None => "missing",
+        Some(p) if p.starts_with(&state.data_dir) => "data",
+        Some(_) => "builtin",
+    };
+    let version = resolved
+        .as_ref()
+        .and_then(core_version_of)
+        .unwrap_or_default();
+    Ok(CoreBinaryInfo {
+        path,
+        source: source.into(),
+        version,
+    })
+}
+
 #[tauri::command]
 fn core_binary_info(state: State<AppState>) -> CoreBinaryInfo {
     let resolved = resolve_core_binary(&state.app, &state.data_dir);
@@ -862,16 +890,26 @@ struct EngineView {
     mixed_port: u16,
     allow_lan: bool,
     flag_emoji: bool,
+    /// 当前引擎对应内核是否已安装。
+    core_installed: bool,
 }
 
 #[tauri::command]
-fn get_engine_config(state: State<AppState>) -> EngineView {
+fn get_engine_config(app: AppHandle, state: State<AppState>) -> EngineView {
     let store = state.store.lock().unwrap();
+    let need = match store.data().engine.engine {
+        crossbow_core::Engine::SingBox => "sing-box",
+        crossbow_core::Engine::Mihomo => "mihomo",
+    };
+    let core_installed = core_download::resolve_core_for(&app, &state.data_dir, Some(need))
+        .map(|p| p.file_name().map(|f| f == need).unwrap_or(false))
+        .unwrap_or(false);
     EngineView {
         engine: format!("{:?}", store.data().engine.engine).to_lowercase(),
         mixed_port: store.data().engine.mixed_port,
         allow_lan: store.data().engine.allow_lan,
         flag_emoji: store.data().engine.flag_emoji,
+        core_installed,
     }
 }
 
@@ -1485,6 +1523,7 @@ pub fn run() {
             autostart_set,
             core_version,
             core_binary_info,
+            core_binary_info_for,
             core_install,
             set_engine,
             diag_log,

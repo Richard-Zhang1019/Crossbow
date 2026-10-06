@@ -13,7 +13,7 @@ export default function SettingsPage() {
   const [autostart, setAutostart] = useState(false);
   const [version, setVersion] = useState<string>("…");
   const [lang, setLangState] = useState<"zh" | "en">("zh");
-  const [coreBin, setCoreBin] = useState<CoreBinaryInfo | null>(null);
+  const [engineBin, setEngineBin] = useState<CoreBinaryInfo | null>(null);
   const [flags, setFlags] = useState(true);
   const [lightweight, setLightweight] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null);
@@ -31,7 +31,11 @@ export default function SettingsPage() {
     setTheme(await ipc.getUiSettings().then((u) => u.theme).catch(() => "system" as const));
     setAutostart(await ipc.autostartStatus().catch(() => false));
     if (e) setFlags(e.flag_emoji);
-    setCoreBin(await ipc.coreBinaryInfo().catch(() => null));
+    setEngineBin(
+      await ipc
+        .coreBinaryInfoFor((e?.engine as "mihomo" | "singbox") ?? "mihomo")
+        .catch(() => null),
+    );
     setVersion(await ipc.coreVersion().catch(() => t("settings.notInstalled")));
   };
 
@@ -88,8 +92,12 @@ export default function SettingsPage() {
             <option value="singbox">sing-box</option>
           </select>
         </Row>
-        {coreBin?.source === "missing" && (
-          <Row label={t("settings.coreMissingEngine", { engine: engine?.engine ?? "mihomo" })}>
+        {engineBin?.source === "missing" && (
+          <Row
+            label={t("settings.coreMissingEngine", {
+              engine: engine?.engine ?? "mihomo",
+            })}
+          >
             <button
               disabled={installing !== null}
               onClick={async () => {
@@ -102,8 +110,9 @@ export default function SettingsPage() {
                   ),
                 );
                 try {
-                  const info = await ipc.coreInstall(engine?.engine ?? "mihomo");
-                  setCoreBin(info);
+                  const eng = (engine?.engine ?? "mihomo") as "mihomo" | "singbox";
+                  const info = await ipc.coreInstall(eng);
+                  setEngineBin(info);
                   setVersion(info.version || t("settings.coreReady"));
                   flash(true, t("settings.coreReady"));
                 } catch (e) {
@@ -111,6 +120,7 @@ export default function SettingsPage() {
                 } finally {
                   un();
                   setInstalling(null);
+                  await load();
                 }
               }}
               className="cb-btn acc px-3 py-1.5"
@@ -121,7 +131,9 @@ export default function SettingsPage() {
         )}
         <Row label={t("settings.version")} hint={engine?.engine ?? "mihomo"}>
           <span className="cb-selectable text-xs" style={{ color: "var(--cb-text-dim)" }}>
-            {coreBin?.source === "missing" ? t("settings.notInstalled") : version}
+            {engineBin?.source === "missing"
+              ? t("settings.notInstalled")
+              : version}
           </span>
         </Row>
         <Row label={t("settings.port")} hint={t("settings.portHint")}>
