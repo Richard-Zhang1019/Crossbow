@@ -831,15 +831,26 @@ async fn core_install(app: AppHandle, engine: Option<String>) -> Result<CoreBina
     })
 }
 
+/// 内核版本（执行 `<bin> -v` 首行）；sing-box 只认 `version` 子命令，依次尝试。
 fn core_version_of(bin: &PathBuf) -> Option<String> {
-    let out = std::process::Command::new(bin).arg("-v").output().ok()?;
-    Some(
-        String::from_utf8_lossy(&out.stdout)
+    for flag in ["-v", "version"] {
+        let Ok(out) = std::process::Command::new(bin).arg(flag).output() else {
+            continue;
+        };
+        if !out.status.success() {
+            continue;
+        }
+        let first = String::from_utf8_lossy(&out.stdout)
             .lines()
-            .next()?
+            .next()
+            .unwrap_or_default()
             .trim()
-            .to_string(),
-    )
+            .to_string();
+        if !first.is_empty() {
+            return Some(first);
+        }
+    }
+    None
 }
 
 // ---------- 代理组命令（代理页） ----------
