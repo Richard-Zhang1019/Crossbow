@@ -168,6 +168,9 @@ export const ipc = {
   onInstallProgress: (cb: (p: InstallProgress) => void) =>
     listen<InstallProgress>("core://install-progress", (e) => cb(e.payload)),
 
+  onEngineChanged: (cb: (engine: string) => void) =>
+    listen<string>("engine://changed", (e) => cb(e.payload)),
+
   listProfiles: () => invoke<Profile[]>("list_profiles"),
   activeProfileId: () => invoke<string | null>("active_profile_id"),
   importProfileUrl: (url: string, name?: string) =>

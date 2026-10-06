@@ -59,7 +59,7 @@ export default function Select({
       </button>
       {open && (
         <div
-          className="cb-card absolute right-0 z-20 mt-1 min-w-[110px] overflow-hidden p-1"
+          className="cb-card absolute right-0 z-20 mt-1 w-max max-w-[300px] min-w-[110px] overflow-hidden p-1"
           style={{ boxShadow: "0 8px 24px rgba(0,0,0,.4)" }}
         >
           {options.map((o) => (

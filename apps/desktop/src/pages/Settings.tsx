@@ -88,27 +88,27 @@ export default function SettingsPage() {
 
       <Group title={t("settings.coreSection")}>
         <Row label={t("settings.engine")} hint={t("settings.engineHint")}>
-          <select
+          <Select
             value={selectedEngine}
-            onChange={(e) => {
+            onChange={(v) => {
               // 仅更新本地选择：安装状态随所选引擎显示；
               // 已安装的引擎在下载行位置出现「启用」按钮
-              const v = e.target.value as "mihomo" | "singbox";
+              const val = v as "mihomo" | "singbox";
               engineTouched.current = true;
-              setSelectedEngine(v);
+              setSelectedEngine(val);
               void ipc
-                .coreBinaryInfoFor(v)
+                .coreBinaryInfoFor(val)
                 .then((info) => {
                   setEngineBin(info);
                   setVersion(info?.version || t("settings.notInstalled"));
                 })
                 .catch(() => {});
             }}
-            className="cb-input"
-          >
-            <option value="mihomo">mihomo (Clash Meta)</option>
-            <option value="singbox">sing-box</option>
-          </select>
+            options={[
+              { value: "mihomo", label: "mihomo (Clash Meta)" },
+              { value: "singbox", label: "sing-box" },
+            ]}
+          />
         </Row>
         {engineBin?.source === "missing" ? (
           <Row

@@ -57,8 +57,7 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [coreLabel, setCoreLabel] = useState<string>("");
 
-  useEffect(() => {
-    // 侧栏底部的内核标识：跟随持久化引擎与其二进制版本
+  const refreshCoreLabel = () => {
     ipc
       .getEngineConfig()
       .then((e) =>
@@ -67,6 +66,18 @@ export default function App() {
           .then((info) => setCoreLabel(`${e.engine === "singbox" ? "sing-box" : "mihomo"} ${shortVersion(info?.version)}`)),
       )
       .catch(() => {});
+  };
+
+  useEffect(() => {
+    // 侧栏底部的内核标识：跟随持久化引擎与其二进制版本；引擎切换时重取
+    refreshCoreLabel();
+    let unlisten: (() => void) | null = null;
+    ipc.onEngineChanged(refreshCoreLabel).then((f) => {
+      unlisten = f;
+    });
+    return () => {
+      unlisten?.();
+    };
   }, []);
 
   useEffect(() => {
