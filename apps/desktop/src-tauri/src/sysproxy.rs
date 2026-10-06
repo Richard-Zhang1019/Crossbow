@@ -503,7 +503,7 @@ mod tests {
     #[test]
     fn enable_all_failed_is_error() {
         let dir = tempfile::tempdir().unwrap();
-        let mut b = FakeBackend::new(&["Wi-Fi"]);
+        let b = FakeBackend::new(&["Wi-Fi"]);
         b.inner.fail_on.lock().unwrap().push("Wi-Fi".into());
         let mgr = manager_with(b, &dir);
         assert!(mgr.enable(7897).is_err());

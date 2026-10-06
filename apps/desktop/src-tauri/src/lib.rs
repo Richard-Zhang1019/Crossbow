@@ -25,7 +25,7 @@ mod ws_bridge;
 
 mod core_download;
 
-use core_download::{resolve_core_binary, CoreBinaryInfo, InstallProgress};
+use core_download::{resolve_core_binary, resolve_core_for, CoreBinaryInfo, InstallProgress};
 use core_manager::{CoreManager, CoreStatus};
 use sysproxy::{SysProxyManager, SysProxyStatus};
 use ws_bridge::WsHub;
@@ -87,12 +87,7 @@ fn start_core(state: &AppState) -> Result<(), String> {
         store.data().engine.engine == crossbow_core::Engine::SingBox
     };
     let need = if is_singbox { "sing-box" } else { "mihomo" };
-    let bin = state.core().binary_path();
-    if !bin.exists() || bin.file_name().map(|f| f != need).unwrap_or(true) {
-        return Err(format!(
-            "内核「{need}」未安装 — 到设置页下载对应内核后再启动"
-        ));
-    }
+    ensure_engine_binary(state, need)?;
     let rendered = render_current(state, !safe)?;
     let store = state.store.lock().unwrap();
     let rt = RuntimeConfig {
@@ -101,6 +96,24 @@ fn start_core(state: &AppState) -> Result<(), String> {
         ..RuntimeConfig::default()
     };
     state.core().start(&rendered.config, &rt)
+}
+
+/// 管理器持有的二进制与目标引擎不一致时（引擎切换、冷启动回退），就地换核。
+/// 返回换核后实际使用的二进制路径。
+fn ensure_engine_binary(state: &AppState, need: &str) -> Result<PathBuf, String> {
+    let cur = state.core().binary_path();
+    if cur.exists() && cur.file_name().map(|f| f == need).unwrap_or(false) {
+        return Ok(cur);
+    }
+    let Some(p) = core_download::resolve_core_for(&state.data_dir, Some(need)) else {
+        return Err(format!(
+            "内核「{need}」未安装 — 到设置页下载对应内核后再启动"
+        ));
+    };
+    state.core().stop();
+    *state.core_slot.lock().unwrap() =
+        CoreManager::new(p.clone(), state.data_dir.join("runtime"));
+    Ok(p)
 }
 
 /// 热重启：切换/更新配置后让新配置生效。
@@ -551,11 +564,7 @@ async fn set_engine(
         crossbow_core::Engine::SingBox => "sing-box",
         crossbow_core::Engine::Mihomo => "mihomo",
     };
-    let resolved = core_download::resolve_core_binary(&state.data_dir);
-    let have = resolved
-        .map(|p| p.file_name().map(|f| f == need_bin).unwrap_or(false))
-        .unwrap_or(false);
-    if !have {
+    if !core_download::resolve_core_for(&state.data_dir, Some(&engine)).is_some() {
         return Err(format!("内核 {need_bin} 未安装，请先在设置页下载"));
     }
     {
@@ -815,19 +824,10 @@ async fn core_install(app: AppHandle, engine: Option<String>) -> Result<CoreBina
     let new_core = CoreManager::new(info.clone(), data_dir.join("runtime"));
     state.core().stop();
     *state.core_slot.lock().unwrap() = new_core;
-    let resolved = resolve_core_binary(&data_dir);
-    let source = match &resolved {
-        None => "missing",
-        Some(p) if p.starts_with(&data_dir) => "data",
-        Some(_) => "builtin",
-    };
     Ok(CoreBinaryInfo {
         path: info.display().to_string(),
-        source: source.into(),
-        version: resolved
-            .as_ref()
-            .and_then(core_version_of)
-            .unwrap_or_default(),
+        source: "data".into(),
+        version: core_version_of(&info).unwrap_or_default(),
     })
 }
 
@@ -1338,12 +1338,14 @@ pub fn run() {
             let store = Store::open(&data_dir)
                 .map_err(|e| std::io::Error::other(format!("open store: {e}")))?;
 
-            // 内核二进制定位（按序）：
-            // 1. CROSSBOW_MIHOMO_BIN 环境变量（开发/调试）
-            // 2. 打包 .app 内置 sidecar（与可执行文件同目录）
-            // 3. 数据目录缓存 binaries/mihomo（此前手动安装/下载的）
-            // 都没有时为空——由「下载内核」命令补齐后再启动。
-            let bin = resolve_core_binary(&data_dir);
+            // 内核二进制定位：优先按持久化引擎精确解析；引擎对应内核缺失时
+            // 回退任意可用链（env → sidecar → 数据目录），启动时仍会校验匹配。
+            let engine_key = match store.data().engine.engine {
+                crossbow_core::Engine::SingBox => "singbox",
+                crossbow_core::Engine::Mihomo => "mihomo",
+            };
+            let bin = resolve_core_for(&data_dir, Some(engine_key))
+                .or_else(|| resolve_core_binary(&data_dir));
             let core = CoreManager::new(bin.unwrap_or_default(), data_dir.join("runtime"));
 
             let handle = app.handle().clone();

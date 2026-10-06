@@ -762,7 +762,7 @@ mod tests {
         // SIGKILL 已发出；僵尸态由 Child::wait 回收，回收后 kill -0 必失败
         let _ = sleeper.wait();
         assert!(!kill_pid_probe(pid), "external core should be dead");
-        assert!(!Shared::descriptor_path(&dir.path()).exists());
+        assert!(!Shared::descriptor_path(dir.path()).exists());
     }
 
     /// 交接语义：detached 后管理器 Drop 不得杀内核，且描述符已写。
@@ -794,7 +794,7 @@ mod tests {
             "detached core must survive drop"
         );
         assert!(
-            Shared::descriptor_path(&dir.path()).exists(),
+            Shared::descriptor_path(dir.path()).exists(),
             "descriptor written"
         );
         let _ = Command::new("kill")

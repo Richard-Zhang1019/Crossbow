@@ -38,8 +38,9 @@ export default function SettingsPage() {
     // engineBin 始终跟随本地选择的引擎（失败/成功状态归一）；
     // 持久化引擎由 set_engine 成功后才变
     const target = selectedEngineRef.current ?? (e?.engine as "mihomo" | "singbox") ?? "mihomo";
-    setEngineBin(await ipc.coreBinaryInfoFor(target).catch(() => null));
-    setVersion(await ipc.coreVersion().catch(() => t("settings.notInstalled")));
+    const info = await ipc.coreBinaryInfoFor(target).catch(() => null);
+    setEngineBin(info);
+    setVersion(info?.version || t("settings.notInstalled"));
   };
 
   useEffect(() => {
