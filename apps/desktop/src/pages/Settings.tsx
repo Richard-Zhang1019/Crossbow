@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ipc, type CoreBinaryInfo, type EngineConfigView, type UiSettings } from "../ipc";
 import Select from "../components/Select";
 import { useT } from "../i18n";
@@ -16,10 +16,12 @@ export default function SettingsPage() {
   const [engineBin, setEngineBin] = useState<CoreBinaryInfo | null>(null);
   // 下拉框的本地选择（与持久化 engine 解耦：未安装的引擎也可选中）
   const [selectedEngine, setSelectedEngine] = useState<"mihomo" | "singbox">("mihomo");
+  const selectedEngineRef = useRef<"mihomo" | "singbox">("mihomo");
+  selectedEngineRef.current = selectedEngine;
   const [flags, setFlags] = useState(true);
   const [lightweight, setLightweight] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string; full?: string } | null>(null);
 
   const load = async () => {
     const e = await ipc.getEngineConfig().catch(() => null);
@@ -33,10 +35,10 @@ export default function SettingsPage() {
     setTheme(await ipc.getUiSettings().then((u) => u.theme).catch(() => "system" as const));
     setAutostart(await ipc.autostartStatus().catch(() => false));
     if (e) setFlags(e.flag_emoji);
-    const persisted = (e?.engine as "mihomo" | "singbox") ?? "mihomo";
-    setEngineBin(
-      await ipc.coreBinaryInfoFor(persisted).catch(() => null),
-    );
+    // engineBin 始终跟随本地选择的引擎（失败/成功状态归一）；
+    // 持久化引擎由 set_engine 成功后才变
+    const target = selectedEngineRef.current ?? (e?.engine as "mihomo" | "singbox") ?? "mihomo";
+    setEngineBin(await ipc.coreBinaryInfoFor(target).catch(() => null));
     setVersion(await ipc.coreVersion().catch(() => t("settings.notInstalled")));
   };
 
@@ -44,9 +46,9 @@ export default function SettingsPage() {
     load();
   }, []);
 
-  const flash = (ok: boolean, text: string) => {
-    setMsg({ ok, text });
-    setTimeout(() => setMsg(null), 2500);
+  const flash = (ok: boolean, text: string, full?: string) => {
+    setMsg({ ok, text, full: full ?? text });
+    setTimeout(() => setMsg(null), 6000);
   };
 
   const applyPort = async () => {
@@ -67,7 +69,11 @@ export default function SettingsPage() {
     <div className="mx-auto max-w-3xl space-y-5">
       <PageHead title={t("settings.title")}>
         {msg && (
-          <span className="text-xs" style={{ color: msg.ok ? "var(--cb-ok)" : "var(--cb-bad)" }}>
+          <span
+            className="text-xs"
+            style={{ color: msg.ok ? "var(--cb-ok)" : "var(--cb-bad)" }}
+            title={msg.full ?? undefined}
+          >
             {msg.text}
           </span>
         )}
@@ -103,9 +109,7 @@ export default function SettingsPage() {
                 setInstalling("starting…");
                 const un = await ipc.onInstallProgress((p) =>
                   setInstalling(
-                    p.stage === "downloading"
-                      ? `${t("settings.downloading")} ${Math.round((p.detail.length % 100))}%`
-                      : p.stage,
+                    p.stage === "downloading" ? t("settings.downloading") : p.stage,
                   ),
                 );
                 try {
@@ -118,10 +122,21 @@ export default function SettingsPage() {
                   await load();
                   flash(true, `engine: ${selectedEngine}`);
                 } catch (e) {
-                  flash(false, String(e));
+                  // 失败：回下载行（engineBin 重新查询所选引擎 → 仍是 missing）
+                  const raw = String(e);
+                  flash(
+                    false,
+                    raw.length > 140 ? `${raw.slice(0, 140)}…（悬停查看完整错误）` : raw,
+                    raw,
+                  );
                 } finally {
                   un();
                   setInstalling(null);
+                  setEngineBin(
+                    await ipc
+                      .coreBinaryInfoFor(selectedEngineRef.current)
+                      .catch(() => null),
+                  );
                   await load();
                 }
               }}

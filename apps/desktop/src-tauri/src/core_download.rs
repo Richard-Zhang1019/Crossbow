@@ -56,6 +56,19 @@ impl CoreKind {
             CoreKind::SingBox => SINGBOX_VERSION,
         }
     }
+    /// GitHub release 下载路径：`<tag>/<asset>`。
+    /// mihomo 资产名自带版本；sing-box 需显式补 tag 段。
+    fn url_path(self) -> Result<String, String> {
+        match self {
+            CoreKind::Mihomo => core_asset_name(),
+            CoreKind::SingBox => Ok(format!(
+                "v{}/{}",
+                SINGBOX_VERSION.trim_start_matches('v'),
+                singbox_asset_name()?
+            )),
+        }
+    }
+
     /// sing-box 发行包是 tar.gz 且带目录前缀：sing-box-<v>-<os>-<arch>/
     #[allow(dead_code)]
     fn asset_kind(self) -> &'static str {
@@ -74,46 +87,36 @@ pub struct CoreBinaryInfo {
     pub version: String,
 }
 
-/// 按定位链解析内核路径；找不到返回 None（前端引导下载）。
-pub fn resolve_core_binary(_app: &tauri::AppHandle, data_dir: &Path) -> Option<PathBuf> {
-    resolve_core_for(_app, data_dir, None)
-}
-
-/// 按引擎解析内核路径；None 时按 mihomo → sing-box 顺序探测。
-pub fn resolve_core_for(
-    _app: &tauri::AppHandle,
-    data_dir: &Path,
-    engine: Option<&str>,
-) -> Option<PathBuf> {
-    let preferred: &[&str] = match engine {
-        Some("singbox") => &["sing-box", "mihomo"],
-        Some("mihomo") | None => &["mihomo", "sing-box"],
-        Some(_) => &["mihomo", "sing-box"],
-    };
-    resolve_preferred(_app, data_dir, preferred)
-}
-
-fn resolve_preferred(_app: &tauri::AppHandle, data_dir: &Path, names: &[&str]) -> Option<PathBuf> {
+/// 启动期定位链：env 覆盖 → mihomo → sing-box（任一可用内核）。
+pub fn resolve_core_binary(data_dir: &Path) -> Option<PathBuf> {
     if let Some(env) = std::env::var_os("CROSSBOW_MIHOMO_BIN") {
         let p = PathBuf::from(env);
         if p.exists() {
             return Some(p);
         }
     }
-    // sidecar：与主可执行文件同目录（.app/Contents/MacOS/{mihomo,sing-box}）
-    if let Ok(exe) = std::env::current_exe() {
-        for name in names {
-            let sibling = exe.parent()?.join(name);
-            if sibling.exists() {
-                return Some(sibling);
-            }
-        }
+    resolve_exact(data_dir, "mihomo").or_else(|| resolve_exact(data_dir, "sing-box"))
+}
+
+/// 按引擎严格解析内核路径：不存在跨引擎回退——查不到就是未安装。
+pub fn resolve_core_for(data_dir: &Path, engine: Option<&str>) -> Option<PathBuf> {
+    let name = match engine {
+        Some("singbox") => "sing-box",
+        _ => "mihomo",
+    };
+    resolve_exact(data_dir, name)
+}
+
+fn resolve_exact(data_dir: &Path, name: &str) -> Option<PathBuf> {
+    // sidecar：与主可执行文件同目录（.app/Contents/MacOS/<name>）
+    let exe = std::env::current_exe().ok()?;
+    let sibling = exe.parent()?.join(name);
+    if sibling.exists() {
+        return Some(sibling);
     }
-    for name in names {
-        let cached = data_dir.join("binaries").join(name);
-        if cached.exists() {
-            return Some(cached);
-        }
+    let cached = data_dir.join("binaries").join(name);
+    if cached.exists() {
+        return Some(cached);
     }
     None
 }
@@ -169,10 +172,7 @@ pub fn install_core(
     kind: CoreKind,
     emit: &dyn Fn(InstallProgress),
 ) -> Result<PathBuf, String> {
-    let asset = match kind {
-        CoreKind::Mihomo => core_asset_name()?,
-        CoreKind::SingBox => singbox_asset_name()?,
-    };
+    let url_path = kind.url_path()?;
     let dest_dir = data_dir.join("binaries");
     std::fs::create_dir_all(&dest_dir).map_err(|e| e.to_string())?;
     let dest = dest_dir.join(kind.binary_name());
@@ -183,7 +183,7 @@ pub fn install_core(
         .build();
     let mut last_err = String::from("no source attempted");
     for base in kind.sources() {
-        let url = format!("{base}/{asset}");
+        let url = format!("{base}/{url_path}");
         emit(InstallProgress {
             stage: "downloading".into(),
             detail: url.clone(),
@@ -277,6 +277,25 @@ fn unpack(download_path: &Path, dest: &Path, kind: CoreKind) -> Result<(), Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resolve_is_exact_per_engine() {
+        let dir = tempfile::tempdir().unwrap();
+        let bins = dir.path().join("binaries");
+        std::fs::create_dir_all(&bins).unwrap();
+        // 只有 mihomo：查 sing-box 必须为 None（不跨引擎回退）
+        std::fs::write(bins.join("mihomo"), b"x").unwrap();
+        assert!(
+            resolve_core_for(dir.path(), Some("singbox")).is_none(),
+            "sing-box must not fall back to mihomo"
+        );
+        let m = resolve_core_for(dir.path(), Some("mihomo")).unwrap();
+        assert!(m.ends_with("mihomo"));
+        // 两个都在：各归各
+        std::fs::write(bins.join("sing-box"), b"x").unwrap();
+        let sb = resolve_core_for(dir.path(), Some("singbox")).unwrap();
+        assert!(sb.ends_with("sing-box"));
+    }
 
     #[test]
     fn asset_name_matches_host_platform() {

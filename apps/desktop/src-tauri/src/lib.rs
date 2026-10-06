@@ -43,7 +43,6 @@ pub struct AppState {
     mode: Mutex<String>,
     tray: Mutex<Option<tauri::tray::TrayIcon<Wry>>>,
     ws: WsHub,
-    app: AppHandle,
     data_dir: PathBuf,
 }
 
@@ -552,7 +551,7 @@ async fn set_engine(
         crossbow_core::Engine::SingBox => "sing-box",
         crossbow_core::Engine::Mihomo => "mihomo",
     };
-    let resolved = core_download::resolve_core_binary(&app, &state.data_dir);
+    let resolved = core_download::resolve_core_binary(&state.data_dir);
     let have = resolved
         .map(|p| p.file_name().map(|f| f == need_bin).unwrap_or(false))
         .unwrap_or(false);
@@ -752,11 +751,10 @@ fn diag_log(state: State<AppState>, line: String) {
 /// 按引擎查询内核安装状态。
 #[tauri::command]
 async fn core_binary_info_for(
-    app: AppHandle,
     state: State<'_, AppState>,
     engine: String,
 ) -> Result<CoreBinaryInfo, String> {
-    let resolved = core_download::resolve_core_for(&app, &state.data_dir, Some(&engine));
+    let resolved = core_download::resolve_core_for(&state.data_dir, Some(&engine));
     let path = resolved
         .as_ref()
         .map(|p| p.display().to_string())
@@ -779,7 +777,7 @@ async fn core_binary_info_for(
 
 #[tauri::command]
 fn core_binary_info(state: State<AppState>) -> CoreBinaryInfo {
-    let resolved = resolve_core_binary(&state.app, &state.data_dir);
+    let resolved = resolve_core_binary(&state.data_dir);
     let path = resolved
         .as_ref()
         .map(|p| p.display().to_string())
@@ -817,7 +815,7 @@ async fn core_install(app: AppHandle, engine: Option<String>) -> Result<CoreBina
     let new_core = CoreManager::new(info.clone(), data_dir.join("runtime"));
     state.core().stop();
     *state.core_slot.lock().unwrap() = new_core;
-    let resolved = resolve_core_binary(&app, &data_dir);
+    let resolved = resolve_core_binary(&data_dir);
     let source = match &resolved {
         None => "missing",
         Some(p) if p.starts_with(&data_dir) => "data",
@@ -895,13 +893,13 @@ struct EngineView {
 }
 
 #[tauri::command]
-fn get_engine_config(app: AppHandle, state: State<AppState>) -> EngineView {
+fn get_engine_config(state: State<AppState>) -> EngineView {
     let store = state.store.lock().unwrap();
     let need = match store.data().engine.engine {
         crossbow_core::Engine::SingBox => "sing-box",
         crossbow_core::Engine::Mihomo => "mihomo",
     };
-    let core_installed = core_download::resolve_core_for(&app, &state.data_dir, Some(need))
+    let core_installed = core_download::resolve_core_for(&state.data_dir, Some(need))
         .map(|p| p.file_name().map(|f| f == need).unwrap_or(false))
         .unwrap_or(false);
     EngineView {
@@ -1345,7 +1343,7 @@ pub fn run() {
             // 2. 打包 .app 内置 sidecar（与可执行文件同目录）
             // 3. 数据目录缓存 binaries/mihomo（此前手动安装/下载的）
             // 都没有时为空——由「下载内核」命令补齐后再启动。
-            let bin = resolve_core_binary(app.handle(), &data_dir);
+            let bin = resolve_core_binary(&data_dir);
             let core = CoreManager::new(bin.unwrap_or_default(), data_dir.join("runtime"));
 
             let handle = app.handle().clone();
@@ -1419,7 +1417,6 @@ pub fn run() {
                 eprintln!("recovered stale system proxy from previous session");
             }
 
-            let handle = app.handle().clone();
             app.manage(AppState {
                 handoff: std::sync::atomic::AtomicBool::new(false),
                 safe_mode: std::sync::atomic::AtomicBool::new(false),
@@ -1429,7 +1426,6 @@ pub fn run() {
                 mode: Mutex::new("rule".to_string()),
                 tray: Mutex::new(None),
                 ws: WsHub::default(),
-                app: handle,
                 data_dir: data_dir.clone(),
             });
 
