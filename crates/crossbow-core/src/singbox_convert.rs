@@ -141,9 +141,6 @@ pub fn convert_to_singbox(
                 { "type": "https", "tag": "proxy-dns", "server": "8.8.8.8", "detour": "AUTO" },
                 { "type": "udp", "tag": "local-dns", "server": "223.5.5.5", "detour": "DIRECT" }
             ],
-            "rules": [
-                { "outbound": "any", "server": "local-dns" }
-            ],
             "final": "proxy-dns",
             "strategy": "prefer_ipv4"
         },
@@ -159,7 +156,9 @@ pub fn convert_to_singbox(
         "route": {
             "rules": route_rules,
             "final": final_out,
-            "auto_detect_interface": true
+            "auto_detect_interface": true,
+            // 1.12+ 域名解析出口：替代已移除的 DNS 规则 outbound 匹配项
+            "default_domain_resolver": "local-dns"
         },
         "experimental": {
             "cache_file": { "enabled": true, "store_fakeip": false }
@@ -441,5 +440,15 @@ rules:
         let rules = v["route"]["rules"].as_array().unwrap();
         // MATCH 不产生规则条目（用 final），这里应有 2 条
         assert_eq!(rules.len(), 2);
+    }
+
+    // sing-box 1.14 移除了 DNS 规则的 outbound 匹配项，域名解析出口改用
+    // route.default_domain_resolver；此回归锁住该迁移（内核会 FATAL 拒启）。
+    #[test]
+    fn no_deprecated_outbound_dns_rule() {
+        let out = convert_to_singbox(SAMPLE, 7897, false).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["dns"]["rules"], Value::Null, "不应生成 outbound:any DNS 规则");
+        assert_eq!(v["route"]["default_domain_resolver"], "local-dns");
     }
 }
