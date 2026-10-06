@@ -394,8 +394,14 @@ pub(crate) mod tests {
             dir.path().to_path_buf(),
         );
         let config = "proxies:\n  - name: OUT-DIRECT\n    type: direct\nproxy-groups:\n  - name: \u{8282}\u{70b9}\u{9009}\u{62e9}\n    type: select\n    proxies:\n      - OUT-DIRECT\nrules:\n  - MATCH,DIRECT\n";
-        mgr.start(config, &crossbow_core::RuntimeConfig::default())
-            .unwrap();
+        mgr.start(
+            config,
+            &crossbow_core::RuntimeConfig {
+                mixed_port: crate::core_manager::tests::tests_free_port(),
+                ..crossbow_core::RuntimeConfig::default()
+            },
+        )
+        .unwrap();
         let mut running = false;
         for _ in 0..100 {
             if mgr.status() == crate::core_manager::CoreStatus::Running {

@@ -397,7 +397,10 @@ pub(crate) mod tests {
         );
         mgr.start(
             "proxies: []\nrules:\n  - MATCH,DIRECT\n",
-            &crossbow_core::RuntimeConfig::default(),
+            &crossbow_core::RuntimeConfig {
+                mixed_port: crate::core_manager::tests::tests_free_port(),
+                ..crossbow_core::RuntimeConfig::default()
+            },
         )
         .unwrap();
         let mut running = false;

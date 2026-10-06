@@ -259,7 +259,24 @@ impl CoreManager {
         }
         std::fs::create_dir_all(&self.shared.work_dir).map_err(|e| e.to_string())?;
 
-        let port = free_port().ok_or("no free port for controller")?;
+        // 混合端口预检：被其他程序占用（常见：Clash Verge 等代理同端口）时，
+        // sing-box 会 FATAL 退出、mihomo 静默失去代理能力——直接给出可操作的错误
+        let bind_probe = std::net::TcpListener::bind(if engine_rt.allow_lan {
+            std::net::SocketAddr::from(([0, 0, 0, 0], engine_rt.mixed_port))
+        } else {
+            std::net::SocketAddr::from(([127, 0, 0, 1], engine_rt.mixed_port))
+        });
+        if let Err(e) = bind_probe {
+            return Err(format!(
+                "混合端口 {} 已被其他程序占用（{e}）。多半是 Clash Verge 等其他代理工具——请更换本应用的混合端口或退出对方程序",
+                engine_rt.mixed_port
+            ));
+        }
+        // controller 端口避开 mixed，避免自相争抢
+        let mut port = free_port().ok_or("no free port for controller")?;
+        while port == engine_rt.mixed_port {
+            port = free_port().ok_or("no free port for controller")?;
+        }
         let secret = Uuid::new_v4().simple().to_string();
         let rt = RuntimeConfig {
             controller_port: port,
@@ -294,7 +311,7 @@ impl CoreManager {
             port: d.port,
             secret: d.secret.clone(),
         };
-        if !probe.wait_ready(Duration::from_secs(2), || false) {
+        if !probe.wait_ready(Duration::from_secs(2), || false, || false) {
             let _ = std::fs::remove_file(Shared::descriptor_path(&self.shared.work_dir));
             return false;
         }
@@ -407,14 +424,26 @@ fn watch(shared: Arc<Shared>, port: u16, secret: String) {
     }
 
     let probe = ControllerProbe { port, secret };
-    if !probe.wait_ready(Duration::from_secs(opts.readiness_timeout_secs), || {
-        shared.inner.lock().unwrap().stopping
-    }) {
-        // stop() 打断了探测：收尾已由 stop() 上报，这里静默退出
-        if shared.inner.lock().unwrap().stopping {
+    // 子进程在探测窗口内退出（如端口被占 FATAL）→ 立刻失败，不傻等满超时
+    let child_gone = || {
+        let mut inner = shared.inner.lock().unwrap();
+        match inner.child.as_mut() {
+            Some(c) => c.try_wait().ok().flatten().is_some(),
+            None => true,
+        }
+    };
+    if !probe.wait_ready(
+        Duration::from_secs(opts.readiness_timeout_secs),
+        || shared.inner.lock().unwrap().stopping,
+        child_gone,
+    ) {
+        let stopping = shared.inner.lock().unwrap().stopping;
+        // 无论打断原因，先收走子进程（stop 打断路径若不杀，刚拉起的内核会变孤儿）
+        shared.kill_child();
+        if stopping {
+            // 收尾已由 stop() 上报 Stopped，这里静默退出
             return;
         }
-        shared.kill_child();
         shared.notify(CoreStatus::Crashed(format!(
             "内核启动失败/超时：{}",
             core_log_tail(&shared.work_dir, 400)
@@ -491,14 +520,19 @@ struct ControllerProbe {
 impl ControllerProbe {
     /// 轮询 `/version` 直到就绪或超时；`cancelled` 返回 true 时立即放弃
     /// （stop() 已接管收尾，本探测不再上报）。
-    fn wait_ready(&self, timeout: Duration, cancelled: impl Fn() -> bool) -> bool {
+    fn wait_ready(
+        &self,
+        timeout: Duration,
+        cancelled: impl Fn() -> bool,
+        child_gone: impl Fn() -> bool,
+    ) -> bool {
         let agent = ureq::AgentBuilder::new()
             .timeout(Duration::from_millis(800))
             .build();
         let url = format!("http://127.0.0.1:{}/version", self.port);
         let deadline = Instant::now() + timeout;
         while Instant::now() < deadline {
-            if cancelled() {
+            if cancelled() || child_gone() {
                 return false;
             }
             if let Ok(resp) = agent
@@ -512,7 +546,7 @@ impl ControllerProbe {
             }
             // 短睡眠分片，保证 stop() 能及时打断长探测
             for _ in 0..6 {
-                if cancelled() {
+                if cancelled() || child_gone() {
                     return false;
                 }
                 std::thread::sleep(Duration::from_millis(50));
@@ -689,6 +723,11 @@ pub fn free_port() -> Option<u16> {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    /// 供其他模块的真内核测试取空闲混合端口（默认 7897 真机上常被占）。
+    pub(crate) fn tests_free_port() -> u16 {
+        free_port().unwrap()
+    }
+
     use super::*;
 
     /// 真内核测试共享网络与端口，必须串行执行（跨模块共享同一把锁）。
@@ -722,7 +761,14 @@ pub(crate) mod tests {
             ensure_geo_files: false,
             ..CoreOptions::default()
         });
-        let _ = mgr.start("", &RuntimeConfig::default());
+        // 默认 7897 在真机上常被其他代理占用（预检会直接拒绝），测试用空闲端口
+        let _ = mgr.start(
+            "",
+            &RuntimeConfig {
+                mixed_port: free_port().unwrap(),
+                ..RuntimeConfig::default()
+            },
+        );
         for _ in 0..80 {
             if matches!(mgr.status(), CoreStatus::Crashed(_)) {
                 return;
@@ -935,7 +981,10 @@ pub(crate) mod tests {
         });
         mgr.start(
             "proxies: []\nrules:\n  - MATCH,DIRECT\n",
-            &RuntimeConfig::default(),
+            &RuntimeConfig {
+                mixed_port: free_port().unwrap(),
+                ..RuntimeConfig::default()
+            },
         )
         .unwrap();
         let wait_status = |mgr: &CoreManager, want: &dyn Fn(&CoreStatus) -> bool| {
