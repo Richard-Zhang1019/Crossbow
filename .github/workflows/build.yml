@@ -1,0 +1,110 @@
+name: build
+
+# 双平台构建验证：macOS (Apple Silicon) + Windows (x64)。
+# 未签名产物仅作构建验证/测试包；正式发布仍由本地签名构建。
+on:
+  push:
+    branches: [master, "feat/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  core-test:
+    name: core test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy -p crossbow-core -- -D warnings
+      - run: cargo test -p crossbow-core
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            mihomo_asset: mihomo-darwin-arm64-v1.19.32.gz
+            mihomo_extract: gunzip
+            sidecar: mihomo-aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            mihomo_asset: mihomo-windows-amd64-v1.19.32.zip
+            mihomo_extract: unzip
+            sidecar: mihomo-x86_64-pc-windows-msvc.exe
+    runs-on: ${{ matrix.os }}
+    needs: [core-test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # 内核侧载二进制不入库（.gitignore），构建前按平台下载
+      # 版本必须与 core_download.rs 的 CORE_VERSION 保持一致
+      - name: Download mihomo sidecar (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          curl -fsSL -o mihomo.gz \
+            "https://github.com/MetaCubeX/meta-rules-dat/releases/download/v1.19.32/${{ matrix.mihomo_asset }}" \
+            || curl -fsSL -o mihomo.gz \
+            "https://gh-proxy.com/https://github.com/MetaCubeX/meta-rules-dat/releases/download/v1.19.32/${{ matrix.mihomo_asset }}"
+          gunzip -f mihomo.gz
+          mv mihomo apps/desktop/src-tauri/binaries/${{ matrix.sidecar }}
+          chmod +x apps/desktop/src-tauri/binaries/${{ matrix.sidecar }}
+
+      - name: Download mihomo sidecar (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $urls = @(
+            "https://github.com/MetaCubeX/meta-rules-dat/releases/download/v1.19.32/${{ matrix.mihomo_asset }}",
+            "https://gh-proxy.com/https://github.com/MetaCubeX/meta-rules-dat/releases/download/v1.19.32/${{ matrix.mihomo_asset }}"
+          )
+          foreach ($u in $urls) {
+            try { Invoke-WebRequest -Uri $u -OutFile mihomo.zip -ErrorAction Stop; break }
+            catch { Write-Host "failed: $u" }
+          }
+          Expand-Archive -Path mihomo.zip -DestinationPath mihomo-zip -Force
+          $exe = Get-ChildItem -Recurse -Path mihomo-zip -Filter "*.exe" | Select-Object -First 1
+          New-Item -ItemType Directory -Force -Path apps/desktop/src-tauri/binaries | Out-Null
+          Copy-Item $exe.FullName apps/desktop/src-tauri/binaries/${{ matrix.sidecar }}
+
+      - name: Install frontend deps
+        working-directory: apps/desktop
+        run: npm install
+
+      - name: Build (unsigned)
+        working-directory: apps/desktop
+        env:
+          TAURI_CONFIG: '{"bundle":{"createUpdaterArtifacts":false}}'
+        run: npm run tauri build
+
+      - name: Upload artifacts (macOS)
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: crossbow-macos-aarch64
+          path: |
+            target/release/bundle/macos/*.app
+            target/release/bundle/dmg/*.dmg
+
+      - name: Upload artifacts (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: crossbow-windows-x64
+          path: |
+            target/release/bundle/nsis/*.exe
+            target/release/bundle/msi/*.msi

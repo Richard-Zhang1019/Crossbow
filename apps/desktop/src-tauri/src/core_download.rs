@@ -37,10 +37,10 @@ pub enum CoreKind {
 }
 
 impl CoreKind {
-    pub fn binary_name(self) -> &'static str {
+    pub fn binary_name(self) -> String {
         match self {
-            CoreKind::Mihomo => "mihomo",
-            CoreKind::SingBox => "sing-box",
+            CoreKind::Mihomo => core_bin_file("mihomo"),
+            CoreKind::SingBox => core_bin_file("sing-box"),
         }
     }
     fn sources(self) -> &'static [&'static str] {
@@ -98,6 +98,20 @@ pub fn resolve_core_binary(data_dir: &Path) -> Option<PathBuf> {
     resolve_exact(data_dir, "mihomo").or_else(|| resolve_exact(data_dir, "sing-box"))
 }
 
+/// 内核二进制文件名（Windows 带 .exe 后缀）。
+pub fn core_bin_file(name: &str) -> String {
+    if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_string()
+    }
+}
+
+/// 路径的文件名是否为指定内核（Windows 认 .exe）。
+pub fn is_core_bin(path: &std::path::Path, name: &str) -> bool {
+    path.file_name().and_then(|f| f.to_str()) == Some(&core_bin_file(name))
+}
+
 /// 按引擎严格解析内核路径：不存在跨引擎回退——查不到就是未安装。
 pub fn resolve_core_for(data_dir: &Path, engine: Option<&str>) -> Option<PathBuf> {
     // 引擎键两种写法：前端下拉框 "singbox"，启动链二进制名 "sing-box"——都接受。
@@ -111,13 +125,14 @@ pub fn resolve_core_for(data_dir: &Path, engine: Option<&str>) -> Option<PathBuf
 }
 
 fn resolve_exact(data_dir: &Path, name: &str) -> Option<PathBuf> {
+    let file = core_bin_file(name);
     // sidecar：与主可执行文件同目录（.app/Contents/MacOS/<name>）
     let exe = std::env::current_exe().ok()?;
-    let sibling = exe.parent()?.join(name);
+    let sibling = exe.parent()?.join(&file);
     if sibling.exists() {
         return Some(sibling);
     }
-    let cached = data_dir.join("binaries").join(name);
+    let cached = data_dir.join("binaries").join(&file);
     if cached.exists() {
         return Some(cached);
     }
@@ -138,12 +153,15 @@ fn platform_asset_name() -> Result<String, String> {
     Ok(format!("mihomo-{os}-{arch}-{CORE_VERSION}"))
 }
 
-/// 当前环境的 mihomo 资产文件名（gzip 压缩包）。
+/// 当前环境的 mihomo 资产文件名（macOS gzip；Windows zip）。
 pub fn core_asset_name() -> Result<String, String> {
+    if cfg!(windows) {
+        return Ok(format!("{}.zip", platform_asset_name()?));
+    }
     Ok(format!("{}.gz", platform_asset_name()?))
 }
 
-/// sing-box 资产名：sing-box-<v>-<os>-<arch>.tar.gz
+/// sing-box 资产名：macOS tar.gz；Windows zip。
 pub fn singbox_asset_name() -> Result<String, String> {
     let arch = match std::env::consts::ARCH {
         "aarch64" => "arm64",
@@ -155,12 +173,17 @@ pub fn singbox_asset_name() -> Result<String, String> {
         "windows" => "windows",
         other => return Err(format!("unsupported os {other}")),
     };
-    Ok(format!(
-        "sing-box-{}-{}-{}.tar.gz",
+    let base = format!(
+        "sing-box-{}-{}-{}",
         SINGBOX_VERSION.trim_start_matches('v'),
         os,
         arch
-    ))
+    );
+    if cfg!(windows) {
+        Ok(format!("{base}.zip"))
+    } else {
+        Ok(format!("{base}.tar.gz"))
+    }
 }
 
 #[derive(Serialize, Clone)]
@@ -241,6 +264,40 @@ pub fn install_core(
 
 /// 从下载包解出内核二进制到 dest。
 fn unpack(download_path: &Path, dest: &Path, kind: CoreKind) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        return unpack_zip(download_path, dest, kind);
+    }
+    #[allow(unreachable_code)]
+    {
+        unpack_unix(download_path, dest, kind)
+    }
+}
+
+/// Windows：zip 包内提取内核可执行文件（mihomo-<target>-*.exe / sing-box.exe）。
+#[cfg(windows)]
+fn unpack_zip(download_path: &Path, dest: &Path, kind: CoreKind) -> Result<(), String> {
+    let f = std::fs::File::open(download_path).map_err(|e| e.to_string())?;
+    let mut archive = zip::ZipArchive::new(f).map_err(|e| format!("zip: {e}"))?;
+    for i in 0..archive.len() {
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| format!("zip entry: {e}"))?;
+        let name = entry.name().to_string();
+        let stem = kind.binary_name().trim_end_matches(".exe").to_string();
+        let hit = name.ends_with(".exe")
+            && (name.starts_with(&format!("{stem}-")) || name.starts_with(&stem));
+        if hit {
+            let mut out = std::fs::File::create(dest).map_err(|e| e.to_string())?;
+            std::io::copy(&mut entry, &mut out).map_err(|e| format!("extract: {e}"))?;
+            return Ok(());
+        }
+    }
+    Err("zip 包内未找到内核可执行文件".to_string())
+}
+
+/// macOS/Linux：gz 直解（mihomo）或 tar.gz 提取（sing-box）。
+fn unpack_unix(download_path: &Path, dest: &Path, kind: CoreKind) -> Result<(), String> {
     let in_file = std::fs::File::open(download_path).map_err(|e| e.to_string())?;
     let gz = flate2::read::GzDecoder::new(in_file);
     match kind {

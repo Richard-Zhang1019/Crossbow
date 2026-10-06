@@ -21,9 +21,6 @@ ureq = "2"
 uuid = { version = "1", features = ["v4"] }
 tungstenite = "0.30"
 tar = "0.4"
-
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
 flate2 = "1"
 url = "2"
 tauri-plugin-autostart = "2"
@@ -31,6 +28,13 @@ tauri-plugin-deep-link = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-single-instance = "2"
 crossbow-core = { path = "../../../crates/crossbow-core" }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Networking_WinInet", "Win32_Foundation"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 tempfile = "3"
