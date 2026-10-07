@@ -33,6 +33,25 @@ crossbow-core = { path = "../../../crates/crossbow-core" }
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = [
+    "std",
+    "NSButton",
+    "NSColor",
+    "NSFont",
+    "NSParagraphStyle",
+    "NSStatusBar",
+    "NSStatusBarButton",
+    "NSStatusItem",
+    "NSView",
+    "NSAttributedString",
+    "NSResponder",
+    "NSCell",
+    "NSControl",
+] }
+objc2-foundation = { version = "0.3", features = ["std", "NSGeometry", "NSString", "NSDictionary", "NSAttributedString"] }
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Networking_WinInet", "Win32_Foundation"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }

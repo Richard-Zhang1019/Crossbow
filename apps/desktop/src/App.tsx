@@ -7,6 +7,17 @@ import DiagnosticsPage from "./pages/Diagnostics";
 import LogsPage from "./pages/Logs";
 import SettingsPage from "./pages/Settings";
 import { initLang, useT } from "./i18n";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import logoGlyph from "./assets/logo-glyph.png";
+
+/** Overlay 标题栏拖拽：显式 startDragging（data-tauri-drag-region 在
+ *  Overlay 样式下不可靠），主键按下才触发，不影响子元素交互。 */
+export function dragWindow(e: React.MouseEvent) {
+  if (e.button === 0) {
+    e.preventDefault();
+    getCurrentWindow().startDragging();
+  }
+}
 import { ipc, type UiSettings } from "./ipc";
 import { Icon } from "./components/Icon";
 
@@ -107,18 +118,26 @@ export default function App() {
   return (
     <div className="flex h-full">
       {/* Overlay 标题栏：顶部 24px 拖拽区（内容区各页起始线 y≥24，不遮挡交互） */}
-      <div data-tauri-drag-region className="fixed inset-x-0 top-0 z-40 h-6" />
+      <div
+        data-tauri-drag-region
+        onMouseDown={dragWindow}
+        className="fixed inset-x-0 top-0 z-40 h-6"
+      />
       <aside
         className="flex w-52 shrink-0 flex-col gap-px border-r pb-5 pl-3 pr-3 pt-11"
         style={{ borderColor: "var(--cb-line)" }}
       >
-        <div className="mb-5 flex items-center gap-2.5 px-2.5">
-          <div
-            className="grid h-6 w-6 place-items-center rounded-md"
-            style={{ background: "linear-gradient(135deg, #7aa2ff, #9d8cff)" }}
-          >
-            <Icon name="crossbow" size={12} stroke="#0a0c10" />
-          </div>
+        <div
+          className="mb-5 flex items-center gap-2.5 px-2.5"
+          onMouseDown={dragWindow}
+        >
+          <img
+            src={logoGlyph}
+            alt=""
+            className="h-6 w-6"
+            style={{ flex: "none" }}
+            draggable={false}
+          />
           <b className="text-[13.5px] font-semibold tracking-tight">Crossbow</b>
         </div>
         {NAV.map((group) => (

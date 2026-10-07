@@ -18,6 +18,8 @@ use tauri_plugin_deep_link::DeepLinkExt as _;
 
 mod core_manager;
 mod diagnose;
+#[cfg(target_os = "macos")]
+mod tray_speed;
 mod mihomo_api;
 mod scheduler;
 mod sysproxy;
@@ -1186,6 +1188,28 @@ fn tr(lang: &str, zh: &str, en: &str) -> String {
     }
 }
 
+/// 同步托盘速率显示与内核状态：Running 订阅 /traffic 更新标题；
+/// 其他状态退订并清空标题。收养（adopt）路径在托盘创建后也要调一次。
+fn sync_tray_traffic(handle: &AppHandle) {
+    let Some(state) = handle.try_state::<AppState>() else {
+        return;
+    };
+    if state.core().status() == CoreStatus::Running {
+        if let Some((port, secret)) = state.core().controller() {
+            let h = handle.clone();
+            let _ = state.ws.subscribe_traffic_tray(port, &secret, move |up, down| {
+                // macOS：富文本双行速率（借道底层 NSStatusItem）；其余平台无操作
+                #[cfg(target_os = "macos")]
+                tray_speed::set_speed(&h, up, down);
+            });
+            return;
+        }
+    }
+    state.ws.unsubscribe_tray_traffic();
+    #[cfg(target_os = "macos")]
+    tray_speed::clear(handle);
+}
+
 fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
     let state = app.state::<AppState>();
     let lang = state.store.lock().unwrap().data().ui.lang.clone();
@@ -1464,6 +1488,8 @@ pub fn run() {
             let handle = app.handle().clone();
             core.set_callback(std::sync::Arc::new(move |status| {
                 let _ = handle.emit("core://status", status.clone());
+                // 托盘实时速率：Running 订阅更新，停止/崩溃退订清空
+                sync_tray_traffic(&handle);
                 // 状态一致性守护：内核崩溃时若系统代理还开着，立即还原，
                 // 避免系统流量指向已死的代理端口导致用户断网。
                 if let CoreStatus::Crashed(msg) = status {
@@ -1563,17 +1589,19 @@ pub fn run() {
             // 托盘
             let menu = build_tray_menu(app.handle())?;
             let tray = TrayIconBuilder::new()
-                .icon(
-                    app.default_window_icon()
-                        .expect("missing bundle icon")
-                        .clone(),
-                )
+                // 菜单栏用单色 template 图（系统自适应深/浅色菜单栏）；
+                // 彩色圆角应用图标在菜单栏里太扎眼
+                .icon(tauri::include_image!("icons/tray-icon.png"))
+                .icon_as_template(true)
                 .menu(&menu)
                 .show_menu_on_left_click(true)
                 .tooltip("Crossbow")
                 .on_menu_event(handle_menu)
                 .build(app)?;
             *app.state::<AppState>().tray.lock().unwrap() = Some(tray);
+
+            // 收养的外部内核不走状态回调：这里补挂托盘速率
+            sync_tray_traffic(app.handle());
 
             Ok(())
         })

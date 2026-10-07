@@ -255,7 +255,18 @@ export default function HomePage() {
 
 export function PageHead({ title, meta, children }: { title: string; meta?: string; children?: React.ReactNode }) {
   return (
-    <div className="mb-1 flex items-center gap-3">
+    <div
+      className="mb-1 flex items-center gap-3"
+      onMouseDown={(e) => {
+        // 页头空白区拖窗（title/meta/span 上的点击才触发，按钮不受影响）
+        const tag = (e.target as HTMLElement).tagName;
+        if (e.button === 0 && (tag === "H1" || tag === "SPAN" || tag === "DIV")) {
+          import("@tauri-apps/api/window").then(({ getCurrentWindow }) =>
+            getCurrentWindow().startDragging(),
+          );
+        }
+      }}
+    >
       <h1 className="text-[15px] font-semibold tracking-tight">{title}</h1>
       {meta && (
         <span className="cb-mono text-[11px]" style={{ color: "var(--cb-faint)" }}>

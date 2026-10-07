@@ -1,22 +1,18 @@
-# Crossbow Logo 资源
+# Crossbow Logo 资源（v3 渐变）
 
-完整十字弓 Glyph（45° 构图：弩身 / 弓臂 / 弓弦 / 箭）。
+完整十字弓 Glyph（45° 构图：弩身 / 弓臂 / 弓弦 / 箭）· 2026-10-07 由 Codex 重绘。
 
-## SVG 矢量源文件
+## 主资产
 | 文件 | 用途 |
 |---|---|
-| `crossbow-app-icon-theme.svg` | App Icon · 主题配色（深蓝底 + 青→蓝渐变 + 白箭） |
-| `crossbow-app-icon-light.svg` | App Icon · 浅色底（箭为深藏青） |
-| `glyph-gradient-transparent.svg` | 渐变 Glyph · 透明底（官网 / 文档用） |
-| `tray-template-white.svg` | macOS 菜单栏模板 · 白色（深色菜单栏） |
-| `tray-template-black.svg` | macOS 菜单栏模板 · 黑色（浅色菜单栏） |
+| `app-icon-gradient-v3-1024.png` / `-512.png` | App 图标母版（圆角深底 + 渐变） |
+| `app-icon-gradient-v3/icon-*.png` | 32/64/128/256/512 导出 |
+| `glyph-gradient-v3-864.png` | 渐变 Glyph · 透明底（官网 Logo） |
+| `tray-template-white-512.png` / `tray-template-black-512.png` | 菜单栏模板形状（512 母版） |
+| `tray-macos/tray-{black,white}-*.png` | 16/18/22/32/36/44/66 导出 |
+| `favicon/` | 官网 favicon 全家桶（ico + 16/32/48/192/256 + apple-touch） |
 
-## PNG 导出（png/）
-- `app-theme/` `app-light/`：512 / 256 / 128 / 64 / 32
-- `tray-white/` `tray-black/`：512 / 44 / 36 / 32 / 18 / 16（透明底）
-- `glyph-gradient-512.png`
-
-## macOS 托盘使用
-Tauri 里用 template image：把 `tray-template-white.svg` 转出的 PDF/PNG
-命名为 `tray-icon.png`（Template 后缀或 `icon.asTemplate = true`），
-系统自动适配深/浅菜单栏。
+## 消费点映射
+- **桌面应用图标**：`apps/desktop/src-tauri/icons/`（32/128/128@2x/icns/ico）— 由 1024 母版重生成
+- **菜单栏托盘**：`apps/desktop/src-tauri/icons/tray-icon.png`（黑色 44px，`icon_as_template(true)` 系统自适应）
+- **官网**：`apps/site/public/`（favicon 全家桶）+ `apps/site/src/assets/logo-glyph.png`（导航/页脚 Logo）
