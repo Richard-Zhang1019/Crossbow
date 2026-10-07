@@ -1,28 +1,15 @@
+import logoGlyph from "./assets/logo-glyph.png";
+
+/** 官网 Logo：v3 渐变十字弓 glyph（透明底 PNG，与 App 图标同源）。 */
 export function Logo({ size = 24 }: { size?: number }) {
   return (
-    <span
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size * 0.27,
-        background: "linear-gradient(135deg, #7aa2ff, #9d8cff)",
-        display: "grid",
-        placeItems: "center",
-        flex: "none",
-      }}
-    >
-      <svg
-        width={size * 0.5}
-        height={size * 0.5}
-        viewBox="0 0 24 24"
-        stroke="#0a0c10"
-        strokeWidth="2.6"
-        fill="none"
-        strokeLinecap="round"
-      >
-        <path d="M5 19 L19 5 M5 5 L12 12" />
-      </svg>
-    </span>
+    <img
+      src={logoGlyph}
+      alt=""
+      width={size}
+      height={size}
+      style={{ flex: "none", display: "block" }}
+    />
   );
 }
 

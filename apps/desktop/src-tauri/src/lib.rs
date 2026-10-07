@@ -1563,11 +1563,10 @@ pub fn run() {
             // 托盘
             let menu = build_tray_menu(app.handle())?;
             let tray = TrayIconBuilder::new()
-                .icon(
-                    app.default_window_icon()
-                        .expect("missing bundle icon")
-                        .clone(),
-                )
+                // 菜单栏用单色 template 图（系统自适应深/浅色菜单栏）；
+                // 彩色圆角应用图标在菜单栏里太扎眼
+                .icon(tauri::include_image!("icons/tray-icon.png"))
+                .icon_as_template(true)
                 .menu(&menu)
                 .show_menu_on_left_click(true)
                 .tooltip("Crossbow")
