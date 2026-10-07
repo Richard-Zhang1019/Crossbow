@@ -50,6 +50,8 @@ pub struct AppState {
     tray: Mutex<Option<tauri::tray::TrayIcon<Wry>>>,
     ws: WsHub,
     data_dir: PathBuf,
+    /// 应用句柄：换核/重装后给新 CoreManager 重挂状态回调用。
+    app: AppHandle,
 }
 
 /// 进程存活探测（pidfile 双实例保险用）：unix kill 0；Windows tasklist。
@@ -148,8 +150,10 @@ fn ensure_engine_binary(state: &AppState, need: &str) -> Result<PathBuf, String>
         ));
     };
     state.core().stop();
-    *state.core_slot.lock().unwrap() =
-        CoreManager::new(p.clone(), state.data_dir.join("runtime"));
+    let new_core = CoreManager::new(p.clone(), state.data_dir.join("runtime"));
+    // 换核 = 新管理器：必须重挂状态回调（托盘速率/前端事件/崩溃守卫都靠它）
+    new_core.set_callback(core_status_callback(state.app.clone()));
+    *state.core_slot.lock().unwrap() = new_core;
     state.core().log_decision(&format!("ensure: swapped to {}", p.display()));
     Ok(p)
 }
@@ -890,6 +894,7 @@ async fn core_install(app: AppHandle, engine: Option<String>) -> Result<CoreBina
     // 与启动链互斥：换核期间不允许并发的 start_core 拿到半新半旧的槽位
     let _op = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
     let new_core = CoreManager::new(info.clone(), data_dir.join("runtime"));
+    new_core.set_callback(core_status_callback(app.clone()));
     state.core().stop();
     *state.core_slot.lock().unwrap() = new_core;
     Ok(CoreBinaryInfo {
@@ -1190,6 +1195,61 @@ fn tr(lang: &str, zh: &str, en: &str) -> String {
 
 /// 同步托盘速率显示与内核状态：Running 订阅 /traffic 更新标题；
 /// 其他状态退订并清空标题。收养（adopt）路径在托盘创建后也要调一次。
+/// 内核状态回调：UI 事件、托盘速率联动、崩溃时系统代理一致性守护。
+/// 换核/重装创建新 CoreManager 后必须重新挂载（ensure_engine_binary / core_install）。
+fn core_status_callback(handle: AppHandle) -> core_manager::Callback {
+    std::sync::Arc::new(move |status| {
+        let _ = handle.emit("core://status", status.clone());                // 托盘实时速率：Running 订阅更新，停止/崩溃退订清空
+                sync_tray_traffic(&handle);
+                // 状态一致性守护：内核崩溃时若系统代理还开着，立即还原，
+                // 避免系统流量指向已死的代理端口导致用户断网。
+                if let CoreStatus::Crashed(msg) = status {
+                    let Some(state) = handle.try_state::<AppState>() else { return };
+                    // 状态一致性守护：内核崩溃时还原系统代理，避免断网。
+                    if state.sysproxy.status().enabled {
+                        state.sysproxy.disable();
+                        let _ = handle.emit("sysproxy://status", state.sysproxy.status());
+                        refresh_tray(&handle);
+                    }
+                    // 安全模式：覆写引发的配置解析错误 → 禁用全部覆写并重启一次。
+                    let config_err = msg.contains("Parse config error");
+                    let already = state
+                        .safe_mode
+                        .load(std::sync::atomic::Ordering::SeqCst);
+                    if config_err && !already {
+                        state
+                            .safe_mode
+                            .store(true, std::sync::atomic::Ordering::SeqCst);
+                        {
+                            let mut store = state.store.lock().unwrap();
+                            for o in store.data_mut().overrides.iter_mut() {
+                                o.enabled = false;
+                            }
+                            let _ = store.save();
+                        }
+                        let port = state.store.lock().unwrap().data().engine.mixed_port;
+                        let _ = start_core(&state);
+                        // 等内核起来后恢复系统代理（最多 20s）
+                        for _ in 0..100 {
+                            if state.core().status() == CoreStatus::Running {
+                                let _ = state.sysproxy.enable(port);
+                                let _ = handle.emit(
+                                    "sysproxy://status",
+                                    state.sysproxy.status(),
+                                );
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(200));
+                        }
+                        let _ = handle.emit(
+                            "core://safe-mode",
+                            "覆写导致内核启动失败，已临时禁用全部覆写（安全模式）。修复覆写后保存即恢复正常。",
+                        );
+                        refresh_tray(&handle);
+                    }
+                }
+    })}
+
 fn sync_tray_traffic(handle: &AppHandle) {
     let Some(state) = handle.try_state::<AppState>() else {
         return;
@@ -1486,58 +1546,7 @@ pub fn run() {
             let core = CoreManager::new(bin.unwrap_or_default(), data_dir.join("runtime"));
 
             let handle = app.handle().clone();
-            core.set_callback(std::sync::Arc::new(move |status| {
-                let _ = handle.emit("core://status", status.clone());
-                // 托盘实时速率：Running 订阅更新，停止/崩溃退订清空
-                sync_tray_traffic(&handle);
-                // 状态一致性守护：内核崩溃时若系统代理还开着，立即还原，
-                // 避免系统流量指向已死的代理端口导致用户断网。
-                if let CoreStatus::Crashed(msg) = status {
-                    let Some(state) = handle.try_state::<AppState>() else { return };
-                    // 状态一致性守护：内核崩溃时还原系统代理，避免断网。
-                    if state.sysproxy.status().enabled {
-                        state.sysproxy.disable();
-                        let _ = handle.emit("sysproxy://status", state.sysproxy.status());
-                        refresh_tray(&handle);
-                    }
-                    // 安全模式：覆写引发的配置解析错误 → 禁用全部覆写并重启一次。
-                    let config_err = msg.contains("Parse config error");
-                    let already = state
-                        .safe_mode
-                        .load(std::sync::atomic::Ordering::SeqCst);
-                    if config_err && !already {
-                        state
-                            .safe_mode
-                            .store(true, std::sync::atomic::Ordering::SeqCst);
-                        {
-                            let mut store = state.store.lock().unwrap();
-                            for o in store.data_mut().overrides.iter_mut() {
-                                o.enabled = false;
-                            }
-                            let _ = store.save();
-                        }
-                        let port = state.store.lock().unwrap().data().engine.mixed_port;
-                        let _ = start_core(&state);
-                        // 等内核起来后恢复系统代理（最多 20s）
-                        for _ in 0..100 {
-                            if state.core().status() == CoreStatus::Running {
-                                let _ = state.sysproxy.enable(port);
-                                let _ = handle.emit(
-                                    "sysproxy://status",
-                                    state.sysproxy.status(),
-                                );
-                                break;
-                            }
-                            std::thread::sleep(std::time::Duration::from_millis(200));
-                        }
-                        let _ = handle.emit(
-                            "core://safe-mode",
-                            "覆写导致内核启动失败，已临时禁用全部覆写（安全模式）。修复覆写后保存即恢复正常。",
-                        );
-                        refresh_tray(&handle);
-                    }
-                }
-            }));
+            core.set_callback(core_status_callback(handle.clone()));
 
             // 状态一致性守护：
             // 1) 尝试收养上一实例轻量交接的内核（描述符 + 控制器探测）
@@ -1571,6 +1580,7 @@ pub fn run() {
                 tray: Mutex::new(None),
                 ws: WsHub::default(),
                 data_dir: data_dir.clone(),
+                app: app.handle().clone(),
             });
 
             // 订阅自动更新调度器

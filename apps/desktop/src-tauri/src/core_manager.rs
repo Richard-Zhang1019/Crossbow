@@ -50,7 +50,7 @@ impl Default for CoreOptions {
     }
 }
 
-type Callback = Arc<dyn Fn(&CoreStatus) + Send + Sync>;
+pub type Callback = Arc<dyn Fn(&CoreStatus) + Send + Sync>;
 
 struct Inner {
     child: Option<Child>,
