@@ -413,7 +413,9 @@ pub(crate) mod tests {
     /// 真实内核 WS 冒烟：traffic 桥 5 秒内应收到数据。
     #[test]
     fn real_core_traffic_ws_roundtrip() {
-        let _serial = crate::core_manager::tests::REAL_CORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _serial = crate::core_manager::tests::REAL_CORE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let Ok(bin) = std::env::var("CROSSBOW_CORE_BIN") else {
             eprintln!("skip: CROSSBOW_CORE_BIN not set");
             return;

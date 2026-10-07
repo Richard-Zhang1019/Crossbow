@@ -18,11 +18,11 @@ use tauri_plugin_deep_link::DeepLinkExt as _;
 
 mod core_manager;
 mod diagnose;
-#[cfg(target_os = "macos")]
-mod tray_speed;
 mod mihomo_api;
 mod scheduler;
 mod sysproxy;
+#[cfg(target_os = "macos")]
+mod tray_speed;
 mod ws_bridge;
 
 mod core_download;
@@ -154,7 +154,9 @@ fn ensure_engine_binary(state: &AppState, need: &str) -> Result<PathBuf, String>
     // 换核 = 新管理器：必须重挂状态回调（托盘速率/前端事件/崩溃守卫都靠它）
     new_core.set_callback(core_status_callback(state.app.clone()));
     *state.core_slot.lock().unwrap() = new_core;
-    state.core().log_decision(&format!("ensure: swapped to {}", p.display()));
+    state
+        .core()
+        .log_decision(&format!("ensure: swapped to {}", p.display()));
     Ok(p)
 }
 
@@ -782,7 +784,10 @@ fn run_diagnosis(state: State<AppState>) -> Vec<diagnose::CheckResult> {
 
 #[tauri::command]
 fn current_outbound(state: State<AppState>) -> Result<mihomo_api::OutboundInfo, String> {
-    let fallback = state.core().current_config().and_then(|c| extract_final_outbound(&c));
+    let fallback = state
+        .core()
+        .current_config()
+        .and_then(|c| extract_final_outbound(&c));
     let c = controller_client(&state)?;
     c.current_outbound(fallback.as_deref())
 }
@@ -1199,56 +1204,54 @@ fn tr(lang: &str, zh: &str, en: &str) -> String {
 /// 换核/重装创建新 CoreManager 后必须重新挂载（ensure_engine_binary / core_install）。
 fn core_status_callback(handle: AppHandle) -> core_manager::Callback {
     std::sync::Arc::new(move |status| {
-        let _ = handle.emit("core://status", status.clone());                // 托盘实时速率：Running 订阅更新，停止/崩溃退订清空
-                sync_tray_traffic(&handle);
-                // 状态一致性守护：内核崩溃时若系统代理还开着，立即还原，
-                // 避免系统流量指向已死的代理端口导致用户断网。
-                if let CoreStatus::Crashed(msg) = status {
-                    let Some(state) = handle.try_state::<AppState>() else { return };
-                    // 状态一致性守护：内核崩溃时还原系统代理，避免断网。
-                    if state.sysproxy.status().enabled {
-                        state.sysproxy.disable();
-                        let _ = handle.emit("sysproxy://status", state.sysproxy.status());
-                        refresh_tray(&handle);
+        let _ = handle.emit("core://status", status.clone()); // 托盘实时速率：Running 订阅更新，停止/崩溃退订清空
+        sync_tray_traffic(&handle);
+        // 状态一致性守护：内核崩溃时若系统代理还开着，立即还原，
+        // 避免系统流量指向已死的代理端口导致用户断网。
+        if let CoreStatus::Crashed(msg) = status {
+            let Some(state) = handle.try_state::<AppState>() else {
+                return;
+            };
+            // 状态一致性守护：内核崩溃时还原系统代理，避免断网。
+            if state.sysproxy.status().enabled {
+                state.sysproxy.disable();
+                let _ = handle.emit("sysproxy://status", state.sysproxy.status());
+                refresh_tray(&handle);
+            }
+            // 安全模式：覆写引发的配置解析错误 → 禁用全部覆写并重启一次。
+            let config_err = msg.contains("Parse config error");
+            let already = state.safe_mode.load(std::sync::atomic::Ordering::SeqCst);
+            if config_err && !already {
+                state
+                    .safe_mode
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                {
+                    let mut store = state.store.lock().unwrap();
+                    for o in store.data_mut().overrides.iter_mut() {
+                        o.enabled = false;
                     }
-                    // 安全模式：覆写引发的配置解析错误 → 禁用全部覆写并重启一次。
-                    let config_err = msg.contains("Parse config error");
-                    let already = state
-                        .safe_mode
-                        .load(std::sync::atomic::Ordering::SeqCst);
-                    if config_err && !already {
-                        state
-                            .safe_mode
-                            .store(true, std::sync::atomic::Ordering::SeqCst);
-                        {
-                            let mut store = state.store.lock().unwrap();
-                            for o in store.data_mut().overrides.iter_mut() {
-                                o.enabled = false;
-                            }
-                            let _ = store.save();
-                        }
-                        let port = state.store.lock().unwrap().data().engine.mixed_port;
-                        let _ = start_core(&state);
-                        // 等内核起来后恢复系统代理（最多 20s）
-                        for _ in 0..100 {
-                            if state.core().status() == CoreStatus::Running {
-                                let _ = state.sysproxy.enable(port);
-                                let _ = handle.emit(
-                                    "sysproxy://status",
-                                    state.sysproxy.status(),
-                                );
-                                break;
-                            }
-                            std::thread::sleep(std::time::Duration::from_millis(200));
-                        }
-                        let _ = handle.emit(
+                    let _ = store.save();
+                }
+                let port = state.store.lock().unwrap().data().engine.mixed_port;
+                let _ = start_core(&state);
+                // 等内核起来后恢复系统代理（最多 20s）
+                for _ in 0..100 {
+                    if state.core().status() == CoreStatus::Running {
+                        let _ = state.sysproxy.enable(port);
+                        let _ = handle.emit("sysproxy://status", state.sysproxy.status());
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                }
+                let _ = handle.emit(
                             "core://safe-mode",
                             "覆写导致内核启动失败，已临时禁用全部覆写（安全模式）。修复覆写后保存即恢复正常。",
                         );
-                        refresh_tray(&handle);
-                    }
-                }
-    })}
+                refresh_tray(&handle);
+            }
+        }
+    })
+}
 
 fn sync_tray_traffic(handle: &AppHandle) {
     let Some(state) = handle.try_state::<AppState>() else {
@@ -1257,11 +1260,13 @@ fn sync_tray_traffic(handle: &AppHandle) {
     if state.core().status() == CoreStatus::Running {
         if let Some((port, secret)) = state.core().controller() {
             let h = handle.clone();
-            let _ = state.ws.subscribe_traffic_tray(port, &secret, move |up, down| {
-                // macOS：富文本双行速率（借道底层 NSStatusItem）；其余平台无操作
-                #[cfg(target_os = "macos")]
-                tray_speed::set_speed(&h, up, down);
-            });
+            let _ = state
+                .ws
+                .subscribe_traffic_tray(port, &secret, move |up, down| {
+                    // macOS：富文本双行速率（借道底层 NSStatusItem）；其余平台无操作
+                    #[cfg(target_os = "macos")]
+                    tray_speed::set_speed(&h, up, down);
+                });
             return;
         }
     }
