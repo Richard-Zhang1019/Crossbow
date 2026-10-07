@@ -1403,6 +1403,16 @@ fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
 
 // ---------- 应用入口 ----------
 
+/// 致命启动错误可见化：弹窗 + stderr（CI/服务场景无 GUI 时仍有日志）。
+fn show_fatal(msg: &str) {
+    eprintln!("crossbow fatal: {msg}");
+    let _ = rfd::MessageDialog::new()
+        .set_level(rfd::MessageLevel::Error)
+        .set_title("Crossbow 启动失败")
+        .set_description(msg)
+        .show();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1640,7 +1650,12 @@ pub fn run() {
             test_node_delay,
         ])
         .build(tauri::generate_context!())
-        .expect("error while building tauri application")
+        .unwrap_or_else(|e| {
+            // 启动失败必须可见（setup 报错最终走到这里）：Windows 上静默退出＝
+            // 闪现即退，无从排查。弹窗给出原因。
+            show_fatal(&e.to_string());
+            panic!("error while building tauri application: {e}");
+        })
         .run(|app, event| {
             match event {
                 // 轻量待机：最后一个窗口销毁会触发 ExitRequested，

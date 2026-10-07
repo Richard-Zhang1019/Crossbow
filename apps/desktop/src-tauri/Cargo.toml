@@ -22,6 +22,7 @@ uuid = { version = "1", features = ["v4"] }
 tungstenite = "0.30"
 tar = "0.4"
 flate2 = "1"
+rfd = { version = "0.15", default-features = false, features = ["gtk3"] }
 url = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-deep-link = "2"
