@@ -1,0 +1,18 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g transform="rotate(45 256 256)">
+<path d="M80 124 L432 124" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round"/>
+<path d="M228 156 C168 136 108 118 78 112 L72 132 C116 146 176 172 228 206 Z" fill="#FFFFFF"/>
+<path d="M284 156 C344 136 404 118 434 112 L440 132 C396 146 336 172 284 206 Z" fill="#FFFFFF"/>
+<rect x="54" y="94" width="32" height="11" rx="5.5" fill="#FFFFFF" transform="rotate(-12 70 99.5)"/>
+<rect x="50" y="109" width="32" height="11" rx="5.5" fill="#FFFFFF" transform="rotate(-12 66 114.5)"/>
+<rect x="46" y="124" width="32" height="11" rx="5.5" fill="#FFFFFF" transform="rotate(-12 62 129.5)"/>
+<rect x="426" y="94" width="32" height="11" rx="5.5" fill="#FFFFFF" transform="rotate(12 439 99.5)"/>
+<rect x="430" y="109" width="32" height="11" rx="5.5" fill="#FFFFFF" transform="rotate(12 443 114.5)"/>
+<rect x="434" y="124" width="32" height="11" rx="5.5" fill="#FFFFFF" transform="rotate(12 447 129.5)"/>
+<path d="M224 98 L288 98 L288 404 Q288 426 265 426 L247 426 Q224 426 224 404 Z" fill="#FFFFFF"/>
+<path d="M262 334 L190 358 L190 396 L262 420 Z" fill="#FFFFFF"/>
+<path d="M250 334 L322 358 L322 396 L250 420 Z" fill="#FFFFFF"/>
+<path d="M256 402 L256 118" stroke="#FFFFFF" stroke-width="13" stroke-linecap="round"/>
+<path d="M256 38 L302 124 L275 107 L256 124 L237 107 L210 124 Z" fill="#FFFFFF"/>
+</g>
+</svg>
