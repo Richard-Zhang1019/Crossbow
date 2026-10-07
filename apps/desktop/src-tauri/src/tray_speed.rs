@@ -8,16 +8,17 @@
 use tauri::AppHandle;
 
 use objc2::rc::Retained;
+use objc2::runtime::AnyObject;
 use objc2::MainThreadMarker;
 use objc2_app_kit::NSAttributedStringNSStringDrawing as _;
-use objc2::runtime::AnyObject;
 use objc2_app_kit::{
-    NSBaselineOffsetAttributeName, NSColor, NSFont, NSFontAttributeName,
-    NSFontWeightMedium, NSForegroundColorAttributeName, NSLineBreakMode,
-    NSMutableParagraphStyle, NSParagraphStyleAttributeName, NSStatusBarButton,
-    NSStatusItem, NSTextAlignment,
+    NSBaselineOffsetAttributeName, NSColor, NSFont, NSFontAttributeName, NSFontWeightMedium,
+    NSForegroundColorAttributeName, NSLineBreakMode, NSMutableParagraphStyle,
+    NSParagraphStyleAttributeName, NSStatusBarButton, NSStatusItem, NSTextAlignment,
 };
-use objc2_foundation::{NSAttributedString, NSAttributedStringKey, NSDictionary, NSNumber, NSString};
+use objc2_foundation::{
+    NSAttributedString, NSAttributedStringKey, NSDictionary, NSNumber, NSString,
+};
 
 const FONT_SIZE: f64 = 9.5;
 const LINE_HEIGHT: f64 = 10.0;
@@ -92,9 +93,7 @@ fn apply(status_item: &NSStatusItem, text: &str, show_speed: bool) {
         eprintln!("tray_speed: not on main thread, skip");
         return;
     };
-    let Some(button): Option<Retained<NSStatusBarButton>> =
-        status_item.button(mtm)
-    else {
+    let Some(button): Option<Retained<NSStatusBarButton>> = status_item.button(mtm) else {
         return;
     };
     let ns_text = NSString::from_str(text);
@@ -140,11 +139,17 @@ pub fn clear(handle: &AppHandle) {
 
 /// 取应用唯一的托盘（我们不建多个），在主线程上执行操作。
 trait TrayExt {
-    fn tray_by_id_or_first(&self, f: impl FnOnce(&NSStatusItem) + Send + 'static) -> Result<(), String>;
+    fn tray_by_id_or_first(
+        &self,
+        f: impl FnOnce(&NSStatusItem) + Send + 'static,
+    ) -> Result<(), String>;
 }
 
 impl TrayExt for AppHandle {
-    fn tray_by_id_or_first(&self, f: impl FnOnce(&NSStatusItem) + Send + 'static) -> Result<(), String> {
+    fn tray_by_id_or_first(
+        &self,
+        f: impl FnOnce(&NSStatusItem) + Send + 'static,
+    ) -> Result<(), String> {
         use tauri::Manager;
         let state = self.state::<crate::AppState>();
         let tray = state.tray.lock().unwrap().clone();

@@ -388,7 +388,9 @@ pub(crate) mod tests {
     /// 真实内核：组快照 → 选择 → 单节点测速 全链路。
     #[test]
     fn real_core_groups_select_and_delay() {
-        let _serial = crate::core_manager::tests::REAL_CORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _serial = crate::core_manager::tests::REAL_CORE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let Ok(bin) = std::env::var("CROSSBOW_CORE_BIN") else {
             eprintln!("skip: CROSSBOW_CORE_BIN not set");
             return;

@@ -165,10 +165,7 @@ impl WinInet {
     }
 
     fn reg_set(name: &str, kind: &str, value: &str) -> Result<(), String> {
-        Self::run(&[
-            "add", INET_KEY, "/v", name, "/t", kind, "/d", value, "/f",
-        ])
-        .map(|_| ())
+        Self::run(&["add", INET_KEY, "/v", name, "/t", kind, "/d", value, "/f"]).map(|_| ())
     }
 
     /// 通知系统代理设置已变更并刷新（正在运行的应用立即感知）。
@@ -177,8 +174,18 @@ impl WinInet {
             InternetSetOptionW, INTERNET_OPTION_REFRESH, INTERNET_OPTION_SETTINGS_CHANGED,
         };
         unsafe {
-            InternetSetOptionW(std::ptr::null(), INTERNET_OPTION_SETTINGS_CHANGED, std::ptr::null(), 0);
-            InternetSetOptionW(std::ptr::null(), INTERNET_OPTION_REFRESH, std::ptr::null(), 0);
+            InternetSetOptionW(
+                std::ptr::null(),
+                INTERNET_OPTION_SETTINGS_CHANGED,
+                std::ptr::null(),
+                0,
+            );
+            InternetSetOptionW(
+                std::ptr::null(),
+                INTERNET_OPTION_REFRESH,
+                std::ptr::null(),
+                0,
+            );
         }
     }
 
@@ -217,7 +224,9 @@ impl SysProxyBackend for WinInet {
     fn service_snapshot(&self, _service: &str) -> Result<ServiceSnapshot, String> {
         let server = Self::reg_query("ProxyServer").unwrap_or_default();
         let ep = WinInet::parse_server(&server);
-        let enabled = Self::reg_query("ProxyEnable").map(|v| v == "0x1").unwrap_or(false);
+        let enabled = Self::reg_query("ProxyEnable")
+            .map(|v| v == "0x1")
+            .unwrap_or(false);
         Ok(if enabled {
             ServiceSnapshot {
                 web: ep.clone(),

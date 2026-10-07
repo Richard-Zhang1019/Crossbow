@@ -50,7 +50,7 @@ impl Default for CoreOptions {
     }
 }
 
-type Callback = Arc<dyn Fn(&CoreStatus) + Send + Sync>;
+pub type Callback = Arc<dyn Fn(&CoreStatus) + Send + Sync>;
 
 struct Inner {
     child: Option<Child>,
@@ -132,9 +132,16 @@ impl Shared {
         let mut cmd = Command::new(&self.binary_path);
         // 两内核 CLI 不同：mihomo `-d workdir -f config`；sing-box `run -D workdir -c config`
         if crate::core_download::is_core_bin(&self.binary_path, "sing-box") {
-            cmd.arg("run").arg("-D").arg(&self.work_dir).arg("-c").arg(&config_path);
+            cmd.arg("run")
+                .arg("-D")
+                .arg(&self.work_dir)
+                .arg("-c")
+                .arg(&config_path);
         } else {
-            cmd.arg("-d").arg(&self.work_dir).arg("-f").arg(&config_path);
+            cmd.arg("-d")
+                .arg(&self.work_dir)
+                .arg("-f")
+                .arg(&config_path);
         }
         // 内核输出落到文件：崩溃诊断（yaml 错误等）靠它，不再丢弃。
         let log_file = std::fs::OpenOptions::new()
@@ -687,8 +694,7 @@ fn fetch_first_ok(
                     continue;
                 }
                 // 健全性检查：足够大，且 metadb 头为 00 00 01 xx
-                let ok_size =
-                    std::fs::metadata(&tmp).map(|m| m.len()).unwrap_or(0) >= min_bytes;
+                let ok_size = std::fs::metadata(&tmp).map(|m| m.len()).unwrap_or(0) >= min_bytes;
                 let head_ok = name.ends_with("metadb") && {
                     let mut head = [0u8; 2];
                     std::fs::File::open(&tmp)

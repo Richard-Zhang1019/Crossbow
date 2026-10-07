@@ -280,9 +280,7 @@ fn unpack_zip(download_path: &Path, dest: &Path, kind: CoreKind) -> Result<(), S
     let f = std::fs::File::open(download_path).map_err(|e| e.to_string())?;
     let mut archive = zip::ZipArchive::new(f).map_err(|e| format!("zip: {e}"))?;
     for i in 0..archive.len() {
-        let mut entry = archive
-            .by_index(i)
-            .map_err(|e| format!("zip entry: {e}"))?;
+        let mut entry = archive.by_index(i).map_err(|e| format!("zip entry: {e}"))?;
         let name = entry.name().to_string();
         let stem = kind.binary_name().trim_end_matches(".exe").to_string();
         let hit = name.ends_with(".exe")
