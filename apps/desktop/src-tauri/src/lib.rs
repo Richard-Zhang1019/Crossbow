@@ -50,6 +50,25 @@ pub struct AppState {
     data_dir: PathBuf,
 }
 
+/// 进程存活探测（pidfile 双实例保险用）：unix kill 0；Windows tasklist。
+fn pid_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        unsafe { libc::kill(pid as i32, 0) == 0 }
+    }
+    #[cfg(windows)]
+    {
+        std::process::Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
+            .output()
+            .map(|o| {
+                let out = String::from_utf8_lossy(&o.stdout);
+                out.contains(&format!("\"{pid}\""))
+            })
+            .unwrap_or(false)
+    }
+}
+
 impl AppState {
     /// 当前内核管理器快照（clone 便宜：内部是 Arc）。
     pub fn core(&self) -> CoreManager {
@@ -118,7 +137,7 @@ fn ensure_engine_binary(state: &AppState, need: &str) -> Result<PathBuf, String>
         cur.display(),
         cur.exists()
     ));
-    if cur.exists() && cur.file_name().map(|f| f == need).unwrap_or(false) {
+    if cur.exists() && core_download::is_core_bin(&cur, need) {
         return Ok(cur);
     }
     let Some(p) = core_download::resolve_core_for(&state.data_dir, Some(need)) else {
@@ -958,7 +977,7 @@ fn get_engine_config(state: State<AppState>) -> EngineView {
         crossbow_core::Engine::Mihomo => "mihomo",
     };
     let core_installed = core_download::resolve_core_for(&state.data_dir, Some(need))
-        .map(|p| p.file_name().map(|f| f == need).unwrap_or(false))
+        .map(|p| core_download::is_core_bin(&p, need))
         .unwrap_or(false);
     EngineView {
         engine: format!("{:?}", store.data().engine.engine).to_lowercase(),
@@ -1268,7 +1287,7 @@ fn show_main_window(app: &AppHandle) {
         }
         None => {
             // 轻量待机中窗口已销毁：重建
-            let _ = tauri::WebviewWindowBuilder::new(
+            let builder = tauri::WebviewWindowBuilder::new(
                 app,
                 "main",
                 tauri::WebviewUrl::App("index.html".into()),
@@ -1276,17 +1295,20 @@ fn show_main_window(app: &AppHandle) {
             .title("Crossbow")
             .inner_size(1120.0, 720.0)
             .min_inner_size(880.0, 560.0)
-            .center()
-            // 与 tauri.conf.json 一致：Overlay 去掉原生标题栏，内容延伸到窗口顶，
-            // 避免标题栏材质在深色 UI 下出现灰白边/白条（NSWindow.setBackgroundColor 会毁标题栏外观，勿用）
-            .title_bar_style(tauri::TitleBarStyle::Overlay)
-            .build();
+            .center();
+            // macOS：Overlay 去掉原生标题栏，内容延伸到窗口顶，避免深色 UI 下
+            // 出现灰白边（NSWindow.setBackgroundColor 会毁标题栏外观，勿用）；
+            // Windows 走系统默认标题栏
+            #[cfg(target_os = "macos")]
+            let builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay);
+            let _ = builder.build();
             // 内核仍是本进程的子进程（adopted/own），继续归我们管
             if let Some(state) = app.try_state::<AppState>() {
                 state
                     .handoff
                     .store(false, std::sync::atomic::Ordering::SeqCst);
             }
+            #[cfg(target_os = "macos")]
             let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
         }
     }
@@ -1334,6 +1356,7 @@ fn lightweight_quit(app: &AppHandle) {
         let _ = win.destroy(); // 直接销毁，绕过 CloseRequested 防递归
     }
     // Dock 图标隐藏（仅剩顶部状态栏托盘）；cmd+tab 切换能力保留
+    #[cfg(target_os = "macos")]
     let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 }
 
@@ -1380,6 +1403,16 @@ fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
 
 // ---------- 应用入口 ----------
 
+/// 致命启动错误可见化：弹窗 + stderr（CI/服务场景无 GUI 时仍有日志）。
+fn show_fatal(msg: &str) {
+    eprintln!("crossbow fatal: {msg}");
+    let _ = rfd::MessageDialog::new()
+        .set_level(rfd::MessageLevel::Error)
+        .set_title("Crossbow 启动失败")
+        .set_description(msg)
+        .show();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1404,8 +1437,8 @@ pub fn run() {
             // 只要 pid 存活就拒绝第二个实例，避免两实例互杀内核。
             let lock_path = data_dir.join("app.pid");
             if let Ok(old) = std::fs::read_to_string(&lock_path) {
-                if let Ok(pid) = old.trim().parse::<i32>() {
-                    if unsafe { libc::kill(pid, 0) } == 0 {
+                if let Ok(pid) = old.trim().parse::<u32>() {
+                    if pid_alive(pid) {
                         return Err(format!(
                             "另一个 Crossbow 实例正在运行 (pid {pid})，退出它后再启动"
                         )
@@ -1486,7 +1519,9 @@ pub fn run() {
             // 3) 收养失败 → 按异常退出处理：全量还原系统代理
             #[cfg(target_os = "macos")]
             let backend = sysproxy::NetworkSetup;
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(windows)]
+            let backend = sysproxy::WinInet;
+            #[cfg(not(any(target_os = "macos", windows)))]
             let backend = sysproxy::UnsupportedBackend;
             let sysproxy = SysProxyManager::new(backend, data_dir.join("sysproxy-journal.json"));
             let adopted = core.adopt_external();
@@ -1615,7 +1650,12 @@ pub fn run() {
             test_node_delay,
         ])
         .build(tauri::generate_context!())
-        .expect("error while building tauri application")
+        .unwrap_or_else(|e| {
+            // 启动失败必须可见（setup 报错最终走到这里）：Windows 上静默退出＝
+            // 闪现即退，无从排查。弹窗给出原因。
+            show_fatal(&e.to_string());
+            panic!("error while building tauri application: {e}");
+        })
         .run(|app, event| {
             match event {
                 // 轻量待机：最后一个窗口销毁会触发 ExitRequested，

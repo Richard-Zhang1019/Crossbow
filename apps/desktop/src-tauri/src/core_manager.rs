@@ -131,7 +131,7 @@ impl Shared {
         }
         let mut cmd = Command::new(&self.binary_path);
         // 两内核 CLI 不同：mihomo `-d workdir -f config`；sing-box `run -D workdir -c config`
-        if self.binary_path.file_name().and_then(|f| f.to_str()) == Some("sing-box") {
+        if crate::core_download::is_core_bin(&self.binary_path, "sing-box") {
             cmd.arg("run").arg("-D").arg(&self.work_dir).arg("-c").arg(&config_path);
         } else {
             cmd.arg("-d").arg(&self.work_dir).arg("-f").arg(&config_path);
@@ -274,7 +274,7 @@ impl CoreManager {
         }
         // 外部（上一实例轻量交接的）内核还活着：先收掉，避免端口冲突。
         if let Some(pid) = self.read_external_pid() {
-            let _ = Command::new("kill").arg("-9").arg(pid.to_string()).output();
+            kill_pid(pid);
             let _ = std::fs::remove_file(Shared::descriptor_path(&self.shared.work_dir));
             std::thread::sleep(Duration::from_millis(400));
         }
