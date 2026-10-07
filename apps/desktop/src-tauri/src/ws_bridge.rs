@@ -62,6 +62,34 @@ impl WsHub {
         }
     }
 
+    /// 托盘实时速率专用订阅：独立 channel（与前端 traffic 互不干扰），
+    /// 每次 tick 回调 (up, down) 字节/秒。菜单栏常驻，不受页面挂载影响。
+    pub fn subscribe_traffic_tray(
+        &self,
+        port: u16,
+        secret: &str,
+        on_tick: impl Fn(u64, u64) + Send + 'static,
+    ) -> Result<(), String> {
+        let url = ws_url(port, secret, "/traffic");
+        self.subscribe("traffic-tray", move |flag| {
+            std::thread::spawn(move || {
+                read_loop(&url, flag, |msg| {
+                    if let Message::Text(txt) = msg {
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
+                            let up = v.get("up").and_then(|x| x.as_u64()).unwrap_or(0);
+                            let down = v.get("down").and_then(|x| x.as_u64()).unwrap_or(0);
+                            on_tick(up, down);
+                        }
+                    }
+                });
+            });
+        })
+    }
+
+    pub fn unsubscribe_tray_traffic(&self) {
+        self.unsubscribe("traffic-tray");
+    }
+
     pub fn subscribe_traffic(
         &self,
         port: u16,
