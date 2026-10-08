@@ -46,6 +46,9 @@ pub struct OutboundInfo {
     pub chain: Vec<String>,
 }
 
+/// 组当前选中项 + 成员延迟列表。
+pub type GroupState = (Option<String>, Vec<(String, Option<u64>)>);
+
 impl Controller {
     fn agent() -> ureq::Agent {
         ureq::AgentBuilder::new()
@@ -190,6 +193,53 @@ impl Controller {
     }
 
     /// 组测速：mihomo 内部并发探测组内全部节点，返回 {节点: 延迟ms}（失败者缺席）。
+    /// 托盘节点子菜单数据：组的当前选中项 + 各成员及其最近延迟。
+    /// 返回 (now, [(节点名, 延迟 ms)])。
+    pub fn group_state(&self, group: &str) -> Result<GroupState, String> {
+        let proxies_v = self.get_json("/proxies")?;
+        let all = proxies_v
+            .get("proxies")
+            .and_then(|p| p.as_object())
+            .ok_or("malformed /proxies")?;
+        let node = all.get(group).ok_or_else(|| format!("组 {group} 不存在"))?;
+        let now = node.get("now").and_then(|n| n.as_str()).map(String::from);
+        let mut out = Vec::new();
+        for name in node
+            .get("all")
+            .and_then(|a| a.as_array())
+            .into_iter()
+            .flatten()
+        {
+            let Some(name) = name.as_str() else { continue };
+            let delay = all
+                .get(name)
+                .and_then(|n| n.get("history"))
+                .and_then(|h| h.as_array())
+                .and_then(|a| a.last())
+                .and_then(|e| e.get("delay"))
+                .and_then(|d| d.as_u64());
+            out.push((name.to_string(), delay));
+        }
+        Ok((now, out))
+    }
+
+    /// 第一个非 GLOBAL 的 Selector 组（托盘节点菜单的目标组）。
+    pub fn first_selector_group(&self) -> Result<Option<String>, String> {
+        let proxies_v = self.get_json("/proxies")?;
+        let all = proxies_v
+            .get("proxies")
+            .and_then(|p| p.as_object())
+            .ok_or("malformed /proxies")?;
+        Ok(
+            all.iter()
+                .find(|(k, v)| {
+                    k.as_str() != "GLOBAL"
+                        && v.get("type").and_then(|t| t.as_str()) == Some("Selector")
+                })
+                .map(|(k, _)| k.clone()),
+        )
+    }
+
     pub fn test_group_delay(&self, group: &str) -> Result<BTreeMap<String, u64>, String> {
         let path = format!(
             "{}?url={}&timeout=5000",

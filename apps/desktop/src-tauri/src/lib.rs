@@ -5,6 +5,7 @@
 //! 内核版本）、深链接导入与单实例。
 
 use std::collections::BTreeMap;
+use std::sync::atomic::Ordering;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -50,8 +51,55 @@ pub struct AppState {
     tray: Mutex<Option<tauri::tray::TrayIcon<Wry>>>,
     ws: WsHub,
     data_dir: PathBuf,
+    /// 托盘节点子菜单：目标组名 / 各节点延迟缓存 / 当前选中 / 测速进行中。
+    tray_group: Mutex<String>,
+    tray_delays: Mutex<BTreeMap<String, u64>>,
+    tray_now: Mutex<String>,
+    /// 子菜单标题：`主组：当前选中`（当前选中可能是子组，逐级下钻）
+    tray_title: Mutex<String>,
+    /// 展示的节点有序列表（主组当前选中若为子组则为其成员）
+    tray_nodes: Mutex<Vec<String>>,
+    tray_testing: std::sync::atomic::AtomicBool,
     /// 应用句柄：换核/重装后给新 CoreManager 重挂状态回调用。
     app: AppHandle,
+}
+
+/// macOS Tahoe 会按 NSWindow 外观绘制浅色外沿。同步窗口外观到应用主题，
+/// 避免深色界面的系统描边仍按 macOS 浅色外观渲染。
+#[cfg(target_os = "macos")]
+fn apply_macos_window_appearance(win: &tauri::WebviewWindow, theme: &str) {
+    let _ = win.set_background_color(Some(tauri::utils::config::Color(10, 12, 16, 255)));
+
+    use objc2_app_kit::{
+        NSAppearance, NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua,
+        NSView,
+    };
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    let Ok(handle) = win.window_handle() else {
+        return;
+    };
+    let RawWindowHandle::AppKit(appkit) = handle.as_raw() else {
+        return;
+    };
+    // Tauri owns the NSView for the lifetime of this window; setup and window
+    // recreation both invoke this helper on the AppKit main thread.
+    unsafe {
+        let view = &*(appkit.ns_view.as_ptr().cast::<NSView>());
+        if let Some(ns_window) = view.window() {
+            let name = match theme {
+                "dark" => Some(NSAppearanceNameDarkAqua),
+                "light" => Some(NSAppearanceNameAqua),
+                _ => None,
+            };
+            if let Some(name) = name {
+                let appearance = NSAppearance::appearanceNamed(name);
+                ns_window.setAppearance(appearance.as_deref());
+            } else {
+                ns_window.setAppearance(None);
+            }
+        }
+    }
 }
 
 /// 进程存活探测（pidfile 双实例保险用）：unix kill 0；Windows tasklist。
@@ -1010,6 +1058,10 @@ fn set_theme(app: AppHandle, state: State<AppState>, theme: String) -> Result<()
         store.data_mut().ui.theme = theme.clone();
         store.save().map_err(|e| e.to_string())?;
     }
+    #[cfg(target_os = "macos")]
+    if let Some(win) = app.get_webview_window("main") {
+        apply_macos_window_appearance(&win, &theme);
+    }
     let _ = app.emit("ui://theme", theme);
     Ok(())
 }
@@ -1204,8 +1256,13 @@ fn tr(lang: &str, zh: &str, en: &str) -> String {
 /// 换核/重装创建新 CoreManager 后必须重新挂载（ensure_engine_binary / core_install）。
 fn core_status_callback(handle: AppHandle) -> core_manager::Callback {
     std::sync::Arc::new(move |status| {
-        let _ = handle.emit("core://status", status.clone()); // 托盘实时速率：Running 订阅更新，停止/崩溃退订清空
+        let _ = handle.emit("core://status", status.clone());
+        // 托盘实时速率：Running 订阅更新，停止/崩溃退订清空
         sync_tray_traffic(&handle);
+        // 托盘节点菜单数据：Running 时后台拉取组与延迟
+        if *status == CoreStatus::Running {
+            refresh_tray_nodes(&handle);
+        }
         // 状态一致性守护：内核崩溃时若系统代理还开着，立即还原，
         // 避免系统流量指向已死的代理端口导致用户断网。
         if let CoreStatus::Crashed(msg) = status {
@@ -1275,6 +1332,99 @@ fn sync_tray_traffic(handle: &AppHandle) {
     tray_speed::clear(handle);
 }
 
+/// 后台拉取托盘节点菜单数据：探测主选择组 + 各节点延迟，完成后刷新托盘。
+fn refresh_tray_nodes(handle: &AppHandle) {
+    let Some(state) = handle.try_state::<AppState>() else { return };
+    if state.core().status() != CoreStatus::Running {
+        return;
+    }
+    let h = handle.clone();
+    std::thread::spawn(move || {
+        let Some(state) = h.try_state::<AppState>() else { return };
+        let Ok(c) = controller_client(&state) else { return };
+        // 主组：已有缓存沿用；否则探测第一个 Selector 组
+        let group = {
+            let cached = state.tray_group.lock().unwrap().clone();
+            cached.is_empty()
+                .then(|| c.first_selector_group().ok().flatten())
+                .flatten()
+                .or_else(|| {
+                    let g = state.tray_group.lock().unwrap().clone();
+                    (!g.is_empty()).then_some(g)
+                })
+        };
+        let Some(group) = group else { return };
+        let Ok((now, nodes)) = c.group_state(&group) else { return };
+        // 展示与测速的目标组：主组的当前选中可能本身是子组（如 自动选择），
+        // 逐级下钻到真实节点列表；标题固定为 `主组：当前选中`。
+        let mut effective = group.clone();
+        let mut sel_now = now.clone().unwrap_or_default();
+        let mut members = nodes;
+        for _ in 0..3 {
+            let sel = sel_now.clone();
+            if sel.is_empty() {
+                break;
+            }
+            let Ok((sub_now, sub_nodes)) = c.group_state(&sel) else { break };
+            if sub_nodes.is_empty() {
+                break;
+            }
+            effective = sel;
+            sel_now = sub_now.unwrap_or_default();
+            members = sub_nodes;
+        }
+        *state.tray_group.lock().unwrap() = effective.clone();
+        // 延迟缓存：以组内 history 为底，测速结果（tray_delays）对存在者覆盖
+        let mut delays = state.tray_delays.lock().unwrap().clone();
+        delays.retain(|n, _| members.iter().any(|(m, _)| m == n));
+        for (n, d) in &members {
+            if let Some(ms) = d {
+                delays.entry(n.clone()).or_insert(*ms);
+            }
+        }
+        *state.tray_delays.lock().unwrap() = delays;
+        *state.tray_now.lock().unwrap() = sel_now.clone();
+        *state.tray_title.lock().unwrap() = format!("{}：{}", group, sel_now);
+        *state.tray_nodes.lock().unwrap() =
+            members.into_iter().map(|(n, _)| n).collect();
+        refresh_tray(&h);
+    });
+}
+
+/// 后台执行延迟测速：完成后更新缓存并刷新托盘菜单显示结果。
+fn run_tray_delay_test(handle: &AppHandle) {
+    let Some(state) = handle.try_state::<AppState>() else { return };
+    if state
+        .tray_testing
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return; // 已在测速
+    }
+    refresh_tray(handle); // 菜单项置为「测速中…」
+    let h = handle.clone();
+    std::thread::spawn(move || {
+        let Some(state) = h.try_state::<AppState>() else { return };
+        let group = state.tray_group.lock().unwrap().clone();
+        if let Ok(c) = controller_client(&state) {
+            if let Ok(delays) = c.test_group_delay(&group) {
+                *state.tray_delays.lock().unwrap() = delays;
+                // 测速会顺带更新当前选中，拉一次最新 now
+                if let Ok(Some(now)) = controller_client(&state)
+                    .and_then(|c| c.group_state(&group))
+                    .map(|(now, _)| now)
+                {
+                    *state.tray_now.lock().unwrap() = now;
+                }
+            }
+        }
+        state
+            .tray_testing
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        refresh_tray(&h);
+    });
+}
+
 fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
     let state = app.state::<AppState>();
     let lang = state.store.lock().unwrap().data().ui.lang.clone();
@@ -1330,6 +1480,17 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
     }
     let profile_menu = profile_builder.build()?;
 
+    // 节点选择子菜单：标题=「主组：当前选中」，首项=延迟测速，
+    // 其后为展示节点列表（名称+最近延迟），点击节点即切换
+    let group = state.tray_group.lock().unwrap().clone();
+    let now = state.tray_now.lock().unwrap().clone();
+    let title = state.tray_title.lock().unwrap().clone();
+    let nodes = state.tray_nodes.lock().unwrap().clone();
+    let testing = state
+        .tray_testing
+        .load(std::sync::atomic::Ordering::SeqCst);
+    let delays = state.tray_delays.lock().unwrap().clone();
+
     let open = MenuItem::with_id(
         app,
         "open",
@@ -1345,10 +1506,51 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
         None::<&str>,
     )?;
 
+    if group.is_empty() {
+        return MenuBuilder::new(app)
+            .item(&proxy)
+            .separator()
+            .item(&open)
+            .separator()
+            .item(&quit)
+            .build();
+    }
+    let group_menu_label = if title.is_empty() {
+        tr(&lang, "节点选择", "Nodes")
+    } else {
+        title
+    };
+    let mut node_builder = SubmenuBuilder::new(app, &group_menu_label);
+    let delay_test = MenuItem::with_id(
+        app,
+        "tray-delay-test",
+        &if testing {
+            tr(&lang, "延迟测速中…", "Testing latency…")
+        } else {
+            tr(&lang, "延迟测速", "Test latency")
+        },
+        !testing,
+        None::<&str>,
+    )?;
+    node_builder = node_builder.item(&delay_test).separator();
+    for name in &nodes {
+        let label = match delays.get(name) {
+            Some(ms) => format!("{name}  {ms}ms"),
+            None => format!("{name}  —"),
+        };
+        node_builder = node_builder.item(&mk_check(
+            &format!("node-{name}"),
+            &label,
+            *name == now,
+        )?);
+    }
+    let node_menu = node_builder.build()?;
+
     MenuBuilder::new(app)
         .item(&proxy)
         .separator()
         .item(&mode_menu)
+        .item(&node_menu)
         .item(&profile_menu)
         .separator()
         .item(&open)
@@ -1358,13 +1560,16 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
 }
 
 fn refresh_tray(app: &AppHandle) {
-    if let Some(tray) = app.state::<AppState>().tray.lock().unwrap().as_ref() {
-        match build_tray_menu(app) {
-            Ok(menu) => {
-                let _ = tray.set_menu(Some(menu));
-            }
-            Err(e) => eprintln!("rebuild tray menu: {e}"),
+    // 关键：不能在持有 tray 锁的状态下构建/设置菜单——两者都会同步派发到
+    // 主线程执行，而主线程上的托盘标题回调（每秒一次）也要拿这把锁，
+    // 持锁派发 = ABBA 死锁（强制退出报告实锤）。先克隆引用再释放锁。
+    let tray = app.state::<AppState>().tray.lock().unwrap().clone();
+    let Some(tray) = tray else { return };
+    match build_tray_menu(app) {
+        Ok(menu) => {
+            let _ = tray.set_menu(Some(menu));
         }
+        Err(e) => eprintln!("rebuild tray menu: {e}"),
     }
 }
 
@@ -1390,7 +1595,17 @@ fn show_main_window(app: &AppHandle) {
             // Windows 走系统默认标题栏
             #[cfg(target_os = "macos")]
             let builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay);
-            let _ = builder.build();
+            let built = builder.build();
+            // 重建窗口同样应用深色标题栏
+            #[cfg(target_os = "macos")]
+            if let Ok(win) = built.as_ref() {
+                let theme = app
+                    .try_state::<AppState>()
+                    .map(|state| state.store.lock().unwrap().data().ui.theme.clone())
+                    .unwrap_or_else(|| "system".to_string());
+                apply_macos_window_appearance(win, &theme);
+            }
+            let _ = built;
             // 内核仍是本进程的子进程（adopted/own），继续归我们管
             if let Some(state) = app.try_state::<AppState>() {
                 state
@@ -1480,10 +1695,28 @@ fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
             lightweight_quit(app);
             Ok(())
         }
-        other => match other.strip_prefix("profile-") {
-            Some(pid) => set_active_profile(app.clone(), app.state::<AppState>(), pid.to_string()),
-            None => Ok(()),
-        },
+        "tray-delay-test" => {
+            run_tray_delay_test(app);
+            Ok(())
+        }
+        other => {
+            if let Some(name) = other.strip_prefix("node-") {
+                let group = app.state::<AppState>().tray_group.lock().unwrap().clone();
+                let h = app.clone();
+                let name = name.to_string();
+                std::thread::spawn(move || {
+                    let result = controller_client(&h.state::<AppState>())
+                        .and_then(|c| c.select_proxy(&group, &name));
+                    drop(result);
+                    refresh_tray(&h);
+                });
+                Ok(())
+            } else if let Some(pid) = other.strip_prefix("profile-") {
+                set_active_profile(app.clone(), app.state::<AppState>(), pid.to_string())
+            } else {
+                Ok(())
+            }
+        }
     };
     if let Err(e) = result {
         eprintln!("tray action {id}: {e}");
@@ -1540,6 +1773,12 @@ pub fn run() {
             let store = Store::open(&data_dir)
                 .map_err(|e| std::io::Error::other(format!("open store: {e}")))?;
 
+            // 主窗口使用与应用界面一致的系统外观，避免浅色窗口描边。
+            #[cfg(target_os = "macos")]
+            if let Some(win) = app.get_webview_window("main") {
+                apply_macos_window_appearance(&win, &store.data().ui.theme);
+            }
+
             // 内核二进制定位：优先按持久化引擎精确解析；引擎对应内核缺失时
             // 回退任意可用链（env → sidecar → 数据目录），启动时仍会校验匹配。
             let engine_key = match store.data().engine.engine {
@@ -1586,6 +1825,12 @@ pub fn run() {
                 ws: WsHub::default(),
                 data_dir: data_dir.clone(),
                 app: app.handle().clone(),
+                tray_group: Mutex::new(String::new()),
+                tray_delays: Mutex::new(BTreeMap::new()),
+                tray_now: Mutex::new(String::new()),
+                tray_title: Mutex::new(String::new()),
+                tray_nodes: Mutex::new(Vec::new()),
+                tray_testing: std::sync::atomic::AtomicBool::new(false),
             });
 
             // 订阅自动更新调度器
@@ -1615,8 +1860,9 @@ pub fn run() {
                 .build(app)?;
             *app.state::<AppState>().tray.lock().unwrap() = Some(tray);
 
-            // 收养的外部内核不走状态回调：这里补挂托盘速率
+            // 收养的外部内核不走状态回调：这里补挂托盘速率与节点菜单数据
             sync_tray_traffic(app.handle());
+            refresh_tray_nodes(app.handle());
 
             Ok(())
         })
