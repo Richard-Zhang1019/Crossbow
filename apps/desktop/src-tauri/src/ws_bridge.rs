@@ -73,7 +73,7 @@ impl WsHub {
         let url = ws_url(port, secret, "/traffic");
         self.subscribe("traffic-tray", move |flag| {
             std::thread::spawn(move || {
-                read_loop(&url, flag, |msg| {
+                read_loop(&url, flag, Some(Duration::from_secs(5)), |msg| {
                     if let Message::Text(txt) = msg {
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
                             let up = v.get("up").and_then(|x| x.as_u64()).unwrap_or(0);
@@ -99,7 +99,7 @@ impl WsHub {
         let url = ws_url(port, secret, "/traffic");
         self.subscribe("traffic", move |flag| {
             std::thread::spawn(move || {
-                read_loop(&url, flag, |msg| {
+                read_loop(&url, flag, Some(Duration::from_secs(5)), |msg| {
                     if let Message::Text(txt) = msg {
                         // mihomo 原始 {"up":..,"down":..} → 结构化转发
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
@@ -121,7 +121,7 @@ impl WsHub {
         self.subscribe("connections", move |flag| {
             std::thread::spawn(move || {
                 let mut last_emit = Instant::now() - CONN_MIN_INTERVAL;
-                read_loop(&url, flag, |msg| {
+                read_loop(&url, flag, Some(Duration::from_secs(5)), |msg| {
                     if let Message::Text(txt) = msg {
                         if last_emit.elapsed() < CONN_MIN_INTERVAL {
                             return; // 节流
@@ -147,7 +147,7 @@ impl WsHub {
             std::thread::spawn(move || {
                 let mut batch: Vec<serde_json::Value> = Vec::new();
                 let mut last_flush = Instant::now();
-                read_loop(&url, flag, |msg| {
+                read_loop(&url, flag, None, |msg| {
                     if let Message::Text(txt) = msg {
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
                             batch.push(v);
@@ -174,7 +174,19 @@ fn ws_url(port: u16, secret: &str, path: &str) -> String {
 }
 
 /// 阻塞式 WS 读循环：断线自动重连，退订后于下一条消息前退出。
-fn read_loop(url: &str, flag: Arc<AtomicBool>, mut on_text: impl FnMut(Message)) {
+/// WS 读循环（自动重连）。
+///
+/// `stale`：静默判定窗口。给到值时给底层 TCP 设读超时，超过 `stale`
+/// 未收到任何帧即断开重连——修复 TCP 半开（睡眠唤醒/网络切换/内核假死）
+/// 导致 read 永久阻塞、托盘速率冻结在旧值的问题。None = 保持旧行为
+/// （适合长期无推送也属正常的通道，如日志）。
+fn read_loop(
+    url: &str,
+    flag: Arc<AtomicBool>,
+    stale: Option<Duration>,
+    mut on_text: impl FnMut(Message),
+) {
+    const READ_TIMEOUT: Duration = Duration::from_secs(2);
     'outer: while flag.load(Ordering::SeqCst) {
         let mut ws = match tungstenite::connect(url) {
             Ok((ws, _)) => ws,
@@ -183,15 +195,36 @@ fn read_loop(url: &str, flag: Arc<AtomicBool>, mut on_text: impl FnMut(Message))
                 continue;
             }
         };
+        if stale.is_some() {
+            if let tungstenite::stream::MaybeTlsStream::Plain(tcp) = ws.get_ref() {
+                let _ = tcp.set_read_timeout(Some(READ_TIMEOUT));
+            }
+        }
+        let mut last_msg = Instant::now();
         loop {
             if !flag.load(Ordering::SeqCst) {
                 break 'outer;
             }
             match ws.read() {
                 Ok(Message::Ping(_) | Message::Pong(_)) => {}
-                Ok(msg @ Message::Text(_)) => on_text(msg),
+                Ok(msg @ Message::Text(_)) => {
+                    last_msg = Instant::now();
+                    on_text(msg);
+                }
                 Ok(Message::Close(_)) => break, // 内核重启中，走重连
                 Ok(_) => {}
+                Err(tungstenite::Error::Io(e))
+                    if stale.is_some()
+                        && matches!(
+                            e.kind(),
+                            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                        ) =>
+                {
+                    // 读超时≠断线：仅在静默超过 stale 窗口时才判定半开重连
+                    if last_msg.elapsed() > stale.unwrap() {
+                        break;
+                    }
+                }
                 Err(_) => break,
             }
         }
