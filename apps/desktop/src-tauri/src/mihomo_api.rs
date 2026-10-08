@@ -223,22 +223,6 @@ impl Controller {
         Ok((now, out))
     }
 
-    /// 第一个非 GLOBAL 的 Selector 组（托盘节点菜单的目标组）。
-    pub fn first_selector_group(&self) -> Result<Option<String>, String> {
-        let proxies_v = self.get_json("/proxies")?;
-        let all = proxies_v
-            .get("proxies")
-            .and_then(|p| p.as_object())
-            .ok_or("malformed /proxies")?;
-        Ok(
-            all.iter()
-                .find(|(k, v)| {
-                    k.as_str() != "GLOBAL"
-                        && v.get("type").and_then(|t| t.as_str()) == Some("Selector")
-                })
-                .map(|(k, _)| k.clone()),
-        )
-    }
 
     pub fn test_group_delay(&self, group: &str) -> Result<BTreeMap<String, u64>, String> {
         let path = format!(
