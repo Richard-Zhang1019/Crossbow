@@ -122,6 +122,7 @@ export default function App() {
         data-tauri-drag-region
         onMouseDown={dragWindow}
         className="fixed inset-x-0 top-0 z-40 h-6"
+        style={{ backgroundColor: "var(--cb-bg)" }}
       />
       <aside
         className="flex w-52 shrink-0 flex-col gap-px border-r pb-5 pl-3 pr-3 pt-11"

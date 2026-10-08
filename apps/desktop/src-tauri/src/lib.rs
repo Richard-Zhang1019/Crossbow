@@ -54,6 +54,44 @@ pub struct AppState {
     app: AppHandle,
 }
 
+/// macOS Tahoe 会按 NSWindow 外观绘制浅色外沿。同步窗口外观到应用主题，
+/// 避免深色界面的系统描边仍按 macOS 浅色外观渲染。
+#[cfg(target_os = "macos")]
+fn apply_macos_window_appearance(win: &tauri::WebviewWindow, theme: &str) {
+    let _ = win.set_background_color(Some(tauri::utils::config::Color(10, 12, 16, 255)));
+
+    use objc2_app_kit::{
+        NSAppearance, NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua,
+        NSView,
+    };
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    let Ok(handle) = win.window_handle() else {
+        return;
+    };
+    let RawWindowHandle::AppKit(appkit) = handle.as_raw() else {
+        return;
+    };
+    // Tauri owns the NSView for the lifetime of this window; setup and window
+    // recreation both invoke this helper on the AppKit main thread.
+    unsafe {
+        let view = &*(appkit.ns_view.as_ptr().cast::<NSView>());
+        if let Some(ns_window) = view.window() {
+            let name = match theme {
+                "dark" => Some(NSAppearanceNameDarkAqua),
+                "light" => Some(NSAppearanceNameAqua),
+                _ => None,
+            };
+            if let Some(name) = name {
+                let appearance = NSAppearance::appearanceNamed(name);
+                ns_window.setAppearance(appearance.as_deref());
+            } else {
+                ns_window.setAppearance(None);
+            }
+        }
+    }
+}
+
 /// 进程存活探测（pidfile 双实例保险用）：unix kill 0；Windows tasklist。
 fn pid_alive(pid: u32) -> bool {
     #[cfg(unix)]
@@ -1010,6 +1048,10 @@ fn set_theme(app: AppHandle, state: State<AppState>, theme: String) -> Result<()
         store.data_mut().ui.theme = theme.clone();
         store.save().map_err(|e| e.to_string())?;
     }
+    #[cfg(target_os = "macos")]
+    if let Some(win) = app.get_webview_window("main") {
+        apply_macos_window_appearance(&win, &theme);
+    }
     let _ = app.emit("ui://theme", theme);
     Ok(())
 }
@@ -1390,7 +1432,17 @@ fn show_main_window(app: &AppHandle) {
             // Windows 走系统默认标题栏
             #[cfg(target_os = "macos")]
             let builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay);
-            let _ = builder.build();
+            let built = builder.build();
+            // 重建窗口同样应用深色标题栏
+            #[cfg(target_os = "macos")]
+            if let Ok(win) = built.as_ref() {
+                let theme = app
+                    .try_state::<AppState>()
+                    .map(|state| state.store.lock().unwrap().data().ui.theme.clone())
+                    .unwrap_or_else(|| "system".to_string());
+                apply_macos_window_appearance(win, &theme);
+            }
+            let _ = built;
             // 内核仍是本进程的子进程（adopted/own），继续归我们管
             if let Some(state) = app.try_state::<AppState>() {
                 state
@@ -1539,6 +1591,12 @@ pub fn run() {
 
             let store = Store::open(&data_dir)
                 .map_err(|e| std::io::Error::other(format!("open store: {e}")))?;
+
+            // 主窗口使用与应用界面一致的系统外观，避免浅色窗口描边。
+            #[cfg(target_os = "macos")]
+            if let Some(win) = app.get_webview_window("main") {
+                apply_macos_window_appearance(&win, &store.data().ui.theme);
+            }
 
             // 内核二进制定位：优先按持久化引擎精确解析；引擎对应内核缺失时
             // 回退任意可用链（env → sidecar → 数据目录），启动时仍会校验匹配。
