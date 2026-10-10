@@ -1723,11 +1723,13 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
     let profile_menu = profile_builder.build()?;
 
     // 节点选择子菜单：标题=「主组：当前选中」，首项=延迟测速，
-    // 其后为展示节点列表（名称+最近延迟），点击节点即切换
-    let data = tray_menu_data(&state);
-    let group_menu_label = data.title;
-    let rows = data.rows;
-    let testing = data.testing;
+    // 其后为展示节点列表（名称+最近延迟），点击节点即切换。
+    // macOS 专属（依赖 NSStatusItem 富文本）；Windows 不展示该子菜单。
+    #[cfg(target_os = "macos")]
+    let node_menu_data = {
+        let data = tray_menu_data(&state);
+        Some((data.title, data.rows, data.testing))
+    };
 
     let open = MenuItem::with_id(
         app,
@@ -1744,48 +1746,67 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
         None::<&str>,
     )?;
 
-    if rows.is_empty() {
+    // 节点子菜单整段 macOS 专属；Windows 直接返回基础菜单
+    #[cfg(not(target_os = "macos"))]
+    {
         return MenuBuilder::new(app)
             .item(&proxy)
+            .separator()
+            .item(&mode_menu)
+            .item(&profile_menu)
             .separator()
             .item(&open)
             .separator()
             .item(&quit)
             .build();
     }
-    let mut node_builder = SubmenuBuilder::new(app, &group_menu_label);
-    let delay_test = MenuItem::with_id(
-        app,
-        "tray-delay-test",
-        &if testing {
-            tr(&lang, "延迟测速中…", "Testing latency…")
-        } else {
-            tr(&lang, "延迟测速", "Test latency")
-        },
-        !testing,
-        None::<&str>,
-    )?;
-    node_builder = node_builder.item(&delay_test).separator();
-    for row in &rows {
-        node_builder = node_builder.item(&mk_check(
-            &format!("node-{}", row.name),
-            &format!("{}\t{}", tray_speed::display_name(&row.name), row.badge),
-            row.selected,
-        )?);
-    }
-    let node_menu = node_builder.build()?;
 
-    MenuBuilder::new(app)
-        .item(&proxy)
-        .separator()
-        .item(&mode_menu)
-        .item(&node_menu)
-        .item(&profile_menu)
-        .separator()
-        .item(&open)
-        .separator()
-        .item(&quit)
-        .build()
+    #[cfg(target_os = "macos")]
+    {
+        let (group_menu_label, rows, testing) = node_menu_data.unwrap();
+        if rows.is_empty() {
+            return MenuBuilder::new(app)
+                .item(&proxy)
+                .separator()
+                .item(&open)
+                .separator()
+                .item(&quit)
+                .build();
+        }
+        let mut node_builder = SubmenuBuilder::new(app, &group_menu_label);
+        let delay_test = MenuItem::with_id(
+            app,
+            "tray-delay-test",
+            &if testing {
+                tr(&lang, "延迟测速中…", "Testing latency…")
+            } else {
+                tr(&lang, "延迟测速", "Test latency")
+            },
+            !testing,
+            None::<&str>,
+        )?;
+        node_builder = node_builder.item(&delay_test).separator();
+        for row in &rows {
+            node_builder = node_builder.item(&mk_check(
+                &format!("node-{}", row.name),
+                &format!("{}\t{}", tray_speed::display_name(&row.name), row.badge),
+                row.selected,
+            )?);
+        }
+        let node_menu = node_builder.build()?;
+
+        MenuBuilder::new(app)
+            .item(&proxy)
+            .separator()
+            .item(&mode_menu)
+            .item(&node_menu)
+            .item(&profile_menu)
+            .separator()
+            .item(&open)
+            .separator()
+            .item(&quit)
+            .build()
+    }
 }
 
 fn refresh_tray(app: &AppHandle) {
@@ -1801,8 +1822,11 @@ fn refresh_tray(app: &AppHandle) {
         Err(e) => eprintln!("rebuild tray menu: {e}"),
     }
     // 菜单重建后立即应用等宽列与延迟颜色；测试状态也按当前语言保持一致。
-    let data = tray_menu_data(&app.state::<AppState>());
-    tray_speed::update_node_items(app, &data.rows, data.testing);
+    #[cfg(target_os = "macos")]
+    {
+        let data = tray_menu_data(&app.state::<AppState>());
+        tray_speed::update_node_items(app, &data.rows, data.testing);
+    }
 }
 
 fn show_main_window(app: &AppHandle) {
