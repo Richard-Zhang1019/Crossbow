@@ -24,6 +24,8 @@ mod scheduler;
 mod sysproxy;
 #[cfg(target_os = "macos")]
 mod tray_speed;
+#[cfg(target_os = "macos")]
+mod tun;
 mod ws_bridge;
 
 mod core_download;
@@ -210,8 +212,23 @@ fn start_core_locked(state: &AppState) -> Result<(), String> {
         engine: store.data().engine.engine,
         mixed_port: store.data().engine.mixed_port,
         allow_lan: store.data().engine.allow_lan,
+        tun_enable: store.data().engine.tun_enable,
         ..RuntimeConfig::default()
     };
+    // TUN 模式：内核需 root 权限创建 utun。用 osascript 管理员授权把内核
+    // 二进制 setuid root（一次性），再由应用正常拉起（子进程继承 root）。
+    if rt.tun_enable {
+        #[cfg(target_os = "macos")]
+        {
+            drop(store);
+            crate::tun::ensure_root_binary(state)?;
+            return state.core().start(&rendered.config, &rt);
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            return Err("TUN 模式即将支持（Windows 走 wintun）".into());
+        }
+    }
     state.core().start(&rendered.config, &rt)
 }
 
@@ -715,6 +732,54 @@ async fn set_engine(
     // 通知侧栏 footer 等跟随引擎的 UI 重新取标识
     let _ = app.emit("engine://changed", engine.clone());
     Ok(())
+}
+
+/// TUN 开关（macOS）。开启时与系统代理互斥（先关系统代理）。
+#[tauri::command]
+fn set_tun(state: State<AppState>, enable: bool) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        crate::tun::toggle_tun(&state, enable)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = enable;
+        Err("TUN 模式即将支持".into())
+    }
+}
+
+#[derive(serde::Serialize)]
+struct TunStatus {
+    enabled: bool,
+    /// 内核二进制已 setuid root（可无感开 TUN）
+    ready: bool,
+}
+
+#[tauri::command]
+fn tun_status(state: State<AppState>) -> TunStatus {
+    #[cfg(target_os = "macos")]
+    {
+        let enabled = {
+            let store = state.store.lock().unwrap();
+            store.data().engine.tun_enable
+        };
+        let is_singbox = {
+            let store = state.store.lock().unwrap();
+            store.data().engine.engine == crossbow_core::Engine::SingBox
+        };
+        let need = if is_singbox { "sing-box" } else { "mihomo" };
+        let ready = crate::core_download::resolve_core_for(&state.data_dir, Some(need))
+            .map(|p| crate::tun::is_setuid(&p))
+            .unwrap_or(false);
+        TunStatus { enabled, ready }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        TunStatus {
+            enabled: false,
+            ready: false,
+        }
+    }
 }
 
 #[tauri::command]
@@ -2192,6 +2257,8 @@ pub fn run() {
             core_binary_info_for,
             core_install,
             set_engine,
+            set_tun,
+            tun_status,
             diag_log,
             run_diagnosis,
             current_outbound,
