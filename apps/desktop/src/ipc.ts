@@ -222,6 +222,9 @@ export const ipc = {
   setLightweightClose: (enabled: boolean) =>
     invoke<void>("set_lightweight_close", { enabled }),
   setMixedPort: (port: number) => invoke<void>("set_mixed_port", { port }),
+  tunStatus: () =>
+    invoke<{ enabled: boolean; ready: boolean }>("tun_status"),
+  setTun: (enable: boolean) => invoke<void>("set_tun", { enable }),
   setAllowLan: (enabled: boolean) => invoke<void>("set_allow_lan", { enabled }),
   autostartStatus: () => invoke<boolean>("autostart_status"),
   autostartSet: (enable: boolean) => invoke<void>("autostart_set", { enable }),

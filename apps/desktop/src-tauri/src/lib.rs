@@ -4,7 +4,7 @@
 //! （traffic/connections/logs 节流聚合）、设置（端口/局域网/主题/自启/
 //! 内核版本）、深链接导入与单实例。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::Ordering;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -24,6 +24,8 @@ mod scheduler;
 mod sysproxy;
 #[cfg(target_os = "macos")]
 mod tray_speed;
+#[cfg(target_os = "macos")]
+mod tun;
 mod ws_bridge;
 
 mod core_download;
@@ -54,12 +56,17 @@ pub struct AppState {
     /// 托盘节点子菜单：目标组名 / 各节点延迟缓存 / 当前选中 / 测速进行中。
     tray_group: Mutex<String>,
     tray_delays: Mutex<BTreeMap<String, u64>>,
+    tray_failed: Mutex<BTreeSet<String>>,
     tray_now: Mutex<String>,
     /// 子菜单标题：`主组：当前选中`（当前选中可能是子组，逐级下钻）
     tray_title: Mutex<String>,
     /// 展示的节点有序列表（主组当前选中若为子组则为其成员）
     tray_nodes: Mutex<Vec<String>>,
     tray_testing: std::sync::atomic::AtomicBool,
+    /// 测速任务序号：看门狗超时后让迟到的旧结果失效。
+    tray_test_generation: std::sync::atomic::AtomicU64,
+    /// 测速开始时刻（看门狗：超时后视图自动恢复可点态）
+    tray_testing_since: Mutex<Option<std::time::Instant>>,
     /// 应用句柄：换核/重装后给新 CoreManager 重挂状态回调用。
     app: AppHandle,
 }
@@ -100,6 +107,36 @@ fn apply_macos_window_appearance(win: &tauri::WebviewWindow, theme: &str) {
             }
         }
     }
+}
+
+/// 活动订阅里 proxy-groups 的声明顺序（代理页排序与托盘主组探测共用）。
+fn profile_group_order(handle: &AppHandle) -> Vec<String> {
+    let Some(state) = handle.try_state::<AppState>() else {
+        return Vec::new();
+    };
+    let content = {
+        let store = state.store.lock().unwrap();
+        store
+            .data()
+            .active_profile
+            .clone()
+            .and_then(|id| store.data().profile(&id).map(|p| p.content.clone()))
+    };
+    let Some(content) = content else { return Vec::new() };
+    serde_yaml::from_str::<serde_yaml::Value>(&content)
+        .ok()
+        .and_then(|v| {
+            v.get("proxy-groups")
+                .and_then(|g| g.as_sequence())
+                .map(|seq| {
+                    seq.iter()
+                        .filter_map(|g| {
+                            g.get("name").and_then(|n| n.as_str()).map(String::from)
+                        })
+                        .collect()
+                })
+        })
+        .unwrap_or_default()
 }
 
 /// 进程存活探测（pidfile 双实例保险用）：unix kill 0；Windows tasklist。
@@ -175,8 +212,23 @@ fn start_core_locked(state: &AppState) -> Result<(), String> {
         engine: store.data().engine.engine,
         mixed_port: store.data().engine.mixed_port,
         allow_lan: store.data().engine.allow_lan,
+        tun_enable: store.data().engine.tun_enable,
         ..RuntimeConfig::default()
     };
+    // TUN 模式：内核需 root 权限创建 utun。用 osascript 管理员授权把内核
+    // 二进制 setuid root（一次性），再由应用正常拉起（子进程继承 root）。
+    if rt.tun_enable {
+        #[cfg(target_os = "macos")]
+        {
+            drop(store);
+            crate::tun::ensure_root_binary(state)?;
+            return state.core().start(&rendered.config, &rt);
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            return Err("TUN 模式即将支持（Windows 走 wintun）".into());
+        }
+    }
     state.core().start(&rendered.config, &rt)
 }
 
@@ -682,6 +734,54 @@ async fn set_engine(
     Ok(())
 }
 
+/// TUN 开关（macOS）。开启时与系统代理互斥（先关系统代理）。
+#[tauri::command]
+fn set_tun(state: State<AppState>, enable: bool) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        crate::tun::toggle_tun(&state, enable)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = enable;
+        Err("TUN 模式即将支持".into())
+    }
+}
+
+#[derive(serde::Serialize)]
+struct TunStatus {
+    enabled: bool,
+    /// 内核二进制已 setuid root（可无感开 TUN）
+    ready: bool,
+}
+
+#[tauri::command]
+fn tun_status(state: State<AppState>) -> TunStatus {
+    #[cfg(target_os = "macos")]
+    {
+        let enabled = {
+            let store = state.store.lock().unwrap();
+            store.data().engine.tun_enable
+        };
+        let is_singbox = {
+            let store = state.store.lock().unwrap();
+            store.data().engine.engine == crossbow_core::Engine::SingBox
+        };
+        let need = if is_singbox { "sing-box" } else { "mihomo" };
+        let ready = crate::core_download::resolve_core_for(&state.data_dir, Some(need))
+            .map(|p| crate::tun::is_setuid(&p))
+            .unwrap_or(false);
+        TunStatus { enabled, ready }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        TunStatus {
+            enabled: false,
+            ready: false,
+        }
+    }
+}
+
 #[tauri::command]
 fn set_flag_emoji(state: State<AppState>, enabled: bool) -> Result<(), String> {
     let mut store = state.store.lock().unwrap();
@@ -989,9 +1089,56 @@ fn controller_client(state: &AppState) -> Result<mihomo_api::Controller, String>
     Ok(mihomo_api::Controller { port, secret })
 }
 
+/// 同 profile_group_order，但直接吃配置文本。
+pub fn profile_group_order_str(content: &str) -> Vec<String> {
+    serde_yaml::from_str::<serde_yaml::Value>(content)
+        .ok()
+        .and_then(|v| {
+            v.get("proxy-groups")
+                .and_then(|g| g.as_sequence())
+                .map(|seq| {
+                    seq.iter()
+                        .filter_map(|g| {
+                            g.get("name").and_then(|n| n.as_str()).map(String::from)
+                        })
+                        .collect()
+                })
+        })
+        .unwrap_or_default()
+}
+
 #[tauri::command]
 fn proxies_snapshot(state: State<AppState>) -> Result<Vec<mihomo_api::GroupView>, String> {
-    controller_client(&state)?.groups()
+    let mut groups = controller_client(&state)?.groups()?;
+    // 按订阅声明顺序展示（与 ClashX 一致，主选择组在前）；GLOBAL 恒最后
+    let order = {
+        let store = state.store.lock().unwrap();
+        store
+            .data()
+            .active_profile
+            .clone()
+            .and_then(|id| {
+                store
+                    .data()
+                    .profile(&id)
+                    .map(|p| crate::profile_group_order_str(&p.content))
+            })
+            .unwrap_or_default()
+    };
+    groups.sort_by(|a, b| {
+        let ga = (a.name == "GLOBAL") as u8;
+        let gb = (b.name == "GLOBAL") as u8;
+        let pa = order
+            .iter()
+            .position(|n| n == &a.name)
+            .unwrap_or(usize::MAX);
+        let pb = order
+            .iter()
+            .position(|n| n == &b.name)
+            .unwrap_or(usize::MAX);
+        ga.cmp(&gb).then(pa.cmp(&pb))
+    });
+    Ok(groups)
 }
 
 #[tauri::command]
@@ -1261,6 +1408,7 @@ fn core_status_callback(handle: AppHandle) -> core_manager::Callback {
         sync_tray_traffic(&handle);
         // 托盘节点菜单数据：Running 时后台拉取组与延迟
         if *status == CoreStatus::Running {
+            #[cfg(target_os = "macos")]
             refresh_tray_nodes(&handle);
         }
         // 状态一致性守护：内核崩溃时若系统代理还开着，立即还原，
@@ -1333,6 +1481,7 @@ fn sync_tray_traffic(handle: &AppHandle) {
 }
 
 /// 后台拉取托盘节点菜单数据：探测主选择组 + 各节点延迟，完成后刷新托盘。
+#[cfg(target_os = "macos")]
 fn refresh_tray_nodes(handle: &AppHandle) {
     let Some(state) = handle.try_state::<AppState>() else { return };
     if state.core().status() != CoreStatus::Running {
@@ -1342,15 +1491,22 @@ fn refresh_tray_nodes(handle: &AppHandle) {
     std::thread::spawn(move || {
         let Some(state) = h.try_state::<AppState>() else { return };
         let Ok(c) = controller_client(&state) else { return };
-        // 主组：已有缓存沿用；否则探测第一个 Selector 组
+        // 主组：已有缓存沿用；否则按订阅声明顺序找第一个有成员的组
+        // （即订阅的主选择组，通常名为 节点选择）
         let group = {
             let cached = state.tray_group.lock().unwrap().clone();
-            cached.is_empty()
-                .then(|| c.first_selector_group().ok().flatten())
-                .flatten()
+            (!cached.is_empty())
+                .then_some(cached)
                 .or_else(|| {
-                    let g = state.tray_group.lock().unwrap().clone();
-                    (!g.is_empty()).then_some(g)
+                    let order = profile_group_order(&h);
+                    order
+                        .iter()
+                        .find(|n| {
+                            c.group_state(n)
+                                .map(|(_, m)| !m.is_empty())
+                                .unwrap_or(false)
+                        })
+                        .cloned()
                 })
         };
         let Some(group) = group else { return };
@@ -1388,41 +1544,175 @@ fn refresh_tray_nodes(handle: &AppHandle) {
         *state.tray_nodes.lock().unwrap() =
             members.into_iter().map(|(n, _)| n).collect();
         refresh_tray(&h);
+        // 部分节点还没有延迟数据时自动补一轮测速（静默，不抢菜单交互）
+        let missing = {
+            let delays = state.tray_delays.lock().unwrap();
+            state
+                .tray_nodes
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|n| !delays.contains_key(*n))
+                .count()
+        };
+        #[cfg(target_os = "macos")]
+        if missing > 0 {
+            run_tray_delay_test(&h, false);
+        }
     });
 }
 
 /// 后台执行延迟测速：完成后更新缓存并刷新托盘菜单显示结果。
-fn run_tray_delay_test(handle: &AppHandle) {
+#[cfg(target_os = "macos")]
+fn run_tray_delay_test(handle: &AppHandle, keep_menu_open: bool) {
     let Some(state) = handle.try_state::<AppState>() else { return };
     if state
         .tray_testing
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
     {
+        if keep_menu_open {
+            tray_speed::keep_menu_open(handle);
+        }
         return; // 已在测速
     }
-    refresh_tray(handle); // 菜单项置为「测速中…」
+    let generation = state
+        .tray_test_generation
+        .fetch_add(1, Ordering::SeqCst)
+        + 1;
+    *state.tray_testing_since.lock().unwrap() = Some(std::time::Instant::now());
+    // 只更新当前菜单项目，避免重建 NSMenu 让托盘弹窗闪退，并保留已绘制的延迟徽标。
+    update_tray_node_menu(handle, true);
+
+    // Mihomo 请求有 30 秒超时。再留 5 秒给本地处理；如果底层意外不返回，
+    // 让菜单恢复可操作，并使之后返回的旧结果失效。
+    let watchdog_handle = handle.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(35));
+        let Some(state) = watchdog_handle.try_state::<AppState>() else { return };
+        if state
+            .tray_test_generation
+            .compare_exchange(generation, generation + 1, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            state.tray_testing.store(false, Ordering::SeqCst);
+            *state.tray_testing_since.lock().unwrap() = None;
+            update_tray_node_menu(&watchdog_handle, false);
+        }
+    });
+
     let h = handle.clone();
     std::thread::spawn(move || {
         let Some(state) = h.try_state::<AppState>() else { return };
+        if keep_menu_open {
+            // 托盘目标先重新打开原菜单；随后在它的跟踪循环中更新测速项状态。
+            std::thread::sleep(std::time::Duration::from_millis(35));
+            update_tray_node_menu(&h, true);
+        }
         let group = state.tray_group.lock().unwrap().clone();
-        if let Ok(c) = controller_client(&state) {
-            if let Ok(delays) = c.test_group_delay(&group) {
-                *state.tray_delays.lock().unwrap() = delays;
-                // 测速会顺带更新当前选中，拉一次最新 now
-                if let Ok(Some(now)) = controller_client(&state)
-                    .and_then(|c| c.group_state(&group))
-                    .map(|(now, _)| now)
-                {
-                    *state.tray_now.lock().unwrap() = now;
+        let members = state.tray_nodes.lock().unwrap().clone();
+        let measured = controller_client(&state).and_then(|c| c.test_group_delay(&group));
+        let now = controller_client(&state)
+            .and_then(|c| c.group_state(&group))
+            .ok()
+            .and_then(|(now, _)| now);
+
+        // 与看门狗竞争结束权；只有一个能提交结果，晚到的响应不会覆盖新一轮测速。
+        if state
+            .tray_test_generation
+            .compare_exchange(generation, generation + 1, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return;
+        }
+        match measured {
+            Ok(delays) => {
+                *state.tray_delays.lock().unwrap() = delays.clone();
+                let mut failed = state.tray_failed.lock().unwrap();
+                failed.clear();
+                for member in &members {
+                    if !delays.contains_key(member) {
+                        failed.insert(member.clone());
+                    }
                 }
             }
+            Err(error) => {
+                eprintln!("tray delay test failed: {error}");
+                state.tray_failed.lock().unwrap().clear();
+            }
         }
-        state
-            .tray_testing
-            .store(false, std::sync::atomic::Ordering::SeqCst);
-        refresh_tray(&h);
+        if let Some(now) = now {
+            *state.tray_now.lock().unwrap() = now;
+        }
+        state.tray_testing.store(false, Ordering::SeqCst);
+        *state.tray_testing_since.lock().unwrap() = None;
+        update_tray_node_menu(&h, false);
     });
+
+    if keep_menu_open {
+        // 等测量任务启动后，再进入原生托盘菜单的嵌套跟踪循环。
+        tray_speed::keep_menu_open(handle);
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn update_tray_node_menu(handle: &AppHandle, testing: bool) {
+    let Some(state) = handle.try_state::<AppState>() else { return };
+    let data = tray_menu_data(&state);
+    tray_speed::update_node_items(handle, &data.rows, testing);
+}
+
+/// 托盘节点子菜单的渲染数据：标题、节点行、测速中。
+#[cfg(target_os = "macos")]
+struct TrayMenuData {
+    title: String,
+    rows: Vec<tray_speed::TrayNodeRow>,
+    testing: bool,
+}
+
+#[cfg(target_os = "macos")]
+fn tray_menu_data(state: &AppState) -> TrayMenuData {
+    let title = state.tray_title.lock().unwrap().clone();
+    let nodes = state.tray_nodes.lock().unwrap().clone();
+    let delays = state.tray_delays.lock().unwrap().clone();
+    let failed = state.tray_failed.lock().unwrap().clone();
+    let now = state.tray_now.lock().unwrap().clone();
+    let testing = state
+        .tray_testing
+        .load(std::sync::atomic::Ordering::SeqCst);
+    let rows = nodes
+        .iter()
+        .map(|n| {
+            let (badge, ms) = if failed.contains(n) {
+                ("失败".to_string(), None)
+            } else {
+                match delays.get(n) {
+                    Some(ms) => (format!("{ms} ms"), Some(*ms)),
+                    None => ("—".to_string(), None),
+                }
+            };
+            let selected = *n == now;
+            tray_speed::TrayNodeRow {
+                name: n.clone(),
+                badge,
+                ms,
+                selected,
+            }
+        })
+        .collect();
+    TrayMenuData {
+        title: if title.is_empty() {
+            format!("{}：{}", tr(&lang_of(state), "节点选择", "Nodes"), now)
+        } else {
+            title
+        },
+        rows,
+        testing,
+    }
+}
+
+fn lang_of(state: &AppState) -> String {
+    state.store.lock().unwrap().data().ui.lang.clone()
 }
 
 fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
@@ -1445,7 +1735,24 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
     let mk_check = |id: &str, label: &str, checked: bool| {
         CheckMenuItem::with_id(app, id, label, true, checked, None::<&str>)
     };
-    let mode_menu = SubmenuBuilder::new(app, tr(&lang, "模式", "Mode"))
+    let mode_label = format!(
+        "{}：{}",
+        tr(&lang, "模式", "Mode"),
+        tr(
+            &lang,
+            match mode.as_str() {
+                "direct" => "直连",
+                "global" => "全局",
+                _ => "规则",
+            },
+            match mode.as_str() {
+                "direct" => "Direct",
+                "global" => "Global",
+                _ => "Rule",
+            }
+        )
+    );
+    let mode_menu = SubmenuBuilder::new(app, &mode_label)
         .item(&mk_check(
             "mode-direct",
             &tr(&lang, "直连", "Direct"),
@@ -1481,15 +1788,13 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
     let profile_menu = profile_builder.build()?;
 
     // 节点选择子菜单：标题=「主组：当前选中」，首项=延迟测速，
-    // 其后为展示节点列表（名称+最近延迟），点击节点即切换
-    let group = state.tray_group.lock().unwrap().clone();
-    let now = state.tray_now.lock().unwrap().clone();
-    let title = state.tray_title.lock().unwrap().clone();
-    let nodes = state.tray_nodes.lock().unwrap().clone();
-    let testing = state
-        .tray_testing
-        .load(std::sync::atomic::Ordering::SeqCst);
-    let delays = state.tray_delays.lock().unwrap().clone();
+    // 其后为展示节点列表（名称+最近延迟），点击节点即切换。
+    // macOS 专属（依赖 NSStatusItem 富文本）；Windows 不展示该子菜单。
+    #[cfg(target_os = "macos")]
+    let node_menu_data = {
+        let data = tray_menu_data(&state);
+        Some((data.title, data.rows, data.testing))
+    };
 
     let open = MenuItem::with_id(
         app,
@@ -1506,57 +1811,67 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
         None::<&str>,
     )?;
 
-    if group.is_empty() {
+    // 节点子菜单整段 macOS 专属；Windows 直接返回基础菜单
+    #[cfg(not(target_os = "macos"))]
+    {
         return MenuBuilder::new(app)
             .item(&proxy)
+            .separator()
+            .item(&mode_menu)
+            .item(&profile_menu)
             .separator()
             .item(&open)
             .separator()
             .item(&quit)
             .build();
     }
-    let group_menu_label = if title.is_empty() {
-        tr(&lang, "节点选择", "Nodes")
-    } else {
-        title
-    };
-    let mut node_builder = SubmenuBuilder::new(app, &group_menu_label);
-    let delay_test = MenuItem::with_id(
-        app,
-        "tray-delay-test",
-        &if testing {
-            tr(&lang, "延迟测速中…", "Testing latency…")
-        } else {
-            tr(&lang, "延迟测速", "Test latency")
-        },
-        !testing,
-        None::<&str>,
-    )?;
-    node_builder = node_builder.item(&delay_test).separator();
-    for name in &nodes {
-        let label = match delays.get(name) {
-            Some(ms) => format!("{name}  {ms}ms"),
-            None => format!("{name}  —"),
-        };
-        node_builder = node_builder.item(&mk_check(
-            &format!("node-{name}"),
-            &label,
-            *name == now,
-        )?);
-    }
-    let node_menu = node_builder.build()?;
 
-    MenuBuilder::new(app)
-        .item(&proxy)
-        .separator()
-        .item(&mode_menu)
-        .item(&node_menu)
-        .item(&profile_menu)
-        .separator()
-        .item(&open)
-        .separator()
-        .item(&quit)
-        .build()
+    #[cfg(target_os = "macos")]
+    {
+        let (group_menu_label, rows, testing) = node_menu_data.unwrap();
+        if rows.is_empty() {
+            return MenuBuilder::new(app)
+                .item(&proxy)
+                .separator()
+                .item(&open)
+                .separator()
+                .item(&quit)
+                .build();
+        }
+        let mut node_builder = SubmenuBuilder::new(app, &group_menu_label);
+        let delay_test = MenuItem::with_id(
+            app,
+            "tray-delay-test",
+            &if testing {
+                tr(&lang, "延迟测速中…", "Testing latency…")
+            } else {
+                tr(&lang, "延迟测速", "Test latency")
+            },
+            !testing,
+            None::<&str>,
+        )?;
+        node_builder = node_builder.item(&delay_test).separator();
+        for row in &rows {
+            node_builder = node_builder.item(&mk_check(
+                &format!("node-{}", row.name),
+                &format!("{}\t{}", tray_speed::display_name(&row.name), row.badge),
+                row.selected,
+            )?);
+        }
+        let node_menu = node_builder.build()?;
+
+        MenuBuilder::new(app)
+            .item(&proxy)
+            .separator()
+            .item(&mode_menu)
+            .item(&node_menu)
+            .item(&profile_menu)
+            .separator()
+            .item(&open)
+            .separator()
+            .item(&quit)
+            .build()
+    }
 }
 
 fn refresh_tray(app: &AppHandle) {
@@ -1570,6 +1885,12 @@ fn refresh_tray(app: &AppHandle) {
             let _ = tray.set_menu(Some(menu));
         }
         Err(e) => eprintln!("rebuild tray menu: {e}"),
+    }
+    // 菜单重建后立即应用等宽列与延迟颜色；测试状态也按当前语言保持一致。
+    #[cfg(target_os = "macos")]
+    {
+        let data = tray_menu_data(&app.state::<AppState>());
+        tray_speed::update_node_items(app, &data.rows, data.testing);
     }
 }
 
@@ -1595,6 +1916,8 @@ fn show_main_window(app: &AppHandle) {
             // Windows 走系统默认标题栏
             #[cfg(target_os = "macos")]
             let builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay);
+            #[cfg(target_os = "macos")]
+            let builder = builder.hidden_title(true);
             let built = builder.build();
             // 重建窗口同样应用深色标题栏
             #[cfg(target_os = "macos")]
@@ -1696,7 +2019,8 @@ fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
             Ok(())
         }
         "tray-delay-test" => {
-            run_tray_delay_test(app);
+            #[cfg(target_os = "macos")]
+            run_tray_delay_test(app, true);
             Ok(())
         }
         other => {
@@ -1827,10 +2151,13 @@ pub fn run() {
                 app: app.handle().clone(),
                 tray_group: Mutex::new(String::new()),
                 tray_delays: Mutex::new(BTreeMap::new()),
+                tray_failed: Mutex::new(BTreeSet::new()),
                 tray_now: Mutex::new(String::new()),
                 tray_title: Mutex::new(String::new()),
                 tray_nodes: Mutex::new(Vec::new()),
                 tray_testing: std::sync::atomic::AtomicBool::new(false),
+                tray_test_generation: std::sync::atomic::AtomicU64::new(0),
+                tray_testing_since: Mutex::new(None),
             });
 
             // 订阅自动更新调度器
@@ -1862,6 +2189,7 @@ pub fn run() {
 
             // 收养的外部内核不走状态回调：这里补挂托盘速率与节点菜单数据
             sync_tray_traffic(app.handle());
+            #[cfg(target_os = "macos")]
             refresh_tray_nodes(app.handle());
 
             Ok(())
@@ -1929,6 +2257,8 @@ pub fn run() {
             core_binary_info_for,
             core_install,
             set_engine,
+            set_tun,
+            tun_status,
             diag_log,
             run_diagnosis,
             current_outbound,

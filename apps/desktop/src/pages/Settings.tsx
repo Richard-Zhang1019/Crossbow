@@ -21,6 +21,7 @@ export default function SettingsPage() {
   const engineTouched = useRef(false);
   selectedEngineRef.current = selectedEngine;
   const [flags, setFlags] = useState(true);
+  const [tun, setTun] = useState<{ enabled: boolean; ready: boolean } | null>(null);
   const [lightweight, setLightweight] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string; full?: string } | null>(null);
@@ -37,6 +38,7 @@ export default function SettingsPage() {
     setTheme(await ipc.getUiSettings().then((u) => u.theme).catch(() => "system" as const));
     setAutostart(await ipc.autostartStatus().catch(() => false));
     if (e) setFlags(e.flag_emoji);
+    setTun(await ipc.tunStatus().catch(() => null));
     // engineBin 始终跟随目标引擎（失败/成功状态归一）；
     // 用户没动过下拉框时回显持久化引擎，动过则保留本地选择
     const target = engineTouched.current
@@ -202,6 +204,28 @@ export default function SettingsPage() {
             }}
           />
         </Row>
+        <Row label={t("settings.tun")} hint={t("settings.tunHint")}>
+          <Switch
+            checked={tun?.enabled ?? false}
+            onChange={async (v) => {
+              try {
+                await ipc.setTun(v);
+                flash(true, v ? t("settings.tunOn") : t("settings.tunOff"));
+                setTun(await ipc.tunStatus());
+              } catch (e) {
+                flash(false, `${t("settings.tunFailed")}: ${String(e)}`);
+              }
+              await load();
+            }}
+          />
+        </Row>
+        {tun?.enabled && (
+          <Row label="">
+            <span className="text-xs" style={{ color: "var(--cb-ok)" }}>
+              {tun.ready ? t("settings.tunReady") : "…"}
+            </span>
+          </Row>
+        )}
         <Row label={t("settings.lan")} hint={t("settings.lanHint")}>
           <Switch
             checked={engine?.allow_lan ?? false}

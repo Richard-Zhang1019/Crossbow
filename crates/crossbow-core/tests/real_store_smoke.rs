@@ -30,6 +30,7 @@ fn real_store_singbox_e2e() {
             controller_port: ctrl,
             controller_secret: secret.into(),
             log_level: "info".into(),
+            tun_enable: false,
         },
     )
     .expect("apply_runtime");
