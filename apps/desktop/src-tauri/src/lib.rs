@@ -1343,6 +1343,7 @@ fn core_status_callback(handle: AppHandle) -> core_manager::Callback {
         sync_tray_traffic(&handle);
         // 托盘节点菜单数据：Running 时后台拉取组与延迟
         if *status == CoreStatus::Running {
+            #[cfg(target_os = "macos")]
             refresh_tray_nodes(&handle);
         }
         // 状态一致性守护：内核崩溃时若系统代理还开着，立即还原，
@@ -1415,6 +1416,7 @@ fn sync_tray_traffic(handle: &AppHandle) {
 }
 
 /// 后台拉取托盘节点菜单数据：探测主选择组 + 各节点延迟，完成后刷新托盘。
+#[cfg(target_os = "macos")]
 fn refresh_tray_nodes(handle: &AppHandle) {
     let Some(state) = handle.try_state::<AppState>() else { return };
     if state.core().status() != CoreStatus::Running {
@@ -1488,6 +1490,7 @@ fn refresh_tray_nodes(handle: &AppHandle) {
                 .filter(|n| !delays.contains_key(*n))
                 .count()
         };
+        #[cfg(target_os = "macos")]
         if missing > 0 {
             run_tray_delay_test(&h, false);
         }
@@ -1495,6 +1498,7 @@ fn refresh_tray_nodes(handle: &AppHandle) {
 }
 
 /// 后台执行延迟测速：完成后更新缓存并刷新托盘菜单显示结果。
+#[cfg(target_os = "macos")]
 fn run_tray_delay_test(handle: &AppHandle, keep_menu_open: bool) {
     let Some(state) = handle.try_state::<AppState>() else { return };
     if state
@@ -1586,6 +1590,7 @@ fn run_tray_delay_test(handle: &AppHandle, keep_menu_open: bool) {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn update_tray_node_menu(handle: &AppHandle, testing: bool) {
     let Some(state) = handle.try_state::<AppState>() else { return };
     let data = tray_menu_data(&state);
@@ -1593,12 +1598,14 @@ fn update_tray_node_menu(handle: &AppHandle, testing: bool) {
 }
 
 /// 托盘节点子菜单的渲染数据：标题、节点行、测速中。
+#[cfg(target_os = "macos")]
 struct TrayMenuData {
     title: String,
     rows: Vec<tray_speed::TrayNodeRow>,
     testing: bool,
 }
 
+#[cfg(target_os = "macos")]
 fn tray_menu_data(state: &AppState) -> TrayMenuData {
     let title = state.tray_title.lock().unwrap().clone();
     let nodes = state.tray_nodes.lock().unwrap().clone();
@@ -1923,6 +1930,7 @@ fn handle_menu(app: &AppHandle, event: tauri::menu::MenuEvent) {
             Ok(())
         }
         "tray-delay-test" => {
+            #[cfg(target_os = "macos")]
             run_tray_delay_test(app, true);
             Ok(())
         }
@@ -2092,6 +2100,7 @@ pub fn run() {
 
             // 收养的外部内核不走状态回调：这里补挂托盘速率与节点菜单数据
             sync_tray_traffic(app.handle());
+            #[cfg(target_os = "macos")]
             refresh_tray_nodes(app.handle());
 
             Ok(())

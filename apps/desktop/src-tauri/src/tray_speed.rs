@@ -243,7 +243,7 @@ fn delay_badge_image(badge: &str, color: &NSColor) -> Retained<NSImage> {
         );
         path.fill();
 
-        let font = NSFont::monospacedDigitSystemFontOfSize_weight(9.5, NSFontWeightRegular);
+        let font = NSFont::monospacedDigitSystemFontOfSize_weight(9.0, NSFontWeightRegular);
         let white = NSColor::whiteColor();
         let keys: &[&NSString] = &[NSFontAttributeName, NSForegroundColorAttributeName];
         let values: &[&AnyObject] = &[&font, &white];
@@ -267,7 +267,7 @@ fn node_row_attributed(
     unsafe {
         let display_name = truncate_display_name(name, 202.0);
         let line = format!("{display_name}\t\u{FFFC}");
-        let font = NSFont::menuBarFontOfSize(13.5);
+        let font = NSFont::menuBarFontOfSize(12.5);
         let para = NSMutableParagraphStyle::new();
         let empty_options = NSDictionary::<objc2_app_kit::NSTextTabOptionKey, AnyObject>::new();
         let tab = objc2_app_kit::NSTextTab::initWithTextAlignment_location_options(
