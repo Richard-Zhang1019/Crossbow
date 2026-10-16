@@ -28,6 +28,8 @@ pub struct RuntimeConfig {
     pub controller_secret: String,
     /// 内核日志级别：debug / info / warning / error / silent。
     pub log_level: String,
+    /// TUN 模式（内核创建 utun 接管全局流量）。
+    pub tun_enable: bool,
 }
 
 impl Default for RuntimeConfig {
@@ -39,6 +41,7 @@ impl Default for RuntimeConfig {
             controller_port: 0, // 0 = 由调用方分配空闲端口
             controller_secret: String::new(),
             log_level: "info".into(),
+            tun_enable: false,
         }
     }
 }
@@ -61,6 +64,19 @@ fn apply_runtime_mihomo(base_yaml: &str, rt: &RuntimeConfig) -> Result<String, S
     );
     patch.insert(Value::from("mode"), Value::from("rule"));
     patch.insert(Value::from("log-level"), Value::from(rt.log_level.as_str()));
+    if rt.tun_enable {
+        // mihomo 内置 sing-tun：gVisor 网栈 + 自动路由；TUN 必须配 DNS（fake-ip）
+        let mut tun = Mapping::new();
+        tun.insert(Value::from("enable"), Value::from(true));
+        tun.insert(Value::from("stack"), Value::from("gvisor"));
+        tun.insert(Value::from("auto-route"), Value::from(true));
+        tun.insert(Value::from("auto-detect-interface"), Value::from(true));
+        let mut dns = Mapping::new();
+        dns.insert(Value::from("enable"), Value::from(true));
+        dns.insert(Value::from("enhanced-mode"), Value::from("fake-ip"));
+        patch.insert(Value::from("tun"), Value::Mapping(tun));
+        patch.insert(Value::from("dns"), Value::Mapping(dns));
+    }
     // 节点选择持久化：内核侧记住手工选择（等价「固定节点」），重启不丢。
     let mut profile = Mapping::new();
     profile.insert(Value::from("store-selected"), Value::from(true));
@@ -104,6 +120,21 @@ fn apply_runtime_singbox(base_json: &str, rt: &RuntimeConfig) -> Result<String, 
             "external_controller": format!("127.0.0.1:{}", rt.controller_port),
             "secret": rt.controller_secret,
         });
+    }
+    if rt.tun_enable {
+        // sing-box 原生 tun inbound：auto_route 接管全局路由
+        if let Some(inbounds) = v
+            .get_mut("inbounds")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            inbounds.push(json!({
+                "type": "tun",
+                "tag": "tun-in",
+                "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
+                "auto_route": true,
+                "strict_route": true,
+            }));
+        }
     }
     serde_json::to_string_pretty(&v).map_err(|e| e.to_string())
 }
@@ -192,6 +223,7 @@ mod tests {
                 controller_port: 19090,
                 controller_secret: "sb-secret".into(),
                 log_level: "warning".into(),
+                tun_enable: false,
             },
         )
         .unwrap();
@@ -233,5 +265,55 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.contains("JSON"));
+    }
+}
+
+#[cfg(test)]
+mod tun_tests {
+    use super::*;
+
+    #[test]
+    fn mihomo_tun_injection() {
+        let out = apply_runtime(
+            "proxies: []",
+            &RuntimeConfig {
+                tun_enable: true,
+                ..RuntimeConfig::default()
+            },
+        )
+        .unwrap();
+        assert!(out.contains("tun:"), "应注入 tun 段");
+        assert!(out.contains("stack: gvisor"));
+        assert!(out.contains("auto-route: true"));
+        assert!(out.contains("enhanced-mode: fake-ip"), "TUN 需 DNS 劫持");
+    }
+
+    #[test]
+    fn mihomo_no_tun_by_default() {
+        let out = apply_runtime("proxies: []", &RuntimeConfig::default()).unwrap();
+        assert!(!out.contains("tun:"));
+    }
+
+    #[test]
+    fn singbox_tun_injection() {
+        let base = r#"{
+            "inbounds": [{ "type": "mixed", "tag": "mixed-in", "listen": "127.0.0.1", "listen_port": 7897 }],
+            "outbounds": [{ "type": "direct", "tag": "DIRECT" }]
+        }"#;
+        let out = apply_runtime(
+            base,
+            &RuntimeConfig {
+                engine: crate::Engine::SingBox,
+                tun_enable: true,
+                ..RuntimeConfig::default()
+            },
+        )
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let inb = v["inbounds"].as_array().unwrap();
+        assert!(
+            inb.iter().any(|i| i["type"] == "tun" && i["auto_route"] == true),
+            "应追加 tun inbound"
+        );
     }
 }

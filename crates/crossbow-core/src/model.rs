@@ -112,6 +112,9 @@ pub struct EngineConfig {
     /// 节点旗帜补全（按地区关键词给节点名加国旗前缀）。
     #[serde(default = "default_flag_emoji")]
     pub flag_emoji: bool,
+    /// TUN 模式：内核创建 utun 虚拟网卡接管全局流量（macOS 需特权服务）。
+    #[serde(default)]
+    pub tun_enable: bool,
 }
 
 fn default_engine() -> Engine {
@@ -130,6 +133,7 @@ impl Default for EngineConfig {
             mixed_port: default_mixed_port(),
             allow_lan: false,
             flag_emoji: default_flag_emoji(),
+            tun_enable: false,
         }
     }
 }
