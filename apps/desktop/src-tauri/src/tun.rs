@@ -64,36 +64,66 @@ fn persistent_core_bin(state: &AppState, source: &Path) -> Result<PathBuf, Strin
     Ok(target)
 }
 
+/// Remove authorized kernel copies for older versions once the current copy is
+/// ready. Version directories are created by this app under data_dir, and the
+/// current version is retained so a failed/partial upgrade cannot delete the
+/// binary that is about to be launched.
+fn cleanup_stale_tun_binaries(data_dir: &Path, current_bin: &Path) {
+    let binaries_dir = data_dir.join("tun-binaries");
+    let current_version_dir = current_bin.parent();
+    let Ok(entries) = std::fs::read_dir(&binaries_dir) else {
+        return;
+    };
+
+    for entry in entries {
+        let Ok(entry) = entry else {
+            continue;
+        };
+        let version_dir = entry.path();
+        if current_version_dir == Some(version_dir.as_path())
+            || !entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false)
+        {
+            continue;
+        }
+        if let Err(error) = std::fs::remove_dir_all(&version_dir) {
+            eprintln!(
+                "tun: failed to remove stale authorized kernel copy {}: {error}",
+                version_dir.display()
+            );
+        }
+    }
+}
+
 /// 确保 TUN 目标内核是 setuid root，并返回持久化副本路径。
 pub fn ensure_root_binary(state: &AppState, source: &Path) -> Result<PathBuf, String> {
     let bin = persistent_core_bin(state, source)?;
-    if is_setuid(&bin) {
-        return Ok(bin);
-    }
-    let script = format!(
-        "chown root '{}'; chmod u+s '{}'",
-        bin.display(),
-        bin.display()
-    );
-    let out = std::process::Command::new("osascript")
-        .args([
-            "-e",
-            &format!(
-                "do shell script \"{}\" with administrator privileges",
-                script.replace('"', "\\\"")
-            ),
-        ])
-        .output()
-        .map_err(|e| format!("run osascript: {e}"))?;
-    if !out.status.success() {
-        return Err(format!(
-            "管理员授权失败：{}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        ));
-    }
     if !is_setuid(&bin) {
-        return Err("提权后 setuid 位未生效".into());
+        let script = format!(
+            "chown root '{}'; chmod u+s '{}'",
+            bin.display(),
+            bin.display()
+        );
+        let out = std::process::Command::new("osascript")
+            .args([
+                "-e",
+                &format!(
+                    "do shell script \"{}\" with administrator privileges",
+                    script.replace('"', "\\\"")
+                ),
+            ])
+            .output()
+            .map_err(|e| format!("run osascript: {e}"))?;
+        if !out.status.success() {
+            return Err(format!(
+                "管理员授权失败：{}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
+        }
+        if !is_setuid(&bin) {
+            return Err("提权后 setuid 位未生效".into());
+        }
     }
+    cleanup_stale_tun_binaries(&state.data_dir, &bin);
     Ok(bin)
 }
 
