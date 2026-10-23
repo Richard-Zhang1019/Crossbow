@@ -205,6 +205,8 @@ const dict: Record<Lang, Record<string, string>> = {
     "settings.autostartOff": "已关闭自启",
     "toast.imported": "订阅导入成功：{url}",
     "toast.importFailed": "导入失败：{msg}",
+    "toast.tunAutoDisabled": "TUN 连续多次健康检测失败，已自动关闭。请检查网络或代理节点。",
+    "toast.tunAutoDisableFailed": "TUN 连续多次健康检测失败，但自动关闭失败。请检查网络设置。",
   },
   en: {
     "section.proxy": "Proxy",
@@ -407,6 +409,8 @@ const dict: Record<Lang, Record<string, string>> = {
     "settings.autostartOff": "Autostart disabled",
     "toast.imported": "Subscription imported: {url}",
     "toast.importFailed": "Import failed: {msg}",
+    "toast.tunAutoDisabled": "TUN failed repeated health checks and was turned off. Check your network or proxy node.",
+    "toast.tunAutoDisableFailed": "TUN failed repeated health checks but could not be turned off. Check your network settings.",
   },
 };
 

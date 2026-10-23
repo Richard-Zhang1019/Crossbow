@@ -120,10 +120,19 @@ export default function App() {
     );
     const un2 = ipc.onProfileImportFailed((msg) => setToast(t("toast.importFailed", { msg })));
     const un3 = ipc.onSafeMode((msg) => setToast(msg));
+    const un4 = ipc.onTunHealthNotice((disabled) =>
+      setToast(t(disabled ? "toast.tunAutoDisabled" : "toast.tunAutoDisableFailed")),
+    );
     return () => {
-      for (const un of [un1, un2, un3]) void un.then((f) => f());
+      for (const un of [un1, un2, un3, un4]) void un.then((f) => f());
     };
   }, [t]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timeout = window.setTimeout(() => setToast(null), 7000);
+    return () => window.clearTimeout(timeout);
+  }, [toast]);
 
   return (
     <div className="flex h-full">
@@ -204,14 +213,17 @@ export default function App() {
 
         {toast && (
           <div
-            className="cb-selectable absolute bottom-5 left-1/2 -translate-x-1/2 rounded-lg border px-4 py-2 text-xs"
+            role="status"
+            aria-live="polite"
+            className="cb-selectable fixed left-1/2 top-9 z-50 flex -translate-x-1/2 items-center rounded-xl border px-4 py-2.5 text-xs"
             style={{
               background: "var(--cb-surface-2)",
               borderColor: "var(--cb-line-strong)",
               color: "var(--cb-text)",
-              boxShadow: "0 8px 24px rgba(0,0,0,.35)",
+              boxShadow: "0 12px 32px rgba(0,0,0,.38)",
             }}
           >
+            <span className="mr-2 text-amber-400" aria-hidden="true">●</span>
             {toast}
             <button className="ml-3 opacity-60 hover:opacity-100" onClick={() => setToast(null)}>
               ✕

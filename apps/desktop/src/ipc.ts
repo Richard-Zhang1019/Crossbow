@@ -227,6 +227,10 @@ export const ipc = {
     listen<string>("profile://updated", (e) => cb(e.payload)),
   onSafeMode: (cb: (msg: string) => void) =>
     listen<string>("core://safe-mode", (e) => cb(e.payload)),
+  onTunStatus: (cb: (enabled: boolean) => void) =>
+    listen<boolean>("tun://status", (e) => cb(e.payload)),
+  onTunHealthNotice: (cb: (disabled: boolean) => void) =>
+    listen<boolean>("tun://health-notice", (e) => cb(e.payload)),
   setActiveProfile: (id: string) => invoke<void>("set_active_profile", { id }),
   removeProfile: (id: string) => invoke<void>("remove_profile", { id }),
   coreStart: () => invoke<void>("core_start"),

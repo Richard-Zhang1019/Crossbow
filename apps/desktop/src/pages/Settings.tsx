@@ -77,6 +77,15 @@ export default function SettingsPage() {
     load();
   }, []);
 
+  useEffect(() => {
+    const un = ipc.onTunStatus((enabled) =>
+      setTun((current) => ({ enabled, ready: current?.ready ?? false })),
+    );
+    return () => {
+      void un.then((off) => off());
+    };
+  }, []);
+
   const flash = (ok: boolean, text: string, full?: string) => {
     setMsg({ ok, text, full: full ?? text });
     setTimeout(() => setMsg(null), 6000);

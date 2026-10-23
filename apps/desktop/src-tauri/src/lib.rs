@@ -760,13 +760,17 @@ async fn set_engine(
 
 /// TUN 开关（macOS）。开启时与系统代理互斥（先关系统代理）。
 #[tauri::command]
-fn set_tun(state: State<AppState>, enable: bool) -> Result<(), String> {
+fn set_tun(app: AppHandle, state: State<AppState>, enable: bool) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        crate::tun::toggle_tun(&state, enable)
+        crate::tun::toggle_tun(&state, enable)?;
+        let _ = app.emit("tun://status", enable);
+        refresh_tray(&app);
+        Ok(())
     }
     #[cfg(not(target_os = "macos"))]
     {
+        let _ = app;
         let _ = enable;
         Err("TUN 模式即将支持".into())
     }
@@ -1707,6 +1711,92 @@ fn spawn_logs_sweeper(app: &AppHandle) {
     });
 }
 
+/// TUN 健康检查：每 5 秒通过当前默认出口请求一次基准 URL；连续 3 次失败时
+/// 关闭 TUN 并通知界面，避免流量持续被送入失效的隧道。
+#[cfg(target_os = "macos")]
+fn spawn_tun_health_monitor(app: &AppHandle) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static SPAWNED: AtomicBool = AtomicBool::new(false);
+    if SPAWNED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+
+    const INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+    const MAX_CONSECUTIVE_FAILURES: u8 = 3;
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        let mut failures = 0u8;
+        let mut reported_disable_failure = false;
+        loop {
+            let cycle_started = std::time::Instant::now();
+            if let Some(state) = handle.try_state::<AppState>() {
+                let tun_enabled = state.store.lock().unwrap().data().engine.tun_enable;
+                if !tun_enabled || state.core().status() != CoreStatus::Running {
+                    failures = 0;
+                    reported_disable_failure = false;
+                } else {
+                    let probe = (|| {
+                        let fallback = state
+                            .core()
+                            .current_config()
+                            .and_then(|config| extract_final_outbound(&config));
+                        let controller = controller_client(&state)?;
+                        let outbound = controller.current_outbound(fallback.as_deref())?;
+                        // A configured reject route is intentional policy, not evidence that the
+                        // tunnel itself is unhealthy.
+                        if outbound.node.eq_ignore_ascii_case("REJECT") {
+                            return Ok(0);
+                        }
+                        controller.test_node_delay(&outbound.node)
+                    })();
+
+                    match probe {
+                        Ok(_) => {
+                            failures = 0;
+                            reported_disable_failure = false;
+                        }
+                        Err(error) => {
+                            failures = failures.saturating_add(1);
+                            eprintln!(
+                                "tun health check failed ({failures}/{MAX_CONSECUTIVE_FAILURES}): {error}"
+                            );
+                            if failures >= MAX_CONSECUTIVE_FAILURES {
+                                let still_enabled =
+                                    state.store.lock().unwrap().data().engine.tun_enable;
+                                if still_enabled {
+                                    match crate::tun::toggle_tun(&state, false) {
+                                        Ok(()) => {
+                                            failures = 0;
+                                            reported_disable_failure = false;
+                                            let _ = handle.emit("tun://status", false);
+                                            refresh_tray(&handle);
+                                            let _ = handle.emit("tun://health-notice", true);
+                                        }
+                                        Err(disable_error) => {
+                                            failures = 0;
+                                            eprintln!(
+                                                "tun health recovery could not disable TUN: {disable_error}"
+                                            );
+                                            if !reported_disable_failure {
+                                                let _ = handle.emit("tun://health-notice", false);
+                                                reported_disable_failure = true;
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    failures = 0;
+                                    reported_disable_failure = false;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            std::thread::sleep(INTERVAL.saturating_sub(cycle_started.elapsed()));
+        }
+    });
+}
+
 /// 托盘速率看门狗（进程级单例）：内核 Running 期间 /traffic 静默超过阈值
 /// 即强制重订。mihomo/sing-box 的 /traffic 即使零流量也每秒推帧，因此
 /// 「订阅还在但静默」必然意味着读线程死亡、socket 半开或内核假活——
@@ -2422,6 +2512,9 @@ pub fn run() {
                 update: Mutex::new(update_settings_init),
                 node_menu: Mutex::new(tray_state::TrayState::default()),
             });
+
+            #[cfg(target_os = "macos")]
+            spawn_tun_health_monitor(app.handle());
 
             // 订阅自动更新调度器
             scheduler::spawn(app.handle().clone());
