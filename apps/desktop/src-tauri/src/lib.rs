@@ -227,6 +227,10 @@ fn start_core_locked(state: &AppState) -> Result<(), String> {
             return Err("TUN 模式即将支持（Windows 走 wintun）".into());
         }
     }
+    #[cfg(target_os = "macos")]
+    {
+        ensure_unprivileged_core_binary(state, need, binary)?;
+    }
     state.core().start(&rendered.config, &rt)
 }
 
@@ -256,6 +260,28 @@ fn ensure_engine_binary(state: &AppState, need: &str) -> Result<PathBuf, String>
         .core()
         .log_decision(&format!("ensure: swapped to {}", p.display()));
     Ok(p)
+}
+
+/// TUN 授权副本长期保留 setuid，但 TUN 关闭后切回普通内核副本，
+/// 避免普通代理运行时也以 root 身份启动。
+#[cfg(target_os = "macos")]
+fn ensure_unprivileged_core_binary(
+    state: &AppState,
+    need: &str,
+    current: PathBuf,
+) -> Result<PathBuf, String> {
+    let tun_dir = state.data_dir.join("tun-binaries");
+    if !current.starts_with(&tun_dir) {
+        return Ok(current);
+    }
+    let Some(binary) = core_download::resolve_core_for(&state.data_dir, Some(need)) else {
+        return Err(format!("内核「{need}」未安装 — 到设置页下载对应内核后再启动"));
+    };
+    state.core().stop();
+    let new_core = CoreManager::new(binary.clone(), state.data_dir.join("runtime"));
+    new_core.set_callback(core_status_callback(state.app.clone()));
+    *state.core_slot.lock().unwrap_or_else(|e| e.into_inner()) = new_core;
+    Ok(binary)
 }
 
 /// 热重启：切换/更新配置后让新配置生效。

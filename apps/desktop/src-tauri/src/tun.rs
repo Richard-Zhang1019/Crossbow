@@ -5,7 +5,7 @@
 //! setuid：管理员授权后把内核二进制 chown root + chmod u+s（持久生效，重启
 //! 不需要再次授权），应用此后正常拉起内核，子进程自动继承 root 身份。
 //!
-//! 关闭 TUN 时把 setuid 位摘掉，恢复普通权限。
+//! 授权后的版本化副本保留 setuid，关闭 TUN 时不重复请求管理员授权。
 //! 仅 macOS；Windows 的 TUN 走 wintun + 服务，属 M1.5 后续。
 
 use std::path::{Path, PathBuf};
@@ -117,23 +117,6 @@ pub fn authorized_copy_exists(data_dir: &std::path::Path, need: &str) -> bool {
     false
 }
 
-/// 关闭 TUN：摘掉 setuid 位（尽力而为，失败不打断流程）。
-pub fn clear_root_binary(state: &AppState) {
-    let bin = state.core().binary_path();
-    if !is_setuid(&bin) {
-        return;
-    }
-    let _ = std::process::Command::new("osascript")
-        .args([
-            "-e",
-            &format!(
-                "do shell script \"chmod u-s '{}'\" with administrator privileges",
-                bin.display()
-            ),
-        ])
-        .output();
-}
-
 /// TUN 与系统代理互斥：TUN 接管全局路由后系统代理冗余且有环路风险。
 pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
     let previous_tun = {
@@ -156,9 +139,6 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
     if enable {
         // 先关系统代理（不发事件，最终状态在重启内核后统一刷新）
         state.sysproxy.disable();
-    } else {
-        // 摘掉 setuid 位，恢复普通权限
-        clear_root_binary(state);
     }
     // 开启 TUN 时即使核心原本停止，也必须启动核心，否则 UI 会显示 TUN 已开，
     // 但实际没有 utun、DNS 或日志；核心已运行时则重启以应用新配置。
@@ -179,9 +159,6 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
                 store.data_mut().engine.tun_enable = previous_tun;
                 store.save().err().map(|e| e.to_string())
             };
-            if !previous_tun {
-                clear_root_binary(state);
-            }
             let recovery_error = (was_running || previous_proxy.enabled)
                 .then(|| crate::start_core(state).err())
                 .flatten();
