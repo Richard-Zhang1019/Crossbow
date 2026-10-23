@@ -21,6 +21,7 @@ export default function HomePage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [core, setCore] = useState<CoreStatus>({ state: "Stopped" });
   const [proxy, setProxy] = useState<SysProxyStatus>({ enabled: false, port: 0 });
+  const [tun, setTun] = useState({ enabled: false, ready: false });
   const [mode, setMode] = useState<CoreMode>("rule");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +47,7 @@ export default function HomePage() {
     setActiveId(await ipc.activeProfileId().catch(() => null));
     setCore(await ipc.coreStatus().catch(() => ({ state: "Stopped" as const })));
     setProxy(await ipc.sysproxyStatus().catch(() => ({ enabled: false, port: 0 })));
+    setTun(await ipc.tunStatus().catch(() => ({ enabled: false, ready: false })));
     setMode(await ipc.coreMode().catch(() => "rule" as const));
     setOutbound(await ipc.currentOutbound().catch(() => null));
   }, []);
@@ -55,7 +57,10 @@ export default function HomePage() {
     let active = true;
     mounted.current = true;
     refresh();
-    const un1 = ipc.onCoreStatus(setCore);
+    const un1 = ipc.onCoreStatus((status) => {
+      setCore(status);
+      if (active) ipc.tunStatus().then(setTun).catch(() => {});
+    });
     const un2 = ipc.onSysproxyStatus(setProxy);
     const un3 = ipc.onCoreMode(setMode);
     const un4 = ipc.onTraffic(({ up, down }) => {
@@ -111,6 +116,14 @@ export default function HomePage() {
   const active = profiles.find((p) => p.id === activeId);
   const latest = rates[rates.length - 1];
   const running = core.state === "Running" || core.state === "Starting";
+  const routingEnabled = proxy.enabled || tun.enabled;
+  const statusTitle = tun.enabled
+    ? running
+      ? t("home.tunOn")
+      : t("home.tunCoreStopped")
+    : proxy.enabled
+      ? t("home.sysproxyOn")
+      : t("home.sysproxyOff");
 
   return (
     <div className="mx-auto max-w-4xl space-y-3.5">
@@ -144,16 +157,16 @@ export default function HomePage() {
       <section className="cb-card flex h-[88px] items-center gap-4 px-5 py-3">
         <span
           className={`cb-dot ${
-            core.state === "Crashed" || (proxy.enabled && !running)
+            core.state === "Crashed" || (routingEnabled && !running)
               ? "bad"
-              : proxy.enabled && running
+              : routingEnabled && running
                 ? "ok"
                 : "idle"
           }`}
         />
         <div className="min-w-0 flex-1">
           <div className="text-[14px] font-semibold">
-            {proxy.enabled ? t("home.sysproxyOn") : t("home.sysproxyOff")}
+            {statusTitle}
           </div>
           <div className="mt-0.5 truncate text-[11.5px]" style={{ color: "var(--cb-text-dim)" }} title={`${coreText(t, core)} · ${t("home.activeProfile")} ${active ? active.name : t("home.none")}`}>
             {coreText(t, core)} · {t("home.activeProfile")}{" "}
@@ -174,7 +187,7 @@ export default function HomePage() {
         <button
           className={`cb-toggle ${proxy.enabled ? "on" : ""}`}
           onClick={toggleProxy}
-          disabled={busy || !activeId}
+          disabled={busy || !activeId || tun.enabled}
           title={activeId ? undefined : t("home.noProfiles")}
         />
         <div className="h-10 w-px" style={{ background: "var(--cb-line)" }} />

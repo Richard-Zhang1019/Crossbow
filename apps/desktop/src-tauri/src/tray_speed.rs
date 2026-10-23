@@ -819,10 +819,19 @@ fn update_state_labels(menu: &NSMenu, handle: &AppHandle) {
     let Some(state) = handle.try_state::<crate::AppState>() else {
         return;
     };
-    let lang = state.store.lock().unwrap_or_else(|e| e.into_inner()).data().ui.lang.clone();
+    let (lang, tun_enabled) = {
+        let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+        (store.data().ui.lang.clone(), store.data().engine.tun_enable)
+    };
     let sp = state.sysproxy.status();
     let mode = state.mode.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    let proxy_title = if sp.enabled {
+    let proxy_title = if tun_enabled {
+        if state.core().status() == crate::CoreStatus::Running {
+            crate::tr(&lang, "TUN 模式：运行中", "TUN mode: Running")
+        } else {
+            crate::tr(&lang, "TUN 已开启 · 内核未运行", "TUN enabled · core stopped")
+        }
+    } else if sp.enabled {
         format!(
             "{} :{}",
             crate::tr(&lang, "系统代理：已开启", "System Proxy: On"),
@@ -853,7 +862,10 @@ fn update_state_labels(menu: &NSMenu, handle: &AppHandle) {
             continue;
         };
         let title = item.title().to_string();
-        let new_title = if title.starts_with("系统代理") || title.starts_with("System Proxy") {
+        let proxy_status_item = title.starts_with("系统代理")
+            || title.starts_with("System Proxy")
+            || title.starts_with("TUN ");
+        let new_title = if proxy_status_item {
             Some(proxy_title.clone())
         } else if title.starts_with("模式") || title.starts_with("Mode") {
             Some(mode_title.clone())
@@ -862,6 +874,7 @@ fn update_state_labels(menu: &NSMenu, handle: &AppHandle) {
         };
         if let Some(new_title) = new_title {
             item.setTitle(&NSString::from_str(&new_title));
+            item.setEnabled(!tun_enabled);
         }
     }
 }

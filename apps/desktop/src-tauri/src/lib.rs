@@ -1924,7 +1924,14 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
     let lang = state.store.lock().unwrap().data().ui.lang.clone();
 
     let sp = state.sysproxy.status();
-    let proxy_label = if sp.enabled {
+    let tun_enabled = state.store.lock().unwrap().data().engine.tun_enable;
+    let proxy_label = if tun_enabled {
+        if state.core().status() == CoreStatus::Running {
+            tr(&lang, "TUN 模式：运行中", "TUN mode: Running")
+        } else {
+            tr(&lang, "TUN 已开启 · 内核未运行", "TUN enabled · core stopped")
+        }
+    } else if sp.enabled {
         format!(
             "{} :{}",
             tr(&lang, "系统代理：已开启", "System Proxy: On"),
@@ -1933,7 +1940,13 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
     } else {
         tr(&lang, "系统代理：已关闭", "System Proxy: Off")
     };
-    let proxy = MenuItem::with_id(app, "toggle-proxy", &proxy_label, true, None::<&str>)?;
+    let proxy = MenuItem::with_id(
+        app,
+        "toggle-proxy",
+        &proxy_label,
+        !tun_enabled,
+        None::<&str>,
+    )?;
 
     let mode = state.mode.lock().unwrap().clone();
     let mk_check = |id: &str, label: &str, checked: bool| {
