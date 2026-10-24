@@ -192,7 +192,9 @@ fn is_default_route(destination: &str) -> bool {
 fn ensure_route_available() -> Result<BTreeSet<(String, String)>, String> {
     let routes = ipv4_routes()?;
     for (destination, interface) in &routes {
-        if is_default_route(destination) {
+        // 只有 utun 接口上的默认路由才是"其他隧道"——en0 等物理网卡的
+        // 默认网关是每台 Mac 的常态，不能当作冲突（否则开 TUN 必失败）。
+        if is_default_route(destination) && interface.starts_with("utun") {
             return Err(format!(
                 "已有其他隧道占用默认路由（{interface}）。请关闭其他代理或 VPN 的 TUN 模式后重试"
             ));
@@ -219,6 +221,20 @@ mod route_tests {
     fn ignores_private_lan_routes() {
         assert!(!is_default_route("192.168.0/16"));
         assert!(!is_default_route("192.168.31"));
+    }
+
+    /// 回归（实测踩坑）：en0 上的正常网关默认路由不是"其他隧道"，
+    /// 物理接口的默认路由不应触发冲突报错。
+    #[test]
+    fn physical_default_route_is_not_a_conflict() {
+        // 模拟 ensure_route_available 的判定逻辑
+        let conflict = |destination: &str, interface: &str| {
+            is_default_route(destination) && interface.starts_with("utun")
+        };
+        assert!(!conflict("default", "en0"));
+        assert!(!conflict("128.0/1", "en0"));
+        assert!(conflict("default", "utun7"));
+        assert!(conflict("128.0/1", "utun1024"));
     }
 }
 
