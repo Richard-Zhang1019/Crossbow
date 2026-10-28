@@ -1,0 +1,101 @@
+{
+  "date": "2026-10-28",
+  "version": "v01",
+  "status": "not-selected",
+  "issue": 174,
+  "baseline": "c4ab8cd",
+  "input": {
+    "summary": "Crossbow 官网重新设计；v03 白色单屏主页、中央设备/分流/网络介绍、顶部进入独立页面；禁止截图式图片",
+    "reference": "codex-clipboard-7b155cff-6f2c-40b4-9d3d-c6d3b3d22137.png"
+  },
+  "files": [
+    {
+      "path": ".taste-skill/app/direction.json",
+      "sha256": "70a558fa0f9d0952457c83a813d0621dadb1cb14217d9d5c8853673051b4f8a6"
+    },
+    {
+      "path": ".taste-skill/direction.json",
+      "sha256": "caccb438f719f280da8a97836e0caeaf04bd7600b6bd5b17a554d36c890ea53a"
+    },
+    {
+      "path": "404.html",
+      "sha256": "c50810e55fb3b7937472c87a3082125bee5b14997ab56f3eaeb8dc3b4cb36271"
+    },
+    {
+      "path": "COPY.md",
+      "sha256": "8064badf97debc1517a3940d58cd2d6914dbad900d7c318ad13351331eb867d2"
+    },
+    {
+      "path": "SPEC.md",
+      "sha256": "4513116cc06d1a0df882ab026f90d9f02af6680475650fceab9e657ea842f3ae"
+    },
+    {
+      "path": "assets/OFL-Manrope.txt",
+      "sha256": "58172e0c0fac2cda8a37b348164bb55e44b0e69051e557e92b1d3f6910141f7b"
+    },
+    {
+      "path": "assets/config.jpg",
+      "sha256": "a7abc228b727763528a98ab9a5cc49ddc03cccc74e061a6968491c8186819496"
+    },
+    {
+      "path": "assets/connections.jpg",
+      "sha256": "acd3121a1ce3585d98012b039ae94c4bb76f9affb2818127e079eb159d091428"
+    },
+    {
+      "path": "assets/crossbow-mark.png",
+      "sha256": "33bb0099e8f136bf43fed1e77725cd238942d6baca62dec92f722f7e777a5bcf"
+    },
+    {
+      "path": "assets/diagnostic.jpg",
+      "sha256": "dcca71323d6bdc0908c63148eb9a20267726544ccf8f64d7edf49b04be8921f1"
+    },
+    {
+      "path": "assets/favicon.png",
+      "sha256": "f9587722ccdbf38504b4af89bd98f90f56bc29745ad63134139cb4534b6971ce"
+    },
+    {
+      "path": "assets/manrope-regular.ttf",
+      "sha256": "ed335894f8d954263675f7e457bf657374d8b7be629be4dc43aef97c309ad3ae"
+    },
+    {
+      "path": "assets/manrope-semibold.ttf",
+      "sha256": "68ed4be49ec7d32f07b42f9232dc01ca1df7a77be1d9b0731aac74db58235f34"
+    },
+    {
+      "path": "assets/nodes.jpg",
+      "sha256": "e60aa3d0a66fb955ed2fedc109e08360ebc2e542a84101772eab713ce41a2706"
+    },
+    {
+      "path": "index.html",
+      "sha256": "3294451a38b04546c9f41e65759e5f89ef686943f0d497aea262f3c376d24f6f"
+    },
+    {
+      "path": "previews/desktop-hero.jpg",
+      "sha256": "d1e9393fdbb2bc93b3869a84130bac0c0854110254e3c34feea45c25df779d48"
+    },
+    {
+      "path": "privacy.html",
+      "sha256": "5799ead4d57b4732886e5cc315ef0df11f14af3405cd19273a3365b8cd9ade05"
+    },
+    {
+      "path": "scenes.css",
+      "sha256": "51c5d8a319d87939656b20a6f4ec7b040d8d832759a7230151c0f7235ba0b2db"
+    },
+    {
+      "path": "scenes.html",
+      "sha256": "f08f20d895d75e8d12332a8d6837ffb3ecb3890c372029ec74eb776ae353a36d"
+    },
+    {
+      "path": "scenes.js",
+      "sha256": "324eb3c2fcec4b625732e30a6cbe1cf2df5213d52ebcbc466c360481b1607bf2"
+    },
+    {
+      "path": "site.js",
+      "sha256": "9fb399d3777e2b12eeea5305866a60a128d67982664086742f6353fa0ebbf1f7"
+    },
+    {
+      "path": "style.css",
+      "sha256": "b2d72d64cdf74a227b3008305054e7ab0599a0f05d1985db9c83c20879ecf8ac"
+    }
+  ]
+}

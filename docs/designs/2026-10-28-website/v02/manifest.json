@@ -1,0 +1,61 @@
+{
+  "date": "2026-10-28",
+  "version": "v02",
+  "status": "superseded",
+  "issue": 174,
+  "baseline": "c4ab8cd",
+  "input": {
+    "summary": "Crossbow 官网重新设计；v03 白色单屏主页、中央设备/分流/网络介绍、顶部进入独立页面；禁止截图式图片",
+    "reference": "codex-clipboard-7b155cff-6f2c-40b4-9d3d-c6d3b3d22137.png"
+  },
+  "files": [
+    {
+      "path": ".taste-skill/direction.json",
+      "sha256": "aab918d978d2cd76667a818f42298a32f7779f750824b9e9abe3f0143d2bcacb"
+    },
+    {
+      "path": "SPEC.md",
+      "sha256": "81924d1c740b8c8654fd3a2ac715068f4be2502090a68a9fc3889c30216d3ec1"
+    },
+    {
+      "path": "assets/OFL-Manrope.txt",
+      "sha256": "58172e0c0fac2cda8a37b348164bb55e44b0e69051e557e92b1d3f6910141f7b"
+    },
+    {
+      "path": "assets/crossbow-mark.png",
+      "sha256": "33bb0099e8f136bf43fed1e77725cd238942d6baca62dec92f722f7e777a5bcf"
+    },
+    {
+      "path": "assets/favicon.png",
+      "sha256": "f9587722ccdbf38504b4af89bd98f90f56bc29745ad63134139cb4534b6971ce"
+    },
+    {
+      "path": "assets/manrope-regular.ttf",
+      "sha256": "ed335894f8d954263675f7e457bf657374d8b7be629be4dc43aef97c309ad3ae"
+    },
+    {
+      "path": "assets/manrope-semibold.ttf",
+      "sha256": "68ed4be49ec7d32f07b42f9232dc01ca1df7a77be1d9b0731aac74db58235f34"
+    },
+    {
+      "path": "index.html",
+      "sha256": "619f2de8969b2956d2e83d7a5297c314970a45bf27ca8849daa2b8aaa05e537c"
+    },
+    {
+      "path": "previews/desktop-hero.jpg",
+      "sha256": "5df469dc09f3b4b269de084006ebfa8107ae18c31b0523b439f041487a2748c5"
+    },
+    {
+      "path": "privacy.html",
+      "sha256": "a6d0ed444682b59fae233e2e5939c758367706442722fbf259fe6b049e3c43cf"
+    },
+    {
+      "path": "site.js",
+      "sha256": "10569bcc030b99fe4382cf83a152f7b241b103255ad1b859e3dfee03323717fe"
+    },
+    {
+      "path": "style.css",
+      "sha256": "ee8777909874138eaa644dfa2f90980d5d3f844a298ab5ac7c7b9b913fc0ec85"
+    }
+  ]
+}

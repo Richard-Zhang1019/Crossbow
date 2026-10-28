@@ -18,3 +18,6 @@
 | 2026-10-27 | 概览连接路径数据传输动效 | v01 | 提案 | [原型](2026-10-27-connection-flow/v01/index.html) · [规格](2026-10-27-connection-flow/v01/SPEC.md) | #160 |
 | 2026-10-28 | 概览连接路径单条快速传输 | v02 | 提案 | [原型](2026-10-27-connection-flow/v02/index.html) · [规格](2026-10-27-connection-flow/v02/SPEC.md) | #160 |
 | 2026-10-28 | 概览连接路径单条传输 / 间隔 2.56 秒 | v03 | 提案 | [原型](2026-10-27-connection-flow/v03/index.html) · [规格](2026-10-27-connection-flow/v03/SPEC.md) | #160 |
+| 2026-10-28 | 官网初稿 / 界面片段 | v01 | 未采用 | [原型](2026-10-28-website/v01/index.html) · [规格](2026-10-28-website/v01/SPEC.md) | #174 |
+| 2026-10-28 | 官网文字主导 / 绿色长页面 | v02 | 已替代 | [原型](2026-10-28-website/v02/index.html) · [规格](2026-10-28-website/v02/SPEC.md) | #174 |
+| 2026-10-28 | 官网白色一屏 / 独立详情页 | v03 | 提案 | [原型](2026-10-28-website/v03/index.html) · [规格](2026-10-28-website/v03/SPEC.md) | #174 |

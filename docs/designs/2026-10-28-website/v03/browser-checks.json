@@ -1,0 +1,506 @@
+[
+  {
+    "file": "index.html",
+    "active": [
+      "首页"
+    ],
+    "brokenImages": [],
+    "heads": [
+      {
+        "lines": 1,
+        "text": "让连接，清晰可见。"
+      }
+    ],
+    "height": 900,
+    "scrollHeight": 900,
+    "scrollWidth": 1440,
+    "width": 1440
+  },
+  {
+    "file": "features.html",
+    "active": [
+      "功能"
+    ],
+    "brokenImages": [],
+    "heads": [
+      {
+        "lines": 0.9998914930555556,
+        "text": "从连接，到掌控。"
+      },
+      {
+        "lines": 1,
+        "text": "选节点，不靠猜。"
+      },
+      {
+        "lines": 1,
+        "text": "搜索、筛选与排序"
+      },
+      {
+        "lines": 1,
+        "text": "测速状态原位展示"
+      },
+      {
+        "lines": 1,
+        "text": "自动选择，也能手动切换"
+      },
+      {
+        "lines": 1,
+        "text": "怎么接管，由你决定。"
+      },
+      {
+        "lines": 1,
+        "text": "系统代理"
+      },
+      {
+        "lines": 1,
+        "text": "TUN 模式"
+      },
+      {
+        "lines": 1,
+        "text": "菜单栏与托盘"
+      },
+      {
+        "lines": 1,
+        "text": "配置，按自己的习惯。"
+      },
+      {
+        "lines": 1,
+        "text": "订阅与本地文件"
+      },
+      {
+        "lines": 1,
+        "text": "Merge 与 Script 覆写"
+      },
+      {
+        "lines": 1,
+        "text": "双内核选择"
+      },
+      {
+        "lines": 1,
+        "text": "连接有迹，问题可查。"
+      },
+      {
+        "lines": 1,
+        "text": "连接与流量"
+      },
+      {
+        "lines": 1,
+        "text": "内核日志与网络诊断"
+      },
+      {
+        "lines": 1,
+        "text": "站点连通性测试"
+      }
+    ],
+    "height": 900,
+    "scrollHeight": 2231,
+    "scrollWidth": 1440,
+    "width": 1440
+  },
+  {
+    "file": "guide.html",
+    "active": [
+      "使用指南"
+    ],
+    "brokenImages": [],
+    "heads": [
+      {
+        "lines": 0.9998914930555556,
+        "text": "从一份配置开始。"
+      },
+      {
+        "lines": 1,
+        "text": "安装客户端"
+      },
+      {
+        "lines": 1,
+        "text": "导入你的配置"
+      },
+      {
+        "lines": 1,
+        "text": "选择节点，开始连接"
+      },
+      {
+        "lines": 1,
+        "text": "有问题，先看链路。"
+      },
+      {
+        "lines": 1,
+        "text": "常见问题"
+      }
+    ],
+    "height": 900,
+    "scrollHeight": 2216,
+    "scrollWidth": 1440,
+    "width": 1440
+  },
+  {
+    "file": "download.html",
+    "active": [
+      "下载"
+    ],
+    "brokenImages": [],
+    "heads": [
+      {
+        "lines": 0.9998914930555556,
+        "text": "选择你的桌面版。"
+      },
+      {
+        "lines": 1,
+        "text": "macOS"
+      },
+      {
+        "lines": 1,
+        "text": "Windows"
+      },
+      {
+        "lines": 1,
+        "text": "iOS"
+      },
+      {
+        "lines": 0.999813988095238,
+        "text": "第一次使用？"
+      }
+    ],
+    "height": 900,
+    "scrollHeight": 1157,
+    "scrollWidth": 1440,
+    "width": 1440
+  },
+  {
+    "file": "index.html",
+    "active": [
+      "首页"
+    ],
+    "brokenImages": [],
+    "heads": [
+      {
+        "lines": 0.9998914930555556,
+        "text": "让连接，清晰可见。"
+      }
+    ],
+    "height": 960,
+    "scrollHeight": 960,
+    "scrollWidth": 768,
+    "width": 768
+  },
+  {
+    "file": "features.html",
+    "active": [
+      "功能"
+    ],
+    "brokenImages": [],
+    "heads": [
+      {
+        "lines": 0.9998914930555556,
+        "text": "从连接，到掌控。"
+      },
+      {
+        "lines": 1,
+        "text": "选节点，不靠猜。"
+      },
+      {
+        "lines": 1,
+        "text": "搜索、筛选与排序"
+      },
+      {
+        "lines": 1,
+        "text": "测速状态原位展示"
+      },
+      {
+        "lines": 1,
+        "text": "自动选择，也能手动切换"
+      },
+      {
+        "lines": 2,
+        "text": "怎么接管，由你决定。"
+      },
+      {
+        "lines": 1,
+        "text": "系统代理"
+      },
+      {
+        "lines": 1,
+        "text": "TUN 模式"
+      },
+      {
+        "lines": 1,
+        "text": "菜单栏与托盘"
+      },
+      {
+        "lines": 2,
+        "text": "配置，按自己的习惯。"
+      },
+      {
+        "lines": 1,
+        "text": "订阅与本地文件"
+      },
+      {
+        "lines": 1,
+        "text": "Merge 与 Script 覆写"
+      },
+      {
+        "lines": 1,
+        "text": "双内核选择"
+      },
+      {
+        "lines": 2,
+        "text": "连接有迹，问题可查。"
+      },
+      {
+        "lines": 1,
+        "text": "连接与流量"
+      },
+      {
+        "lines": 1,
+        "text": "内核日志与网络诊断"
+      },
+      {
+        "lines": 1,
+        "text": "站点连通性测试"
+      }
+    ],
+    "height": 960,
+    "scrollHeight": 2469,
+    "scrollWidth": 768,
+    "width": 768
+  },
+  {
+    "file": "guide.html",
+    "active": [
+      "使用指南"
+    ],
+    "brokenImages": [],
+    "heads": [
+      {
+        "lines": 0.9998914930555556,
+        "text": "从一份配置开始。"
+      },
+      {
+        "lines": 1,
+        "text": "安装客户端"
+      },
+      {
+        "lines": 1,
+        "text": "导入你的配置"
+      },
+      {
+        "lines": 1,
+        "text": "选择节点，开始连接"
+      },
+      {
+        "lines": 1,
+        "text": "有问题，先看链路。"
+      },
+      {
+        "lines": 1,
+        "text": "常见问题"
+      }
+    ],
+    "height": 960,
+    "scrollHeight": 2375,
+    "scrollWidth": 768,
+    "width": 768
+  },
+  {
+    "file": "download.html",
+    "active": [
+      "下载"
+    ],
+    "brokenImages": [],
+    "heads": [
+      {
+        "lines": 0.9998914930555556,
+        "text": "选择你的桌面版。"
+      },
+      {
+        "lines": 1,
+        "text": "macOS"
+      },
+      {
+        "lines": 1,
+        "text": "Windows"
+      },
+      {
+        "lines": 1,
+        "text": "iOS"
+      },
+      {
+        "lines": 0.999813988095238,
+        "text": "第一次使用？"
+      }
+    ],
+    "height": 960,
+    "scrollHeight": 1157,
+    "scrollWidth": 768,
+    "width": 768
+  },
+  {
+    "file": "index.html",
+    "active": [
+      "首页"
+    ],
+    "brokenImages": [],
+    "heads": [
+      {
+        "lines": 0.9998914930555556,
+        "text": "让连接，清晰可见。"
+      }
+    ],
+    "height": 844,
+    "scrollHeight": 844,
+    "scrollWidth": 390,
+    "width": 390
+  },
+  {
+    "file": "features.html",
+    "active": [
+      "功能"
+    ],
+    "brokenImages": [],
+    "heads": [
+      {
+        "lines": 0.9998914930555556,
+        "text": "从连接，到掌控。"
+      },
+      {
+        "lines": 0.999813988095238,
+        "text": "选节点，不靠猜。"
+      },
+      {
+        "lines": 1,
+        "text": "搜索、筛选与排序"
+      },
+      {
+        "lines": 1,
+        "text": "测速状态原位展示"
+      },
+      {
+        "lines": 1,
+        "text": "自动选择，也能手动切换"
+      },
+      {
+        "lines": 0.999813988095238,
+        "text": "怎么接管，由你决定。"
+      },
+      {
+        "lines": 1,
+        "text": "系统代理"
+      },
+      {
+        "lines": 1,
+        "text": "TUN 模式"
+      },
+      {
+        "lines": 1,
+        "text": "菜单栏与托盘"
+      },
+      {
+        "lines": 0.999813988095238,
+        "text": "配置，按自己的习惯。"
+      },
+      {
+        "lines": 1,
+        "text": "订阅与本地文件"
+      },
+      {
+        "lines": 1,
+        "text": "Merge 与 Script 覆写"
+      },
+      {
+        "lines": 1,
+        "text": "双内核选择"
+      },
+      {
+        "lines": 0.999813988095238,
+        "text": "连接有迹，问题可查。"
+      },
+      {
+        "lines": 1,
+        "text": "连接与流量"
+      },
+      {
+        "lines": 1,
+        "text": "内核日志与网络诊断"
+      },
+      {
+        "lines": 1,
+        "text": "站点连通性测试"
+      }
+    ],
+    "height": 844,
+    "scrollHeight": 2406,
+    "scrollWidth": 390,
+    "width": 390
+  },
+  {
+    "file": "guide.html",
+    "active": [
+      "使用指南"
+    ],
+    "brokenImages": [],
+    "heads": [
+      {
+        "lines": 0.9998914930555556,
+        "text": "从一份配置开始。"
+      },
+      {
+        "lines": 0.999813988095238,
+        "text": "安装客户端"
+      },
+      {
+        "lines": 0.999813988095238,
+        "text": "导入你的配置"
+      },
+      {
+        "lines": 0.999813988095238,
+        "text": "选择节点，开始连接"
+      },
+      {
+        "lines": 0.999813988095238,
+        "text": "有问题，先看链路。"
+      },
+      {
+        "lines": 0.999813988095238,
+        "text": "常见问题"
+      }
+    ],
+    "height": 844,
+    "scrollHeight": 2283,
+    "scrollWidth": 390,
+    "width": 390
+  },
+  {
+    "file": "download.html",
+    "active": [
+      "下载"
+    ],
+    "brokenImages": [],
+    "heads": [
+      {
+        "lines": 0.9998914930555556,
+        "text": "选择你的桌面版。"
+      },
+      {
+        "lines": 0.999813988095238,
+        "text": "macOS"
+      },
+      {
+        "lines": 0.999813988095238,
+        "text": "Windows"
+      },
+      {
+        "lines": 0.999813988095238,
+        "text": "iOS"
+      },
+      {
+        "lines": 0.999813988095238,
+        "text": "第一次使用？"
+      }
+    ],
+    "height": 844,
+    "scrollHeight": 1048,
+    "scrollWidth": 390,
+    "width": 390
+  }
+]

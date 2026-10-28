@@ -1,0 +1,145 @@
+{
+  "date": "2026-10-28",
+  "version": "v03",
+  "status": "proposal",
+  "issue": 174,
+  "baseline": "c4ab8cd",
+  "input": {
+    "summary": "Crossbow 官网重新设计；v03 白色单屏主页、中央设备/分流/网络介绍、顶部进入独立页面；禁止截图式图片",
+    "reference": "codex-clipboard-7b155cff-6f2c-40b4-9d3d-c6d3b3d22137.png"
+  },
+  "files": [
+    {
+      "path": "404.html",
+      "sha256": "6ced3ac7a47d511b2312965203e5b99d16dcbdf81fa5e4dd9ce7dd434db594d7"
+    },
+    {
+      "path": "REVIEW.md",
+      "sha256": "7d4b9dcc683c208d2321d146fa2678177680e60f19dff5e1bc68330acffac678"
+    },
+    {
+      "path": "SPEC.md",
+      "sha256": "2a175357833e47ed4e51da87e880fddc1364cbb9e6ae1e8d2b5ad2d12278eff4"
+    },
+    {
+      "path": "assets/OFL-Manrope.txt",
+      "sha256": "58172e0c0fac2cda8a37b348164bb55e44b0e69051e557e92b1d3f6910141f7b"
+    },
+    {
+      "path": "assets/favicon.png",
+      "sha256": "f9587722ccdbf38504b4af89bd98f90f56bc29745ad63134139cb4534b6971ce"
+    },
+    {
+      "path": "assets/logo.png",
+      "sha256": "ab873fe798730d5f51e833422a2475889f408b7f8706bf6fbe7113b1421a36d8"
+    },
+    {
+      "path": "assets/manrope-regular.ttf",
+      "sha256": "ed335894f8d954263675f7e457bf657374d8b7be629be4dc43aef97c309ad3ae"
+    },
+    {
+      "path": "assets/manrope-semibold.ttf",
+      "sha256": "68ed4be49ec7d32f07b42f9232dc01ca1df7a77be1d9b0731aac74db58235f34"
+    },
+    {
+      "path": "browser-checks.json",
+      "sha256": "6abd43af359bf81525bf6776584e24b2c07ed67966e556125bff9bc68f23a0d8"
+    },
+    {
+      "path": "download.html",
+      "sha256": "f7e2a81e777d38e2bbdba08fe14271ce023a0f99225a1a5449920f7f18073940"
+    },
+    {
+      "path": "features.html",
+      "sha256": "9064a4ddd0d8517449e62429323b543ae3b3632861c2c75f8bc4b90b07c3f521"
+    },
+    {
+      "path": "generate.py",
+      "sha256": "82093078e0e852958aedf203880863704fe5cbfff2203178a34d85441b9b326b"
+    },
+    {
+      "path": "guide.html",
+      "sha256": "3a41bbc3a2586b65c77749b04c9ed6cdfd1645c7961ebef420aaa58f448829d1"
+    },
+    {
+      "path": "index.html",
+      "sha256": "4546084c2fddcb10cfed55435cf4930eee39543b5283a2b0e4f3181993795dfb"
+    },
+    {
+      "path": "previews/download-1440.jpg",
+      "sha256": "224a3014c30c5b5f854228f80e9fa5d4e229dde8df6c5fd86faa3965381ab9a3"
+    },
+    {
+      "path": "previews/download-390.jpg",
+      "sha256": "91b178ab2f9477473729d18729b2dd7ab837ea3770cb3d4bb0e541c176a83f0f"
+    },
+    {
+      "path": "previews/download-768.jpg",
+      "sha256": "dd6ec42d187c32d82af501af3fb14bc67479fe27bc9360edc2b5c48d1ecc3ca8"
+    },
+    {
+      "path": "previews/features-1440.jpg",
+      "sha256": "e1bb9544a60afd1a58d879bd3b6a454bb83febd564f85cb4c1ac43a6b9d1b3be"
+    },
+    {
+      "path": "previews/features-390.jpg",
+      "sha256": "d8fc188a3c1e8256550ff635680219701b18e6301c031465318f7e14110efe1b"
+    },
+    {
+      "path": "previews/features-768.jpg",
+      "sha256": "fc501396fd6a7701069e71d98386c5580f9be2f97f91302521cd576c4fb974cc"
+    },
+    {
+      "path": "previews/features-desktop.jpg",
+      "sha256": "b4438dd95063645ee81c92fd61e091e61f89e33e3dbf2ef2d01f72207294baa5"
+    },
+    {
+      "path": "previews/guide-1440.jpg",
+      "sha256": "a3cb572cebf713d8e186b91c097f8a976d93ec037a445661e890f114f7914418"
+    },
+    {
+      "path": "previews/guide-390.jpg",
+      "sha256": "b3ba0829c71dd6d2f4d1b149b14db8eac673c1373984f919f3d6a63105e22500"
+    },
+    {
+      "path": "previews/guide-768.jpg",
+      "sha256": "bcac8872139768e97f8433ee7b02b26ee5594c86943d4204e64db8579b0ddcf4"
+    },
+    {
+      "path": "previews/guide-faq-mobile.jpg",
+      "sha256": "37414b27d667ac69f0071caecdd730a482e9b820ca7c5751c434e5ed3dba1146"
+    },
+    {
+      "path": "previews/home-desktop.jpg",
+      "sha256": "3df5b95cc5236136d7348d1275e75252fc20c626984e0da02283a02bc3faa5c6"
+    },
+    {
+      "path": "previews/index-1440.jpg",
+      "sha256": "0de50659322fb29248c8d8d7c5497abb2fda938604d1ae077b80b045b050dd98"
+    },
+    {
+      "path": "previews/index-390.jpg",
+      "sha256": "16daf0fb37a450d1e4b17bbc8e36d8a527e1f36207e4d9ca328f56adef533815"
+    },
+    {
+      "path": "previews/index-768.jpg",
+      "sha256": "a5352fdfd84c909af38347af079fd639cb1c88b22840761ae48bd713048d1304"
+    },
+    {
+      "path": "previews/mobile-menu.jpg",
+      "sha256": "8ced6e927ebf3bff8c5b09440583f9baf481808e08261786a37a2d35aac4f6e5"
+    },
+    {
+      "path": "privacy.html",
+      "sha256": "4a4993e893f3824992b34fd9266ca38176a24cab5dc9a5b14779f3b1114169b1"
+    },
+    {
+      "path": "site.js",
+      "sha256": "ad4b227e2af729a154fd2553fe154fe80da262463b8564abd750bf45d2da8f66"
+    },
+    {
+      "path": "style.css",
+      "sha256": "aa9e83ac027ffed57f4b3bc64b2ff9620ef60bd7e77e6c1505ce0b4900805c55"
+    }
+  ]
+}
