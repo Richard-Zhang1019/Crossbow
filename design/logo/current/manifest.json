@@ -51,6 +51,10 @@
       "sha256": "8082e6f36f3ada36502f4c2e0e57391fe72765336281c05d875905a7d7563cfe"
     },
     {
+      "path": "design/logo/current/dock-icon.svg",
+      "sha256": "7c73abbf9e4ccb45435c3c0b1bd0eeb48a77ee0c7420b1261286d179176e6bd2"
+    },
+    {
       "path": "design/logo/current/favicon/apple-touch-icon.png",
       "sha256": "d79c0d7dbdb3e1c14b4297b10429eb3ec95d6a23f6218e03b86e8d9b1e5230ee"
     },
@@ -189,6 +193,10 @@
     {
       "path": "apps/desktop/src-tauri/icons/32x32.png",
       "sha256": "99b27eb32058e0159f420ff28f202116da070f7e2f69c78febc285b706bea444"
+    },
+    {
+      "path": "apps/desktop/src-tauri/icons/dock-icon.icns",
+      "sha256": "4ecf2a202193b7ccd88c70790fd76c549e6a094f605f68252a0bb9f2cf5f240b"
     },
     {
       "path": "apps/desktop/src-tauri/icons/icon-source.png",

@@ -1,0 +1,56 @@
+{
+  "date": "2026-10-31",
+  "version": "v02",
+  "status": "implemented-native-verified-awaiting-installed-app-review",
+  "issue": 246,
+  "baseline": "3c52408",
+  "input": "用户反馈颜色修复后 Dock 图标比相邻 App 大，要求恢复协调尺寸，保留主色和清晰度。",
+  "color": "#3f52cf",
+  "dockScale": 0.82,
+  "dockTranslate": [
+    9,
+    9
+  ],
+  "files": [
+    {
+      "path": "SPEC.md",
+      "sha256": "6bccfd494479fd28b13369211198794bb377a5f2bb8af34bfce19f359e4c15d5",
+      "bytes": 2940
+    },
+    {
+      "path": "dock-smoke.swift",
+      "sha256": "5df79ce86ff863103aadd788bbd66a4cb94e6d1c613ac022b28579505a829a5b",
+      "bytes": 2279
+    },
+    {
+      "path": "native-comparison.swift",
+      "sha256": "a4173e0fcb89eeae81f825eb338f05d19b9e1b00458e57b4c2f0a4b6d09bd812",
+      "bytes": 2325
+    },
+    {
+      "path": "native-probe.swift",
+      "sha256": "f2eaae5bdc8606f47488403169904f927f5134e1597fdaee94e46b5341821968",
+      "bytes": 2186
+    },
+    {
+      "path": "previews/native-comparison.png",
+      "sha256": "8ffe7fe04bc52be5380ac106462325bae74cf3e3d2062aa3f0b722e7db931274",
+      "bytes": 86693
+    },
+    {
+      "path": "previews/runtime-check.txt",
+      "sha256": "912b0894c6de12f10ac62c26df80c44ddbae0a0bdf5dfc45adc57f26009bc3e1",
+      "bytes": 632
+    },
+    {
+      "path": "previews/smoke-window.jpg",
+      "sha256": "db496607ab0874fc1e988d8795e171dc825783020e0ca9df8266570aacee0db0",
+      "bytes": 42650
+    },
+    {
+      "path": "source.zip",
+      "sha256": "29f7188e32d0eaa8c4d4f19b8a7cd0e4bceeb44070cbe71d9c3e2a10234b96f9",
+      "bytes": 131084
+    }
+  ]
+}

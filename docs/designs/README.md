@@ -40,3 +40,5 @@
 
 | 2026-10-30 | 节点工具栏降噪 | v01 | 整体方向已确认 | [原型](2026-10-30-node-toolbar/v01/index.html) · [规格](2026-10-30-node-toolbar/v01/SPEC.md) | #207 |
 | 2026-10-30 | 节点工具栏与可用滑动开关 | v02 | 已实现 | [规格](2026-10-30-node-toolbar/v02/SPEC.md) · [实际浅色](2026-10-30-node-toolbar/v02/previews/light.png) · [实际深色](2026-10-30-node-toolbar/v02/previews/dark.png) | #207 |
+
+| 2026-10-31 | Dock 图标安全区：恢复与系统 App 一致的视觉尺寸 | v02 | 已实现，原生验证通过，待安装验收 | [规格](2026-10-31-dock-color/v02/SPEC.md) · [原生对比](2026-10-31-dock-color/v02/previews/native-comparison.png) · [源快照](2026-10-31-dock-color/v02/source.zip) | #246 |

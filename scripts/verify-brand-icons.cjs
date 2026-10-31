@@ -43,15 +43,35 @@ const root=path.resolve(__dirname,'..'),file=p=>path.join(root,p),read=p=>fs.rea
   const ico=read('apps/desktop/src-tauri/icons/icon.ico');assert.equal(ico.readUInt16LE(2),1);const n=ico.readUInt16LE(4);assert(n>=3);let sizes=[];
   for(let i=0;i<n;i++){const o=6+16*i;sizes.push(ico[o]||256);assert(ico.readUInt32LE(o+12)+ico.readUInt32LE(o+8)<=ico.length);}
   for(const s of [16,32,256])assert(sizes.includes(s),'Missing ICO size '+s);
-  const icns=read('apps/desktop/src-tauri/icons/icon.icns');assert.equal(icns.toString('ascii',0,4),'icns');assert.equal(icns.readUInt32BE(4),icns.length);
-  let frames=0;
-  for(let o=8;o<icns.length;){
-    const length=icns.readUInt32BE(o+4);assert(length>=8 && o+length<=icns.length,'Invalid ICNS chunk');
-    const data=icns.subarray(o+8,o+length);
-    if(isPng(data)){await checkPng(data,'ICNS '+icns.toString('ascii',o,o+4));frames++;}
-    o+=length;
+  for(const name of ['icon.icns','dock-icon.icns']){
+    const icns=read('apps/desktop/src-tauri/icons/'+name);assert.equal(icns.toString('ascii',0,4),'icns');assert.equal(icns.readUInt32BE(4),icns.length);
+    let frames=0;
+    for(let o=8;o<icns.length;){
+      const length=icns.readUInt32BE(o+4);assert(length>=8 && o+length<=icns.length,'Invalid ICNS chunk');
+      const data=icns.subarray(o+8,o+length);
+      if(isPng(data)){
+        const m=await checkPng(data,name+' '+icns.toString('ascii',o,o+4));frames++;
+        if(name==='dock-icon.icns'){
+          // Check the shipped representations, not just the SVG transform. Reject
+          // full-bleed or off-centre tiles and colour drift after native encoding.
+          const {data:pixels,info}=await sharp(data).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+          let left=info.width,top=info.height,right=-1,bottom=-1,ink=0;
+          for(let y=0;y<info.height;y++)for(let x=0;x<info.width;x++){
+            const p=(y*info.width+x)*4;
+            if(pixels[p+3]>=128){left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y);}
+            if(pixels[p]===63 && pixels[p+1]===82 && pixels[p+2]===207 && pixels[p+3]===255)ink++;
+          }
+          const tolerance=2/info.width;
+          assert(Math.abs((right-left+1)/info.width-.812)<tolerance,name+' tile width must retain Dock safe area');
+          assert(Math.abs((bottom-top+1)/info.height-.812)<tolerance,name+' tile height must retain Dock safe area');
+          assert(Math.abs(left-(info.width-1-right))<=1 && Math.abs(top-(info.height-1-bottom))<=1,name+' must be centred');
+          if(m.width>=64)assert(ink>0,name+' must retain approved opaque sRGB ink');
+        }
+      }
+      o+=length;
+    }
+    assert(frames>=8,'Missing profiled ICNS resolutions');
   }
-  assert(frames>=8,'Missing profiled ICNS resolutions');
   for(const p of ['apps/desktop/src-tauri/icons/icon.ico','design/logo/current/favicon/favicon.ico','apps/site/public/favicon.ico']){
     const b=read(p),count=b.readUInt16LE(4);
     for(let i=0;i<count;i++){

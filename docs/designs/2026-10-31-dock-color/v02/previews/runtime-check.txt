@@ -1,0 +1,6 @@
+NSImage (1024.0, 1024.0) 1
+NSCGImageSnapshotRep 2048 2048 unknown
+draw 32 bounds 3 3 28 28 opaque tile 26 of 32 [(key: "72,90,209", value: 6), (key: "73,91,209", value: 6), (key: "63,82,207", value: 4)]
+draw 64 bounds 6 6 57 57 opaque tile 52 of 64 [(key: "63,82,207", value: 74), (key: "62,81,207", value: 54), (key: "58,77,206", value: 16)]
+draw 96 bounds 9 9 86 86 opaque tile 78 of 96 [(key: "63,82,207", value: 386), (key: "62,81,207", value: 65), (key: "55,75,205", value: 35)]
+draw 128 bounds 12 12 115 115 opaque tile 104 of 128 [(key: "63,82,207", value: 933), (key: "60,79,206", value: 53), (key: "55,75,205", value: 53)]
