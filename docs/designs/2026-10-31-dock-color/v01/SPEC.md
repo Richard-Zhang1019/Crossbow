@@ -1,6 +1,6 @@
 # Dock Logo 色彩一致性修复 v01
 
-状态：代码已实现；原生自动验色通过，实际 Dock 视觉验收待用户确认。Issue #241，跟进 #228 / #229。基线 `37f303b`（v0.12.0）。
+状态：代码已实现；原生自动验色及独立测试程序的实际 Dock 视觉验收均通过。Issue #241，跟进 #228 / #229。基线 `37f303b`（v0.12.0）。
 
 ## 目标
 
@@ -12,7 +12,11 @@
 2. macOS ImageIO 和 NSImage 直接读取安装包 ICNS：64/96/128px 原生绘制的主色为 (63,82,207)。通过 NSWorkspace 获取同一 App 的 bundle icon，则得到偏浅且模糊的图案。
 3. 重新注册 App、重载 Dock，以及使用新建有效测试 bundle，均未消除差异。重新导出带统一 ICC 的资源后，静态图标服务路径仍复现。说明只刷新 Dock 或给 PNG 补标签不足以解决本机现象；这里不声称已定位 IconServices 内部具体的缓存/合成算法。
 4. 修复路径使用 NSImage(data:) 保留完整多尺寸 ICNS，在 Tauri RunEvent::Ready / AppKit 主线程设置 NSApplication.applicationIconImage。原生验色工具对同一 API 的返回图像执行 64/96/128px 主色断言，均通过。
-5. native-comparison.png 为原生 API 的离屏渲染对比，并非用户真实 Dock 的截图。smoke-window.jpg 为独立测试窗口实际截图。真实 Dock 的最终合成效果需要用户比较测试窗口与新增测试图标；正式 Crossbow 包尚未替换或重启。
+5. native-comparison.png 为原生 API 的离屏渲染对比，并非用户真实 Dock 的截图。smoke-window.jpg 为独立测试窗口实际截图。用户已比较测试窗口与新增测试图标，确认「颜色一致，也更清晰了」。此验收针对独立测试程序的实际 Dock 图标；正式 Crossbow 包尚未替换或重启。
+
+## 人工验收
+
+2026-10-31，用户确认独立原生窗口与其实际 Dock 测试图标「颜色一致，也更清晰了」。记录见 `previews/manual-verification.json`。该结果补足此前离屏验色无法覆盖的 Dock 最终合成环节；不等同于已安装正式 Crossbow 修复包。测试程序现已退出。
 
 ## 实现
 
