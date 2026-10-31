@@ -1,7 +1,7 @@
 {
   "date": "2026-10-31",
   "version": "v01",
-  "status": "implemented-native-assertions-passed-awaiting-dock-review",
+  "status": "implemented-native-and-user-dock-verification-passed",
   "issue": 241,
   "baseline": "37f303b",
   "input": "用户反馈 v0.12.0 界面与 Dock Logo 色差，要求修复，保留 B1 主色和形状。",
@@ -9,8 +9,8 @@
   "files": [
     {
       "path": "SPEC.md",
-      "sha256": "117753ba4dcd417d7dd64579e39669bd19f3804fccd831b08799cd642110a337",
-      "bytes": 4468
+      "sha256": "6a3713d5b635d61bf1f32bb23117f93480162e88029a79d8886937a57424bb4d",
+      "bytes": 4873
     },
     {
       "path": "dock-smoke.swift",
@@ -63,6 +63,11 @@
       "bytes": 862
     },
     {
+      "path": "previews/manual-verification.json",
+      "sha256": "3a779d112ea04aa95c335e0d2b8dfa056fb4b07b3f2fdf388847221c82daf555",
+      "bytes": 275
+    },
+    {
       "path": "previews/native-comparison.png",
       "sha256": "bf8312f470fde208cfd9435786c956f7e4361c772e36855c5152dec1d956633f",
       "bytes": 99101
@@ -79,8 +84,9 @@
     },
     {
       "path": "source.zip",
-      "sha256": "107b5908d61f2a88dc208d72613fafd9828daaf55fa0ce2cf2a3d4283ee839d9",
-      "bytes": 628432
+      "sha256": "ca3720b5235aecdca3cc448ef32ae678c1aaf5d41667625f091fd41f2350321f",
+      "bytes": 628595
     }
-  ]
+  ],
+  "manualVerification": "previews/manual-verification.json"
 }
