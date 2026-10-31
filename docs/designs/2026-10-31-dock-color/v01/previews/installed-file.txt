@@ -1,0 +1,15 @@
+NSImage (512.0, 512.0) 10
+NSBitmapImageRep 1024 1024 sRGB IEC61966-2.1
+NSBitmapImageRep 512 512 sRGB IEC61966-2.1
+NSBitmapImageRep 512 512 sRGB IEC61966-2.1
+NSBitmapImageRep 256 256 sRGB IEC61966-2.1
+NSBitmapImageRep 256 256 sRGB IEC61966-2.1
+NSBitmapImageRep 128 128 sRGB IEC61966-2.1
+NSBitmapImageRep 64 64 sRGB IEC61966-2.1
+NSBitmapImageRep 32 32 sRGB IEC61966-2.1
+NSBitmapImageRep 32 32 sRGB IEC61966-2.1
+NSBitmapImageRep 16 16 sRGB IEC61966-2.1
+draw 32 [(key: "55,75,205", value: 11), (key: "59,78,206", value: 10), (key: "57,77,206", value: 8)]
+draw 64 [(key: "63,82,207", value: 214), (key: "55,75,205", value: 42), (key: "62,81,207", value: 22)]
+draw 96 [(key: "63,82,207", value: 670), (key: "58,77,206", value: 46), (key: "62,81,207", value: 32)]
+draw 128 [(key: "63,82,207", value: 1490), (key: "62,81,207", value: 90), (key: "55,75,205", value: 69)]

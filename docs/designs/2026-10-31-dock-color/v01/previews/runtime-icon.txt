@@ -1,0 +1,6 @@
+NSImage (1024.0, 1024.0) 1
+NSCGImageSnapshotRep 2048 2048 unknown
+draw 32 [(key: "55,75,205", value: 12), (key: "57,77,206", value: 8), (key: "59,78,206", value: 8)]
+draw 64 [(key: "63,82,207", value: 210), (key: "55,75,205", value: 40), (key: "60,79,206", value: 18)]
+draw 96 [(key: "63,82,207", value: 704), (key: "59,78,206", value: 46), (key: "62,81,207", value: 36)]
+draw 128 [(key: "63,82,207", value: 1485), (key: "62,81,207", value: 87), (key: "55,75,205", value: 66)]
