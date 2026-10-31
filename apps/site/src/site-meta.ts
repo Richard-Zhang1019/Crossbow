@@ -1,7 +1,7 @@
 export const REPO = "https://github.com/Richard-Zhang1019/Crossbow";
 export const RELEASES = `${REPO}/releases`;
 export const LATEST = `${REPO}/releases/latest`;
-export const VERSION = "v0.11.5";
+export const VERSION = "v0.12.0";
 export const RELEASE_DATE = "2026-10-30";
 export const DMG_URL = `${REPO}/releases/download/${VERSION}/Crossbow_${VERSION.slice(1)}_aarch64.dmg`;
 export const WINDOWS_URL = `${REPO}/releases/download/${VERSION}/Crossbow_${VERSION.slice(1)}_x64-setup.exe`;
