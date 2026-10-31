@@ -38,6 +38,16 @@ async function png(svg,size,to,opaque=false){let im=sharp(Buffer.from(svg)).resi
     put('apps/desktop/src-tauri/icons/icon.icns',icns);
     put('apps/desktop/src-tauri/icons/icon.ico',ico);
     put('design/logo/current/favicon/favicon.ico',ico);
+    // Direct NSApplication icons bypass IconServices' tile inset. Give only the
+    // running macOS Dock icon its own safe area; preserve all other brand sizes.
+    // 98% source tile × 82% scale = 80.36% visible tile, centred on the canvas.
+    const dockSvg=tile().replace(/(<svg[^>]*>)([\s\S]*)(<\/svg>)/,'$1<g transform="translate(9 9) scale(.82)">$2</g>$3');
+    put('design/logo/current/dock-icon.svg',dockSvg);
+    const dockPng=path.join(temp,'dock-source.png');
+    fs.writeFileSync(dockPng,await sharp(Buffer.from(dockSvg)).resize(1024,1024).withIccProfile('srgb').png().toBuffer());
+    const dockOutput=path.join(temp,'dock');
+    cp.execFileSync(cli,['icon',dockPng,'--output',dockOutput],{stdio:'pipe',shell:process.platform==='win32'});
+    put('apps/desktop/src-tauri/icons/dock-icon.icns',await profileIcns(fs.readFileSync(path.join(dockOutput,'icon.icns')),profilePng));
   }finally{fs.rmSync(temp,{recursive:true,force:true});}
   for(const [size,name] of [[32,'32x32.png'],[128,'128x128.png'],[256,'128x128@2x.png'],[1024,'icon-source.png']])copy(`design/logo/current/app/icon-${size}.png`,`apps/desktop/src-tauri/icons/${name}`);
   copy('design/logo/current/tray/black-44.png','apps/desktop/src-tauri/icons/tray-icon.png');
