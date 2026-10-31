@@ -7,34 +7,36 @@
     "dark": "#3f52cf",
     "tile": "#f7f8fb"
   },
+  "colorSpace": "sRGB",
+  "embeddedIcc": true,
   "files": [
     {
       "path": "design/logo/current/app/icon-1024.png",
-      "sha256": "b5e1d020039cfb1cf49d3f9c74eddb198bd15b11ba1cafa315ee73b695f21916"
+      "sha256": "4c1b8ec566d1b9e1b6a91c045725309f075d88a5ecf0effc19e4d8376559c473"
     },
     {
       "path": "design/logo/current/app/icon-128.png",
-      "sha256": "0dc8e23ca23cc4f2049f4461570fd7997107f3f46f728c13eb38e4bcc45675ec"
+      "sha256": "eb45fe43e15c8e2befb1a6b0cd520fdd12676494e842e3a56b06efd431ed3fae"
     },
     {
       "path": "design/logo/current/app/icon-16.png",
-      "sha256": "226c8afad30c9d1b4a4a47728a2f6dd4ca236ee3e2063753694fb6575c459fd3"
+      "sha256": "dab0fe1dc197055934cd983acd127703520991f654910f64a04d0bd6c0568cc3"
     },
     {
       "path": "design/logo/current/app/icon-256.png",
-      "sha256": "860c44faf1a5bdab48071ca6e3644bb824e473c2f0847e9e845e89ec5632b686"
+      "sha256": "0a97a557b9cf0cd34c3e6b8b1075e35357ae8e4e8cdd1bfd956e3f30faf7aed7"
     },
     {
       "path": "design/logo/current/app/icon-32.png",
-      "sha256": "9b9b4b77f5964b14baf8e464be7d0ab62995ebd29bbb008bcd2d67cb0313c04f"
+      "sha256": "99b27eb32058e0159f420ff28f202116da070f7e2f69c78febc285b706bea444"
     },
     {
       "path": "design/logo/current/app/icon-512.png",
-      "sha256": "126865e4ec59c4a96131bf5c16455d90272c085289b94242d8700870a12ebb46"
+      "sha256": "b588148d0fa93f01e024ef66f4490717d6ec6566d562d1f34f78a887c328c246"
     },
     {
       "path": "design/logo/current/app/icon-64.png",
-      "sha256": "6bd59784703bdd38443bcf6c2fe71aa15bf532c15d6af57eb15605ea2da9c7ba"
+      "sha256": "54d08073b1c59ed79690498efe7d58194d7b17cba0d23a6847faecbc8ce6a1b3"
     },
     {
       "path": "design/logo/current/app-icon-dark.svg",
@@ -50,31 +52,31 @@
     },
     {
       "path": "design/logo/current/favicon/apple-touch-icon.png",
-      "sha256": "e9ae5747af34bb938b3a63ab3a38e2cc6d53e97ca0ed3f6cc13df40f922a8246"
+      "sha256": "d79c0d7dbdb3e1c14b4297b10429eb3ec95d6a23f6218e03b86e8d9b1e5230ee"
     },
     {
       "path": "design/logo/current/favicon/favicon-16.png",
-      "sha256": "226c8afad30c9d1b4a4a47728a2f6dd4ca236ee3e2063753694fb6575c459fd3"
+      "sha256": "dab0fe1dc197055934cd983acd127703520991f654910f64a04d0bd6c0568cc3"
     },
     {
       "path": "design/logo/current/favicon/favicon-192.png",
-      "sha256": "c45045b2b757ceb6148b0fc340dadba4eed97562e3fd38f1df79b67585392c7c"
+      "sha256": "9db41db226e1c86dc7b158f30b73c061ab0526a5b24ad0a687adf8b56530d5d6"
     },
     {
       "path": "design/logo/current/favicon/favicon-256.png",
-      "sha256": "860c44faf1a5bdab48071ca6e3644bb824e473c2f0847e9e845e89ec5632b686"
+      "sha256": "0a97a557b9cf0cd34c3e6b8b1075e35357ae8e4e8cdd1bfd956e3f30faf7aed7"
     },
     {
       "path": "design/logo/current/favicon/favicon-32.png",
-      "sha256": "9b9b4b77f5964b14baf8e464be7d0ab62995ebd29bbb008bcd2d67cb0313c04f"
+      "sha256": "99b27eb32058e0159f420ff28f202116da070f7e2f69c78febc285b706bea444"
     },
     {
       "path": "design/logo/current/favicon/favicon-48.png",
-      "sha256": "f06dc3b40a040be3dc4f6c46f211b3d928d1f82a6110725be0ec5d70ced89040"
+      "sha256": "9ff68ec3579c695312afc893e52699ff146b05f527d9b38c6ecaee9cef14ddbc"
     },
     {
       "path": "design/logo/current/favicon/favicon.ico",
-      "sha256": "31689ea5aaa6ded8bf639291788a7e4867d41f4ae2a83bd1504d0abaf594c63e"
+      "sha256": "25a129db767dfa4975b0bda210cd70f37cd9a12bb06886150749a72778766789"
     },
     {
       "path": "design/logo/current/favicon/favicon.svg",
@@ -82,11 +84,11 @@
     },
     {
       "path": "design/logo/current/mark-512.png",
-      "sha256": "88e1cd2a2ccbea276093fc4fb9c51d2e2cf93681fc765aed4a636dd3ae584e37"
+      "sha256": "2568457e49638409bd57a4de2e5b94b48e0daa870b2d73c61aa54d111fa04c81"
     },
     {
       "path": "design/logo/current/mark-black-512.png",
-      "sha256": "c0ce3366de2d228d6fcf4b67f895cc5896de70308e2dd422645f45b3a990f0b6"
+      "sha256": "78876841c377d9f01c0b3bd23ff925d3e766dc187463f3a42adadcdd28dd7cd8"
     },
     {
       "path": "design/logo/current/mark-black.svg",
@@ -94,7 +96,7 @@
     },
     {
       "path": "design/logo/current/mark-dark-512.png",
-      "sha256": "88e1cd2a2ccbea276093fc4fb9c51d2e2cf93681fc765aed4a636dd3ae584e37"
+      "sha256": "2568457e49638409bd57a4de2e5b94b48e0daa870b2d73c61aa54d111fa04c81"
     },
     {
       "path": "design/logo/current/mark-dark.svg",
@@ -102,7 +104,7 @@
     },
     {
       "path": "design/logo/current/mark-white-512.png",
-      "sha256": "ac94328e3734992226616cf8c1ea1cb994523e892b7794c168b8ace5d56bfa2e"
+      "sha256": "61eab231bfe81b8c329cdecd5549765ffa074f896dae4fc62d04fd2ca6dab75f"
     },
     {
       "path": "design/logo/current/mark-white.svg",
@@ -114,115 +116,115 @@
     },
     {
       "path": "design/logo/current/tray/black-16.png",
-      "sha256": "e11962543798c96e017c3aabbdfb61d5bcd813d66a98956c62c7c51fdd0f561f"
+      "sha256": "c19e8f2841ad9449b184c0c6d3f86fc93f7b093f7f4ecadb9a7951233e3b5c1f"
     },
     {
       "path": "design/logo/current/tray/black-18.png",
-      "sha256": "4feb5d364288deded6cc341a4939a9fb430ff7b5eec17117d27c628716a42bc1"
+      "sha256": "ae28e134433b6a67359568d6489192b52040bfe4d127bfd1eb1db4b727cf9cf9"
     },
     {
       "path": "design/logo/current/tray/black-22.png",
-      "sha256": "d10467f812016ae83ab32845e2bc4743d9af89bf6a47ed705ee01dec48173ea3"
+      "sha256": "2429f2931c59fcfea63cec9cf96b2d6bb0739d5e2e695772c89143d402f4aa05"
     },
     {
       "path": "design/logo/current/tray/black-32.png",
-      "sha256": "d039893534117ed0762b5741f824d1e203e2c16b00223a6128db3131f5814818"
+      "sha256": "dcb61cf8af80da264befad9539865f26a4529d03f75ee2a7e435d7238cb10781"
     },
     {
       "path": "design/logo/current/tray/black-36.png",
-      "sha256": "32eb4e5351be0f346c35ecdc031e32f2ae906e31c4171f631e5b238d63092450"
+      "sha256": "17730e1acd3136686232be8716007729978d4d931f11458186c741173e4f4844"
     },
     {
       "path": "design/logo/current/tray/black-44.png",
-      "sha256": "f28df18ea97c31fcd3af9d9d9a5447f7c63e722cd1b85ecbdd3845c1f9bdf967"
+      "sha256": "6b6e44e51e2e77e73c45d425b9c4885c6e645e6b43050ed7588bbf84b6b348d6"
     },
     {
       "path": "design/logo/current/tray/black-512.png",
-      "sha256": "c0ce3366de2d228d6fcf4b67f895cc5896de70308e2dd422645f45b3a990f0b6"
+      "sha256": "78876841c377d9f01c0b3bd23ff925d3e766dc187463f3a42adadcdd28dd7cd8"
     },
     {
       "path": "design/logo/current/tray/black-66.png",
-      "sha256": "6f9bf14f024656fc50a7ebcbcd7e272655b1ef792bf62c7b9e028b917589b852"
+      "sha256": "a035c7084cb1c1c7f96579688c02bf02ced46eec19033efbbb2454da0a1a1fce"
     },
     {
       "path": "design/logo/current/tray/white-16.png",
-      "sha256": "1267b3da638ef84337c10ede1de03fe5734c14fada15771dbf066888d654145f"
+      "sha256": "dc7e2ff5b2fe7ab806eabe9f3f4fecd8b26c50fafc7301a97ed9dfafea8d2b07"
     },
     {
       "path": "design/logo/current/tray/white-18.png",
-      "sha256": "9161b6da4bc4ccd6b25d729fb08afa95f103774e884d71603fdd9d670e66ba6c"
+      "sha256": "d97bc4fc4a77a85f9b6c13e6111bf1e1b2e059e305a68ac3ec2a13e878150c82"
     },
     {
       "path": "design/logo/current/tray/white-22.png",
-      "sha256": "08cccb8b0be20a99ecae8a876faa42786e2edd1e384937760830fc21cdf07c51"
+      "sha256": "4c6bdbc03162cd53725fe5364f449684ed469fe2896ac578929cdfe9f580b143"
     },
     {
       "path": "design/logo/current/tray/white-32.png",
-      "sha256": "b7ac4e3f052625fdc31dc96ee7a542504097eca936544ffc6efd6dff24fb46f9"
+      "sha256": "a5492e9baed48d845b3f165cca3969f172c5bfb8d3e601d552c96bbe48126b38"
     },
     {
       "path": "design/logo/current/tray/white-36.png",
-      "sha256": "8fa5053af7da1ee07d366c1ef59d81c335b42aebd18003cb1e1b2c3a5941f533"
+      "sha256": "6024075ef6788ff5fe7c161fdff413a318d7b0e33ecc3dc25bde40a53578f7cb"
     },
     {
       "path": "design/logo/current/tray/white-44.png",
-      "sha256": "5b24c08c9b5f20414aa79a94351e942b3019bff679430bfd03a802f1f96542fb"
+      "sha256": "f836ee3e229bc4eede14213d40cc4bc3d46c51988cf0ace4753d649df6ace05e"
     },
     {
       "path": "design/logo/current/tray/white-512.png",
-      "sha256": "ac94328e3734992226616cf8c1ea1cb994523e892b7794c168b8ace5d56bfa2e"
+      "sha256": "61eab231bfe81b8c329cdecd5549765ffa074f896dae4fc62d04fd2ca6dab75f"
     },
     {
       "path": "design/logo/current/tray/white-66.png",
-      "sha256": "bf8522a2f05b961435949325f2add28dc11c640a182139822344e5d8fb7f18d7"
+      "sha256": "676de7034cc6d56edcee77e2d5ea174111aae54d09ab95b22c9d573241892e47"
     },
     {
       "path": "apps/desktop/src-tauri/icons/128x128.png",
-      "sha256": "0dc8e23ca23cc4f2049f4461570fd7997107f3f46f728c13eb38e4bcc45675ec"
+      "sha256": "eb45fe43e15c8e2befb1a6b0cd520fdd12676494e842e3a56b06efd431ed3fae"
     },
     {
       "path": "apps/desktop/src-tauri/icons/128x128@2x.png",
-      "sha256": "860c44faf1a5bdab48071ca6e3644bb824e473c2f0847e9e845e89ec5632b686"
+      "sha256": "0a97a557b9cf0cd34c3e6b8b1075e35357ae8e4e8cdd1bfd956e3f30faf7aed7"
     },
     {
       "path": "apps/desktop/src-tauri/icons/32x32.png",
-      "sha256": "9b9b4b77f5964b14baf8e464be7d0ab62995ebd29bbb008bcd2d67cb0313c04f"
+      "sha256": "99b27eb32058e0159f420ff28f202116da070f7e2f69c78febc285b706bea444"
     },
     {
       "path": "apps/desktop/src-tauri/icons/icon-source.png",
-      "sha256": "b5e1d020039cfb1cf49d3f9c74eddb198bd15b11ba1cafa315ee73b695f21916"
+      "sha256": "4c1b8ec566d1b9e1b6a91c045725309f075d88a5ecf0effc19e4d8376559c473"
     },
     {
       "path": "apps/desktop/src-tauri/icons/icon.icns",
-      "sha256": "28a37d646634aba276d86c814a5e2594655f0bd718a0ccc1385a2cf174238830"
+      "sha256": "d9077ed6793f69138d1430bf7c05ce9f475f5e3a3021a344a07b2e9e0e76d584"
     },
     {
       "path": "apps/desktop/src-tauri/icons/icon.ico",
-      "sha256": "31689ea5aaa6ded8bf639291788a7e4867d41f4ae2a83bd1504d0abaf594c63e"
+      "sha256": "25a129db767dfa4975b0bda210cd70f37cd9a12bb06886150749a72778766789"
     },
     {
       "path": "apps/desktop/src-tauri/icons/tray-icon.png",
-      "sha256": "f28df18ea97c31fcd3af9d9d9a5447f7c63e722cd1b85ecbdd3845c1f9bdf967"
+      "sha256": "6b6e44e51e2e77e73c45d425b9c4885c6e645e6b43050ed7588bbf84b6b348d6"
     },
     {
       "path": "apps/site/public/apple-touch-icon.png",
-      "sha256": "e9ae5747af34bb938b3a63ab3a38e2cc6d53e97ca0ed3f6cc13df40f922a8246"
+      "sha256": "d79c0d7dbdb3e1c14b4297b10429eb3ec95d6a23f6218e03b86e8d9b1e5230ee"
     },
     {
       "path": "apps/site/public/favicon-16.png",
-      "sha256": "226c8afad30c9d1b4a4a47728a2f6dd4ca236ee3e2063753694fb6575c459fd3"
+      "sha256": "dab0fe1dc197055934cd983acd127703520991f654910f64a04d0bd6c0568cc3"
     },
     {
       "path": "apps/site/public/favicon-192.png",
-      "sha256": "c45045b2b757ceb6148b0fc340dadba4eed97562e3fd38f1df79b67585392c7c"
+      "sha256": "9db41db226e1c86dc7b158f30b73c061ab0526a5b24ad0a687adf8b56530d5d6"
     },
     {
       "path": "apps/site/public/favicon-32.png",
-      "sha256": "9b9b4b77f5964b14baf8e464be7d0ab62995ebd29bbb008bcd2d67cb0313c04f"
+      "sha256": "99b27eb32058e0159f420ff28f202116da070f7e2f69c78febc285b706bea444"
     },
     {
       "path": "apps/site/public/favicon.ico",
-      "sha256": "31689ea5aaa6ded8bf639291788a7e4867d41f4ae2a83bd1504d0abaf594c63e"
+      "sha256": "25a129db767dfa4975b0bda210cd70f37cd9a12bb06886150749a72778766789"
     },
     {
       "path": "apps/site/public/favicon.svg",
@@ -230,7 +232,7 @@
     },
     {
       "path": "apps/ios/Crossbow/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
-      "sha256": "7c3078fb889aa75cc1739b77f62078cccba32ff3c96a98e73ae3ee57c1d7044c"
+      "sha256": "43ef768ae082d3ccd0ef683b8c8d1f3cfb6c8a1998385009d34fae9ac31f8cc2"
     },
     {
       "path": "apps/ios/Crossbow/Resources/Assets.xcassets/AppIcon.appiconset/Contents.json",
@@ -246,39 +248,39 @@
     },
     {
       "path": "apps/ios/Crossbow/Resources/Assets.xcassets/logo-glyph.imageset/logo-dark@1x.png",
-      "sha256": "fc133674bd5c27a6e2beab1da335bae17ac10b28af54514ab59695536abd4432"
+      "sha256": "590e7b7cd98494943b5f4dbee0e2d0d2fc000a93a5210b9b06b4f6d88f095a43"
     },
     {
       "path": "apps/ios/Crossbow/Resources/Assets.xcassets/logo-glyph.imageset/logo-dark@2x.png",
-      "sha256": "7fe2798591fcc731a7c4989f371c7421cc6634e886f0b4f65e97137c876b98ab"
+      "sha256": "33aa3ff21ee906b7ee4c7bf567f699c7aaa517ede4dba355c4391a0a2e5d5493"
     },
     {
       "path": "apps/ios/Crossbow/Resources/Assets.xcassets/logo-glyph.imageset/logo-dark@3x.png",
-      "sha256": "0f5c08c75e28b8e4d1e574b377257059adee39c9ac85245d1de44b9682984775"
+      "sha256": "4dc72cbc7421c4a08cb31cf715947cea666e24216e985d979f7077d95c54b791"
     },
     {
       "path": "apps/ios/Crossbow/Resources/Assets.xcassets/logo-glyph.imageset/logo-light@1x.png",
-      "sha256": "fc133674bd5c27a6e2beab1da335bae17ac10b28af54514ab59695536abd4432"
+      "sha256": "590e7b7cd98494943b5f4dbee0e2d0d2fc000a93a5210b9b06b4f6d88f095a43"
     },
     {
       "path": "apps/ios/Crossbow/Resources/Assets.xcassets/logo-glyph.imageset/logo-light@2x.png",
-      "sha256": "7fe2798591fcc731a7c4989f371c7421cc6634e886f0b4f65e97137c876b98ab"
+      "sha256": "33aa3ff21ee906b7ee4c7bf567f699c7aaa517ede4dba355c4391a0a2e5d5493"
     },
     {
       "path": "apps/ios/Crossbow/Resources/Assets.xcassets/logo-glyph.imageset/logo-light@3x.png",
-      "sha256": "0f5c08c75e28b8e4d1e574b377257059adee39c9ac85245d1de44b9682984775"
+      "sha256": "4dc72cbc7421c4a08cb31cf715947cea666e24216e985d979f7077d95c54b791"
     },
     {
       "path": "apps/desktop/src/assets/logo-glyph.png",
-      "sha256": "88e1cd2a2ccbea276093fc4fb9c51d2e2cf93681fc765aed4a636dd3ae584e37"
+      "sha256": "2568457e49638409bd57a4de2e5b94b48e0daa870b2d73c61aa54d111fa04c81"
     },
     {
       "path": "apps/site/src/assets/logo-glyph.png",
-      "sha256": "88e1cd2a2ccbea276093fc4fb9c51d2e2cf93681fc765aed4a636dd3ae584e37"
+      "sha256": "2568457e49638409bd57a4de2e5b94b48e0daa870b2d73c61aa54d111fa04c81"
     },
     {
       "path": "apps/site/src/assets/app-icon.png",
-      "sha256": "126865e4ec59c4a96131bf5c16455d90272c085289b94242d8700870a12ebb46"
+      "sha256": "b588148d0fa93f01e024ef66f4490717d6ec6566d562d1f34f78a887c328c246"
     }
   ]
 }

@@ -16,6 +16,8 @@ use tauri::{AppHandle, Emitter, Manager, State, Wry};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt as _};
 use tauri_plugin_deep_link::DeepLinkExt as _;
 
+#[cfg(target_os = "macos")]
+mod macos_icon;
 mod coexist;
 mod config_transition;
 mod core_manager;
@@ -3788,6 +3790,13 @@ pub fn run() {
         })
         .run(|app, event| {
             match event {
+                tauri::RunEvent::Ready => {
+                    #[cfg(target_os = "macos")]
+                    if let Err(error) = macos_icon::install() {
+                        // Cosmetic fallback: keep the system icon, never fail startup.
+                        eprintln!("[crossbow] {error}");
+                    }
+                }
                 // 轻量待机：最后一个窗口销毁会触发 ExitRequested，
                 // handoff 时阻止退出（进程保留、托盘常驻、内核照跑）。
                 // swap 一次性消费：只拦截「轻量关窗」这一次请求，用完即复位，

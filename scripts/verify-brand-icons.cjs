@@ -1,6 +1,7 @@
 /** Validate the shipped B1 binary assets and catalog references, not just source filenames. */
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),crypto=require('node:crypto');
 const sharp=require(process.env.CROSSBOW_SHARP_MODULE||'sharp');
+const {isPng}=require('./brand-icon-containers.cjs');
 const root=path.resolve(__dirname,'..'),file=p=>path.join(root,p),read=p=>fs.readFileSync(file(p));
 (async()=>{
   const approved=read('docs/designs/2026-10-28-logo/v01/assets/b1.svg');
@@ -21,6 +22,15 @@ const root=path.resolve(__dirname,'..'),file=p=>path.join(root,p),read=p=>fs.rea
   assert(/\.cb-logo-glyph\s*\{[^}]*background:\s*var\(--cb-brand\)/s.test(css),'Desktop logo must not inherit the theme accent');
   const manifest=JSON.parse(read('design/logo/current/manifest.json'));
   assert.equal(manifest.colors.light,brandColor);assert.equal(manifest.colors.dark,brandColor);
+  assert.equal(manifest.colorSpace,'sRGB');assert.equal(manifest.embeddedIcc,true);
+  const canonicalIcc=(await sharp(read('apps/desktop/src-tauri/icons/icon-source.png')).metadata()).icc;
+  assert(canonicalIcc && canonicalIcc.length>128,'Master PNG must contain an ICC profile');
+  async function checkPng(bytes,label){
+    const m=await sharp(bytes).metadata();
+    assert(m.icc && m.icc.equals(canonicalIcc),label+' must embed the canonical sRGB profile');
+    return m;
+  }
+  for(const f of manifest.files)if(f.path.endsWith('.png'))await checkPng(read(f.path),f.path);
   for(const f of manifest.files)assert.equal(crypto.createHash('sha256').update(read(f.path)).digest('hex'),f.sha256,f.path+' drifted; regenerate');
   for(const [p,n] of [['apps/desktop/src-tauri/icons/32x32.png',32],['apps/desktop/src-tauri/icons/128x128.png',128],['apps/desktop/src-tauri/icons/128x128@2x.png',256],['apps/desktop/src-tauri/icons/icon-source.png',1024],['apps/site/public/apple-touch-icon.png',180]]){
     const m=await sharp(read(p)).metadata();assert.equal(m.width,n,p);assert.equal(m.height,n,p);
@@ -34,6 +44,24 @@ const root=path.resolve(__dirname,'..'),file=p=>path.join(root,p),read=p=>fs.rea
   for(let i=0;i<n;i++){const o=6+16*i;sizes.push(ico[o]||256);assert(ico.readUInt32LE(o+12)+ico.readUInt32LE(o+8)<=ico.length);}
   for(const s of [16,32,256])assert(sizes.includes(s),'Missing ICO size '+s);
   const icns=read('apps/desktop/src-tauri/icons/icon.icns');assert.equal(icns.toString('ascii',0,4),'icns');assert.equal(icns.readUInt32BE(4),icns.length);
+  let frames=0;
+  for(let o=8;o<icns.length;){
+    const length=icns.readUInt32BE(o+4);assert(length>=8 && o+length<=icns.length,'Invalid ICNS chunk');
+    const data=icns.subarray(o+8,o+length);
+    if(isPng(data)){await checkPng(data,'ICNS '+icns.toString('ascii',o,o+4));frames++;}
+    o+=length;
+  }
+  assert(frames>=8,'Missing profiled ICNS resolutions');
+  for(const p of ['apps/desktop/src-tauri/icons/icon.ico','design/logo/current/favicon/favicon.ico','apps/site/public/favicon.ico']){
+    const b=read(p),count=b.readUInt16LE(4);
+    for(let i=0;i<count;i++){
+      const o=6+16*i,length=b.readUInt32LE(o+8),start=b.readUInt32LE(o+12);
+      assert(start>=6+16*count && start+length<=b.length,'Invalid ICO entry');
+      const data=b.subarray(start,start+length);assert(isPng(data),'Expected PNG-backed ICO');
+      const m=await checkPng(data,p+' entry '+i);
+      assert.equal(m.width,b[o]||256);assert.equal(m.height,b[o+1]||256);
+    }
+  }
   const catalog='apps/ios/Crossbow/Resources/Assets.xcassets';
   for(const set of ['AppIcon.appiconset','logo-glyph.imageset']){
     const c=JSON.parse(read(`${catalog}/${set}/Contents.json`));for(const img of c.images){assert(fs.existsSync(file(`${catalog}/${set}/${img.filename}`)));}

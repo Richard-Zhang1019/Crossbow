@@ -1,0 +1,11 @@
+ImageIO representations 10
+0 1024 1024 space none
+1 512 512 space none
+2 512 512 space none
+3 256 256 space none
+4 256 256 space none
+5 128 128 space none
+6 64 64 space none
+7 32 32 space none
+8 32 32 space kCGColorSpaceSRGB
+9 16 16 space kCGColorSpaceSRGB

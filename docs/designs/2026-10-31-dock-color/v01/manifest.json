@@ -1,0 +1,86 @@
+{
+  "date": "2026-10-31",
+  "version": "v01",
+  "status": "implemented-native-assertions-passed-awaiting-dock-review",
+  "issue": 241,
+  "baseline": "37f303b",
+  "input": "用户反馈 v0.12.0 界面与 Dock Logo 色差，要求修复，保留 B1 主色和形状。",
+  "color": "#3f52cf",
+  "files": [
+    {
+      "path": "SPEC.md",
+      "sha256": "117753ba4dcd417d7dd64579e39669bd19f3804fccd831b08799cd642110a337",
+      "bytes": 4468
+    },
+    {
+      "path": "dock-smoke.swift",
+      "sha256": "4d52f6ece55fb2ffb2d265ba8583c6ca2481eeb45042b2d6f6c4c7fa01a4b2e7",
+      "bytes": 2267
+    },
+    {
+      "path": "native-comparison.swift",
+      "sha256": "ee5b92e79c5e4b54fac315c7bbf69d456b773b7f5c9fc25cd3d3c87b777e04d2",
+      "bytes": 2252
+    },
+    {
+      "path": "native-probe.swift",
+      "sha256": "eff0987c3b892350c5f3632343081df5703d38cbb92c6541fc468b954da54860",
+      "bytes": 1735
+    },
+    {
+      "path": "previews/after-refresh-iconservices.txt",
+      "sha256": "47c75a41ea74a1d9ad90bea6e9ad67a53227c7e02d85e3701ae1852ae69f026b",
+      "bytes": 1473
+    },
+    {
+      "path": "previews/before-iconservices.txt",
+      "sha256": "78f15abd108aea02053dddc266e4b8a8e5913ff30892ea206039e9e4df8d82b8",
+      "bytes": 1473
+    },
+    {
+      "path": "previews/fresh-bundle-iconservices.txt",
+      "sha256": "2307fd189f89be3d4135c563150f9c6b895e4b815e817e42ac8a9607835f40aa",
+      "bytes": 1473
+    },
+    {
+      "path": "previews/generated-bundle-iconservices.txt",
+      "sha256": "9c07e081b93a0f812d3ad611fe5f171e06e7bff8377ecc088a3aeb3cb3dcd4a4",
+      "bytes": 1469
+    },
+    {
+      "path": "previews/generation-check.json",
+      "sha256": "9482417d9a0706e15b02ac831c8d65fab081d1faf09ba4ae831b33c9859c1cb4",
+      "bytes": 192
+    },
+    {
+      "path": "previews/imageio-representations.txt",
+      "sha256": "b358c1c8e89719c4a9e12b75d1652fed29ca06d972391a0271d8a3eb2a215e2f",
+      "bytes": 257
+    },
+    {
+      "path": "previews/installed-file.txt",
+      "sha256": "67b86d7dde58c6978df0799e991da3a5b5db64e2dfb1b269ba40138d53053158",
+      "bytes": 862
+    },
+    {
+      "path": "previews/native-comparison.png",
+      "sha256": "bf8312f470fde208cfd9435786c956f7e4361c772e36855c5152dec1d956633f",
+      "bytes": 99101
+    },
+    {
+      "path": "previews/runtime-icon.txt",
+      "sha256": "4a31a7a74af8ed174de0c9b888374b7d151a887094f462c1f7ba93b0165f8f2e",
+      "bytes": 477
+    },
+    {
+      "path": "previews/smoke-window.jpg",
+      "sha256": "2975775884508d919c273bf099cd93152f3f06a758dfd7a7f45e7b8bb8bfe4f2",
+      "bytes": 43547
+    },
+    {
+      "path": "source.zip",
+      "sha256": "107b5908d61f2a88dc208d72613fafd9828daaf55fa0ce2cf2a3d4283ee839d9",
+      "bytes": 628432
+    }
+  ]
+}

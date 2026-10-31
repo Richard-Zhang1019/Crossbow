@@ -1,0 +1,37 @@
+NSImage (32.0, 32.0) 32
+NSISIconImageRep 32 32 unknown
+NSISIconImageRep 32 32 unknown
+NSISIconImageRep 64 64 unknown
+NSISIconImageRep 64 64 unknown
+NSISIconImageRep 16 16 unknown
+NSISIconImageRep 16 16 unknown
+NSISIconImageRep 32 32 unknown
+NSISIconImageRep 32 32 unknown
+NSISIconImageRep 18 18 unknown
+NSISIconImageRep 18 18 unknown
+NSISIconImageRep 36 36 unknown
+NSISIconImageRep 36 36 unknown
+NSISIconImageRep 24 24 unknown
+NSISIconImageRep 24 24 unknown
+NSISIconImageRep 48 48 unknown
+NSISIconImageRep 48 48 unknown
+NSISIconImageRep 128 128 unknown
+NSISIconImageRep 128 128 unknown
+NSISIconImageRep 256 256 unknown
+NSISIconImageRep 256 256 unknown
+NSISIconImageRep 256 256 unknown
+NSISIconImageRep 256 256 unknown
+NSISIconImageRep 512 512 unknown
+NSISIconImageRep 512 512 unknown
+NSISIconImageRep 512 512 unknown
+NSISIconImageRep 512 512 unknown
+NSISIconImageRep 1024 1024 unknown
+NSISIconImageRep 1024 1024 unknown
+NSISIconImageRep 1024 1024 unknown
+NSISIconImageRep 1024 1024 unknown
+NSISIconImageRep 2048 2048 unknown
+NSISIconImageRep 2048 2048 unknown
+draw 32 [(key: "63,82,207", value: 4), (key: "54,73,205", value: 4), (key: "85,102,212", value: 4)]
+draw 64 [(key: "79,97,215", value: 9), (key: "98,113,218", value: 8), (key: "99,115,218", value: 7)]
+draw 96 [(key: "78,96,214", value: 14), (key: "94,110,217", value: 13), (key: "76,94,214", value: 11)]
+draw 128 [(key: "77,95,214", value: 19), (key: "95,111,217", value: 19), (key: "96,112,219", value: 18)]
