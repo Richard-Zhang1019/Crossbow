@@ -1,0 +1,9 @@
+{
+  "date": "2026-10-31",
+  "source": "用户在当前会话确认",
+  "result": "颜色一致，也更清晰了",
+  "scope": "独立原生验证窗口与其实际 Dock 测试图标",
+  "passed": true,
+  "formalCrossbowPackageReplaced": false,
+  "smokeProcessExited": true
+}
