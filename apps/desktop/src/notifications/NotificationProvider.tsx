@@ -292,12 +292,6 @@ function NotificationCard({
                 <span className="cb-notification-count">×{notice.count}</span>
               )}
             </div>
-            {progressing && percent !== null && (
-              <span className="cb-notification-percent" aria-hidden="true">
-                {percent}
-                <span>%</span>
-              </span>
-            )}
           </div>
           {!progressing && description && (
             <p className="cb-selectable">{description}</p>
@@ -352,6 +346,12 @@ function NotificationCard({
           </div>
         )}
       </div>
+      {progressing && percent !== null && (
+        <span className="cb-notification-percent" aria-hidden="true">
+          {percent}
+          <span>%</span>
+        </span>
+      )}
       {!history && (
         <ButtonBase
           className="cb-notification-close"
