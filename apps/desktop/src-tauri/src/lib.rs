@@ -3834,6 +3834,8 @@ pub fn run() {
                 }
                 // 真正退出：还原系统代理、收内核（handoff 之外的所有路径）。
                 tauri::RunEvent::Exit => {
+                    #[cfg(target_os = "linux")]
+                    notifications::shutdown(app);
                     if let Some(state) = app.try_state::<AppState>() {
                         // 退出时不允许 root 内核补杀弹授权框：杀不掉就留给系统，
                         // 下次启动的收养/预绑定检查会处理。

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Non-disruptive niri/Wayland acceptance using the actual Linux application.
 
-Requires the smoke_desktop.py dependencies, niri, busctl and zenity. Only this
+Requires the smoke_desktop.py dependencies, niri, busctl, dbus-monitor and zenity. Only this
 instance's windows, tray, private HOME and XDG directories are operated on.
 """
 import argparse
@@ -128,6 +128,7 @@ def main():
     sentinel = None
     app_pid = None
     cold = None
+    notifications = None
     temp = tempfile.TemporaryDirectory(prefix='crossbow-linux-daily-')
     env = os.environ.copy()
     for key in ['HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME']:
@@ -177,7 +178,14 @@ rules: ["MATCH,Daily"]
         wait_until(lambda: driver.js('return !!document.querySelector(".cb-home-page")'))
     def main_window():
         return next(w['id'] for w in windows(app_pid) if w['title'] == 'Crossbow')
+    def reminder_count():
+        return (args.output / 'notifications.log').read_text().count('member=Notify')
     try:
+        # Restrict observation to Crossbow's generic reminders, never other apps.
+        with (args.output / 'notifications.log').open('w') as log:
+            notifications = subprocess.Popen(['dbus-monitor', '--session',
+                "type='method_call',interface='org.freedesktop.Notifications',member='Notify',arg0='Crossbow'"],
+                stdout=log, stderr=subprocess.DEVNULL)
         port, native_port, mixed = free_port(), free_port(), free_port()
         with (args.output / 'driver.log').open('w') as log:
             child = subprocess.Popen([args.driver, '--port', str(port), '--native-port', str(native_port)],
@@ -249,24 +257,33 @@ rules: ["MATCH,Daily"]
             '--text=Crossbow focus acceptance', '--no-wrap'], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         sentinel_id = wait_until(lambda: next((w['id'] for w in windows(sentinel.pid)), None))
         for iteration in range(2):
+            count = reminder_count()
             notice = driver.invoke('notification_publish', {'notice': {'kind': 'error',
-                'title': 'Crossbow acceptance notice', 'source': f'daily-focus-{iteration}'}})
+                'title': 'Crossbow acceptance notice', 'details': 'token=focus-private-value',
+                'source': f'daily-focus-{iteration}'}})
             action('close-window', main_window())
             action('focus-window', sentinel_id)
             before_focus = focused()
-            already_mapped = any(w['title'] == 'Crossbow Notifications' for w in windows(app_pid))
+            already_sent = reminder_count() > count
             # No WebDriver operation occurs while native focus is observed.
-            overlay = wait_until(lambda: next((w for w in windows(app_pid) if w['title'] == 'Crossbow Notifications'), None))
+            wait_until(lambda: reminder_count() > count)
             time.sleep(.5)
             record(f'background notice {iteration + 1} preserves focus',
-                not already_mapped and focused() == before_focus,
-                {'before': before_focus, 'after': focused(), 'overlay': overlay['id'],
-                 'already_mapped_before_observation': already_mapped})
-            record(f'background notice {iteration + 1} floats', overlay.get('is_floating'))
-            wait_until(lambda: select_view(driver, overlay=True))
+                not already_sent and before_focus == sentinel_id and focused() == sentinel_id,
+                {'before': before_focus, 'after': focused(),
+                 'already_sent_before_observation': already_sent})
+            record(f'background notice {iteration + 1} creates no toplevel', not windows(app_pid))
+            reopen(tray)
+            snapshot = driver.invoke('notification_snapshot')
+            record(f'background notice {iteration + 1} retains unread history', any(
+                n['id'] == notice and n['readAt'] is None and n['resolvedAt'] is None
+                for n in snapshot['history']))
             driver.screenshot(args.output / f'notification-{iteration + 1}.png')
             driver.invoke('notification_dismiss', {'id': notice})
-            reopen(tray)
+            time.sleep(.35)  # Let the foreground route withdraw the reminder.
+        payload = (args.output / 'notifications.log').read_text()
+        record('system reminders contain no notification title or secret',
+            'focus-private-value' not in payload and 'Crossbow acceptance notice' not in payload)
         # Lightweight close destroys main; background work must continue and reattach.
         driver.invoke('set_lightweight_close', {'enabled': True})
         history_size = len(driver.invoke('traffic_history'))
@@ -286,19 +303,19 @@ rules: ["MATCH,Daily"]
         for _ in range(3):
             assert probe(); time.sleep(.5)
         record('lightweight reopen restores log persistence', log_size() > size)
-        # Keep the overlay as the only WebView, then use the actual WM close action.
+        # Lightweight close now leaves no WebView; native reminders must not exit the app.
+        count = reminder_count()
         notice = driver.invoke('notification_publish', {'notice': {'kind': 'error',
             'title': 'Crossbow last-window acceptance', 'source': 'daily-last-window'}})
         action('close-window', main_window())
-        overlay = wait_until(lambda: next((w for w in windows(app_pid) if w['title'] == 'Crossbow Notifications'), None))
-        action('close-window', overlay['id'])
+        wait_until(lambda: reminder_count() > count)
         time.sleep(1)
         survived = owner_pid() == app_pid
-        record('closing the last notification window keeps app and proxy', survived and probe())
+        record('native reminder without a WebView keeps app and proxy', survived and not windows(app_pid) and probe())
         if survived:
             reopen(tray)
             snapshot = driver.invoke('notification_snapshot')
-            record('notification history survives WM close', any(n['id'] == notice for n in snapshot['history']))
+            record('notification history survives lightweight native reminder', any(n['id'] == notice for n in snapshot['history']))
             quit_label = next(p['label'] for _, p in menu_rows(tray) if '退出' in p.get('label', ''))
             click_menu(tray, quit_label)
             wait_until(lambda: owner_pid() is None)
@@ -366,7 +383,7 @@ rules: ["MATCH,Daily"]
                 click_menu(target, label)
             except Exception:
                 os.kill(app_pid, signal.SIGTERM)
-        for process in [cold, sentinel, child]:
+        for process in [cold, sentinel, child, notifications]:
             if process and process.poll() is None:
                 process.terminate(); process.wait(timeout=10)
         # A failing UI/driver must not leave an orphan test core behind.

@@ -9,6 +9,10 @@ use std::sync::{
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
+#[cfg(target_os = "linux")]
+#[path = "notifications_linux.rs"]
+mod linux;
+
 const EVENT: &str = "app://notifications";
 const OVERLAY: &str = "notifications";
 const MAX_PENDING: usize = 30;
@@ -97,6 +101,8 @@ pub struct Notice {
     paused: bool,
     #[serde(skip)]
     retrying: bool,
+    #[serde(skip)]
+    generation: u64,
 }
 impl Notice {
     fn is_pending(&self) -> bool {
@@ -126,6 +132,7 @@ impl Notice {
             remaining: None,
             paused: false,
             retrying: false,
+            generation: 0,
         }
     }
 }
@@ -197,6 +204,7 @@ impl Queue {
         notice.read_at = None;
         notice.resolved_at = None;
         notice.count = 1;
+        notice.generation = self.revision + 1;
         if let Some(index) = existing {
             let old = &self.entries[index];
             // Background repeats may contain changing diagnostic details. Merge
@@ -222,6 +230,7 @@ impl Queue {
                 || (old.kind == Kind::Progress && notice.kind == Kind::Progress)
             {
                 notice.read_at = old.read_at;
+                notice.generation = old.generation;
             }
             if repeated && same_attempt {
                 notice.remaining = old.remaining;
@@ -346,15 +355,17 @@ impl Queue {
         active
     }
     fn dismiss_active(&mut self) {
-        let active = self.active();
-        if active.is_empty() {
+        self.dismiss_batch(
+            &self.active().into_iter().map(|n| (n.id, n.generation)).collect::<Vec<_>>(),
+        );
+    }
+    fn dismiss_batch(&mut self, ids: &[(String, u64)]) {
+        if ids.is_empty() {
             return;
         }
-        for entry in self
-            .entries
-            .iter_mut()
-            .filter(|entry| active.iter().any(|notice| notice.id == entry.id))
-        {
+        for entry in self.entries.iter_mut().filter(|entry| {
+            ids.iter().any(|(id, generation)| entry.id == *id && entry.generation == *generation)
+        }) {
             entry.dismissed = true;
         }
         self.revision += 1;
@@ -393,6 +404,8 @@ impl Queue {
 #[derive(Default)]
 pub struct Notifications {
     queue: Mutex<Queue>,
+    #[cfg(target_os = "linux")]
+    native: OnceLock<linux::Notifier>,
     dispatching: AtomicBool,
     creating_overlay: AtomicBool,
     overlay_retry_after: AtomicU64,
@@ -533,8 +546,25 @@ fn position_overlay(app: &AppHandle, window: &WebviewWindow) {
         ));
     }
 }
+#[cfg(target_os = "linux")]
+fn native_reminder(notices: &[Notice], english: bool) -> linux::Reminder {
+    let mut ids: Vec<_> = notices
+        .iter()
+        .map(|n| (n.id.clone(), n.generation))
+        .collect();
+    // Repeated faults may reorder equal-priority cards without changing the batch.
+    ids.sort_unstable();
+    linux::Reminder {
+        ids,
+        english,
+        urgent: notices.iter().any(|n| n.kind == Kind::Error),
+    }
+}
 fn route(app: &AppHandle, elapsed: u64) {
     let service = app.state::<Notifications>();
+    // Wayland compositors may activate ordinary toplevels despite focused(false).
+    // Linux uses the desktop notification service without mapping another window.
+    let native_background = cfg!(target_os = "linux");
     let main = app.get_webview_window("main");
     let main_visible = main
         .as_ref()
@@ -547,6 +577,7 @@ fn route(app: &AppHandle, elapsed: u64) {
         .active()
         .is_empty();
     if !main_visible
+        && !native_background
         && has_notices
         && app.get_webview_window(OVERLAY).is_none()
         && now_ms() >= service.overlay_retry_after.load(Ordering::SeqCst)
@@ -596,7 +627,7 @@ fn route(app: &AppHandle, elapsed: u64) {
     let mut queue = service.queue.lock().unwrap_or_else(|e| e.into_inner());
     let target = if main_visible && queue.ready.contains("main") {
         "main"
-    } else if has_notices && !main_visible && queue.ready.contains(OVERLAY) {
+    } else if !native_background && has_notices && !main_visible && queue.ready.contains(OVERLAY) {
         OVERLAY
     } else {
         ""
@@ -618,6 +649,19 @@ fn route(app: &AppHandle, elapsed: u64) {
         queue.delivered_revision = queue.revision;
     }
     drop(queue);
+    #[cfg(target_os = "linux")]
+    if let Some(native) = service.native.get() {
+        let reminder = if !main_visible && !snapshot.active.is_empty() {
+            let english = app
+                .try_state::<crate::AppState>()
+                .map(|state| state.store.lock().unwrap().data().ui.lang == "en")
+                .unwrap_or(false);
+            Some(native_reminder(&snapshot.active, english))
+        } else {
+            None
+        };
+        native.update(reminder);
+    }
     // All window operations run on the event loop without holding the queue.
     if let Some(window) = app.get_webview_window(OVERLAY) {
         let visible = target == OVERLAY && !snapshot.active.is_empty();
@@ -641,6 +685,26 @@ fn route(app: &AppHandle, elapsed: u64) {
 }
 pub fn install(app: &AppHandle) {
     app.manage(Notifications::default());
+    #[cfg(target_os = "linux")]
+    {
+        let open = app.clone();
+        let dismiss = app.clone();
+        let native = linux::Notifier::start(
+            move || {
+                let handle = open.clone();
+                let _ = open.run_on_main_thread(move || crate::show_main_window(&handle));
+            },
+            move |ids| {
+                dismiss
+                    .state::<Notifications>()
+                    .queue
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .dismiss_batch(ids);
+            },
+        );
+        let _ = app.state::<Notifications>().native.set(native);
+    }
     let app = app.clone();
     std::thread::spawn(move || {
         let mut last = Instant::now();
@@ -667,6 +731,14 @@ pub fn install(app: &AppHandle) {
             }
         }
     });
+}
+#[cfg(target_os = "linux")]
+pub fn shutdown(app: &AppHandle) {
+    if let Some(service) = app.try_state::<Notifications>() {
+        if let Some(native) = service.native.get() {
+            native.shutdown();
+        }
+    }
 }
 pub fn window_destroyed(app: &AppHandle, label: &str) {
     if let Some(service) = app.try_state::<Notifications>() {
@@ -907,6 +979,55 @@ mod tests {
         assert_eq!(queue.active().len(), 1);
         assert_eq!(queue.active()[0].id, next);
         assert_eq!(queue.snapshot().history.len(), 3);
+    }
+    #[test]
+    fn native_reminder_dismisses_its_batch_without_losing_unread_problems() {
+        let mut queue = Queue::default(); // No renderer while running in the tray.
+        let first = queue.push(Notice::new(Kind::Warning, "failed", "first"));
+        let displayed = queue
+            .active()
+            .into_iter()
+            .map(|n| (n.id, n.generation))
+            .collect::<Vec<_>>();
+        let second = queue.push(Notice::new(Kind::Error, "failed", "second"));
+        queue.tick(60_000); // A missing/expired system reminder does not expire cards.
+        assert_eq!(
+            queue.entries.iter().find(|n| n.id == first).unwrap().remaining,
+            Some(8000)
+        );
+        queue.dismiss_batch(&displayed);
+        assert_eq!(queue.active()[0].id, second);
+        assert!(queue
+            .entries
+            .iter()
+            .all(|n| n.is_pending() && n.read_at.is_none()));
+        assert_eq!(queue.snapshot().history.len(), 2);
+        queue.ready.insert("main".into());
+        queue.target = "main".into();
+        assert_eq!(queue.snapshot().active[0].id, second);
+    }
+    #[test]
+    fn late_native_dismissal_cannot_hide_a_new_attempt_with_the_same_id() {
+        let mut queue = Queue::default();
+        let id = queue.push(Notice::new(Kind::Progress, "download", "op"));
+        let displayed = vec![(id.clone(), queue.entries[0].generation)];
+        queue.push(Notice::new(Kind::Error, "download", "op"));
+        queue.dismiss_batch(&displayed);
+        assert_eq!(queue.active()[0].id, id);
+        assert_eq!(queue.active()[0].kind, Kind::Error);
+        let generation = queue.entries[0].generation;
+        queue.push(Notice::new(Kind::Error, "download", "op"));
+        assert_eq!(queue.entries[0].generation, generation); // Repeats do not re-alert.
+    }
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn repeated_faults_reordering_cards_do_not_repeat_the_native_reminder() {
+        let mut queue = Queue::default();
+        queue.push(Notice::new(Kind::Error, "failed", "first"));
+        queue.push(Notice::new(Kind::Error, "failed", "second"));
+        let before = native_reminder(&queue.active(), false);
+        queue.push(Notice::new(Kind::Error, "failed", "first"));
+        assert!(before == native_reminder(&queue.active(), false));
     }
     #[test]
     fn errors_preempt_progress_without_consuming_queued_lifetimes() {
