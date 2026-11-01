@@ -1432,9 +1432,15 @@ fn watch(shared: Arc<Shared>, port: u16, secret: String) {
             // 收尾已由 stop() 上报 Stopped，这里静默退出
             return;
         }
+        let summary = core_error_summary(&shared.work_dir, 200)
+            .unwrap_or_else(|| {
+                format!(
+                    "就绪探针 {}s 未通过，内核无错误输出（详见监测→日志）",
+                    opts.readiness_timeout_secs
+                )
+            });
         shared.notify(CoreStatus::Crashed(format!(
-            "内核启动失败/超时：{}",
-            core_log_tail(&shared.work_dir, 400)
+            "内核启动失败/超时：{summary}"
         )));
         return;
     }
@@ -1456,12 +1462,11 @@ fn watch(shared: Arc<Shared>, port: u16, secret: String) {
         if shared.inner.lock().unwrap().stopping {
             return; // stop() 负责上报 Stopped
         }
+        let summary = core_error_summary(&shared.work_dir, 200)
+            .unwrap_or_else(|| "内核无错误输出（详见监测→日志）".into());
         let reason = match exit.code() {
-            Some(code) => format!(
-                "内核异常退出（code {code}）：{}",
-                core_log_tail(&shared.work_dir, 400)
-            ),
-            None => format!("内核被信号终止：{}", core_log_tail(&shared.work_dir, 400)),
+            Some(code) => format!("内核异常退出（code {code}）：{summary}"),
+            None => format!("内核被信号终止：{summary}"),
         };
         shared.notify(CoreStatus::Crashed(reason));
 
@@ -1733,22 +1738,55 @@ fn append_core_log(work_dir: &std::path::Path, line: &str) {
     }
 }
 
-/// 读取内核输出日志的尾部（崩溃原因展示用）。
-fn core_log_tail(work_dir: &std::path::Path, max_chars: usize) -> String {
-    let path = work_dir.join("core-stdio.log");
-    let Ok(raw) = std::fs::read_to_string(&path) else {
-        return "（无内核输出）".into();
-    };
-    let trimmed: String = raw.trim().to_string();
-    if trimmed.is_empty() {
-        return "（内核无输出）".into();
+/// 判断内核日志行是否为错误/致命级别
+/// （mihomo logfmt、sing-box JSON、大写 FATAL、panic）。
+fn is_error_line(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    lower.contains("level=error")
+        || lower.contains("level=fatal")
+        || lower.contains("\"level\":\"error\"")
+        || lower.contains("\"level\":\"fatal\"")
+        || lower.contains("fatal")
+        || lower.contains("panic")
+}
+
+/// 提炼单行摘要：logfmt 行取 msg 内容，去掉 time=/level= 前缀，
+/// 压平空白并截断。绝不保留换行——Crashed 消息会流进首页状态徽标。
+fn sanitize_log_line(line: &str, max_chars: usize) -> String {
+    let mut owned = line.trim().to_string();
+    if let Some(start) = owned.find("msg=\"") {
+        let rest = owned[start + 5..].to_string();
+        if let Some(end) = rest.rfind('"') {
+            owned = rest[..end].trim().to_string();
+        }
+    } else {
+        let kept: Vec<&str> = owned
+            .split_whitespace()
+            .filter(|token| {
+                let lower = token.to_ascii_lowercase();
+                !lower.starts_with("time=") && !lower.starts_with("level=")
+            })
+            .collect();
+        owned = kept.join(" ");
     }
-    let char_count = trimmed.chars().count();
-    if char_count <= max_chars {
-        return trimmed;
+    let mut out = owned.split_whitespace().collect::<Vec<&str>>().join(" ");
+    if out.chars().count() > max_chars {
+        out = out.chars().take(max_chars).collect::<String>() + "…";
     }
-    let skip = char_count - max_chars;
-    format!("…{}", trimmed.chars().skip(skip).collect::<String>())
+    out
+}
+
+/// 崩溃/超时原因摘要：只取内核输出里最后一条错误/致命级行，
+/// 单行、截断。找不到错误行时返回 None（调用方给通用文案）——
+/// 绝不把 info 级连接日志原文塞进 UI（#250）。
+fn core_error_summary(work_dir: &std::path::Path, max_chars: usize) -> Option<String> {
+    let raw = std::fs::read_to_string(work_dir.join("core-stdio.log")).ok()?;
+    let line = raw
+        .lines()
+        .rev()
+        .filter(|l| !l.trim().is_empty())
+        .find(|l| is_error_line(l))?;
+    Some(sanitize_log_line(line, max_chars))
 }
 
 /// 分配一个空闲 TCP 端口（先绑定 0 拿端口再释放，存在极小竞态，S2 可接受）。
@@ -1760,6 +1798,61 @@ pub fn free_port() -> Option<u16> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn error_summary_picks_last_error_line_and_extracts_msg() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("core-stdio.log");
+        std::fs::write(
+            &log,
+            concat!(
+                "2026-11-01T12:25:33+08:00 level=info msg=\"[TCP] 127.0.0.1:44683(TslGame.exe) --> a:443\"\n",
+                "time=\"2026-11-01T12:26:00+08:00\" level=error msg=\"Start Configuration error\"\n",
+                "level=info msg=\"[TCP] more traffic\"\n",
+            ),
+        )
+        .unwrap();
+        let s = core_error_summary(dir.path(), 200).unwrap();
+        assert_eq!(s, "Start Configuration error");
+    }
+
+    #[test]
+    fn error_summary_none_when_only_info_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("core-stdio.log"),
+            "level=info msg=\"[TCP] traffic\"\n",
+        )
+        .unwrap();
+        assert!(core_error_summary(dir.path(), 200).is_none());
+    }
+
+    #[test]
+    fn error_summary_matches_fatal_and_json_levels() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("core-stdio.log"),
+            "FATAL init config: yaml unmarshal errors\n",
+        )
+        .unwrap();
+        let s = core_error_summary(dir.path(), 200).unwrap();
+        assert!(s.starts_with("FATAL init config"));
+        let dir2 = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir2.path().join("core-stdio.log"),
+            "{\"level\":\"fatal\",\"msg\":\"service start failed\"}\n",
+        )
+        .unwrap();
+        assert!(core_error_summary(dir2.path(), 200).is_some());
+    }
+
+    #[test]
+    fn sanitize_flattens_newlines_and_truncates() {
+        let out = sanitize_log_line("FATAL\ninit config:\n  bad yaml", 10);
+        assert!(!out.contains('\n'));
+        assert!(out.chars().count() <= 11);
+        assert!(out.ends_with('…'));
+    }
 
     #[test]
     fn geo_file_ok_rejects_truncated_metadb() {
