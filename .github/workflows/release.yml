@@ -307,13 +307,13 @@ jobs:
           cat /tmp/changelog.md
 
       - name: Download Windows artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: windows-release-${{ env.VERSION }}
           path: dist-windows/
 
       - name: Download Linux artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: linux-release-${{ env.VERSION }}
           path: dist-linux/
