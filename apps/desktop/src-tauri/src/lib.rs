@@ -3311,7 +3311,11 @@ fn lightweight_quit(app: &AppHandle) {
         app.get_webview_window("notifications").is_none(),
         std::sync::atomic::Ordering::SeqCst,
     );
-    state.ws.unsubscribe_all();
+    // Page subscriptions belong to the destroyed WebView. Keep the independent
+    // traffic history and log writer running while the core stays in the tray.
+    for channel in ["traffic", "connections", "logs"] {
+        state.ws.unsubscribe(channel);
+    }
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.destroy(); // 直接销毁，绕过 CloseRequested 防递归
     }
@@ -3670,6 +3674,15 @@ pub fn run() {
                         handle_crossbow_url(&handle, url.as_str());
                     }
                 });
+                // Linux delivers the initial argv before setup registers this
+                // listener. Replay that startup URL; later invocations use the
+                // single-instance callback above.
+                #[cfg(target_os = "linux")]
+                if let Some(urls) = app.deep_link().get_current()? {
+                    for url in urls {
+                        handle_crossbow_url(app.handle(), url.as_str());
+                    }
+                }
             }
 
             // 托盘
@@ -3704,6 +3717,12 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if window.label() == "notifications" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    notifications::close_overlay(window.app_handle());
+                }
+            }
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 notifications::window_destroyed(window.app_handle(), window.label());
             }
