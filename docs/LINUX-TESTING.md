@@ -157,3 +157,46 @@ CI 编译通过不是 niri/Wayland 实机通过；本机原生验证结果单独
 本轮桌面后端 105 项、服务 19 项单测通过；服务构建及 clippy 通过。扩展后的 `scripts/linux/smoke_network.py` 共 16 项通过，宿主路由/DNS 摘要未变。测试产物与报告位于 `target/linux-validation/review-network/`、`review-rp-filter/`、`review-assets/` 和 `cache-review/`；独立测试基础设施没有提交到仓库。服务实测 SHA-256 为 `982b8e1ceb6b49f7f55837ee8d607fc5d0849b02874926478c87a1d1236e11fb`。
 
 当前宿主没有安装服务或启用 TUN，FlClash 和 VPN 未改动。宿主实网日用与公开发布验收仍不标记为通过。
+
+## 2026-11-01 日用验收（#255，原生 Wayland）
+
+基于 `1d7cf54`，在 CachyOS x86_64 + niri 26.04 的真实 Wayland 会话执行。先直接运行官方 v0.12.2 Linux 压缩包，再验证本次三处修复的本地 debug 构建；没有以浏览器模拟或隔离虚拟机代替这轮桌面验证。
+
+发布包 `Crossbow_0.12.2_linux_x86_64.tar.gz` 的 SHA-256 与 GitHub Release 元数据一致：`b15cbc43cc1d5e8e4e87295c65f12afeb262804862d2283b48a7e01b5ddf0fe2`，桌面 ELF 的动态依赖均能解析。包内桌面程序 SHA-256 为 `71d0d0c2620babeeee807cabf66d07c613eff8da4a4f8e1ba33a79ad7eea0433`。
+
+测试实例使用独立 HOME、XDG 配置/数据/缓存目录、空闲端口与本地脱敏订阅。Linux 单实例 D-Bus 名不随 XDG 目录变化，因此启动前先确认没有其他 Crossbow 占用，发现占用则退出测试。自启动插件直接写 HOME 下的 `.config/autostart/Crossbow.desktop`，只隔离 XDG 不足以保护真实用户配置。
+
+| 验收项 | 结果与范围 |
+| --- | --- |
+| 官方发布包基础回归 | 14 项通过：实际界面与 IPC、显式 HTTP/SOCKS、HTTPS、日志、诊断、无效更新恢复与冲突拦截 |
+| 正常关窗驻留 | 实际 niri 关窗与原生托盘唤回连续 3 次通过，测试代理持续可用 |
+| 托盘菜单 | 真实 StatusNotifierItem/DBusMenu 注册、直连/规则模式切换、配置切换、打开窗口、退出均验证 |
+| 轻量关窗 | 发布包会停掉后台日志，重开后仍未恢复；修复后保留后台日志和流量历史，仅停止已销毁页面的订阅 |
+| 关闭唯一通知窗口 | 发布包会退出应用并停止内核；修复后收起当前卡片，应用、代理、未读未解决历史均保留 |
+| 深链接 | 精确二进制 argv 的第二次启动导入原本可用；冷启动导入原本丢失，补读启动 URL 后通过。没有注册或调用宿主 URL 关联 |
+| 普通退出与重启 | 偏好、活动配置、节点选择保留；再次启动的显式代理可用；托盘退出后 PID 文件与监听端口释放 |
+| 自启动 | 仅在隔离 HOME 中验证真实插件写入及删除条目，未启用宿主启动项，未验证真实登录执行 |
+| 后台浮层 | 在 niri 中确实浮动；首次和再次出现均抢占焦点，**未通过**，跟踪 [#256](https://github.com/Richard-Zhang1019/Crossbow/issues/256) |
+
+`smoke_desktop.py` 已更新当前 Button 选择器和实例/HOME 隔离；新增 `smoke_daily.py` 覆盖本轮原生窗口、托盘、缓存与协议路径。修复构建的日用检查共 24 项，22 项通过、2 项焦点检查失败，报告保留 `passed=false`，不能写成完整日用验收通过。焦点测量先在可见主窗口发出测试通知，再关闭它并聚焦自有参考窗口，确认浮层尚未映射后才观察；期间不操作 WebDriver。当前 niri 开启了 `focus-follows-mouse`，没有改动这些用户规则。
+
+复现命令（需要 `tauri-driver`、`WebKitWebDriver`、`niri`、`busctl`、`gdbus`、`zenity` 和真实图形会话）：
+
+```sh
+GDK_BACKEND=wayland python3 scripts/linux/smoke_desktop.py \
+  --application /absolute/path/to/crossbow-desktop \
+  --driver /absolute/path/to/tauri-driver \
+  --upstream-port 7890 --output /tmp/crossbow-release-smoke
+GDK_BACKEND=wayland python3 scripts/linux/smoke_daily.py \
+  --application /absolute/path/to/crossbow-desktop \
+  --driver /absolute/path/to/tauri-driver \
+  --output /tmp/crossbow-daily
+```
+
+后一命令当前会因 #256 返回非零；逐项结果与清理后的网络摘要仍会落盘。复跑可复用该输出目录旁 `fixture-assets/` 中由测试实例下载的 Geo 数据，避免每次重新下载；不读取现有代理的数据。
+
+本地构建的前端、Tauri 原生程序和 106 项桌面后端单测通过。修复构建也重新通过 14 项基础原生回归。修复构建 SHA-256：`d27b51d569135c4794ccb7d27124f8309fce4a52d797bfb97425db97e483a61e`。证据位于本工作树 `target/linux-daily/evidence/` 的 `release-smoke/`、`release-daily/`、`fixed-smoke/`、`fixed-daily/`，包括 JSON 结果、原生截图和驱动日志；这些测试产物不提交。
+
+最终核对确认路由/DNS 摘要、记录的原代理/VPN 进程身份与全部 `rp_filter` 值一致，FlClash 原核心仍运行；测试应用与内核均已退出，宿主未安装网络服务。汇总 `report.json` 保留 `completed=true / passed=false`，前者表示这轮检查与清理完成，后者表示焦点问题仍未解决。
+
+本轮未运行宿主 TUN、系统代理切换、休眠/唤醒或真实登录自启动，未覆盖其他发行版与桌面。Linux 托盘的速率、节点选择和 TUN 菜单目前也没有实现。上述限制继续保留，宿主实网日用验收仍未完成。

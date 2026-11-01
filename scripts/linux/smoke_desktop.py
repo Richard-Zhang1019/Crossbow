@@ -114,6 +114,14 @@ def main():
     args = parser.parse_args()
     if args.upstream_port is not None and not 1 <= args.upstream_port <= 65535:
         parser.error('upstream port must be 1..65535')
+    # The single-instance bus name is shared even with separate XDG directories.
+    owner = subprocess.check_output([
+        'gdbus', 'call', '--session', '--dest', 'org.freedesktop.DBus',
+        '--object-path', '/org/freedesktop/DBus',
+        '--method', 'org.freedesktop.DBus.NameHasOwner',
+        'com.richard.crossbow.SingleInstance'], text=True).strip()
+    if owner != '(false,)':
+        parser.error('A Crossbow instance already owns the session bus name; leave it running and test later')
     args.output.mkdir(parents=True, exist_ok=True)
     report = {'passed': False, 'checks': [], 'desktop': os.getenv('XDG_CURRENT_DESKTOP'),
               'session_type': os.getenv('XDG_SESSION_TYPE'), 'gdk_backend': os.getenv('GDK_BACKEND'),
@@ -168,6 +176,9 @@ rules:
     temp = tempfile.TemporaryDirectory(prefix='crossbow-linux-smoke-')
     try:
         env = os.environ.copy()
+        # Linux auto-launch uses HOME/.config directly, bypassing XDG_CONFIG_HOME.
+        env['HOME'] = str(Path(temp.name) / 'home')
+        Path(env['HOME']).mkdir()
         for key in ['XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME']:
             env[key] = str(Path(temp.name) / key)
             Path(env[key]).mkdir()
@@ -207,7 +218,7 @@ rules:
         driver.command('POST', '/element/' + input_id + '/value', {
             'text': subscription_url, 'value': list(subscription_url)})
         wait_until(lambda: driver.js('return document.querySelector("#profile-url").value') == subscription_url)
-        driver.click('.cb-dialog button.primary')
+        driver.click('.cb-dialog button[data-variant="primary"]')
         profiles = wait_until(lambda: driver.invoke('list_profiles'))
         profile_id = profiles[0]['id']
         driver.invoke('set_active_profile', {'id': profile_id})
@@ -293,7 +304,7 @@ rules:
             assert all(c['ok'] for c in diagnosis if not c['skipped'])
         report['diagnosis'] = diagnosis
         driver.page('diagnostics')
-        driver.click('.cb-diagnostics-page .cb-btn.acc')
+        driver.click('.cb-diagnostics-page button[data-variant="primary"]')
         wait_until(lambda: '不适用' in driver.js('return document.body.innerText'))
         driver.screenshot(args.output / 'diagnostics.png')
         report['checks'].append('diagnostics display unsupported system proxy as not applicable')

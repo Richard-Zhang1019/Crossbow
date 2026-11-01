@@ -345,6 +345,20 @@ impl Queue {
         active.truncate(2);
         active
     }
+    fn dismiss_active(&mut self) {
+        let active = self.active();
+        if active.is_empty() {
+            return;
+        }
+        for entry in self
+            .entries
+            .iter_mut()
+            .filter(|entry| active.iter().any(|notice| notice.id == entry.id))
+        {
+            entry.dismissed = true;
+        }
+        self.revision += 1;
+    }
     fn snapshot(&self) -> Snapshot {
         Snapshot {
             revision: self.revision,
@@ -488,6 +502,19 @@ fn hide_overlay(window: &WebviewWindow) {
     }
     #[cfg(not(windows))]
     let _ = window.hide();
+}
+/// A window-manager close dismisses the displayed cards, not the app or tasks.
+/// The caller prevents native destruction so this can remain the last window.
+pub(crate) fn close_overlay(app: &AppHandle) {
+    if let Some(service) = app.try_state::<Notifications>() {
+        let mut queue = service.queue.lock().unwrap_or_else(|e| e.into_inner());
+        if queue.target == OVERLAY {
+            queue.dismiss_active();
+        }
+    }
+    if let Some(window) = app.get_webview_window(OVERLAY) {
+        hide_overlay(&window);
+    }
 }
 fn position_overlay(app: &AppHandle, window: &WebviewWindow) {
     let monitor = app
@@ -854,6 +881,32 @@ mod tests {
         queue.tick(1);
         assert!(queue.active().is_empty());
         assert_eq!(queue.snapshot().history.len(), 1);
+    }
+    #[test]
+    fn closing_overlay_keeps_unresolved_history_and_allows_new_notices() {
+        let mut queue = visible_queue();
+        queue.push(Notice::new(Kind::Error, "failed", "download-a"));
+        queue.push(Notice::new(Kind::Error, "failed", "download-b"));
+        let revision = queue.revision;
+        queue.dismiss_active();
+        queue.tick(250);
+        assert!(queue.revision > revision);
+        assert!(queue.active().is_empty());
+        let history = queue.snapshot().history;
+        assert_eq!(history.len(), 2);
+        assert!(history
+            .iter()
+            .all(|notice| notice.dismissed && notice.is_pending()));
+        assert!(history.iter().all(|notice| notice.read_at.is_none()));
+
+        let mut repeated = Notice::new(Kind::Error, "failed", "download-a");
+        repeated.details = "new diagnostic details".into();
+        queue.push(repeated);
+        assert!(queue.active().is_empty());
+        let next = queue.push(Notice::new(Kind::Error, "new failure", "download-c"));
+        assert_eq!(queue.active().len(), 1);
+        assert_eq!(queue.active()[0].id, next);
+        assert_eq!(queue.snapshot().history.len(), 3);
     }
     #[test]
     fn errors_preempt_progress_without_consuming_queued_lifetimes() {
