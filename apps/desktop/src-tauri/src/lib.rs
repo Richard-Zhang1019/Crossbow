@@ -3475,7 +3475,46 @@ fn show_fatal(msg: &str) {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// Windows：更新安装器以提权 token 重启应用；若 UAC 中选择了另一个
+/// 管理员账号，提权实例会读那个账号的 AppData，订阅等数据看似全丢（#252）。
+/// GUI 不需要管理员（TUN 由 LocalSystem 服务承载），发现被提权就用
+/// explorer.exe 派生交互用户会话的降权实例并退出。
+#[cfg(target_os = "windows")]
+fn deelevate_if_needed() {
+    const SKIP_ENV: &str = "CROSSBOW_DEELEVATED";
+    if std::env::var_os(SKIP_ENV).is_some() || !is_elevated() {
+        return;
+    }
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let spawned = std::process::Command::new("explorer.exe")
+        .arg(&exe)
+        .env(SKIP_ENV, "1")
+        .spawn()
+        .is_ok();
+    if spawned {
+        eprintln!(
+            "elevated process detected; relaunched de-elevated via explorer to keep the interactive user's data dir"
+        );
+        // 不做清理直接退出：pidfile 里是已死 pid，降权实例的保险检查能放行；
+        // 本实例尚未打开 store/内核，无孤儿资源。
+        std::process::exit(0);
+    }
+    // explorer 派生失败（shell 未运行等）→ 继续提权运行，可用性优先。
+    eprintln!("deelevate relaunch failed; continuing elevated");
+}
+
+#[cfg(target_os = "windows")]
+fn is_elevated() -> bool {
+    // windows-sys 0.59 未导出 OpenProcessToken；IsUserAnAdmin（shell32）判定
+    // 当前令牌是否处于管理员组——UAC 拆分令牌（未提权）会正确返回 false。
+    unsafe { windows_sys::Win32::UI::Shell::IsUserAnAdmin() != 0 }
+}
+
 pub fn run() {
+    #[cfg(target_os = "windows")]
+    deelevate_if_needed();
     tauri::Builder::default()
         // 单实例必须最先注册：二次启动的 argv 里可能带 crossbow:// 深链接。
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {

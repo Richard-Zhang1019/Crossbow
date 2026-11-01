@@ -76,7 +76,7 @@ objc2-foundation = { version = "0.3", features = ["std", "NSGeometry", "NSString
 raw-window-handle = "0.6"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Networking_WinInet", "Win32_Graphics_Dwm", "Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Pipes", "Win32_System_IO"] }
+windows-sys = { version = "0.59", features = ["Win32_Networking_WinInet", "Win32_Graphics_Dwm", "Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Pipes", "Win32_System_IO"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
