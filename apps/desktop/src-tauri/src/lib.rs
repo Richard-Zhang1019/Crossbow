@@ -2190,10 +2190,23 @@ fn toggle_sysproxy_state(state: &AppState) -> Result<(), String> {
             return Err("内核未运行，无法开启系统代理".into());
         }
         if tun_enabled {
-            state.sysproxy.enable_during_tun(port)
+            state.sysproxy.enable_during_tun(port)?;
         } else {
-            state.sysproxy.enable(port)
+            state.sysproxy.enable(port)?;
         }
+        // 原生授权期间内核可能已退出；完成后复查，避免代理指向失效端口。
+        if state.core().status() != CoreStatus::Running {
+            let recovery = if tun_enabled {
+                state.sysproxy.disable_during_tun()
+            } else {
+                state.sysproxy.disable()
+            };
+            return match recovery {
+                Ok(()) => Err("管理员授权期间内核已停止，系统代理已恢复".into()),
+                Err(error) => Err(format!("管理员授权期间内核已停止；代理恢复失败：{error}")),
+            };
+        }
+        Ok(())
     }
 }
 
@@ -2665,12 +2678,8 @@ fn spawn_tun_health_monitor(app: &AppHandle) {
                     let probe = if core_status == CoreStatus::Running {
                         // A second proxy client may re-enable a stale macOS
                         // proxy after Crossbow has established its route.
-                        if !state.sysproxy.status().enabled
-                            && !state.sysproxy.external_endpoints().is_empty()
-                        {
-                            if let Err(error) = state.sysproxy.suspend_for_tun() {
-                                eprintln!("tun system proxy cleanup failed: {error}");
-                            }
+                        if let Err(error) = state.sysproxy.clear_external_for_tun() {
+                            eprintln!("tun system proxy cleanup failed: {error}");
                         }
                         if skip_probe {
                             // 重建立/放弃周期跳过连通性探测
@@ -3361,6 +3370,7 @@ pub(crate) fn cleanup_before_process_exit(app: &AppHandle, preserve_handoff: boo
             .update_handoff
             .load(std::sync::atomic::Ordering::SeqCst);
         if !preserve_handoff || (!handoff && !updating) {
+            state.sysproxy.begin_shutdown();
             let tun_enabled = state.store.lock().unwrap().data().engine.tun_enable;
             if tun_enabled {
                 // 特权内核停掉之后，立刻按记住的记录还原系统代理。
