@@ -22,9 +22,9 @@ const canonical = new URL(`${withBase(pathFor(lang, path))}`, Astro.site);
 const altLang = other(lang);
 const altPath = new URL(`${withBase(pathFor(altLang, path))}`, Astro.site);
 const nav = [
-  { to: "/", label: "首页" },
-  { to: "/features", label: "功能详解" },
-  { to: "/guide", label: "进阶指南" },
+  { to: "/", label: i18n("nav.home") },
+  { to: "/features", label: i18n("nav.features") },
+  { to: "/guide", label: i18n("nav.guide") },
 ];
 ---
 

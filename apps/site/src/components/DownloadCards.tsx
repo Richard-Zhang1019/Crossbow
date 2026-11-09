@@ -109,15 +109,15 @@ export default function DownloadCards({ lang }: { lang: Lang }) {
   })();
 
   const platforms = [
-    { name: "macOS", detail: i18n("download.1"), url: release?.dmgUrl, label: i18n("download.2"), note: i18n("download.3") },
-    { name: "Windows", detail: "x64 (Windows 11)", url: release?.windowsUrl, label: i18n("download.4"), note: i18n("download.5") },
-    { name: "Linux", detail: i18n("download.6"), url: release?.linuxUrl, label: i18n("download.7"), note: i18n("download.8") },
+    { name: "macOS", detail: i18n("card.1"), url: release?.dmgUrl, label: i18n("card.2"), note: i18n("card.3") },
+    { name: "Windows", detail: "x64 (Windows 11)", url: release?.windowsUrl, label: i18n("card.4"), note: i18n("card.5") },
+    { name: "Linux", detail: i18n("card.6"), url: release?.linuxUrl, label: i18n("card.7"), note: i18n("card.8") },
   ];
   const headline = release
-    ? `${release.version}${release.date ? `（${release.date}）` : ""}，${i18n("download.9")}`
+    ? `${release.version}${release.date ? `（${release.date}）` : ""}，${i18n("card.9")}`
     : status === "loading"
-      ? i18n("download.10")
-      : i18n("download.11");
+      ? i18n("card.10")
+      : i18n("card.11");
 
   return (
     <>
@@ -126,20 +126,20 @@ export default function DownloadCards({ lang }: { lang: Lang }) {
       </div>
       {(status === "failed" || stale) && (
         <p className="download-notice" role="status">
-          {status === "failed" ? i18n("download.12") : i18n("download.13")}
-          <button className="download-retry" onClick={retry}>{i18n("download.14")}</button>
+          {status === "failed" ? i18n("card.12") : i18n("card.13")}
+          <button className="download-retry" onClick={retry}>{i18n("card.14")}</button>
         </p>
       )}
       <div className="download-platforms">
         {platforms.map((p) => (
           <article key={p.name} className={"download-platform" + (detected === p.name ? " recommended" : "")}>
             <span className="platform-detail">{p.detail}</span>
-            {detected === p.name && <span className="platform-badge">{i18n("download.15")}</span>}
+            {detected === p.name && <span className="platform-badge">{i18n("card.15")}</span>}
             <h3>Crossbow for {p.name}</h3>
             <p>{p.note}</p>
             <div className="platform-actions">
               {status === "loading" ? (
-                <span className="download-state" role="status">{i18n("download.10")}</span>
+                <span className="download-state" role="status">{i18n("card.10")}</span>
               ) : p.url ? (
                 <a className="primary-button" href={p.url} target="_blank" rel="noopener noreferrer">{p.label}</a>
               ) : (
@@ -152,7 +152,7 @@ export default function DownloadCards({ lang }: { lang: Lang }) {
         ))}
       </div>
       <div className="download-links">
-        <a href={LATEST} target="_blank" rel="noopener noreferrer">{i18n("download.16")}</a>
+        <a href={LATEST} target="_blank" rel="noopener noreferrer">{i18n("card.16")}</a>
         {release?.checksumsUrl && <a href={release.checksumsUrl} target="_blank" rel="noopener noreferrer">SHA256SUMS ↗</a>}
       </div>
     </>
