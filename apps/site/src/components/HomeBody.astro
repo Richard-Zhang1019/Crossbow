@@ -1,113 +1,114 @@
 ---
-import { t, type Lang } from "../lib/i18n";
+import { createI18n, t, type Lang } from "../i18n";
 import { REPO, RELEASES } from "../site-meta";
 import Logo from "./Logo.astro";
 import DownloadSection from "./DownloadSection.astro";
 
 const { lang } = Astro.props;
-const _ = (key: string) => t(lang, key);
+const i18n = createI18n(lang);
+
 const base = import.meta.env.BASE_URL.replace(/\/+$/, "");
 const route = (p: string) => `${base}${lang === "zh" ? "/zh" : ""}${p === "/" ? "/" : p}`;
 
 const FEATURES = [
-  { icon: "M4 5h16v14H4z", icon2: "M4 10h16M9 5v14", title: _("订阅管理"), text: _("多种方式导入订阅，查看流量、到期和更新状态；更新后显示节点变更摘要，失败保留旧配置。") },
-  { icon: "M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z", icon2: "M9 12l2 2 4-4", title: _("系统代理与 TUN"), text: _("系统代理适合日常使用；TUN 可接管更多应用流量。macOS / Windows 上两者可同时开启、独立控制；Linux 实验版使用手动代理或另装服务开启 TUN。") },
-  { icon: "M3 12h4l2-6 4 12 2-6h6", title: _("网络诊断向导"), text: _("按依赖顺序检查内核、控制器、配置、端口、系统代理、代理连通与 DNS；优先定位第一个阻塞项。") },
-  { icon: "M8 9l-4 3 4 3M16 9l4 3-4 3M13 5l-2 14", title: _("JS 覆写"), text: _("用 function main(config) 改造订阅：过滤节点、改写规则。保存即校验，错误当场归因；沙箱执行无副作用。") },
-  { icon: "M13 2L5 13h6l-2 9 8-13h-6z", title: _("轻量模式"), text: _("关闭窗口后保留内核与代理，释放界面内存。重新打开自动接管，状态无缝恢复；托盘一键切换。") },
-  { icon: "M2 12h4l2-5 3 10 3-7 2 2h6", title: _("实时观测"), text: _("速率曲线、按进程聚合的流量排行、单连接断开、分级日志——运行状态尽收眼底。") },
+  { icon: "M4 5h16v14H4z", icon2: "M4 10h16M9 5v14", title: i18n("home.1"), text: i18n("home.2") },
+  { icon: "M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z", icon2: "M9 12l2 2 4-4", title: i18n("home.3"), text: i18n("home.4") },
+  { icon: "M3 12h4l2-6 4 12 2-6h6", title: i18n("home.5"), text: i18n("home.6") },
+  { icon: "M8 9l-4 3 4 3M16 9l4 3-4 3M13 5l-2 14", title: i18n("home.7"), text: i18n("home.8") },
+  { icon: "M13 2L5 13h6l-2 9 8-13h-6z", title: i18n("home.9"), text: i18n("home.10") },
+  { icon: "M2 12h4l2-5 3 10 3-7 2 2h6", title: i18n("home.11"), text: i18n("home.12") },
 ];
 
 const FAQS = [
   {
-    q: _("安装或打开时遇到 macOS 安全提示？"),
+    q: i18n("home.13"),
     a: [
-      { text: _("请确认安装包来自") },
+      { text: i18n("home.14") },
       { href: RELEASES, label: "GitHub Releases", external: true },
-      { text: _("，重新下载后按系统提示打开；不要使用来源不明的安装包。") },
+      { text: i18n("home.15") },
     ],
   },
   {
-    q: _("支持哪些协议？"),
+    q: i18n("home.16"),
     a: [
-      { text: _("可使用 mihomo 或 sing-box，协议支持以所选内核为准。mihomo 支持 Shadowsocks / VMess / VLESS / Trojan / Hysteria2 / TUIC / WireGuard 等全部 mihomo 所支持的协议，兼容 Clash 订阅与配置格式。") },
+      { text: i18n("home.17") },
     ],
   },
   {
-    q: _("支持 TUN 模式吗？"),
+    q: i18n("home.18"),
     a: [
-      { text: _("macOS 与 Windows 可在设置中开启 TUN，首次需按平台完成管理员授权或服务安装。可与本应用的系统代理同时开启、独立控制；若其他 VPN 或代理已占用 TUN 路由，请先关闭其 TUN。测试前请阅读") },
-      { href: `${REPO}/blob/main/docs/TUN-RECOVERY.md`, label: _("离线恢复说明"), external: true },
-      { text: _("。") },
+      { text: i18n("home.19") },
+      { href: `${REPO}/blob/main/docs/TUN-RECOVERY.md`, label: i18n("home.20"), external: true },
+      { text: i18n("home.21") },
     ],
   },
   {
-    q: _("支持 Linux 和 iOS 吗？"),
+    q: i18n("home.22"),
     a: [
-      { text: _("已提供 Linux x86_64 社区实验版归档，当前主要在 CachyOS + niri / Wayland 验证。需手动配置应用代理，TUN 需 systemd / polkit 服务；尚无 AppImage / DEB 或应用内自动更新。") },
-      { href: route("/features#support-matrix"), label: _("查看平台支持矩阵") },
-      { text: _("。iOS 正在真机开发验证中，尚未公开分发。") },
+      { text: i18n("home.23") },
+      { href: route("/features#support-matrix"), label: i18n("home.24") },
+      { text: i18n("home.25") },
     ],
   },
   {
-    q: _("升级会丢配置吗？"),
+    q: i18n("home.26"),
     a: [
-      { text: _("macOS 配置会继续保存在 ~/Library/Application Support/com.richard.crossbow/；旧版 com.crossbow.app 数据会在升级时迁移。配置保存前有快照，建议升级前仍自行备份。") },
+      { text: i18n("home.27") },
     ],
   },
   {
-    q: _("显示「运行中」，但浏览器打不开网站？"),
+    q: i18n("home.28"),
     a: [
-      { text: _("内核运行 ≠ 浏览器可用。先打开") },
-      { href: route("/features#diagnostics"), label: _("网络诊断向导") },
-      { text: _("，按第一个阻塞项逐层排查（系统代理指向、TUN、DNS）；更多证据化排查步骤见") },
-      { href: route("/guide#troubleshooting"), label: _("连接不通时按证据排查") },
-      { text: _("。") },
+      { text: i18n("home.29") },
+      { href: route("/features#diagnostics"), label: i18n("home.5") },
+      { text: i18n("home.30") },
+      { href: route("/guide#troubleshooting"), label: i18n("home.31") },
+      { text: i18n("home.21") },
     ],
   },
   {
-    q: _("订阅更新失败了？"),
+    q: i18n("home.32"),
     a: [
-      { text: _("更新失败不会清空节点，旧配置继续可用；在「配置 → 配置来源」查看最近失败原因与下次重试时间，也可手动更新。详见") },
-      { href: route("/guide#subscriptions"), label: _("订阅更新：知道更新了什么") },
-      { text: _("。") },
+      { text: i18n("home.33") },
+      { href: route("/guide#subscriptions"), label: i18n("home.34") },
+      { text: i18n("home.21") },
     ],
   },
   {
-    q: _("Windows 提示服务缺失，TUN 无法开启？"),
+    q: i18n("home.35"),
     a: [
-      { text: _("TUN 依赖随安装包附带的 CrossbowService。用完整安装包重新安装或修复即可；详细步骤见") },
-      { href: route("/guide#windows"), label: _("Windows 安装与 TUN 服务") },
-      { text: _("。") },
+      { text: i18n("home.36") },
+      { href: route("/guide#windows"), label: i18n("home.37") },
+      { text: i18n("home.21") },
     ],
   },
     {
-    q: _("如何参与或反馈？"),
+    q: i18n("home.38"),
     a: [
-      { text: _("项目开源于 GitHub，欢迎提交 Issue 与 PR。感谢") },
+      { text: i18n("home.39") },
       { href: "https://github.com/YangYuS8", label: "YangYuS8", external: true },
-      { text: _(" 推进 Linux 适配与实机验证，也感谢所有贡献者。") },
+      { text: i18n("home.40") },
     ],
   },
 ];
 ---
 
 <section class="hero shell" aria-labelledby="hero-title">
-  <div class="hero-intro"><h1 id="hero-title">{_("让连接，清晰可见。")}</h1><p>{_("macOS / Windows 开源代理客户端，Linux 实验版由社区共建。")}<br class="mobile-break" />{_("管理订阅与节点，也看清每一步连接。")}</p></div>
-  <div class="flow-stage" role="img" aria-label={_("你的设备，经规则分流，连接目标网络。连接路径示意。")}>
-    <div class="flow-node"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="14" rx="1.5" /><path d="M12 17v4m-5 0h10" /></svg><b>{_("你的设备")}</b><span class="desktop-copy">macOS / Windows / Linux</span><span class="mobile-copy">{_("桌面设备")}</span></div>
+  <div class="hero-intro"><h1 id="hero-title">{i18n("home.41")}</h1><p>{i18n("home.42")}<br class="mobile-break" />{i18n("home.43")}</p></div>
+  <div class="flow-stage" role="img" aria-label={i18n("home.44")}>
+    <div class="flow-node"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="14" rx="1.5" /><path d="M12 17v4m-5 0h10" /></svg><b>{i18n("home.45")}</b><span class="desktop-copy">macOS / Windows / Linux</span><span class="mobile-copy">{i18n("home.46")}</span></div>
     <div class="flow-track" />
-    <div class="flow-node"><svg viewBox="0 0 24 24"><path d="M3 5h18M3 12h18M3 19h18M7 2v6m10 1v6m-9 1v6" /></svg><b>{_("规则分流")}</b><span>{_("按需连接")}</span></div>
+    <div class="flow-node"><svg viewBox="0 0 24 24"><path d="M3 5h18M3 12h18M3 19h18M7 2v6m10 1v6m-9 1v6" /></svg><b>{i18n("home.47")}</b><span>{i18n("home.48")}</span></div>
     <div class="flow-track" />
-    <div class="flow-node"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><ellipse cx="12" cy="12" rx="4" ry="9" /><path d="M3 12h18M5 6.5c4 3 10 3 14 0M5 17.5c4-3 10-3 14 0" /></svg><b>{_("目标网络")}</b><span>{_("代理 / 直连")}</span></div>
+    <div class="flow-node"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><ellipse cx="12" cy="12" rx="4" ry="9" /><path d="M3 12h18M5 6.5c4 3 10 3 14 0M5 17.5c4-3 10-3 14 0" /></svg><b>{i18n("home.49")}</b><span>{i18n("home.50")}</span></div>
     <div class="flow-lane" aria-hidden="true"><span class="packet" data-packet /></div>
   </div>
-  <div class="hero-action"><a class="primary-button" href={route("/download")}>{_("下载 Crossbow")}</a><p>{_("开源客户端，自备节点或配置。")}</p></div>
-  <button class="pause-button" aria-pressed="false" data-pause><span aria-hidden="true">Ⅱ</span>{_("暂停动效")}</button>
+  <div class="hero-action"><a class="primary-button" href={route("/download")}>{i18n("home.51")}</a><p>{i18n("home.52")}</p></div>
+  <button class="pause-button" aria-pressed="false" data-pause><span aria-hidden="true">Ⅱ</span>{i18n("home.53")}</button>
 </section>
 
 <section id="features" class="shell content-section">
-  <div class="section-heading"><h2>{_("把复杂留给内核，把简单交给你")}</h2><p>{_("每个特性都来自真实的日常使用反馈")}</p></div>
+  <div class="section-heading"><h2>{i18n("home.54")}</h2><p>{i18n("home.55")}</p></div>
   <div class="feature-grid">
     {FEATURES.map((f) => (
       <article class="feature-card">
@@ -116,24 +117,24 @@ const FAQS = [
       </article>
     ))}
   </div>
-  <div class="feature-callout"><div><h3>{_("双内核引擎 + 菜单栏实时速率")}</h3><p>{_("mihomo ↔ sing-box 一键切换，配置自动转换、规则集自动更新；macOS 菜单栏双行速率，恒宽展示。")}</p></div><a class="text-link" href={route("/features")}>{_("查看功能详解 →")}</a></div>
-  <p class="community-note">{_("Linux 实验版由社区共同推进，感谢")} <a href="https://github.com/YangYuS8" target="_blank" rel="noopener noreferrer">YangYuS8</a>{_(" 的适配与验证，")}<a class="text-link" href={route("/guide#linux")}>{_("了解当前支持范围 →")}</a></p>
+  <div class="feature-callout"><div><h3>{i18n("home.56")}</h3><p>{i18n("home.57")}</p></div><a class="text-link" href={route("/features")}>{i18n("home.58")}</a></div>
+  <p class="community-note">{i18n("home.59")} <a href="https://github.com/YangYuS8" target="_blank" rel="noopener noreferrer">YangYuS8</a>{i18n("home.60")}<a class="text-link" href={route("/guide#linux")}>{i18n("home.61")}</a></p>
 </section>
 
 <section id="start" class="shell content-section">
-  <div class="section-heading"><h2>{_("三步上手")}</h2></div>
+  <div class="section-heading"><h2>{i18n("home.62")}</h2></div>
   <div class="steps-grid">
-    {/* taste-skill-ignore: retain user-requested three installation steps. */}<article class="step-card"><span class="step-number">01</span><h3>{_("下载并安装")}</h3><p>{_("macOS 下载 DMG 并拖入「应用程序」；Windows 下载 x64 安装程序；Linux 实验版解压后运行。安装包均来自 GitHub Releases。")}</p></article>
-    {/* taste-skill-ignore: retain user-requested three installation steps. */}<article class="step-card"><span class="step-number">02</span><h3>{_("导入订阅")}</h3><p>{_("粘贴订阅链接，或把 .yaml 配置文件拖进窗口。设置自动更新间隔，查看流量与到期信息。")}</p></article>
-    {/* taste-skill-ignore: retain user-requested three installation steps. */}<article class="step-card"><span class="step-number">03</span><h3>{_("一键开启")}</h3><p>{_("选择节点，macOS / Windows 在概览开启系统代理；Linux 需手动设置应用代理。TUN 按平台完成授权或服务安装后开启。")}</p></article>
+    {/* taste-skill-ignore: retain user-requested three installation steps. */}<article class="step-card"><span class="step-number">01</span><h3>{i18n("home.63")}</h3><p>{i18n("home.64")}</p></article>
+    {/* taste-skill-ignore: retain user-requested three installation steps. */}<article class="step-card"><span class="step-number">02</span><h3>{i18n("home.65")}</h3><p>{i18n("home.66")}</p></article>
+    {/* taste-skill-ignore: retain user-requested three installation steps. */}<article class="step-card"><span class="step-number">03</span><h3>{i18n("home.67")}</h3><p>{i18n("home.68")}</p></article>
   </div>
-  <a class="text-link section-more" href={route("/guide#quick-start")}>{_("按步骤快速开始 →")}</a>
+  <a class="text-link section-more" href={route("/guide#quick-start")}>{i18n("home.69")}</a>
 </section>
 
 <DownloadSection lang={lang} />
 
 <section id="faq" class="shell content-section faq-section">
-  <div class="section-heading"><h2>{_("常见问题")}</h2></div>
+  <div class="section-heading"><h2>{i18n("home.70")}</h2></div>
   <div class="faq-list">
     {FAQS.map((f) => (
     <details name="faq">
