@@ -1,6 +1,8 @@
 ---
 import Layout from "../layouts/Layout.astro";
+import { createI18n } from "../i18n";
+const i18n = createI18n("en");
 ---
-<Layout lang="zh" path="/404" title="页面未找到 · Crossbow" description="这条路径还未连接。">
-  <div class="shell not-found"><h1>这条路径还未连接。</h1><a class="text-link" href="/">返回首页 →</a></div>
+<Layout lang="en" path="/404" title={i18n("notfound.title")} description={i18n("notfound.desc")}>
+  <div class="shell not-found"><h1>{i18n("notfound.heading")}</h1><a class="text-link" href="/">{i18n("notfound.back")}</a></div>
 </Layout>

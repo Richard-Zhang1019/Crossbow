@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { t, type Lang } from "../lib/i18n";
+import { createI18n, type Lang } from "../i18n";
 import { LATEST } from "../site-meta";
 
 export interface ReleaseInfo {
@@ -65,7 +65,7 @@ function parseRelease(d: {
 /** 下载卡片岛（#363 平移自 #349 的 React 下载区）：版本/资产跟随 GitHub release，
  *  状态机区分加载中 / 失败 / 就绪，失败可重试，成功结果本地缓存。 */
 export default function DownloadCards({ lang }: { lang: Lang }) {
-  const _ = (key: string) => t(lang, key);
+  const i18n = createI18n(lang);
   const [release, setRelease] = useState<ReleaseInfo | null>(() => readCache());
   const [status, setStatus] = useState<ReleaseStatus>(() => (readCache() ? "ready" : "loading"));
   const [stale, setStale] = useState(false);
@@ -109,15 +109,15 @@ export default function DownloadCards({ lang }: { lang: Lang }) {
   })();
 
   const platforms = [
-    { name: "macOS", detail: _("Apple Silicon（M 系列芯片）"), url: release?.dmgUrl, label: _("下载 DMG"), note: _("Developer ID 签名与公证；拖入应用程序后启动。") },
-    { name: "Windows", detail: "x64 (Windows 11)", url: release?.windowsUrl, label: _("下载 EXE"), note: _("尚无 Windows 代码签名；请核对官方来源及发布页中的 SHA256SUMS。") },
-    { name: "Linux", detail: _("x86_64（社区实验版）"), url: release?.linuxUrl, label: _("下载 TAR.GZ"), note: _("已在 CachyOS / niri 环境验证部分功能。解压后以普通用户运行；代理需手动配置，TUN 需另装服务。") },
+    { name: "macOS", detail: i18n("download.1"), url: release?.dmgUrl, label: i18n("download.2"), note: i18n("download.3") },
+    { name: "Windows", detail: "x64 (Windows 11)", url: release?.windowsUrl, label: i18n("download.4"), note: i18n("download.5") },
+    { name: "Linux", detail: i18n("download.6"), url: release?.linuxUrl, label: i18n("download.7"), note: i18n("download.8") },
   ];
   const headline = release
-    ? `${release.version}${release.date ? `（${release.date}）` : ""}，${_("macOS / Windows 支持应用内更新；Linux 实验版手动下载")}`
+    ? `${release.version}${release.date ? `（${release.date}）` : ""}，${i18n("download.9")}`
     : status === "loading"
-      ? _("正在获取最新版本…")
-      : _("版本信息获取失败");
+      ? i18n("download.10")
+      : i18n("download.11");
 
   return (
     <>
@@ -126,20 +126,20 @@ export default function DownloadCards({ lang }: { lang: Lang }) {
       </div>
       {(status === "failed" || stale) && (
         <p className="download-notice" role="status">
-          {status === "failed" ? _("版本信息获取失败，可重试或直接前往发布页。") : _("当前展示的是缓存的版本信息（本次刷新失败）。")}
-          <button className="download-retry" onClick={retry}>{_("重试")}</button>
+          {status === "failed" ? i18n("download.12") : i18n("download.13")}
+          <button className="download-retry" onClick={retry}>{i18n("download.14")}</button>
         </p>
       )}
       <div className="download-platforms">
         {platforms.map((p) => (
           <article key={p.name} className={"download-platform" + (detected === p.name ? " recommended" : "")}>
             <span className="platform-detail">{p.detail}</span>
-            {detected === p.name && <span className="platform-badge">{_("检测到你的系统")}</span>}
+            {detected === p.name && <span className="platform-badge">{i18n("download.15")}</span>}
             <h3>Crossbow for {p.name}</h3>
             <p>{p.note}</p>
             <div className="platform-actions">
               {status === "loading" ? (
-                <span className="download-state" role="status">{_("正在获取最新版本…")}</span>
+                <span className="download-state" role="status">{i18n("download.10")}</span>
               ) : p.url ? (
                 <a className="primary-button" href={p.url} target="_blank" rel="noopener noreferrer">{p.label}</a>
               ) : (
@@ -152,7 +152,7 @@ export default function DownloadCards({ lang }: { lang: Lang }) {
         ))}
       </div>
       <div className="download-links">
-        <a href={LATEST} target="_blank" rel="noopener noreferrer">{_("更新说明 ↗")}</a>
+        <a href={LATEST} target="_blank" rel="noopener noreferrer">{i18n("download.16")}</a>
         {release?.checksumsUrl && <a href={release.checksumsUrl} target="_blank" rel="noopener noreferrer">SHA256SUMS ↗</a>}
       </div>
     </>

@@ -1,162 +1,163 @@
 ---
-import { t, type Lang } from "../lib/i18n";
+import { createI18n, t, type Lang } from "../i18n";
 import { REPO, LATEST } from "../site-meta";
 
 const { lang } = Astro.props;
-const _ = (key: string) => t(lang, key);
+const i18n = createI18n(lang);
+
 
 const FEATURES = [
   {
-    id: "support-matrix", tag: _("支持矩阵"), title: _("平台支持矩阵"), matrix: true,
-    summary: _("一台设备对应一套能力边界：系统、CPU、TUN、双内核与自动更新，先看矩阵再决定用在哪台机器。"),
-    detail: [_("macOS 与 Windows 为正式支持；Linux x86_64 为社区实验版，iOS 仍在开发验证中。")],
+    id: "support-matrix", tag: i18n("features.1"), title: i18n("features.2"), matrix: true,
+    summary: i18n("features.3"),
+    detail: [i18n("features.4")],
   },
   {
-    id: "nodes", tag: _("节点"), title: _("节点选择与测速"),
-    summary: _("按地区、名称与延迟找到合适的节点，保留自动选择，也支持手动指定。"),
+    id: "nodes", tag: i18n("features.5"), title: i18n("features.6"),
+    summary: i18n("features.7"),
     detail: [
-      _("按地区整理节点，结合名称搜索、可用过滤与延迟排序缩小范围。"),
-      _("支持单节点与整组延迟测试，区分测速中、成功和超时状态。"),
-      _("自动选择组可手动固定节点，并通过「恢复自动」重新交给内核择优。"),
-      _("macOS 托盘中可切换节点并查看延迟，不必反复打开主窗口。"),
+      i18n("features.8"),
+      i18n("features.9"),
+      i18n("features.10"),
+      i18n("features.11"),
     ],
   },
   {
-    id: "subscription", tag: _("订阅"), title: _("订阅管理"),
-    summary: _("URL / 粘贴 / 文件 / 拖拽 / 深链接五种方式导入；流量与到期自动追踪；自动更新失败保留旧配置并指数退避重试。"),
+    id: "subscription", tag: i18n("features.12"), title: i18n("features.13"),
+    summary: i18n("features.14"),
     detail: [
-      _("导入即校验：格式不合法当场报错，不会写坏现有配置。"),
-      _("订阅卡片直观展示剩余流量与到期时间，即将到期高亮提醒。"),
-      _("自动更新间隔可按订阅独立设置（默认 6 小时）；更新失败不会清空节点，旧配置继续可用。"),
-      _("支持 crossbow://import?url=… 深链接，从任意分享页一键导入。"),
-      _("顶部配置选择器可直接切换已导入的配置；切换后可在概览检查出口与接管状态。"),
-      _("配置来源详情展示上次成功、下次更新或重试时间，以及最近失败原因；更新后统计新增、移除和变化的节点数量。"),
+      i18n("features.15"),
+      i18n("features.16"),
+      i18n("features.17"),
+      i18n("features.18"),
+      i18n("features.19"),
+      i18n("features.20"),
     ],
   },
   {
-    id: "sysproxy-guard", tag: _("守护"), title: _("系统代理守护"),
-    summary: _("macOS / Windows 开启前快照原设置，退出/崩溃还原；内核异常自动降级恢复——告别「退出后断网」。"),
+    id: "sysproxy-guard", tag: i18n("features.21"), title: i18n("features.22"),
+    summary: i18n("features.23"),
     detail: [
-      _("开启代理前对每个网络服务的 HTTP/HTTPS/SOCKS 原设置拍照存档（journal）。"),
-      _("正常退出、崩溃、甚至进程被强杀，下次启动都会先执行一次全量还原，不留脏设置。"),
-      _("内核崩溃时立即还原系统代理并提示；覆写导致的配置错误自动进入安全模式（禁用覆写重启一次）。"),
-      _("混合端口被其他程序占用时，启动前即明确报错，不让你对着「启动中」干等。"),
+      i18n("features.24"),
+      i18n("features.25"),
+      i18n("features.26"),
+      i18n("features.27"),
     ],
   },
   {
-    id: "tun", tag: _("网络"), title: _("TUN 模式"),
-    summary: _("通过虚拟网卡接管更多应用流量；macOS / Windows 可与本应用的系统代理同时开启。Linux 实验版需单独安装服务。"),
+    id: "tun", tag: i18n("features.28"), title: i18n("features.29"),
+    summary: i18n("features.30"),
     detail: [
-      _("macOS 首次开启需管理员授权，Windows 需安装并使用后台服务；完成设置后可在界面开关 TUN。"),
-      _("TUN 与本应用的系统代理可同时开启；其他代理或 VPN 的 TUN 应先关闭，避免路由冲突。"),
-      _("Linux 实验版通过 systemd / polkit 服务运行 mihomo TUN；尚未完成所有桌面与真实网络场景的验收。"),
-      _("若其他代理或 VPN 已占用隧道路由，先关闭对方的 TUN 模式；断网时可按仓库中的离线恢复说明操作。"),
+      i18n("features.31"),
+      i18n("features.32"),
+      i18n("features.33"),
+      i18n("features.34"),
     ],
   },
   {
-    id: "diagnostics", tag: _("诊断"), title: _("网络诊断向导"),
-    summary: _("按依赖顺序检查内核、控制器、配置、端口、系统代理、代理连通与 DNS；优先定位第一个阻塞项。"),
+    id: "diagnostics", tag: i18n("features.35"), title: i18n("features.36"),
+    summary: i18n("features.37"),
     detail: [
-      _("逐层排查：先内核是否起来，再控制器是否就绪，然后配置是否合法、端口是否监听、系统代理是否指向本应用、代理是否真的能出网、DNS 是否可用。"),
-      _("逐项显示检查中、通过、失败或跳过；结束后优先展示第一个阻塞项，提供可用的修复操作或配置入口。"),
-      _("诊断结果保留在当前应用会话中；修复后重新检查，确认后续依赖项是否恢复。"),
+      i18n("features.38"),
+      i18n("features.39"),
+      i18n("features.40"),
     ],
   },
   {
-    id: "js-override", tag: _("覆写"), title: _("JS 覆写"),
-    summary: _("用 function main(config) 改造订阅：过滤节点、改写规则、注入自定义配置。保存即校验，错误当场归因。"),
+    id: "js-override", tag: i18n("features.41"), title: i18n("features.42"),
+    summary: i18n("features.43"),
     detail: [
-      _("内嵌 JS 引擎沙箱执行，无网络无文件副作用，只对订阅配置做纯函数变换。"),
-      _("支持「脚本」与「Merge 补丁」两种覆写类型；可同时启用多条并绑定到指定订阅。"),
-      _("保存时自动试运行：语法错误、运行时异常当场报错并定位到行。"),
-      _("覆写出错不会拖垮内核：自动进入安全模式禁用全部覆写，修复后保存即恢复。"),
+      i18n("features.44"),
+      i18n("features.45"),
+      i18n("features.46"),
+      i18n("features.47"),
     ],
   },
   {
-    id: "lightweight", tag: _("轻量"), title: _("轻量模式"),
-    summary: _("关闭窗口后保留内核与代理，释放界面内存。重新打开自动接管，状态无缝恢复；托盘一键切换。"),
+    id: "lightweight", tag: i18n("features.48"), title: i18n("features.49"),
+    summary: i18n("features.50"),
     detail: [
-      _("轻量交接：GUI 进程只保留托盘与内核管理，webview 内存完全释放。"),
-      _("内核以 detach 模式留给系统收养；重新打开应用自动收养并恢复全部状态。"),
-      _("macOS 菜单栏实时速率在轻量模式下照常跳动。"),
+      i18n("features.51"),
+      i18n("features.52"),
+      i18n("features.53"),
     ],
   },
   {
-    id: "observability", tag: _("观测"), title: _("实时观测"),
-    summary: _("菜单栏实时速率、速率曲线、按进程聚合的流量排行、单连接断开、分级日志——运行状态尽收眼底。"),
+    id: "observability", tag: i18n("features.54"), title: i18n("features.55"),
+    summary: i18n("features.56"),
     detail: [
-      _("macOS 菜单栏双行实时速率（上行/下行），数字恒宽显示不抖动。"),
-      _("首页实时速率曲线 + 累计流量；当前出口节点与延迟一目了然。"),
-      _("连接页按进程聚合流量排行，可单独断开任意连接。"),
-      _("点击连接行查看完整目标、命中规则、策略链和进程路径；可逐项或整体复制，并按流量排序、搜索和暂停刷新。"),
-      _("日志支持级别多选、关键词筛选、暂停跟随、返回底部和复制单条；可将当前筛选结果导出为脱敏日志。"),
-      _("节点页可测试 YouTube、X、Google 与 GitHub，保留测试时间与出口；链路变化后提示重新测试，HTTP 限制响应与连接失败分别说明。"),
+      i18n("features.57"),
+      i18n("features.58"),
+      i18n("features.59"),
+      i18n("features.60"),
+      i18n("features.61"),
+      i18n("features.62"),
     ],
   },
   {
-    id: "engines", tag: _("引擎"), title: _("双内核引擎"),
-    summary: _("mihomo 生态兼容性最佳，sing-box 新协议跟进快——应用内一键下载、切换即用。"),
+    id: "engines", tag: i18n("features.63"), title: i18n("features.64"),
+    summary: i18n("features.65"),
     detail: [
-      _("设置页一键下载对应内核（约 20MB，支持镜像加速），切换需内核已安装。"),
-      _("切换即热重启：配置自动按引擎格式转换（sing-box 输出 JSON 并注入 Clash 兼容 API）。"),
-      _("sing-box 专属：规则集（geoip/geosite）自动下载、本地缓存并每日自更新。"),
-      _("切换后托盘速率、连接观测等全部功能无缝衔接。"),
+      i18n("features.66"),
+      i18n("features.67"),
+      i18n("features.68"),
+      i18n("features.69"),
     ],
   },
   {
-    id: "notifications", tag: _("通知"), title: _("重要结果，不被琐事淹没"),
-    summary: _("通知集中呈现错误、需要处理的问题与后台任务进度；主题、语言等可直接感知的成功操作保持安静。"),
+    id: "notifications", tag: i18n("features.70"), title: i18n("features.71"),
+    summary: i18n("features.72"),
     detail: [
-      _("顶部铃铛提示未读，通知中心按待处理问题与时间整理；重复故障合并，恢复状态保留在同一记录中。"),
-      _("更新、内核下载和测速共用进度反馈；收起通知不会取消任务，失败后仍能查看原因。"),
-      _("技术详情统一脱敏，可复制并前往设置、日志或诊断。历史仅保留本次会话的最近记录，不是永久日志。"),
-      _("Linux 后台系统通知改进已合入 main：使用桌面原生提醒，不创建抢焦点浮层；是否包含请以当前发布说明为准。"),
+      i18n("features.73"),
+      i18n("features.74"),
+      i18n("features.75"),
+      i18n("features.76"),
     ],
   },
   {
-    id: "snapshots", tag: _("恢复"), title: _("配置快照与恢复"),
-    summary: _("保存前自动保留最近五份配置快照，可在界面查看时间、配置与覆写数量，选择需要恢复的版本。"),
+    id: "snapshots", tag: i18n("features.77"), title: i18n("features.78"),
+    summary: i18n("features.79"),
     detail: [
-      _("在「配置 → 配置恢复」查看快照，确认恢复影响后再执行。"),
-      _("恢复订阅、本地配置、覆写链与当前配置选择，保留外观、端口、内核及接管设置。"),
-      _("恢复前保留当前版本；运行中的内核可能重新加载或短暂重启。自动快照不替代升级前的数据目录备份。"),
+      i18n("features.80"),
+      i18n("features.81"),
+      i18n("features.82"),
     ],
   },
   {
-    id: "updates", tag: _("更新"), title: _("由你确认的应用更新"),
-    summary: _("macOS / Windows 可在应用内检查、下载并安装更新；检查版本与下载是两个独立动作。"),
+    id: "updates", tag: i18n("features.83"), title: i18n("features.84"),
+    summary: i18n("features.85"),
     detail: [
-      _("手动点击「检查更新」只检查版本，发现新版后由你点击「下载」确认；不会因开启自动下载而立即下载。"),
-      _("自动检查与自动下载分别设置；自动下载仅作用于定时检查，下载完成后提示重启安装。"),
-      _("Linux 实验版暂不支持应用内更新，需从发布页下载新归档；Windows 安装与服务说明见进阶指南。"),
+      i18n("features.86"),
+      i18n("features.87"),
+      i18n("features.88"),
     ],
   },
   {
-    id: "preferences", tag: _("偏好"), title: _("外观与连接设置"),
-    summary: _("界面支持浅色、深色、跟随系统及中英文；按使用场景调整端口与局域网连接。"),
+    id: "preferences", tag: i18n("features.89"), title: i18n("features.90"),
+    summary: i18n("features.91"),
     detail: [
-      _("主题与语言在应用设置中切换；外观跟随系统时会响应系统明暗变化。"),
-      _("混合端口供 HTTP 与 SOCKS5 共用，修改时需点击「应用」或按 Enter，失去焦点不会保存。"),
-      _("开启「允许局域网连接」后，同一网络中的设备可使用本机局域网 IP 与混合端口；需要系统防火墙允许访问。"),
+      i18n("features.92"),
+      i18n("features.93"),
+      i18n("features.94"),
     ],
   },
   {
-    id: "linux", tag: "Linux", title: _("社区共建的 Linux 实验版"),
-    summary: _("提供 x86_64 TAR.GZ；当前主要验证 CachyOS 与 niri / Wayland，逐步补齐桌面适配。"),
+    id: "linux", tag: "Linux", title: i18n("features.95"),
+    summary: i18n("features.96"),
     detail: [
-      _("归档包含 GUI、mihomo 与可选服务安装脚本。解压后以普通用户运行，浏览器或终端需手动配置 HTTP / SOCKS 代理。"),
-      _("TUN 需安装 systemd / polkit 服务，当前使用 mihomo；Linux 尚无系统代理开关、AppImage / DEB 和应用内自动更新。"),
-      _("宿主机 niri 的完整 TUN、休眠恢复与其他桌面环境仍需验证，适合愿意反馈问题的测试者。"),
+      i18n("features.97"),
+      i18n("features.98"),
+      i18n("features.99"),
     ],
   },
 ];
 
 // 四组归类（#365）：锚点 id 保持稳定，外链不漂移
 const GROUPS: { label: string; ids: string[] }[] = [
-  { label: _("管理配置"), ids: ["nodes", "subscription", "preferences"] },
-  { label: _("连接接管"), ids: ["sysproxy-guard", "tun", "engines", "js-override"] },
-  { label: _("观测排障"), ids: ["diagnostics", "observability", "notifications"] },
-  { label: _("维护恢复"), ids: ["lightweight", "snapshots", "updates", "linux"] },
+  { label: i18n("features.100"), ids: ["nodes", "subscription", "preferences"] },
+  { label: i18n("features.101"), ids: ["sysproxy-guard", "tun", "engines", "js-override"] },
+  { label: i18n("features.102"), ids: ["diagnostics", "observability", "notifications"] },
+  { label: i18n("features.103"), ids: ["lightweight", "snapshots", "updates", "linux"] },
 ];
 const byId = Object.fromEntries(FEATURES.map((f) => [f.id, f]));
 const groupLabel = (id: string) => GROUPS.find((g) => g.ids.includes(id))?.label ?? "";
@@ -165,9 +166,9 @@ const path = (id: string) => `${import.meta.env.BASE_URL.replace(/\/+$/, "")}${l
 ---
 
 <div class="shell detail-page">
-  <header class="page-heading"><h1>{_("功能详解")}</h1><p>{_("从订阅与节点，到接管与观测。了解每一步连接由什么组成。")}</p></header>
-  <nav class="section-nav" aria-label={_("功能目录")}>
-    <a href={path("support-matrix")} class="section-link" data-section="support-matrix">{_("支持矩阵")}</a>
+  <header class="page-heading"><h1>{i18n("features.104")}</h1><p>{i18n("features.105")}</p></header>
+  <nav class="section-nav" aria-label={i18n("features.106")}>
+    <a href={path("support-matrix")} class="section-link" data-section="support-matrix">{i18n("features.1")}</a>
     {GROUPS.map((g) => (
       <div class="nav-group">
         <span class="nav-group-label">{g.label}</span>
@@ -184,7 +185,7 @@ const path = (id: string) => `${import.meta.env.BASE_URL.replace(/\/+$/, "")}${l
 
       <section class={"detail-section" + (f.matrix ? " wide support-matrix" : "")} id={f.id}>
         <div>
-          <h2>{f.title}<button class="anchor-button" data-copy={path(f.id)} title={_("复制章节链接")} aria-label={_("复制章节链接")}>
+          <h2>{f.title}<button class="anchor-button" data-copy={path(f.id)} title={i18n("features.107")} aria-label={i18n("features.107")}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
           </button></h2>
           <p>{f.summary}</p>
@@ -193,22 +194,22 @@ const path = (id: string) => `${import.meta.env.BASE_URL.replace(/\/+$/, "")}${l
           <div class="matrix-scroll">
             <table>
               <thead><tr>
-                <th scope="col">{_("能力")}</th>
+                <th scope="col">{i18n("features.108")}</th>
                 <th scope="col">macOS<span class="th-sub">Apple Silicon</span></th>
                 <th scope="col">Windows<span class="th-sub">x64</span></th>
-                <th scope="col">Linux<span class="th-sub">x86_64（{_("社区实验")}）</span></th>
-                <th scope="col">iOS<span class="th-sub">{_("开发验证中")}</span></th>
+                <th scope="col">Linux<span class="th-sub">x86_64（{i18n("features.109")}）</span></th>
+                <th scope="col">iOS<span class="th-sub">{i18n("features.110")}</span></th>
               </tr></thead>
               <tbody>
-                <tr><th scope="row">{_("安装包")}</th><td>DMG（{_("签名与公证")}）</td><td>EXE（{_("未签名")}）</td><td>TAR.GZ（{_("社区归档")}）</td><td>{_("暂未公开分发")}</td></tr>
-                <tr><th scope="row">{_("系统代理")}</th><td><span class="cell-yes">✓ {_("自动快照与还原")}</span></td><td><span class="cell-yes">✓ {_("自动快照与还原")}</span></td><td><span class="cell-no">✗ {_("手动配置")}</span></td><td><span class="cell-na">—</span></td></tr>
-                <tr><th scope="row">{_("TUN 模式")}</th><td><span class="cell-yes">✓ {_("管理员授权")}</span></td><td><span class="cell-yes">✓ {_("系统服务承载")}</span></td><td>{_("实验性 systemd / polkit 服务")}</td><td><span class="cell-na">—</span></td></tr>
-                <tr><th scope="row">{_("双内核切换")}</th><td><span class="cell-yes">✓</span></td><td><span class="cell-yes">✓</span></td><td><span class="cell-yes">✓</span></td><td><span class="cell-na">—</span></td></tr>
-                <tr><th scope="row">{_("应用内自动更新")}</th><td><span class="cell-yes">✓</span></td><td><span class="cell-yes">✓</span></td><td><span class="cell-no">✗ {_("手动下载")}</span></td><td><span class="cell-na">—</span></td></tr>
-                <tr><th scope="row">{_("当前状态")}</th><td>{_("正式支持")}</td><td>{_("正式支持")}</td><td>{_("社区实验")}</td><td>{_("开发验证中")}</td></tr>
+                <tr><th scope="row">{i18n("features.111")}</th><td>DMG（{i18n("features.112")}）</td><td>EXE（{i18n("features.113")}）</td><td>TAR.GZ（{i18n("features.114")}）</td><td>{i18n("features.115")}</td></tr>
+                <tr><th scope="row">{i18n("features.116")}</th><td><span class="cell-yes">✓ {i18n("features.117")}</span></td><td><span class="cell-yes">✓ {i18n("features.117")}</span></td><td><span class="cell-no">✗ {i18n("features.118")}</span></td><td><span class="cell-na">—</span></td></tr>
+                <tr><th scope="row">{i18n("features.29")}</th><td><span class="cell-yes">✓ {i18n("features.119")}</span></td><td><span class="cell-yes">✓ {i18n("features.120")}</span></td><td>{i18n("features.121")}</td><td><span class="cell-na">—</span></td></tr>
+                <tr><th scope="row">{i18n("features.122")}</th><td><span class="cell-yes">✓</span></td><td><span class="cell-yes">✓</span></td><td><span class="cell-yes">✓</span></td><td><span class="cell-na">—</span></td></tr>
+                <tr><th scope="row">{i18n("features.123")}</th><td><span class="cell-yes">✓</span></td><td><span class="cell-yes">✓</span></td><td><span class="cell-no">✗ {i18n("features.124")}</span></td><td><span class="cell-na">—</span></td></tr>
+                <tr><th scope="row">{i18n("features.125")}</th><td>{i18n("features.126")}</td><td>{i18n("features.126")}</td><td>{i18n("features.109")}</td><td>{i18n("features.110")}</td></tr>
               </tbody>
             </table>
-            <p class="matrix-note">{_("更新内容以各平台发布说明为准；Linux 的验收边界与安装步骤见")}<a class="text-link" href={`${import.meta.env.BASE_URL.replace(/\/+$/, "")}${lang === "zh" ? "/zh" : ""}/guide#linux`}>{_("Linux 支持范围")}</a>{_("。")}</p>
+            <p class="matrix-note">{i18n("features.127")}<a class="text-link" href={`${import.meta.env.BASE_URL.replace(/\/+$/, "")}${lang === "zh" ? "/zh" : ""}/guide#linux`}>{i18n("features.128")}</a>{i18n("features.129")}</p>
           </div>
         ) : (
           <ul>{f.detail.map((d) => <li>{d}</li>)}</ul>
@@ -218,12 +219,12 @@ const path = (id: string) => `${import.meta.env.BASE_URL.replace(/\/+$/, "")}${l
     ))}
   </div>
   <div class="page-next">
-    <div><h2>{_("还有更多进阶玩法")}</h2><p>{_("JS 覆写、双引擎切换、深链接导入，继续探索。")}</p></div>
-    <a class="text-link" href={`${import.meta.env.BASE_URL.replace(/\/+$/, "")}${lang === "zh" ? "/zh" : ""}/guide`}>{_("查看进阶指南 →")}</a>
+    <div><h2>{i18n("features.130")}</h2><p>{i18n("features.131")}</p></div>
+    <a class="text-link" href={`${import.meta.env.BASE_URL.replace(/\/+$/, "")}${lang === "zh" ? "/zh" : ""}/guide`}>{i18n("features.132")}</a>
   </div>
   <div class="page-meta">
-    <a href={`${REPO}/issues`} target="_blank" rel="noopener noreferrer">{_("功能建议欢迎提 Issue ↗")}</a>
-    <a href={LATEST} target="_blank" rel="noopener noreferrer">{_("下载体验 ↗")}</a>
+    <a href={`${REPO}/issues`} target="_blank" rel="noopener noreferrer">{i18n("features.133")}</a>
+    <a href={LATEST} target="_blank" rel="noopener noreferrer">{i18n("features.134")}</a>
   </div>
 </div>
 
