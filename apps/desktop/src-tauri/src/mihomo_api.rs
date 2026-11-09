@@ -93,7 +93,6 @@ impl Controller {
     }
 
     #[cfg(any(target_os = "macos", target_os = "windows", test))]
-#[cfg(target_os = "macos")]
     pub fn tun_enabled(&self) -> Result<Option<bool>, String> {
         Ok(self.get_json("/configs")?["tun"]["enable"].as_bool())
     }

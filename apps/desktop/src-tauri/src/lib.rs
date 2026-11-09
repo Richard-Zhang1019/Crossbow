@@ -20,9 +20,7 @@ use tauri_plugin_deep_link::DeepLinkExt as _;
 mod macos_icon;
 #[cfg(target_os = "macos")]
 mod macos_shutdown;
-#[cfg(any(target_os = "macos", target_os = "windows"))]
 mod authorization;
-#[cfg(any(target_os = "macos", target_os = "windows"))]
 mod coexist;
 mod config_transition;
 mod core_manager;
@@ -96,7 +94,6 @@ pub struct AppState {
     ws: WsHub,
     data_dir: PathBuf,
     /// 托盘节点子菜单统一状态（此前 9 个分散锁的字段全部收拢于此）
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
     node_menu: Mutex<tray_state::TrayState>,
     /// 应用句柄：换核/重装后给新 CoreManager 重挂状态回调用。
     app: AppHandle,
