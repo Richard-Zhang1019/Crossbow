@@ -1,9 +1,10 @@
 ---
-import { t, type Lang } from "../lib/i18n";
+import { createI18n, t, type Lang } from "../i18n";
 import { REPO, LATEST } from "../site-meta";
 
 const { lang } = Astro.props;
-const _ = (key: string) => t(lang, key);
+const i18n = createI18n(lang);
+
 const base = import.meta.env.BASE_URL.replace(/\/+$/, "");
 const route = (p: string) => `${base}${lang === "zh" ? "/zh" : ""}${p === "/" ? "/" : p}`;
 
@@ -42,34 +43,34 @@ const CODE_DEEPLINK = `crossbow://import?url=https%3A%2F%2Fexample.com%2Fsub`;
 
 const TOC = [
   {
-    group: _("快速上手"),
+    group: i18n("guide.1"),
     items: [
-      { id: "quick-start", label: _("快速开始") },
-      { id: "deeplink", label: _("深链接导入") },
-      { id: "proxy-vs-tun", label: _("系统代理与 TUN 怎么选") },
+      { id: "quick-start", label: i18n("guide.2") },
+      { id: "deeplink", label: i18n("guide.3") },
+      { id: "proxy-vs-tun", label: i18n("guide.4") },
     ],
   },
   {
-    group: _("高级配置"),
+    group: i18n("guide.5"),
     items: [
-      { id: "engines", label: _("双内核引擎") },
-      { id: "override", label: _("JS 覆写") },
-      { id: "ports", label: _("混合端口与绕过") },
-      { id: "lightweight", label: _("轻量模式与托盘") },
-      { id: "subscriptions", label: _("订阅更新：知道更新了什么") },
-      { id: "recovery", label: _("从配置快照恢复") },
-      { id: "data-locations", label: _("配置与数据的位置") },
+      { id: "engines", label: i18n("guide.6") },
+      { id: "override", label: i18n("guide.7") },
+      { id: "ports", label: i18n("guide.8") },
+      { id: "lightweight", label: i18n("guide.9") },
+      { id: "subscriptions", label: i18n("guide.10") },
+      { id: "recovery", label: i18n("guide.11") },
+      { id: "data-locations", label: i18n("guide.12") },
     ],
   },
   {
-    group: _("观测与排障"),
+    group: i18n("guide.13"),
     items: [
-      { id: "tray-speed", label: _("菜单栏实时速率") },
-      { id: "notifications", label: _("通知中心") },
-      { id: "linux", label: _("Linux 实验版支持范围") },
-      { id: "windows", label: _("Windows 安装与 TUN 服务") },
-      { id: "troubleshooting", label: _("连接不通时，按证据排查") },
-      { id: "updates", label: _("应用内更新：检查、下载与安装") },
+      { id: "tray-speed", label: i18n("guide.14") },
+      { id: "notifications", label: i18n("guide.15") },
+      { id: "linux", label: i18n("guide.16") },
+      { id: "windows", label: i18n("guide.17") },
+      { id: "troubleshooting", label: i18n("guide.18") },
+      { id: "updates", label: i18n("guide.19") },
     ],
   },
 ];
@@ -77,11 +78,11 @@ const TOC = [
 
 <div class="shell guide-page">
   <header class="page-heading">
-    <h1>{_("进阶指南")}</h1>
-    <p>{_("从内核切换到配置覆写，按场景找到下一步操作。")}</p>
+    <h1>{i18n("guide.20")}</h1>
+    <p>{i18n("guide.21")}</p>
   </header>
 
-  <nav class="guide-toc" aria-label={_("指南目录")}>
+  <nav class="guide-toc" aria-label={i18n("guide.22")}>
     {TOC.map((group) => (
       <div class="guide-toc-group">
         <h2>{group.group}</h2>
@@ -92,131 +93,131 @@ const TOC = [
 
   <div class="guide-list">
     <section class="guide-card" id="quick-start">
-      <h2>{_("快速开始：安装 → 导入 → 选节点 → 接管 → 验证")}<button class="anchor-button" data-copy={route("/guide#quick-start")} title={_("复制章节链接")} aria-label={_("复制章节链接")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
-      <p class="guide-intro">{_("第一次使用按这五步走；双内核、JS 覆写等进阶内容都在后面的章节，可以先跳过。")}</p>
-      <div class="guide-step"><span>1</span><div><h3>{_("安装")}</h3><div>{_("macOS 下载 DMG 并拖入「应用程序」；Windows 运行安装程序；Linux 解压归档后运行 run.sh。安装包均来自 GitHub Releases。")}{_("支持范围见")}<a class="text-link" href={route("/features#support-matrix")}>{_("平台支持矩阵")}</a>{_("。")}</div></div></div>
-      <div class="guide-step"><span>2</span><div><h3>{_("导入订阅")}</h3><div>{_("「配置」页粘贴订阅 URL，或把 .yaml 配置文件拖进窗口；导入时自动校验，设置自动更新间隔后无需再管。")}</div></div></div>
-      <div class="guide-step"><span>3</span><div><h3>{_("选择节点")}</h3><div>{_("在「节点」页按地区或延迟挑一个，或保留「自动选择」交给内核择优。")}</div></div></div>
-      <div class="guide-step"><span>4</span><div><h3>{_("开启接管")}</h3><div>{_("概览页开启「系统代理」即可覆盖日常浏览；需要接管更多应用时再开 TUN（macOS 首次需管理员授权，Windows 需先装服务）。")}</div></div></div>
-      <div class="guide-step"><span>5</span><div><h3>{_("验证")}</h3><div>{_("概览确认当前出口与速率，节点页跑一次延迟测试，再用浏览器实际访问目标网站。连接不通时打开「诊断」逐项排查。")}</div></div></div>
+      <h2>{i18n("guide.23")}<button class="anchor-button" data-copy={route("/guide#quick-start")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p class="guide-intro">{i18n("guide.25")}</p>
+      <div class="guide-step"><span>1</span><div><h3>{i18n("guide.26")}</h3><div>{i18n("guide.27")}{i18n("guide.28")}<a class="text-link" href={route("/features#support-matrix")}>{i18n("guide.29")}</a>{i18n("guide.30")}</div></div></div>
+      <div class="guide-step"><span>2</span><div><h3>{i18n("guide.31")}</h3><div>{i18n("guide.32")}</div></div></div>
+      <div class="guide-step"><span>3</span><div><h3>{i18n("guide.33")}</h3><div>{i18n("guide.34")}</div></div></div>
+      <div class="guide-step"><span>4</span><div><h3>{i18n("guide.35")}</h3><div>{i18n("guide.36")}</div></div></div>
+      <div class="guide-step"><span>5</span><div><h3>{i18n("guide.37")}</h3><div>{i18n("guide.38")}</div></div></div>
     </section>
 
     <section class="guide-card" id="engines">
-      <h2>{_("双内核引擎：mihomo ↔ sing-box")}<button class="anchor-button" data-copy={route("/guide#engines")} title={_("复制章节链接")} aria-label={_("复制章节链接")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
-      <p style="color: var(--dim); font-size: 15; line-height: 1.75; margin: 10px 0 4px">{_("Crossbow 支持 mihomo 与 sing-box 两种内核。选择时请确认订阅中的节点协议与规则被目标内核支持。配置会按引擎自动转换格式，切换即热重启。")}</p>
-      <div class="guide-step"><span>01</span><div><h3>{_("下载内核")}</h3><div>{_("设置 → 内核引擎 → 选择 sing-box → 点「下载内核」（约 20MB，内置镜像加速；已下载的内核不会重复下载）。")}</div></div></div>
-      <div class="guide-step"><span>02</span><div><h3>{_("一键切换")}</h3><div>{_("在「设置 → 网络与内核」选择目标引擎，按提示下载缺失内核；安装完成后应用目标引擎。运行中的内核会重新加载或重启，配置按引擎转换格式。")}</div></div></div>
-      <div class="guide-step"><span>03</span><div><h3>{_("注意")}</h3><div>{_("切换前确认当前订阅的节点类型被目标内核支持（绝大多数常见协议两者都支持；个别小众协议建议留在 mihomo）。规则集（geoip/geosite）在 sing-box 下会自动下载并每日自更新。")}</div></div></div>
+      <h2>{i18n("guide.39")}<button class="anchor-button" data-copy={route("/guide#engines")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p style="color: var(--dim); font-size: 15; line-height: 1.75; margin: 10px 0 4px">{i18n("guide.40")}</p>
+      <div class="guide-step"><span>01</span><div><h3>{i18n("guide.41")}</h3><div>{i18n("guide.42")}</div></div></div>
+      <div class="guide-step"><span>02</span><div><h3>{i18n("guide.43")}</h3><div>{i18n("guide.44")}</div></div></div>
+      <div class="guide-step"><span>03</span><div><h3>{i18n("guide.45")}</h3><div>{i18n("guide.46")}</div></div></div>
     </section>
 
     <section class="guide-card" id="override">
-      <h2>{_("JS 覆写：把订阅改成你想要的样子")}<button class="anchor-button" data-copy={route("/guide#override")} title={_("复制章节链接")} aria-label={_("复制章节链接")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
-      <p style="color: var(--dim); font-size: 15; line-height: 1.75; margin: 10px 0 4px">{_("配置 → 覆写链 → 新建覆写 → 选择「JS 脚本」，编写")} <code style="font: 12px var(--mono)">function main(config)</code>{_("， 返回改造后的配置。沙箱执行、无网络无文件副作用，保存时自动试运行。")}</p>
+      <h2>{i18n("guide.47")}<button class="anchor-button" data-copy={route("/guide#override")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p style="color: var(--dim); font-size: 15; line-height: 1.75; margin: 10px 0 4px">{i18n("guide.48")} <code style="font: 12px var(--mono)">function main(config)</code>{i18n("guide.49")}</p>
       <ul class="guide-intro code-preconditions">
-        <li>{_("前提：订阅中存在名字含「香港」或「JP」的节点，否则过滤后为空。")}</li>
-        <li>{_("示例规则引用的「自动选择」组需真实存在于订阅；若组名不同，请同步改写规则或删除该引用——保存时的试运行会当场暴露悬空引用。")}</li>
+        <li>{i18n("guide.50")}</li>
+        <li>{i18n("guide.51")}</li>
       </ul>
       <div class="code-wrap">
         <pre class="code-block"><code>{lang === "en" ? CODE_FILTER_EN : CODE_FILTER}</code></pre>
-        <button class="code-copy" data-copy-code title={_("复制代码")} aria-label={_("复制代码")}>{_("复制")}</button>
+        <button class="code-copy" data-copy-code title={i18n("guide.52")} aria-label={i18n("guide.52")}>{i18n("guide.53")}</button>
       </div>
-      <div class="guide-step"><span>01</span><div><h3>{_("编写并绑定")}</h3><div>{_("新建脚本 → 粘贴代码 → 保存（自动校验，语法/运行时错误当场报）→ 勾选「绑定到当前订阅」并启用。")}</div></div></div>
-      <div class="guide-step"><span>02</span><div><h3>{_("多条覆写按序执行")}</h3><div>{_("可同时启用多条覆写与 Merge 补丁，按列表顺序依次应用到订阅上。")}</div></div></div>
-      <div class="guide-step"><span>03</span><div><h3>{_("出错兜底")}</h3><div>{_("覆写导致内核启动失败时会自动进入「安全模式」：全部覆写临时禁用并重启内核。修复脚本后保存即恢复正常。")}</div></div></div>
+      <div class="guide-step"><span>01</span><div><h3>{i18n("guide.54")}</h3><div>{i18n("guide.55")}</div></div></div>
+      <div class="guide-step"><span>02</span><div><h3>{i18n("guide.56")}</h3><div>{i18n("guide.57")}</div></div></div>
+      <div class="guide-step"><span>03</span><div><h3>{i18n("guide.58")}</h3><div>{i18n("guide.59")}</div></div></div>
     </section>
 
     <section class="guide-card" id="deeplink">
-      <h2>{_("深链接导入：从任意页面一键订阅")}<button class="anchor-button" data-copy={route("/guide#deeplink")} title={_("复制章节链接")} aria-label={_("复制章节链接")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
-      <p style="color: var(--dim); font-size: 15; line-height: 1.75; margin: 10px 0 4px">{_("网页上放一个这样的链接，已安装 Crossbow 的用户点击即弹出导入确认：")}</p>
+      <h2>{i18n("guide.60")}<button class="anchor-button" data-copy={route("/guide#deeplink")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p style="color: var(--dim); font-size: 15; line-height: 1.75; margin: 10px 0 4px">{i18n("guide.61")}</p>
       <pre class="code-block"><code>{CODE_DEEPLINK}</code></pre>
-      <p style="color: var(--dim); font-size: 13; line-height: 1.7">{_("url 参数需要 URL 编码。未安装的用户可回落到官网下载页——适合机场/自建服务者在文档里引用。")}</p>
+      <p style="color: var(--dim); font-size: 13; line-height: 1.7">{i18n("guide.62")}</p>
     </section>
 
     <section class="guide-card" id="tray-speed">
-      <h2>{_("菜单栏实时速率")}<button class="anchor-button" data-copy={route("/guide#tray-speed")} title={_("复制章节链接")} aria-label={_("复制章节链接")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
-      <p style="color: var(--dim); font-size: 15; line-height: 1.75; margin: 10px 0 4px">{_("内核运行时，菜单栏图标旁实时显示 ↑ 上行 / ↓ 下行（每秒刷新，双行紧凑排版，宽度恒定不抖动）。 轻量模式下照常工作；内核停止自动消失。该功能目前仅 macOS 提供。")}</p>
+      <h2>{i18n("guide.14")}<button class="anchor-button" data-copy={route("/guide#tray-speed")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p style="color: var(--dim); font-size: 15; line-height: 1.75; margin: 10px 0 4px">{i18n("guide.63")}</p>
     </section>
 
     <section class="guide-card" id="ports">
-      <h2>{_("混合端口与绕过")}<button class="anchor-button" data-copy={route("/guide#ports")} title={_("复制章节链接")} aria-label={_("复制章节链接")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
-      <p style="color: var(--dim); font-size: 15; line-height: 1.75; margin: 10px 0 4px">{_("混合监听端口供 HTTP 与 SOCKS5 共用，默认 7897。在「设置 → 网络与内核」点击端口旁的「修改」，编辑后点击「应用」或按 Enter；Escape 可取消，失去焦点不会保存。运行中的内核可能短暂重启，系统代理绕过本机与局域网地址。")}</p>
-      <p style="color: var(--dim); font-size: 13; line-height: 1.7">{_("提示：若 7897 被其他代理工具占用（常见于 Clash Verge 等），开启时会明确报错——换一个端口即可。")}</p>
-      <p class="guide-intro">{_("需要给同一网络的设备提供代理时，可开启「允许局域网连接」，使用本机局域网 IP 与混合端口。该选项会监听 0.0.0.0，请仅在可信网络开启，并确认系统防火墙规则。")}</p>
+      <h2>{i18n("guide.8")}<button class="anchor-button" data-copy={route("/guide#ports")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p style="color: var(--dim); font-size: 15; line-height: 1.75; margin: 10px 0 4px">{i18n("guide.64")}</p>
+      <p style="color: var(--dim); font-size: 13; line-height: 1.7">{i18n("guide.65")}</p>
+      <p class="guide-intro">{i18n("guide.66")}</p>
     </section>
 
     <section class="guide-card" id="linux">
-      <h2>{_("Linux 实验版：先确认支持范围")}<button class="anchor-button" data-copy={route("/guide#linux")} title={_("复制章节链接")} aria-label={_("复制章节链接")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
-      <p class="guide-intro">{_("社区已提供 x86_64 归档，主要在 CachyOS + niri / Wayland 验证。感谢")} <a href="https://github.com/YangYuS8" target="_blank" rel="noopener noreferrer">YangYuS8</a>{_(" 的适配与实机反馈。其他发行版和桌面环境尚未全面验收。")}</p>
-      <div class="guide-step"><span>01</span><div><h3>{_("解压，以普通用户运行")}</h3><div>{_("在")}<a class="text-link" href={route("/download")}>{_("下载页")}</a>{_("获取 TAR.GZ，核对 SHA256SUMS 后解压，运行")} <code>./run.sh</code>{_("。GUI 不需要以 root 身份启动；尚未提供 AppImage / DEB 或应用内自动更新。")}</div></div></div>
-      <div class="guide-step"><span>02</span><div><h3>{_("手动设置应用代理")}</h3><div>{_("导入订阅并选择可用节点，在浏览器或终端设置 HTTP / SOCKS 代理，地址为 127.0.0.1，端口以 Crossbow 设置为准。Linux 实验版不会自动更改桌面的系统代理；先用站点连通性测试检查内核链路。")}</div></div></div>
-      <div class="guide-step"><span>03</span><div><h3>{_("需要 TUN，再安装服务")}</h3><div>{_("需 systemd / polkit 与 mihomo，按仓库的")} <a href={`${REPO}/blob/main/docs/LINUX-NETWORK.md`} target="_blank" rel="noopener noreferrer">{_("Linux 网络说明")}</a>{_("安装可选服务。完整宿主机 TUN、休眠恢复和其他桌面场景仍在验证，请先准备恢复方案；不要同时开启其他 VPN 的 TUN。")}</div></div></div>
-      <p class="release-scope">{_("发布与开发进展分开看：Linux 关窗后的后台任务、冷启动深链接与原生系统通知改进已合入 main，是否包含在你下载的版本中请核对")} <a href={LATEST} target="_blank" rel="noopener noreferrer">{_("发布说明")}</a>{_("。详细验收记录见")} <a href={`${REPO}/blob/main/docs/LINUX-TESTING.md`} target="_blank" rel="noopener noreferrer">{_("Linux 测试文档")}</a>{_("。")}</p>
+      <h2>{i18n("guide.67")}<button class="anchor-button" data-copy={route("/guide#linux")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p class="guide-intro">{i18n("guide.68")} <a href="https://github.com/YangYuS8" target="_blank" rel="noopener noreferrer">YangYuS8</a>{i18n("guide.69")}</p>
+      <div class="guide-step"><span>01</span><div><h3>{i18n("guide.70")}</h3><div>{i18n("guide.71")}<a class="text-link" href={route("/download")}>{i18n("guide.72")}</a>{i18n("guide.73")} <code>./run.sh</code>{i18n("guide.74")}</div></div></div>
+      <div class="guide-step"><span>02</span><div><h3>{i18n("guide.75")}</h3><div>{i18n("guide.76")}</div></div></div>
+      <div class="guide-step"><span>03</span><div><h3>{i18n("guide.77")}</h3><div>{i18n("guide.78")} <a href={`${REPO}/blob/main/docs/LINUX-NETWORK.md`} target="_blank" rel="noopener noreferrer">{i18n("guide.79")}</a>{i18n("guide.80")}</div></div></div>
+      <p class="release-scope">{i18n("guide.81")} <a href={LATEST} target="_blank" rel="noopener noreferrer">{i18n("guide.82")}</a>{i18n("guide.83")} <a href={`${REPO}/blob/main/docs/LINUX-TESTING.md`} target="_blank" rel="noopener noreferrer">{i18n("guide.84")}</a>{i18n("guide.30")}</p>
     </section>
 
     <section class="guide-card" id="proxy-vs-tun">
-      <h2>{_("系统代理与 TUN 怎么选")}<button class="anchor-button" data-copy={route("/guide#proxy-vs-tun")} title={_("复制章节链接")} aria-label={_("复制章节链接")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
-      <p style="color: var(--dim); font-size: 15; line-height: 1.75; margin: 10px 0 4px">{_("macOS / Windows 日常浏览可先使用首页的系统代理；需要代理不读取系统代理设置的应用时，在设置中开启 TUN。 本应用的两种方式可同时开启、独立控制。关闭 TUN 后请检查系统代理状态和网络连接。")}</p>
-      <div class="guide-step"><span>01</span><div><h3>{_("开启前")}</h3><div>{_("先关闭 Clash Verge 或其他 VPN 的 TUN 模式，确认当前配置与节点可用。若要测试断网恢复，先按离线恢复说明检查备用代理。")}</div></div></div>
-      <div class="guide-step"><span>02</span><div><h3>{_("开启和检查")}</h3><div>{_("设置 → TUN 模式 → 开启；macOS 首次需要管理员授权，Windows 需先安装后台服务。访问网页并观察日志和菜单栏速率，确认流量经过内核。")}</div></div></div>
-      <div class="guide-step"><span>03</span><div><h3>{_("关闭或恢复")}</h3><div>{_("关闭 TUN 后确认原系统代理状态与网络连接已恢复。若测试时断网，可在终端运行仓库中的")} <a href={`${REPO}/blob/main/docs/TUN-RECOVERY.md`} target="_blank" rel="noopener">{_("离线恢复命令")}</a>{_("；该命令依赖仍在运行的备用代理。")}</div></div></div>
+      <h2>{i18n("guide.4")}<button class="anchor-button" data-copy={route("/guide#proxy-vs-tun")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p style="color: var(--dim); font-size: 15; line-height: 1.75; margin: 10px 0 4px">{i18n("guide.85")}</p>
+      <div class="guide-step"><span>01</span><div><h3>{i18n("guide.86")}</h3><div>{i18n("guide.87")}</div></div></div>
+      <div class="guide-step"><span>02</span><div><h3>{i18n("guide.88")}</h3><div>{i18n("guide.89")}</div></div></div>
+      <div class="guide-step"><span>03</span><div><h3>{i18n("guide.90")}</h3><div>{i18n("guide.91")} <a href={`${REPO}/blob/main/docs/TUN-RECOVERY.md`} target="_blank" rel="noopener">{i18n("guide.92")}</a>{i18n("guide.93")}</div></div></div>
     </section>
 
     <section class="guide-card" id="lightweight">
-      <h2>{_("轻量模式与托盘")}<button class="anchor-button" data-copy={route("/guide#lightweight")} title={_("复制章节链接")} aria-label={_("复制章节链接")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
-      <p style="color: var(--dim); font-size: 15; line-height: 1.75; margin: 10px 0 4px">{_("设置 → 轻量模式开启后：点关闭窗口 = 代理照常、界面内存释放、托盘常驻。再点托盘图标即恢复窗口。 彻底退出请走托盘菜单「退出」。内核运行时关闭窗口，内核会以交接模式保留，重新打开自动接管。")}</p>
+      <h2>{i18n("guide.9")}<button class="anchor-button" data-copy={route("/guide#lightweight")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p style="color: var(--dim); font-size: 15; line-height: 1.75; margin: 10px 0 4px">{i18n("guide.94")}</p>
     </section>
 
     <section class="guide-card" id="notifications">
-      <h2>{_("用通知中心追踪需要处理的问题")}<button class="anchor-button" data-copy={route("/guide#notifications")} title={_("复制章节链接")} aria-label={_("复制章节链接")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
-      <p class="guide-intro">{_("点击顶部铃铛查看最近通知。未读与待处理是不同状态：全部已读不会解决故障；进入诊断或设置完成修复后，原记录会显示已恢复。")}</p>
-      <p class="guide-intro">{_("主题、语言与普通设置成功时不再重复提醒。进度通知收起后任务继续，出错时可查看脱敏详情。记录仅在本次会话中保留，排查长期问题请同时查看日志。")}</p>
+      <h2>{i18n("guide.95")}<button class="anchor-button" data-copy={route("/guide#notifications")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p class="guide-intro">{i18n("guide.96")}</p>
+      <p class="guide-intro">{i18n("guide.97")}</p>
     </section>
 
     <section class="guide-card" id="subscriptions">
-      <h2>{_("订阅更新：知道更新了什么")}<button class="anchor-button" data-copy={route("/guide#subscriptions")} title={_("复制章节链接")} aria-label={_("复制章节链接")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
-      <p class="guide-intro">{_("在「配置 → 配置来源」选择订阅，先看更新状态，再决定是否手动更新。")}</p>
-      <div class="guide-step"><span>01</span><div><h3>{_("查看更新时间")}</h3><div>{_("详情显示上次成功、下次更新或失败后的重试时间。自动更新可关闭，也可选择 6、12 或 24 小时间隔。")}</div></div></div>
-      <div class="guide-step"><span>02</span><div><h3>{_("失败与节点变化")}</h3><div>{_("更新失败时保留原配置，并展示最近失败原因；成功后可查看新增、移除和变化的节点数量，快速判断订阅内容是否改变。")}</div></div></div>
+      <h2>{i18n("guide.10")}<button class="anchor-button" data-copy={route("/guide#subscriptions")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p class="guide-intro">{i18n("guide.98")}</p>
+      <div class="guide-step"><span>01</span><div><h3>{i18n("guide.99")}</h3><div>{i18n("guide.100")}</div></div></div>
+      <div class="guide-step"><span>02</span><div><h3>{i18n("guide.101")}</h3><div>{i18n("guide.102")}</div></div></div>
     </section>
 
     <section class="guide-card" id="recovery">
-      <h2>{_("从配置快照恢复")}<button class="anchor-button" data-copy={route("/guide#recovery")} title={_("复制章节链接")} aria-label={_("复制章节链接")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
-      <p class="guide-intro">{_("配置保存前自动保留最近五份快照。在「配置」页面点击「配置恢复」，按时间和内容选择恢复点。")}</p>
-      <div class="guide-step"><span>01</span><div><h3>{_("先确认范围")}</h3><div>{_("恢复会替换订阅、本地配置、覆写链与当前配置选择；外观、端口、内核和接管设置保留。快照列表会显示配置与覆写数量。")}</div></div></div>
-      <div class="guide-step"><span>02</span><div><h3>{_("恢复后检查连接")}</h3><div>{_("恢复前会保留当前版本，运行中的内核可能短暂重新加载或重启；完成后检查当前配置、节点与诊断结果。升级前仍建议自行备份数据目录。")}</div></div></div>
+      <h2>{i18n("guide.11")}<button class="anchor-button" data-copy={route("/guide#recovery")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p class="guide-intro">{i18n("guide.103")}</p>
+      <div class="guide-step"><span>01</span><div><h3>{i18n("guide.104")}</h3><div>{i18n("guide.105")}</div></div></div>
+      <div class="guide-step"><span>02</span><div><h3>{i18n("guide.106")}</h3><div>{i18n("guide.107")}</div></div></div>
     </section>
 
     <section class="guide-card" id="troubleshooting">
-      <h2>{_("连接不通时，按证据排查")}<button class="anchor-button" data-copy={route("/guide#troubleshooting")} title={_("复制章节链接")} aria-label={_("复制章节链接")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
-      <p class="guide-intro">{_("内核运行、接管配置与网络连通性是不同状态。首页显示运行中，不代表浏览器已经可以访问目标网站。")}</p>
-      <div class="guide-step"><span>01</span><div><h3>{_("先看诊断的第一个阻塞项")}</h3><div>{_("打开「监测 → 诊断」或顶部「诊断」，逐项查看检查中、通过、失败与跳过。先处理优先展示的阻塞项，按可用修复操作或配置入口处理，再重新检查。")}</div></div></div>
-      <div class="guide-step"><span>02</span><div><h3>{_("用连接和日志定位规则")}</h3><div>{_("在「监测 → 连接」搜索目标、规则、链路或进程，点击行查看并复制完整详情。在「日志」中多选级别、筛选关键词；暂停跟随阅读，复制单条或导出当前筛选的脱敏日志。")}</div></div></div>
-      <div class="guide-step"><span>03</span><div><h3>{_("站点测试要看测试上下文")}</h3><div>{_("节点页的站点连通性测试保留时间与出口。切换链路后应重新测试；HTTP 限制响应表示目标作出响应但限制访问，不等于连接失败，也不代表浏览器一定走代理。")}</div></div></div>
+      <h2>{i18n("guide.18")}<button class="anchor-button" data-copy={route("/guide#troubleshooting")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p class="guide-intro">{i18n("guide.108")}</p>
+      <div class="guide-step"><span>01</span><div><h3>{i18n("guide.109")}</h3><div>{i18n("guide.110")}</div></div></div>
+      <div class="guide-step"><span>02</span><div><h3>{i18n("guide.111")}</h3><div>{i18n("guide.112")}</div></div></div>
+      <div class="guide-step"><span>03</span><div><h3>{i18n("guide.113")}</h3><div>{i18n("guide.114")}</div></div></div>
     </section>
 
     <section class="guide-card" id="updates">
-      <h2>{_("应用内更新：检查、下载与安装")}<button class="anchor-button" data-copy={route("/guide#updates")} title={_("复制章节链接")} aria-label={_("复制章节链接")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
-      <p class="guide-intro">{_("macOS / Windows 在「设置 → 应用与更新」检查版本。Linux 实验版需手动下载新归档。")}</p>
-      <div class="guide-step"><span>01</span><div><h3>{_("手动检查后再确认下载")}</h3><div>{_("「检查更新」只检查版本；发现新版后点击「下载」，完成后按提示重启安装。即使开启自动下载，手动检查仍会等待下载确认。")}</div></div></div>
-      <div class="guide-step"><span>02</span><div><h3>{_("按需设置后台更新")}</h3><div>{_("自动检查与自动下载可以分别设置；自动检查在启动后约 30 秒和之后每 6 小时执行，自动下载仅作用于这类定时检查。")}</div></div></div>
+      <h2>{i18n("guide.19")}<button class="anchor-button" data-copy={route("/guide#updates")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p class="guide-intro">{i18n("guide.115")}</p>
+      <div class="guide-step"><span>01</span><div><h3>{i18n("guide.116")}</h3><div>{i18n("guide.117")}</div></div></div>
+      <div class="guide-step"><span>02</span><div><h3>{i18n("guide.118")}</h3><div>{i18n("guide.119")}</div></div></div>
     </section>
 
     <section class="guide-card" id="windows">
-      <h2>{_("Windows 安装与 TUN 服务")}<button class="anchor-button" data-copy={route("/guide#windows")} title={_("复制章节链接")} aria-label={_("复制章节链接")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
-      <p class="guide-intro">{_("Windows x64 安装包附带 CrossbowService，TUN 依赖该服务。安装或更新提示文件被占用时，先关闭其他 Crossbow 实例，按安装器提示重试；服务缺失时使用完整安装包修复。安装包签名与支持范围以发布说明为准。")}</p>
-      <p class="guide-intro"><a href={`${REPO}/blob/main/docs/WINDOWS-INSTALL.md`} target="_blank" rel="noopener noreferrer">{_("查看 Windows 安装、服务与升级说明 ↗")}</a></p>
+      <h2>{i18n("guide.17")}<button class="anchor-button" data-copy={route("/guide#windows")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p class="guide-intro">{i18n("guide.120")}</p>
+      <p class="guide-intro"><a href={`${REPO}/blob/main/docs/WINDOWS-INSTALL.md`} target="_blank" rel="noopener noreferrer">{i18n("guide.121")}</a></p>
     </section>
 
     <section class="guide-card" id="data-locations">
-      <h2>{_("配置与数据的位置")}<button class="anchor-button" data-copy={route("/guide#data-locations")} title={_("复制章节链接")} aria-label={_("复制章节链接")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
-      <p style="color: var(--dim); font-size: 15; line-height: 1.75; margin: 10px 0 4px">{_("macOS 数据在")} <code style="font: 12px var(--mono)">~/Library/Application Support/com.richard.crossbow/</code>{_("： store.json（订阅/设置/覆写，保存前自动快照保留 5 份）、runtime/（内核运行时与日志）、binaries/（内核本体）。 旧版")} <code style="font: 12px var(--mono)">com.crossbow.app</code>{_(" 数据会自动迁移；升级前可备份新目录。")}</p>
+      <h2>{i18n("guide.12")}<button class="anchor-button" data-copy={route("/guide#data-locations")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p style="color: var(--dim); font-size: 15; line-height: 1.75; margin: 10px 0 4px">{i18n("guide.122")} <code style="font: 12px var(--mono)">~/Library/Application Support/com.richard.crossbow/</code>{i18n("guide.123")} <code style="font: 12px var(--mono)">com.crossbow.app</code>{i18n("guide.124")}</p>
     </section>
   </div>
 
   <div style="margin-top: 48; text-align: center; padding: 32px 24px; background: var(--surface); border: 1px solid var(--line); border-radius: 16">
-    <h3 style="font-size: 18; font-weight: 700">{_("还没安装？")}</h3>
-    <p style="color: var(--dim); font-size: 15; margin: 8px auto 20px">{_("免费开源，提供 macOS Apple Silicon、Windows x64 安装包与 Linux x86_64 实验版。")}</p>
-    <a href={LATEST} target="_blank" rel="noopener" class="btn-primary" style="display: inline-flex; align-items: center; gap: 8; border-radius: 10; padding: 11px 22px; font-size: 14; font-weight: 600; color: var(--on-button); background: var(--button)">{_("下载 Crossbow")}</a>
-    <a href={`${REPO}/tree/main/docs`} target="_blank" rel="noopener" style="margin-left: 10; color: var(--dim); font-size: 15">{_("设计文档（DESIGN / MVP）")}</a>
+    <h3 style="font-size: 18; font-weight: 700">{i18n("guide.125")}</h3>
+    <p style="color: var(--dim); font-size: 15; margin: 8px auto 20px">{i18n("guide.126")}</p>
+    <a href={LATEST} target="_blank" rel="noopener" class="btn-primary" style="display: inline-flex; align-items: center; gap: 8; border-radius: 10; padding: 11px 22px; font-size: 14; font-weight: 600; color: var(--on-button); background: var(--button)">{i18n("guide.127")}</a>
+    <a href={`${REPO}/tree/main/docs`} target="_blank" rel="noopener" style="margin-left: 10; color: var(--dim); font-size: 15">{i18n("guide.128")}</a>
   </div>
 </div>
