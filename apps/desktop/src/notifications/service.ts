@@ -111,6 +111,23 @@ const copy = {
   "core.recovered": ["内核已恢复运行", "Core is running again"],
   "core.safeMode": ["已进入安全模式", "Safe mode enabled"],
   "tun.disabled": ["TUN 已自动关闭", "TUN turned off automatically"],
+  "app.exitBlocked": [
+    "退出未完成，应用继续运行",
+    "Exit canceled; the app is still running",
+  ],
+  "tun.externalProxy": [
+    "检测到外部系统代理，请手动关闭",
+    "External system proxy detected; turn it off manually",
+  ],
+  "tun.manualRecovery": ["TUN 需要手动恢复", "TUN needs manual recovery"],
+  "tun.manualRecovery.hint": [
+    "请在设置中手动关闭或重新开启 TUN，并完成系统要求的授权。",
+    "Turn TUN off or back on in settings and complete any authorization requested by the system.",
+  ],
+  "tun.externalProxy.hint": [
+    "请在其他代理客户端或系统网络设置中关闭系统代理。处理后提示会自动解除。",
+    "Turn off the system proxy in the other proxy app or system network settings. This notice clears when the conflict is resolved.",
+  ],
   "tun.wedgeRestart": [
     "TUN 通道无响应，正在重启内核恢复",
     "TUN unresponsive; restarting core to recover",
@@ -118,7 +135,6 @@ const copy = {
   "sysproxy.coreDead": [
     "内核未运行，已关闭系统代理",
     "Core is down; system proxy turned off",
-
   ],
   "tun.takeoverGiveUp": [
     "TUN 接管异常，已停止自动恢复",

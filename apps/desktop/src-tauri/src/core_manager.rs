@@ -217,7 +217,9 @@ impl Shared {
 
     fn notify(&self, status: CoreStatus) {
         self.inner.lock().unwrap().status = status.clone();
-        if let Some(cb) = self.callback.lock().unwrap().clone() {
+        // 回调可能等待 core_op，不能持注册锁调用。
+        let callback = self.callback.lock().unwrap().clone();
+        if let Some(cb) = callback {
             cb(&status);
         }
     }
@@ -783,7 +785,7 @@ impl CoreManager {
                 // SYSTEM 内核归服务管理，这里只探测置 Running（无子进程句柄
                 // 可监视；死亡可感知性由 #20 健康监测的控制器探测兜底）
                 let shared = self.shared.clone();
-                std::thread::spawn(move || {
+                crate::authorization::spawn_background(move || {
                     probe_external_core(shared, pid, port, secret);
                 });
                 #[cfg(target_os = "linux")]
@@ -879,6 +881,61 @@ impl CoreManager {
     /// 轻量关窗与自动更新共用同一交接协议。
     pub fn detach(&self) -> Option<u32> {
         self.prepare_handoff().ok().flatten()
+    }
+
+    /// 退出失败时重新接管仍存活的内核，让用户可以继续使用或重试退出。
+    pub fn stop_for_exit(&self) -> bool {
+        let _lifecycle = self
+            .shared
+            .lifecycle
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let controller = self.controller();
+        if self.stop_locked() {
+            return true;
+        }
+        self.resume_after_failed_stop(controller);
+        false
+    }
+
+    /// 调用方已持有 lifecycle；只探测原进程，不再停止或授权。
+    fn resume_after_failed_stop(&self, controller: Option<(u16, String)>) {
+        let Some((port, secret)) = controller else {
+            return;
+        };
+        let (pid, binary) = {
+            let inner = self.shared.inner.lock().unwrap();
+            let Some(pid) = inner.external_pid else {
+                return;
+            };
+            let Some(binary) = inner.external_binary.clone() else {
+                // 服务租约缺少身份时保留原状，不能伪造二进制身份。
+                return;
+            };
+            (pid, binary)
+        };
+        let gone = || {
+            !pid_is_alive(pid) || process_matches_binary(pid, &binary) == Some(false)
+        };
+        let probe = ControllerProbe {
+            port,
+            secret: secret.clone(),
+        };
+        if !probe.wait_ready(Duration::from_secs(2), || false, gone) {
+            return;
+        }
+        {
+            let mut inner = self.shared.inner.lock().unwrap();
+            if inner.external_pid != Some(pid) {
+                return;
+            }
+            inner.controller = Some((port, secret));
+            inner.stopping = false;
+            inner.detached = false;
+        }
+        self.shared.notify(CoreStatus::Running);
+        #[cfg(any(unix, windows))]
+        watch_external(self.shared.clone(), pid, binary);
     }
 
     /// 优雅停止：标记后杀进程，watch 线程随之退出。
@@ -1045,7 +1102,7 @@ fn spawn_and_watch(shared: Arc<Shared>, previous: Option<u32>) {
             if previous.is_some() {
                 shared.notify(CoreStatus::Starting);
             }
-            std::thread::spawn(move || watch(shared, pid, port, secret));
+            crate::authorization::spawn_background(move || watch(shared, pid, port, secret));
         }
         Ok(None) => {} // stop() 或另一条启动链已接管
         Err(error) => shared.notify(CoreStatus::Crashed(error)),
@@ -1062,12 +1119,6 @@ fn kill_pid_probe(pid: u32) -> bool {
 fn kill_pid_probe(_pid: u32) -> bool {
     false
 }
-
-/// root 内核补杀的授权弹窗门控：应用退出路径置 true（退出时不该突然弹
-/// 管理员框），用户主动的 TUN/引擎/配置切换保持允许——这些本就是会弹
-/// 授权框的语义场景。拒绝授权时停止流程照常继续（预绑定检查兜底报错）。
-pub static ROOT_KILL_PROMPT_DISABLED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
 
 const KILL_GRACE: Duration = Duration::from_secs(2);
 #[cfg(unix)]
@@ -1227,9 +1278,7 @@ fn shell_quote(value: &str) -> String {
 
 #[cfg(target_os = "macos")]
 fn run_admin_stop(script: &str) -> Option<String> {
-    if ROOT_KILL_PROMPT_DISABLED.load(std::sync::atomic::Ordering::SeqCst) {
-        return None;
-    }
+    crate::authorization::require_interactive().ok()?;
     let out = crate::process::command("/usr/bin/osascript")
         .args(["-e", &privileged_shell_script(script)])
         .output()
@@ -1694,7 +1743,7 @@ impl Shared {
 /// 不把权限不足当作退出；Windows 使用原生进程存活查询。
 #[cfg(any(unix, windows))]
 fn watch_external(shared: Arc<Shared>, pid: u32, binary: PathBuf) {
-    std::thread::spawn(move || loop {
+    crate::authorization::spawn_background(move || loop {
         std::thread::sleep(Duration::from_secs(3));
         {
             let inner = shared.inner.lock().unwrap_or_else(|e| e.into_inner());
@@ -1725,7 +1774,7 @@ fn watch_external(shared: Arc<Shared>, pid: u32, binary: PathBuf) {
 /// A live service connection confirms both core lifetime and owned resources.
 #[cfg(target_os = "linux")]
 fn watch_linux_service(shared: Arc<Shared>, pid: u32) {
-    std::thread::spawn(move || loop {
+    crate::authorization::spawn_background(move || loop {
         std::thread::sleep(Duration::from_secs(1));
         {
             let inner = shared.inner.lock().unwrap_or_else(|e| e.into_inner());
@@ -1844,7 +1893,7 @@ fn watch(shared: Arc<Shared>, pid: u32, port: u16, secret: String) {
         .as_deref().and_then(tun_health_port)
     {
         let weak = Arc::downgrade(&shared);
-        std::thread::spawn(move || tun_health_monitor(weak, pid, mixed_port));
+        crate::authorization::spawn_background(move || tun_health_monitor(weak, pid, mixed_port));
     }
 
     // 子进程始终留在共享状态（stop/pid 都依赖它）；这里只轮询退出状态。
@@ -2339,6 +2388,23 @@ pub fn free_port() -> Option<u16> {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    /// 状态回调不可占着回调注册锁，退出和崩溃恢复可能同时通知。
+    #[test]
+    fn callback_runs_without_holding_registration_lock() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let dir = tempfile::tempdir().unwrap();
+        let manager = super::CoreManager::new(std::path::PathBuf::from("unused-core"), dir.path().into());
+        let shared = manager.shared.clone();
+        let weak = std::sync::Arc::downgrade(&shared);
+        let unlocked = std::sync::Arc::new(AtomicBool::new(false));
+        let observed = unlocked.clone();
+        manager.set_callback(std::sync::Arc::new(move |_| {
+            observed.store(weak.upgrade().unwrap().callback.try_lock().is_ok(), Ordering::SeqCst);
+        }));
+        shared.notify(super::CoreStatus::Stopped);
+        shared.callback.lock().unwrap().take();
+        assert!(unlocked.load(Ordering::SeqCst));
+    }
     use super::*;
 
     #[test]
@@ -3371,6 +3437,74 @@ pub(crate) mod tests {
         assert!(replacement.stop());
         let _ = reaper.join().unwrap();
         assert!(!Shared::descriptor_path(dir.path()).exists());
+    }
+
+    /// 服务租约没有进程身份时，退出恢复不得猜测身份或探测控制器。
+    #[test]
+    fn failed_exit_resume_preserves_unverified_service_lease() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = CoreManager::new(std::env::current_exe().unwrap(), dir.path().into());
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        {
+            let mut inner = manager.shared.inner.lock().unwrap();
+            inner.external_pid = Some(std::process::id());
+            inner.external_binary = None;
+            inner.stopping = true;
+        }
+        {
+            let _lifecycle = manager.shared.lifecycle.lock().unwrap();
+            manager.resume_after_failed_stop(Some((listener.local_addr().unwrap().port(), "secret".into())));
+        }
+        assert!(matches!(listener.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock));
+        let mut inner = manager.shared.inner.lock().unwrap();
+        assert_eq!(inner.external_pid, Some(std::process::id()));
+        assert!(inner.external_binary.is_none());
+        assert!(inner.controller.is_none());
+        assert!(inner.stopping);
+        inner.external_pid = None;
+    }
+
+    /// 停止授权取消后恢复控制连接，且恢复过程不再次发送停止请求。
+    #[cfg(unix)]
+    #[test]
+    fn failed_exit_stop_resumes_authenticated_core_without_another_kill() {
+        use std::io::Read;
+        let dir = tempfile::tempdir().unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            let mut buffer = [0; 2048];
+            let size = stream.read(&mut buffer).unwrap();
+            assert!(String::from_utf8_lossy(&buffer[..size])
+                .to_lowercase().contains("authorization: bearer test-secret"));
+            stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}").unwrap();
+        });
+        let manager = CoreManager::new(PathBuf::from("/bin/sleep"), dir.path().to_path_buf());
+        let mut child = Command::new("/bin/sleep").arg("30").spawn().unwrap();
+        let pid = child.id();
+        let reaper = std::thread::spawn(move || child.wait());
+        // 模拟停止授权被取消后留下的状态，恢复只能探测，不能再次杀进程。
+        {
+            let mut inner = manager.shared.inner.lock().unwrap();
+            inner.external_pid = Some(pid);
+            inner.external_binary = Some(PathBuf::from("/bin/sleep"));
+            inner.stopping = true;
+            inner.status = CoreStatus::Crashed("cancelled".into());
+        }
+        {
+            let _lifecycle = manager.shared.lifecycle.lock().unwrap();
+            manager.resume_after_failed_stop(Some((port, "test-secret".into())));
+        }
+        server.join().unwrap();
+        assert_eq!(manager.controller(), Some((port, "test-secret".into())));
+        assert_eq!(manager.status(), CoreStatus::Running);
+        assert!(!manager.shared.inner.lock().unwrap().stopping);
+        assert!(pid_is_alive(pid));
+        assert!(manager.stop());
+        reaper.join().unwrap().unwrap();
     }
 
     #[cfg(unix)]

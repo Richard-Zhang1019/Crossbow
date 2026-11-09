@@ -158,6 +158,7 @@ fn cleanup_stale_tun_binaries(data_dir: &Path, current_bin: &Path) {
 pub fn ensure_root_binary(state: &AppState, source: &Path) -> Result<PathBuf, String> {
     let bin = persistent_core_bin(state, source)?;
     if !is_setuid(&bin) {
+        crate::authorization::require_interactive()?;
         let script = format!(
             "chown root '{}'; chmod u+s '{}'",
             bin.display(),
@@ -382,6 +383,7 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
     // Serialize the entire transition with core start/restart and the health
     // monitor. The saved flag must never get ahead of a failed stop.
     let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
+    state.exit.ensure_open()?;
     toggle_tun_locked(state, enable)
 }
 
@@ -389,6 +391,7 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
 /// 用户已经关掉时直接返回，避免「关了又被打开」。
 pub fn reestablish_if_enabled(state: &AppState) -> Result<(), String> {
     let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
+    state.exit.ensure_open()?;
     let enabled = {
         let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         store.data().engine.tun_enable
@@ -396,6 +399,8 @@ pub fn reestablish_if_enabled(state: &AppState) -> Result<(), String> {
     if !enabled {
         return Ok(());
     }
+    state.sysproxy.ensure_unattended_tun_rebuild()?;
+    ensure_unattended_root(state)?;
     toggle_tun_locked(state, false)?;
     toggle_tun_locked(state, true)
 }
@@ -403,6 +408,7 @@ pub fn reestablish_if_enabled(state: &AppState) -> Result<(), String> {
 /// 连通性失败时关闭。持锁后再读，避免关掉用户刚刚打开的 TUN。
 pub fn disable_if_enabled(state: &AppState) -> Result<(), String> {
     let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
+    state.exit.ensure_open()?;
     let enabled = {
         let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         store.data().engine.tun_enable
@@ -410,7 +416,17 @@ pub fn disable_if_enabled(state: &AppState) -> Result<(), String> {
     if !enabled {
         return Ok(());
     }
+    state.sysproxy.ensure_unattended_tun_restore()?;
+    ensure_unattended_root(state)?;
     toggle_tun_locked(state, false)
+}
+
+/// 自检不能触发新授权，预检必须发生在关闭 TUN 或停止内核之前。
+fn ensure_unattended_root(state: &AppState) -> Result<(), String> {
+    if !is_setuid(&state.core().binary_path()) {
+        return Err("TUN 内核需要重新授权，请手动操作 TUN 开关".into());
+    }
+    Ok(())
 }
 
 fn toggle_tun_locked(state: &AppState, enable: bool) -> Result<(), String> {

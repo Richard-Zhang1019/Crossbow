@@ -73,7 +73,11 @@ fn updater_with_proxy(app: &AppHandle) -> Result<tauri_plugin_updater::Updater, 
     #[cfg(target_os = "windows")]
     {
         let handle = app.clone();
-        builder = builder.on_before_exit(move || crate::cleanup_before_process_exit(&handle, false));
+        builder = builder.on_before_exit(move || {
+            if let Err(error) = crate::cleanup_before_process_exit(&handle, false) {
+                eprintln!("updater exit cleanup failed after network preflight: {error}");
+            }
+        });
     }
     if let Some(proxy) = updater_proxy(app) {
         builder = builder.proxy(proxy);
@@ -264,7 +268,13 @@ pub fn install(app: &AppHandle) -> Result<(), String> {
         .ok()
         .and_then(|p| p.clone())
         .ok_or_else(|| "没有待安装的更新".to_string())?;
-    update.install(bytes).map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    crate::prepare_windows_update_exit(app)?;
+    if let Err(error) = update.install(bytes) {
+        #[cfg(windows)]
+        crate::cancel_windows_update_exit(app);
+        return Err(error.to_string());
+    }
     // Windows installation exits the process inside update.install(); the NSIS
     // installer owns relaunch. Only macOS uses our restart/handoff below.
     #[cfg(not(target_os = "windows"))]

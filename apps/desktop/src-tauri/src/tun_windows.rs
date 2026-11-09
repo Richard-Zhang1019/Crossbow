@@ -15,12 +15,14 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
     // 与 macOS 相同：整段切换与启动/健康监测串行化，存储标志不得跑在
     // 失败的停止前面。
     let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
+    state.exit.ensure_open()?;
     toggle_tun_locked(state, enable)
 }
 
 /// 连通性失败时关闭。持锁后再读，避免关掉用户刚刚打开的 TUN。
 pub fn disable_if_enabled(state: &AppState) -> Result<(), String> {
     let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
+    state.exit.ensure_open()?;
     let enabled = {
         let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         store.data().engine.tun_enable

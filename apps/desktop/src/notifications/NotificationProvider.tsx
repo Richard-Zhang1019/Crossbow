@@ -230,9 +230,11 @@ function NotificationCard({
       ? text("failedHint")
       : notice.code === "core.safeMode"
         ? text("safeMode.hint")
-        : notice.code === "tun.disabled"
-          ? text("tun.disabled.hint")
-          : "";
+        : (notice.code === "tun.externalProxy" || notice.code === "tun.manualRecovery")
+          ? text(`${notice.code}.hint`)
+          : notice.code === "tun.disabled"
+            ? text("tun.disabled.hint")
+            : "";
   const detailsId = `notice-details-${notice.id}`;
   const progressing = notice.kind === "progress";
   const percent =
@@ -410,11 +412,13 @@ function HistoryRow({
         : notice.description
       : notice.code === "core.safeMode"
         ? text("safeMode.hint")
-        : notice.code === "tun.disabled"
-          ? text("tun.disabled.hint")
-          : kind === "error"
-            ? text("failedHint")
-            : "";
+        : (notice.code === "tun.externalProxy" || notice.code === "tun.manualRecovery")
+          ? text(`${notice.code}.hint`)
+          : notice.code === "tun.disabled"
+            ? text("tun.disabled.hint")
+            : kind === "error"
+              ? text("failedHint")
+              : "";
   const read = () =>
     void invoke("notification_mark_read", { id: notice.id }).catch(
       console.error,

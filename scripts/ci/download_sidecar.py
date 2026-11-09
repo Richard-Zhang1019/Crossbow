@@ -31,6 +31,15 @@ def verify(data, expected):
         raise ValueError('Sidecar SHA-256 mismatch')
 
 
+def github_request(url, accept='application/vnd.github+json'):
+    """API 查询和资产下载共用鉴权，令牌不随 CDN 重定向转发。"""
+    request = urllib.request.Request(url, headers={'Accept': accept})
+    token = os.environ.get('GITHUB_TOKEN') or os.environ.get('GH_TOKEN')
+    if token:
+        request.add_unredirected_header('Authorization', f'Bearer {token}')
+    return request
+
+
 def main():
     runtime_source = (ROOT / 'apps/desktop/src-tauri/src/core_download.rs').read_text(encoding='utf-8')
     runtime_version = re.search(r'CORE_VERSION: &str = "([^"]+)"', runtime_source)
@@ -62,19 +71,16 @@ def main():
         # 末路镜像：api.github.com 资产下载。查询与下载分两步且都在
         # try 内——任一失败仅打印，绝不影响前面的候选结果。
         try:
-            release = json.load(urllib.request.urlopen(
-                f'https://api.github.com/repos/MetaCubeX/mihomo/releases/tags/{VERSION}',
+            release = json.load(urllib.request.urlopen(github_request(
+                f'https://api.github.com/repos/MetaCubeX/mihomo/releases/tags/{VERSION}'),
                 timeout=30))
             asset_id = next((a['id'] for a in release.get('assets', [])
                              if a['name'] == asset), None)
             if not asset_id:
                 raise ValueError(f'asset {asset} not found in release {VERSION}')
-            req = urllib.request.Request(
+            req = github_request(
                 f'https://api.github.com/repos/MetaCubeX/mihomo/releases/assets/{asset_id}',
-                headers={'Accept': 'application/octet-stream'})
-            token = os.environ.get('GITHUB_TOKEN')
-            if token:
-                req.add_header('Authorization', f'Bearer {token}')
+                'application/octet-stream')
             with urllib.request.urlopen(req, timeout=180) as response:
                 candidate_data = response.read()
             verify(candidate_data, digest)
