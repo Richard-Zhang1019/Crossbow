@@ -359,6 +359,27 @@ export const english = {
   "深链接导入": "Deep-link import",
   "「配置」页粘贴订阅 URL，或把 .yaml 配置文件拖进窗口；导入时自动校验，设置自动更新间隔后无需再管。": "Paste a subscription URL on the Config page, or drag a .yaml file into the window. Imports are validated on the spot; set an update interval once and forget it.",
   "选择节点": "Pick a node",
+  " 推进 Linux 适配与实机验证，也感谢所有贡献者。": " for driving the Linux adaptation and field validation, and thanks to all contributors.",
+  " 数据会自动迁移；升级前可备份新目录。": " data migrates automatically; backing up the new directory before an upgrade is a good idea.",
+  " 的适配与实机反馈。其他发行版和桌面环境尚未全面验收。": " for the adaptation and field feedback. Other distros and desktop environments are not fully verified yet.",
+  " 的适配与验证，": " for the adaptation and validation, ",
+  " TUN 依赖随安装包附带的 CrossbowService。用完整安装包重新安装或修复即可；详细步骤见": " TUN depends on the CrossbowService bundled with the installer. Reinstall or repair with the full installer; see",
+  "Windows 提示服务缺失，TUN 无法开启？": "Windows says the service is missing and TUN can't be enabled?",
+  " 内核运行 ≠ 浏览器可用。先打开": " A running core ≠ a working browser. Open the",
+  "前提：订阅中存在名字含「香港」或「JP」的节点，否则过滤后为空。": "Prerequisite: your subscription contains nodes whose names include 香港 (HK) or JP — otherwise the filtered list is empty.",
+  "复制": "Copy",
+  "复制代码": "Copy code",
+  "显示「运行中」，但浏览器打不开网站？": "It says \"running\", but the browser can't open websites?",
+  "更新失败不会清空节点，旧配置继续可用；在「配置 → 配置来源」查看最近失败原因与下次重试时间，也可手动更新。详见": "A failed update keeps your nodes and the previous config; check the last failure reason and next retry time under Config → Sources, or update manually. See",
+  "示例规则引用的「自动选择」组需真实存在于订阅；若组名不同，请同步改写规则或删除该引用——保存时的试运行会当场暴露悬空引用。": "The sample rules reference an AUTO group that must exist in your subscription; if the name differs, adjust the rules or remove the reference — the dry run on save exposes dangling references.",
+  "管理配置": "Manage configs",
+  "维护恢复": "Maintenance & recovery",
+  "观测排障": "Observability & troubleshooting",
+  "订阅更新失败了？": "Subscription update failed?",
+  "连接不通时按证据排查": "Troubleshoot connectivity by evidence",
+  "连接接管": "Connection takeover",
+  "，按第一个阻塞项逐层排查（系统代理指向、TUN、DNS）；更多证据化排查步骤见": ", then work through the first blocking item (system proxy target, TUN, DNS); more evidence-based troubleshooting in",
+
 }
 
 export type Message = keyof typeof english;
