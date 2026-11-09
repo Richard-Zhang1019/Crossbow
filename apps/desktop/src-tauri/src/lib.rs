@@ -4054,7 +4054,9 @@ pub fn run() {
                 // 会话结束（关机/注销）兜底：还原系统代理（#334 review P3）
                 #[cfg(target_os = "windows")]
                 if let Ok(hwnd) = win.hwnd() {
-                    crate::windows_session_end::install(app.handle(), hwnd);
+                    // tauri 的 hwnd() 返回 windows crate 的 HWND 结构体；
+                    // windows-sys 侧接口需要裸指针
+                    crate::windows_session_end::install(app.handle(), hwnd.0);
                 }
             }
 
