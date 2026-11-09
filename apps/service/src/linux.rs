@@ -1114,20 +1114,13 @@ impl Session {
             .stderr(stderr)
             .spawn()
             .map_err(|e| format!("启动 mihomo 失败：{e}"))?;
-        self.child = Some(child);
+        let child = self.child.insert(child);
         let deadline = Instant::now() + Duration::from_secs(20);
-        loop {
+        let ifindex = loop {
             if STOP.load(Ordering::Relaxed) {
                 return Err("服务正在停止".into());
             }
-            if self
-                .child
-                .as_mut()
-                .unwrap()
-                .try_wait()
-                .map_err(|e| e.to_string())?
-                .is_some()
-            {
+            if child.try_wait().map_err(|e| e.to_string())?.is_some() {
                 return Err("mihomo 在就绪前退出，请查看内核日志".into());
             }
             if let Some(index) = network::device_index()? {
@@ -1142,22 +1135,22 @@ impl Session {
                     .save()?;
                 }
                 if controller_ready(controller, &secret) && cache_ready(Path::new(SESSION))? {
-                    break;
+                    break index;
                 }
             }
             if Instant::now() >= deadline {
                 return Err("等待 TUN 设备、内核控制器和节点缓存超时".into());
             }
             std::thread::sleep(Duration::from_millis(100));
-        }
-        self.verify_network(&[std::process::id(), self.child.as_ref().unwrap().id()])?;
+        };
+        self.verify_network()?;
         Journal {
-            ifindex: self.ifindex.unwrap(),
+            ifindex,
             resources: Vec::new(),
             pending: None,
         }
         .install(&self.resources)?;
-        self.verify_network(&[std::process::id(), self.child.as_ref().unwrap().id()])?;
+        self.verify_network()?;
         self.verify_session()
     }
     fn stop(&mut self) -> Result<(), String> {
@@ -1196,14 +1189,17 @@ impl Session {
         self.resources.clear();
         Ok(())
     }
-    fn verify_network(&self, pids: &[u32]) -> Result<(), String> {
+    fn verify_network(&self) -> Result<(), String> {
+        let child = self.child.as_ref().ok_or("TUN 会话缺少内核进程句柄")?;
+        let ifindex = self.ifindex.ok_or("TUN 尚未就绪")?;
+        let pids = [std::process::id(), child.id()];
         if let Some(expected) = &self.wireguard {
-            if network::wireguard_plan(self.ifindex, pids)? != *expected {
+            if network::wireguard_plan(Some(ifindex), &pids)? != *expected {
                 return Err("WireGuard 接口、路由或固定端点发生变化，正在退出本次接管".into());
             }
             Ok(())
         } else {
-            network::ensure_available(self.ifindex, pids)
+            network::ensure_available(Some(ifindex), &pids)
         }
     }
     fn status(&self) -> Value {
@@ -1336,7 +1332,6 @@ fn connection(mut stream: UnixStream) -> Result<bool, String> {
             return Ok(false);
         }
         if let Some(child) = session.child.as_mut() {
-            let pid = child.id();
             if child.try_wait().map_err(|e| e.to_string())?.is_some() {
                 session.stop()?;
                 let _ = reply(
@@ -1345,7 +1340,7 @@ fn connection(mut stream: UnixStream) -> Result<bool, String> {
                 );
                 return Ok(false);
             }
-            if let Err(error) = session.verify_network(&[std::process::id(), pid]) {
+            if let Err(error) = session.verify_network() {
                 let recovery = session.stop();
                 let _ = reply(
                     &mut stream,
@@ -1495,6 +1490,17 @@ mod tests {
         )
         .is_err());
     }
+    #[test]
+    fn network_check_without_a_core_returns_an_error_before_inspecting_routes() {
+        // This unstarted fixture owns no resources. Skip Drop, which consults
+        // the real runtime directory to clean up a production session.
+        let session = std::mem::ManuallyDrop::new(Session::new());
+        assert_eq!(
+            session.verify_network().unwrap_err(),
+            "TUN 会话缺少内核进程句柄"
+        );
+    }
+
     #[test]
     fn refuses_occupied_listener_ports_before_starting_core() {
         let occupied = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
