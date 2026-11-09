@@ -51,6 +51,8 @@ mod tun;
 #[cfg(windows)]
 mod tun_windows;
 #[cfg(windows)]
+mod windows_session_end;
+#[cfg(windows)]
 mod service_client;
 #[cfg(target_os = "linux")]
 mod linux_service;
@@ -4049,6 +4051,13 @@ pub fn run() {
             // 主窗口使用与应用界面一致的系统外观，避免浅色窗口描边。
             if let Some(win) = app.get_webview_window("main") {
                 apply_window_appearance(&win, &store.data().ui.theme);
+                // 会话结束（关机/注销）兜底：还原系统代理（#334 review P3）
+                #[cfg(target_os = "windows")]
+                if let Ok(hwnd) = win.hwnd() {
+                    // tauri 的 hwnd() 返回 windows crate 的 HWND 结构体；
+                    // windows-sys 侧接口需要裸指针
+                    crate::windows_session_end::install(app.handle(), hwnd.0);
+                }
             }
 
             // 内核二进制定位：优先按持久化引擎精确解析；引擎对应内核缺失时
@@ -4191,7 +4200,11 @@ pub fn run() {
             refresh_tray_nodes(app.handle(), false);
 
             #[cfg(target_os = "macos")]
-            macos_shutdown::install(app.handle())?;
+            if let Err(error) = macos_shutdown::install(app.handle()) {
+                // 增强入口：Dock/注销退出委托装不上时不阻塞启动，
+                // 退出恢复仍由 Tauri 的 ExitRequested 路径覆盖。
+                eprintln!("[crossbow] {error}");
+            }
 
             Ok(())
         })
