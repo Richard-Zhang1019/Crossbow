@@ -368,8 +368,13 @@ pub(crate) fn start_core_locked(state: &AppState) -> Result<(), String> {
             if is_singbox {
                 return Err("Linux TUN 当前仅支持 mihomo".into());
             }
-            crossbow_service::linux_network::ensure_available(None, &[])?;
-            let spawner = linux_service::make_core_spawner()?;
+            let wireguard_coexist = state.store.lock().unwrap().data().engine.linux_wireguard_coexist;
+            crossbow_service::linux_network::ensure_available_with_wireguard(
+                None,
+                &[],
+                wireguard_coexist,
+            )?;
+            let spawner = linux_service::make_core_spawner(wireguard_coexist)?;
             return state.core().start_with_spawner(&rendered.config, &rt, Box::new(spawner));
         }
         #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
@@ -1394,6 +1399,32 @@ fn tun_status(state: State<AppState>) -> TunStatus {
 }
 
 #[tauri::command]
+async fn set_linux_wireguard_coexist(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    let result = crate::tun_linux::set_wireguard_coexist(&state, enabled);
+    #[cfg(not(target_os = "linux"))]
+    let result: Result<(), String> = {
+        let _ = (state, enabled);
+        Err("当前平台不支持 Linux WireGuard 共存设置".into())
+    };
+    const OPERATION: &str = "linux-wireguard-coexist";
+    match &result {
+        Ok(()) => notifications::resolve(&app, OPERATION),
+        Err(error) => notifications::result(
+            &app,
+            OPERATION,
+            "linux.wireguardCoexist",
+            Err(error.clone()),
+        ),
+    }
+    result
+}
+
+#[tauri::command]
 fn set_flag_emoji(state: State<AppState>, enabled: bool) -> Result<(), String> {
     let mut store = state.store.lock().unwrap();
     store.data_mut().engine.flag_emoji = enabled;
@@ -1833,6 +1864,7 @@ struct EngineView {
     mixed_port: u16,
     allow_lan: bool,
     flag_emoji: bool,
+    linux_wireguard_coexist: bool,
     /// 当前引擎对应内核是否已安装。
     core_installed: bool,
 }
@@ -1852,6 +1884,7 @@ fn get_engine_config(state: State<AppState>) -> EngineView {
         mixed_port: store.data().engine.mixed_port,
         allow_lan: store.data().engine.allow_lan,
         flag_emoji: store.data().engine.flag_emoji,
+        linux_wireguard_coexist: store.data().engine.linux_wireguard_coexist,
         core_installed,
     }
 }
@@ -4090,6 +4123,7 @@ pub fn run() {
             set_engine,
             set_tun,
             tun_status,
+            set_linux_wireguard_coexist,
             diag_log,
             run_diagnosis,
             workflow::profile_statuses,

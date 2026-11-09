@@ -1734,14 +1734,22 @@ fn watch_linux_service(shared: Arc<Shared>, pid: u32) {
         let result = crate::linux_service::status();
         if result.as_ref().ok().and_then(|s| s.as_ref())
             .is_some_and(|s| s.pid == pid && s.active) { continue; }
+        let message = match result {
+            Ok(None) => "Linux TUN 服务已停止，接管资源已释放".to_string(),
+            Ok(Some(_)) => "Linux TUN 服务状态异常，尚未确认清理完成".to_string(),
+            Err(error) => {
+                // A terminal failure can confirm cleanup and still return its cause.
+                if crate::linux_service::status().is_ok_and(|session| session.is_none()) {
+                    format!("Linux TUN 服务已停止，接管资源已释放：{error}")
+                } else {
+                    format!("Linux TUN 服务异常，尚未确认清理完成：{error}")
+                }
+            }
+        };
         {
             let inner = shared.inner.lock().unwrap_or_else(|e| e.into_inner());
             if inner.stopping || inner.external_pid != Some(pid) { return; }
         }
-        let message = match result {
-            Ok(_) => "Linux TUN 服务已停止，接管资源已释放".to_string(),
-            Err(error) => format!("Linux TUN 服务失联，尚未确认清理完成：{error}"),
-        };
         // Keep the tracked PID on uncertain cleanup so a later stop can retry.
         shared.notify(CoreStatus::Crashed(message));
         return;

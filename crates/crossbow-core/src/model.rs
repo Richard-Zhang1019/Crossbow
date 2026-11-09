@@ -121,6 +121,9 @@ pub struct EngineConfig {
     /// TUN 模式：内核创建 utun 虚拟网卡接管全局流量（macOS 需特权服务）。
     #[serde(default)]
     pub tun_enable: bool,
+    /// Linux only: preserve a verified WireGuard split tunnel when starting TUN.
+    #[serde(default)]
+    pub linux_wireguard_coexist: bool,
 }
 
 fn default_engine() -> Engine {
@@ -140,6 +143,7 @@ impl Default for EngineConfig {
             allow_lan: false,
             flag_emoji: default_flag_emoji(),
             tun_enable: false,
+            linux_wireguard_coexist: false,
         }
     }
 }
@@ -409,6 +413,7 @@ mod tests {
         data.migrate();
         assert_eq!(data.schema_version, 2);
         assert_eq!(data.ui, UiSettings::default());
+        assert!(!data.engine.linux_wireguard_coexist);
     }
 
     #[test]

@@ -465,6 +465,35 @@ export default function SettingsPage({
               </span>
             </Row>
           )}
+          {isLinux && capabilities?.tun && (
+            <Row
+              label={t("linux.wireguardCoexist")}
+              hint={t(tun?.enabled ? "linux.wireguardCoexistTurnOffTun" : "linux.wireguardCoexistHint")}
+            >
+              <Switch
+                checked={engine?.linux_wireguard_coexist ?? false}
+                disabled={tunBusy || !tun || tun.enabled}
+                onChange={async (enabled) => {
+                  const key = "linux-wireguard-coexist";
+                  if (saving.current.has(key)) return;
+                  saving.current.add(key);
+                  setSavingCount(count => count + 1);
+                  try {
+                    await ipc.setLinuxWireguardCoexist(enabled);
+                  } catch {
+                    // The backend reports the error. Read the stored value below.
+                  } finally {
+                    try {
+                      await load();
+                    } finally {
+                      saving.current.delete(key);
+                      setSavingCount(count => Math.max(0, count - 1));
+                    }
+                  }
+                }}
+              />
+            </Row>
+          )}
           <Row label={t("settings.lan")} hint={t("settings.lanHint")}>
             <Switch
               checked={engine?.allow_lan ?? false}
