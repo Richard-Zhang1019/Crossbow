@@ -1563,11 +1563,6 @@ fn windows_port_listeners(port: u16) -> Vec<(u32, String)> {
     out
 }
 
-#[cfg(not(target_os = "windows"))]
-fn windows_port_listeners(_port: u16) -> Vec<(u32, String)> {
-    Vec::new()
-}
-
 /// The privileged port lookup may see listeners hidden from the GUI user.
 /// Only exact executable paths from this installation are eligible.
 #[cfg(target_os = "macos")]
@@ -2388,6 +2383,7 @@ pub fn free_port() -> Option<u16> {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use super::*;
     /// 状态回调不可占着回调注册锁，退出和崩溃恢复可能同时通知。
     #[test]
     fn callback_runs_without_holding_registration_lock() {
@@ -2405,7 +2401,6 @@ pub(crate) mod tests {
         shared.callback.lock().unwrap().take();
         assert!(unlocked.load(Ordering::SeqCst));
     }
-    use super::*;
 
     #[test]
     fn error_summary_picks_last_error_line_and_extracts_msg() {
@@ -2585,8 +2580,6 @@ pub(crate) mod tests {
     pub(crate) fn tests_free_port() -> u16 {
         free_port().unwrap()
     }
-
-    use super::*;
 
     #[test]
     fn dead_descriptor_is_removed_without_waiting_for_controller_timeout() {

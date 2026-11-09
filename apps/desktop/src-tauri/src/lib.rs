@@ -20,7 +20,9 @@ use tauri_plugin_deep_link::DeepLinkExt as _;
 mod macos_icon;
 #[cfg(target_os = "macos")]
 mod macos_shutdown;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 mod authorization;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 mod coexist;
 mod config_transition;
 mod core_manager;
@@ -42,6 +44,8 @@ mod workflow;
 mod sysproxy;
 #[cfg(target_os = "macos")]
 mod tray_speed;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 mod tray_state;
 mod tray_menu;
 #[cfg(target_os = "macos")]
@@ -92,6 +96,7 @@ pub struct AppState {
     ws: WsHub,
     data_dir: PathBuf,
     /// 托盘节点子菜单统一状态（此前 9 个分散锁的字段全部收拢于此）
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     node_menu: Mutex<tray_state::TrayState>,
     /// 应用句柄：换核/重装后给新 CoreManager 重挂状态回调用。
     app: AppHandle,
@@ -2568,6 +2573,7 @@ fn spawn_logs_sweeper(app: &AppHandle) {
 
 /// Probe actual traffic through the default route. A node-delay benchmark can
 /// fail even while normal websites work, so it must not disable a healthy TUN.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn probe_tun_network() -> Result<(), String> {
     let agent = ureq::AgentBuilder::new()
         .try_proxy_from_env(false)
@@ -2584,6 +2590,7 @@ fn probe_tun_network() -> Result<(), String> {
 }
 
 /// 健康检查重建立。与手动开关共用 core_op，进锁后再读 TUN 标志。
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn reestablish_tun_if_enabled(state: &AppState) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -2597,6 +2604,7 @@ fn reestablish_tun_if_enabled(state: &AppState) -> Result<(), String> {
 }
 
 /// 连通性失败时关 TUN。持锁后再读标志，避免和用户的开关打架。
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn disable_tun_if_enabled(state: &AppState) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -2857,7 +2865,7 @@ fn spawn_tun_health_monitor(app: &AppHandle) {
                                     reported_recovery_failure = false;
                                     wedge_cooldown_until =
                                         std::time::Instant::now()
-                                            + std::time::Duration::from_secs(90);
+                                            + std::time::Duration::from_secs(WEDGE_COOLDOWN_SECS);
                                     let mut notice = notifications::Notice::new(
                                         notifications::Kind::Warning,
                                         "tun.wedgeRestart",
@@ -2881,7 +2889,6 @@ fn spawn_tun_health_monitor(app: &AppHandle) {
                                     eprintln!(
                                         "tun health: restarting core to recover wedged TUN (attempt {wedge_restarts}/{MAX_WEDGE_RESTARTS}, signaled={restarted})"
                                     );
-                                    skip_probe = true;
                                 } else if still_enabled {
                                     match disable_tun_if_enabled(&state) {
                                         Ok(()) => {
@@ -3948,10 +3955,12 @@ fn clear_stale_system_proxy_early() {
 fn clear_stale_system_proxy_early() {}
 
 /// 自愈判定（纯函数便于测试）：journal 记录了非零端口且该端口无监听。
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 fn stale_proxy_should_clear(journal_port: Option<u16>, port_listening: bool) -> bool {
     journal_port.is_some_and(|p| p > 0) && !port_listening
 }
 
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 fn port_has_listener(port: u16) -> bool {
     use std::net::{Ipv4Addr, SocketAddr, TcpStream};
     use std::time::Duration;
@@ -4135,6 +4144,7 @@ pub fn run() {
                 data_dir: data_dir.clone(),
                 app: app.handle().clone(),
                 update: Mutex::new(update_settings_init),
+                #[cfg(any(target_os = "macos", target_os = "windows"))]
                 node_menu: Mutex::new(tray_state::TrayState::default()),
                 traffic_history: Mutex::new(std::collections::VecDeque::new()),
             });

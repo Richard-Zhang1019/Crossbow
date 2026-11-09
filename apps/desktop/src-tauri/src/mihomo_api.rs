@@ -93,6 +93,7 @@ impl Controller {
     }
 
     #[cfg(any(target_os = "macos", target_os = "windows", test))]
+#[cfg(target_os = "macos")]
     pub fn tun_enabled(&self) -> Result<Option<bool>, String> {
         Ok(self.get_json("/configs")?["tun"]["enable"].as_bool())
     }
@@ -125,6 +126,7 @@ impl Controller {
     /// tun 栈。关 TUN 由此绕开「杀 root 内核 → 端口交接 → 重启探测」
     /// 整条链路（实测该链路 30s+ 且 root 内核杀不死时 bind 必失败）。
     /// 仅 mihomo 支持 tun 热更新；sing-box 的 clash_api 不支持。
+#[cfg(target_os = "macos")]
     pub fn patch_tun_enable(&self, enable: bool) -> Result<(), String> {
         let body = serde_json::to_vec(&serde_json::json!({
             "tun": { "enable": enable }

@@ -14,6 +14,7 @@ use std::sync::{
 use serde::{Deserialize, Serialize};
 
 /// 与 TUN 开关共用操作锁，排队后重新读取开关，再执行只读检测。
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 pub(crate) fn check_external_proxy_for_tun(
     operation: &Mutex<()>,
     tun_enabled: impl FnOnce() -> bool,
@@ -25,8 +26,10 @@ pub(crate) fn check_external_proxy_for_tun(
 
 /// 同一次外部代理冲突只展示一次提示，恢复后才允许提示新冲突。
 #[derive(Default)]
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 pub(crate) struct ExternalProxyNotice(bool);
 
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 impl ExternalProxyNotice {
     /// Some(true) 展示、Some(false) 解除，None 表示提示状态无需变化。
     pub(crate) fn update(&mut self, conflict: bool) -> Option<bool> {
@@ -63,6 +66,7 @@ pub trait SysProxyBackend: Send + Sync {
     fn restore_service(&self, service: &str, snap: &ServiceSnapshot) -> Result<(), String>;
 
     /// 交互授权后端在后台变更前预检，其他平台无需管理员弹窗。
+#[cfg_attr(target_os = "linux", allow(dead_code))]
     fn restoration_requires_authorization(
         &self,
         _: &BTreeMap<String, ServiceSnapshot>,
@@ -841,6 +845,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
     }
 
     /// 自动重建前检查外部代理，避免关闭后无法在后台再次挂起代理。
+#[cfg_attr(target_os = "linux", allow(dead_code))]
     pub(crate) fn ensure_unattended_tun_rebuild(&self) -> Result<(), String> {
         if self.external_proxy_conflict_for_tun() {
             return Err("检测到外部系统代理，请手动操作 TUN 开关完成恢复".into());
@@ -920,6 +925,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
 
     /// Restore the exact pre-TUN settings after either a failed start or a
     /// successful exit from TUN. Keep the journal if restoration fails.
+#[cfg_attr(target_os = "linux", allow(dead_code))]
     pub fn restore_after_failed_tun(&self, suspended: SuspendedSysProxy) -> Result<(), String> {
         let _operation = self
             .operation
@@ -944,6 +950,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         Ok(())
     }
 
+#[cfg_attr(target_os = "linux", allow(dead_code))]
     pub fn restore_after_tun(&self) -> Result<(), String> {
         let _operation = self
             .operation
@@ -953,6 +960,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
     }
 
     /// 已持有代理操作锁的内部实现。
+#[cfg_attr(target_os = "linux", allow(dead_code))]
     fn restore_after_tun_locked(&self) -> Result<(), String> {
         if self.state.lock().unwrap().is_some() {
             return Ok(());
