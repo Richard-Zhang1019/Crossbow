@@ -38,6 +38,7 @@ struct Session {
     stream: UnixStream,
     service_pid: u32,
     core: Option<ServiceStatus>,
+    wireguard_coexist: bool,
     broken: bool,
 }
 
@@ -166,6 +167,7 @@ fn connect() -> Result<Session, String> {
         stream,
         service_pid,
         core: None,
+        wireguard_coexist: false,
         broken: false,
     })
 }
@@ -252,29 +254,41 @@ impl Session {
                 .map_err(|_| "无法确认 Linux 网络资源清理结果".into())
         };
         let links = read(&["-j", "link", "show"])?;
-        let mut rules = read(&["-j", "-4", "rule", "show"])?;
-        rules.extend(read(&["-j", "-6", "rule", "show"])?);
-        let mut routes = read(&["-j", "-4", "route", "show", "table", "all"])?;
-        routes.extend(read(&["-j", "-6", "route", "show", "table", "all"])?);
-        Ok(resources_absent(&links, &rules, &routes))
+        let mut rules = read(&["-N", "-j", "-4", "rule", "show"])?;
+        rules.extend(read(&["-N", "-j", "-6", "rule", "show"])?);
+        let mut routes = read(&["-N", "-j", "-4", "route", "show", "table", "all"])?;
+        routes.extend(read(&["-N", "-j", "-6", "route", "show", "table", "all"])?);
+        Ok(resources_absent(&links, &rules, &routes, self.wireguard_coexist))
     }
 }
 
-fn resources_absent(links: &[Value], rules: &[Value], routes: &[Value]) -> bool {
-    use crossbow_service::linux_network::{DEVICE, PRIORITY, TABLE};
+fn resources_absent(
+    links: &[Value],
+    rules: &[Value],
+    routes: &[Value],
+    wireguard_coexist: bool,
+) -> bool {
+    use crossbow_service::linux_network::{
+        DEVICE, PRIORITY, TABLE, WIREGUARD_PRIORITY, WIREGUARD_TABLE,
+    };
     let number = |value: &Value, expected: u32| {
         value.as_u64() == Some(expected as u64)
             || value
                 .as_str()
                 .is_some_and(|value| value == expected.to_string())
     };
+    let reserved_table = |value: &Value| {
+        number(value, TABLE) || (wireguard_coexist && number(value, WIREGUARD_TABLE))
+    };
     !links.iter().any(|link| link["ifname"] == DEVICE)
-        && !rules
-            .iter()
-            .any(|rule| number(&rule["priority"], PRIORITY) || number(&rule["table"], TABLE))
+        && !rules.iter().any(|rule| {
+            number(&rule["priority"], PRIORITY)
+                || (wireguard_coexist && number(&rule["priority"], WIREGUARD_PRIORITY))
+                || reserved_table(&rule["table"])
+        })
         && !routes
             .iter()
-            .any(|route| route["dev"] == DEVICE || number(&route["table"], TABLE))
+            .any(|route| route["dev"] == DEVICE || reserved_table(&route["table"]))
 }
 
 fn response_error(response: &Value) -> String {
@@ -283,6 +297,12 @@ fn response_error(response: &Value) -> String {
         .and_then(Value::as_str)
         .unwrap_or("Linux 服务未完成操作")
         .to_string()
+}
+
+fn confirmed_stop(response: &Value) -> bool {
+    response["ok"].is_boolean()
+        && response["stopped"] == true
+        && matches!(response.get("active"), None | Some(Value::Bool(false)))
 }
 
 fn positive_u32(response: &Value, field: &str) -> Result<u32, String> {
@@ -295,13 +315,13 @@ fn positive_u32(response: &Value, field: &str) -> Result<u32, String> {
 }
 
 /// Only an explicit TUN enable action may invoke this authorization flow.
-pub fn authorize() -> Result<(), String> {
+pub fn authorize(wireguard_coexist: bool) -> Result<(), String> {
     validate_installation()?;
     if managed_pid().is_some() && active() {
         return Ok(());
     }
-    if probe_idle_service().is_ok() {
-        return Ok(());
+    if let Ok((_, supported)) = probe_idle_service() {
+        return require_wireguard_support(wireguard_coexist, supported);
     }
     protected_executable(Path::new(PKEXEC))?;
     let mut child = Command::new(PKEXEC)
@@ -340,25 +360,37 @@ pub fn authorize() -> Result<(), String> {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         match probe_idle_service() {
-            Ok(()) => return Ok(()),
+            Ok((_, supported)) => return require_wireguard_support(wireguard_coexist, supported),
             Err(error) if Instant::now() >= deadline => return Err(error),
             Err(_) => std::thread::sleep(Duration::from_millis(100)),
         }
     }
 }
 
-fn probe_idle_service() -> Result<(), String> {
+fn probe_idle_service() -> Result<(u32, bool), String> {
     let mut session = connect()?;
     let response = session.request(json!({"cmd":"status"}), REQUEST_TIMEOUT)?;
     if response["ok"] == true && response["active"] == false && response["stopped"] == true {
-        Ok(())
+        Ok((
+            session.service_pid,
+            response["wireguard_coexist_supported"] == true,
+        ))
     } else {
         Err("Linux 服务尚未确认可供本次会话使用".into())
     }
 }
 
-pub fn make_core_spawner() -> Result<impl FnOnce(&Path, &Path) -> Result<u32, String> + Send, String>
-{
+fn require_wireguard_support(requested: bool, supported: bool) -> Result<(), String> {
+    if requested && !supported {
+        Err("已安装的 Linux 网络服务版本不支持 WireGuard 共存，请从当前版本安装包更新网络服务".into())
+    } else {
+        Ok(())
+    }
+}
+
+pub fn make_core_spawner(
+    wireguard_coexist: bool,
+) -> Result<impl FnOnce(&Path, &Path) -> Result<u32, String> + Send, String> {
     validate_installation()?;
     Ok(move |config: &Path, log: &Path| {
         let path_text = |path: &Path| -> Result<String, String> {
@@ -369,15 +401,32 @@ pub fn make_core_spawner() -> Result<impl FnOnce(&Path, &Path) -> Result<u32, St
                 .map(str::to_string)
                 .ok_or_else(|| "服务路径不是有效 UTF-8".into())
         };
-        let payload = json!({"cmd":"start", "config":path_text(config)?, "log":path_text(log)?});
+        let mut payload = json!({"cmd":"start", "config":path_text(config)?, "log":path_text(log)?});
+        if wireguard_coexist {
+            payload["wireguard_coexist"] = json!(true);
+        }
         let mut guard = SESSION.lock().unwrap_or_else(|error| error.into_inner());
         if guard.is_some() {
             return Err("上次 Linux 服务会话尚未确认清理，请先停止后重试".into());
         }
-        *guard = Some(connect()?);
+        // An older service ignores extra start fields. Verify support before it
+        // can start ordinary TUN, and only send the request to the probed peer.
+        let verified_pid = if wireguard_coexist {
+            let (pid, supported) = probe_idle_service()?;
+            require_wireguard_support(true, supported)?;
+            Some(pid)
+        } else {
+            None
+        };
+        let mut session = connect()?;
+        if verified_pid.is_some_and(|pid| pid != session.service_pid) {
+            return Err("Linux 服务身份在预检后发生变化，未开启 TUN".into());
+        }
+        session.wireguard_coexist = wireguard_coexist;
+        *guard = Some(session);
         let response = guard.as_mut().unwrap().request(payload, START_TIMEOUT)?;
         if response["ok"] != true {
-            if response["stopped"] == true {
+            if confirmed_stop(&response) {
                 *guard = None;
             }
             return Err(response_error(&response));
@@ -411,12 +460,18 @@ pub fn status() -> Result<Option<ServiceStatus>, String> {
             return Err(error);
         }
     };
+    if confirmed_stop(&response) {
+        // A runtime failure can include a trusted cleanup acknowledgement.
+        // Keep its reason for the watcher, but release the confirmed session.
+        *guard = None;
+        return if response["ok"] == true {
+            Ok(None)
+        } else {
+            Err(response_error(&response))
+        };
+    }
     if response["ok"] != true {
         return Err(response_error(&response));
-    }
-    if response["stopped"] == true && response["active"] == false {
-        *guard = None;
-        return Ok(None);
     }
     let status = ServiceStatus {
         pid: positive_u32(&response, "pid")?,
@@ -463,8 +518,10 @@ pub fn stop_core() -> Result<bool, String> {
         // Reconnecting never starts a core or asks for privilege. The helper
         // must verify/recover its journal before acknowledging an idle stop.
         let previous_core = session.core;
+        let wireguard_coexist = session.wireguard_coexist;
         *session = connect()?;
         session.core = previous_core;
+        session.wireguard_coexist = wireguard_coexist;
     }
     let response = match session.request(json!({"cmd":"stop"}), STOP_TIMEOUT) {
         Ok(response) => response,
@@ -476,14 +533,14 @@ pub fn stop_core() -> Result<bool, String> {
             return Err(error);
         }
     };
+    if confirmed_stop(&response) {
+        *guard = None;
+        return Ok(true);
+    }
     if response["ok"] != true {
         return Err(response_error(&response));
     }
-    if response["stopped"] != true {
-        return Err("Linux 服务尚未确认网络资源已清理".into());
-    }
-    *guard = None;
-    Ok(true)
+    Err("Linux 服务尚未确认网络资源已清理".into())
 }
 
 fn command_output(mut command: Command, timeout: Duration) -> Result<String, String> {
@@ -606,24 +663,50 @@ mod tests {
     #[test]
     fn cleanup_requires_both_route_families_and_device_to_be_empty() {
         use crossbow_service::linux_network::{DEVICE, PRIORITY, TABLE};
-        assert!(resources_absent(&[], &[], &[]));
-        assert!(!resources_absent(&[json!({"ifname": DEVICE})], &[], &[]));
+        assert!(resources_absent(&[], &[], &[], false));
+        assert!(!resources_absent(&[json!({"ifname": DEVICE})], &[], &[], false));
         assert!(!resources_absent(
             &[],
             &[json!({"priority": PRIORITY})],
-            &[]
+            &[],
+            false
         ));
         assert!(!resources_absent(
             &[],
             &[json!({"table": TABLE.to_string()})],
-            &[]
+            &[],
+            false
         ));
-        assert!(!resources_absent(&[], &[], &[json!({"table": TABLE})]));
-        assert!(!resources_absent(&[], &[], &[json!({"dev": DEVICE})]));
+        assert!(!resources_absent(&[], &[], &[json!({"table": TABLE})], false));
+        assert!(!resources_absent(&[], &[], &[json!({"dev": DEVICE})], false));
         assert!(resources_absent(
             &[json!({"ifname":"wg-work"})],
             &[json!({"priority":5270,"table":52})],
-            &[json!({"table":52,"dev":"tailscale0"})]
+            &[json!({"table":52,"dev":"tailscale0"})],
+            false
         ));
+    }
+
+    #[test]
+    fn coexist_cleanup_requires_the_wireguard_resources_to_be_absent() {
+        use crossbow_service::linux_network::{WIREGUARD_PRIORITY, WIREGUARD_TABLE};
+        let rules = [json!({"priority": WIREGUARD_PRIORITY})];
+        let routes = [json!({"table": WIREGUARD_TABLE, "dev": "wg-work"})];
+        assert!(resources_absent(&[], &rules, &routes, false));
+        assert!(!resources_absent(&[], &rules, &[], true));
+        assert!(!resources_absent(&[], &[], &routes, true));
+        assert!(resources_absent(&[], &[], &[], true));
+    }
+
+    #[test]
+    fn terminal_failure_can_confirm_cleanup_but_an_active_or_incomplete_reply_cannot() {
+        let failure = json!({"ok":false,"stopped":true,"error":"WireGuard route changed"});
+        assert!(confirmed_stop(&failure));
+        assert_eq!(response_error(&failure), "WireGuard route changed");
+        assert!(confirmed_stop(&json!({"ok":true,"stopped":true})));
+        assert!(!confirmed_stop(&json!({"ok":false,"stopped":false})));
+        assert!(!confirmed_stop(&json!({"ok":false,"stopped":true,"active":true})));
+        assert!(!confirmed_stop(&json!({"ok":false,"stopped":true,"active":"unknown"})));
+        assert!(!confirmed_stop(&json!({"stopped":true})));
     }
 }

@@ -1,10 +1,13 @@
 //! A single-user TUN session. The system manager grants only CAP_NET_ADMIN;
 //! the GUI owns a live socket, while this process owns the core and its routes.
-use crossbow_service::linux_network::{self as network, DEVICE, MARK, PRIORITY, PROTOCOL, TABLE};
+use crossbow_service::linux_network::{
+    self as network, WireguardPlan, DEVICE, MARK, PRIORITY, PROTOCOL, TABLE, WIREGUARD_PRIORITY,
+    WIREGUARD_TABLE,
+};
 use serde_json::{json, Value};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
-use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -198,6 +201,7 @@ fn read_limited(path: &Path, limit: u64) -> Result<Vec<u8>, String> {
 
 fn controlled_config(
     bytes: &[u8],
+    wireguard_coexist: bool,
 ) -> Result<(String, Vec<String>, SocketAddr, String, u16), String> {
     if bytes.len() as u64 > crate::policy::MAX_CONFIG {
         return Err("config too large".into());
@@ -267,9 +271,12 @@ fn controlled_config(
     // mihomo 1.19.32 / sing-tun 0.4.27 installs IPv6 routes and an oif rule even
     // with auto-route=false if Inet6Address is nonempty. gvisor still forwards
     // IPv6 with an empty list; this service owns both families' routes instead.
-    let tun = json!({"enable":true,"device":DEVICE,"stack":"gvisor","auto-route":false,
+    let mut tun = json!({"enable":true,"device":DEVICE,"stack":"gvisor","auto-route":false,
         "auto-redirect":false,"auto-detect-interface":true,"dns-mode":"disabled",
         "dns-hijack":["any:53","tcp://any:53"],"inet6-address":[]});
+    if wireguard_coexist {
+        tun["dns-hijack"] = json!([]);
+    }
     root.insert(
         key("tun"),
         serde_yaml::to_value(tun).map_err(|e| e.to_string())?,
@@ -284,7 +291,14 @@ fn controlled_config(
     let dns = dns.as_mapping_mut().unwrap();
     dns.remove(key("listen"));
     dns.insert(key("enable"), serde_yaml::Value::Bool(true));
-    dns.insert(key("enhanced-mode"), key("fake-ip"));
+    dns.insert(
+        key("enhanced-mode"),
+        key(if wireguard_coexist {
+            "redir-host"
+        } else {
+            "fake-ip"
+        }),
+    );
     dns.entry(key("nameserver"))
         .or_insert_with(|| serde_yaml::to_value(["https://1.1.1.1/dns-query"]).unwrap());
     let text = serde_yaml::to_string(&value).map_err(|e| e.to_string())?;
@@ -320,7 +334,7 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-fn prepare(request: &Value) -> Result<(SocketAddr, String, File), String> {
+fn prepare(request: &Value, wireguard_coexist: bool) -> Result<(SocketAddr, String, File), String> {
     let config = request["config"]
         .as_str()
         .map(Path::new)
@@ -332,7 +346,7 @@ fn prepare(request: &Value) -> Result<(SocketAddr, String, File), String> {
         .filter(|p| p.is_absolute())
         .ok_or("log must be an absolute path")?;
     let bytes = read_limited(config, crate::policy::MAX_CONFIG)?;
-    let (yaml, paths, controller, secret, mixed) = controlled_config(&bytes)?;
+    let (yaml, paths, controller, secret, mixed) = controlled_config(&bytes, wireguard_coexist)?;
     fs::create_dir(SESSION).map_err(|e| format!("建立 TUN 工作目录失败：{e}"))?;
     fs::set_permissions(SESSION, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
     own_directory(Path::new(SESSION))?;
@@ -446,11 +460,22 @@ fn cache_ready(session: &Path) -> Result<bool, String> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Resource {
     Route(u8, usize),
     Rule(u8),
+    WireguardRule(u8),
+    WireguardCapture(u8),
+    WireguardRoute {
+        prefix: String,
+        link: Option<(String, u32)>,
+    },
+    WireguardEndpoint(IpAddr),
 }
+
+const WIREGUARD_METRIC: u32 = 1024;
+const WIREGUARD_UNREACHABLE_METRIC: u32 = 4096;
+const MAX_RESOURCES: usize = 256;
 const V4: &[&str] = &[
     "default",
     "10.0.0.0/8",
@@ -464,10 +489,20 @@ const V4: &[&str] = &[
 ];
 const V6: &[&str] = &["default", "::1/128", "fc00::/7", "fe80::/10", "ff00::/8"];
 impl Resource {
-    fn id(self) -> String {
+    fn id(&self) -> String {
         match self {
             Self::Route(f, i) => format!("{f}:route:{i}"),
             Self::Rule(f) => format!("{f}:rule"),
+            Self::WireguardRule(f) => format!("{f}:wg-rule"),
+            Self::WireguardCapture(f) => format!("{f}:wg-capture"),
+            Self::WireguardRoute { prefix, link: None } => format!("wg-block|{prefix}"),
+            Self::WireguardRoute {
+                prefix,
+                link: Some((name, index)),
+            } => {
+                format!("wg-route|{name}|{index}|{prefix}")
+            }
+            Self::WireguardEndpoint(endpoint) => format!("wg-endpoint|{endpoint}"),
         }
     }
     fn all() -> Vec<Self> {
@@ -477,17 +512,157 @@ impl Resource {
             .chain([Self::Rule(4), Self::Rule(6)])
             .collect()
     }
-    fn parse(id: &str) -> Option<Self> {
-        Self::all().into_iter().find(|r| r.id() == id)
+    fn for_session(wireguard: Option<&WireguardPlan>) -> Vec<Self> {
+        let mut resources = Vec::new();
+        if let Some(plan) = wireguard {
+            // Both routes are Crossbow-owned. If the kernel removes the device
+            // route, the less preferred unreachable route still blocks fallback.
+            for prefix in &plan.prefixes {
+                resources.push(Self::WireguardRoute {
+                    prefix: prefix.clone(),
+                    link: None,
+                });
+                resources.push(Self::WireguardRoute {
+                    prefix: prefix.clone(),
+                    link: Some((plan.device.clone(), plan.ifindex)),
+                });
+            }
+            resources.extend([Self::WireguardRule(4), Self::WireguardRule(6)]);
+            resources.extend(plan.endpoints.iter().copied().map(Self::WireguardEndpoint));
+        }
+        // Install public capture last. Recovery removes it first.
+        resources.extend(Self::all().into_iter().map(|resource| match resource {
+            Self::Rule(family) if wireguard.is_some() => Self::WireguardCapture(family),
+            resource => resource,
+        }));
+        resources
     }
-    fn family(self) -> u8 {
+    fn parse(id: &str, version: u64) -> Option<Self> {
+        if let Some(resource) = Self::all().into_iter().find(|r| r.id() == id) {
+            return Some(resource);
+        }
+        if version != 2 {
+            return None;
+        }
+        let parts: Vec<_> = id.split('|').collect();
+        let resource = match parts.as_slice() {
+            ["4:wg-rule"] => Self::WireguardRule(4),
+            ["6:wg-rule"] => Self::WireguardRule(6),
+            ["4:wg-capture"] => Self::WireguardCapture(4),
+            ["6:wg-capture"] => Self::WireguardCapture(6),
+            ["wg-block", prefix] => Self::WireguardRoute {
+                prefix: network::normalize_wireguard_prefix(prefix)?,
+                link: None,
+            },
+            ["wg-route", name, index, prefix] if network::valid_wireguard_device(name) => {
+                let index = index.parse::<u32>().ok().filter(|index| *index > 0)?;
+                Self::WireguardRoute {
+                    prefix: network::normalize_wireguard_prefix(prefix)?,
+                    link: Some((name.to_string(), index)),
+                }
+            }
+            ["wg-endpoint", endpoint] => {
+                let endpoint = endpoint.parse::<IpAddr>().ok()?;
+                let prefix = Self::endpoint_prefix(endpoint);
+                network::normalize_wireguard_prefix(&prefix)?;
+                Self::WireguardEndpoint(endpoint)
+            }
+            _ => return None,
+        };
+        (resource.id() == id).then_some(resource)
+    }
+    fn endpoint_prefix(endpoint: IpAddr) -> String {
+        let length = if endpoint.is_ipv4() { 32 } else { 128 };
+        format!("{endpoint}/{length}")
+    }
+    fn family(&self) -> u8 {
         match self {
-            Self::Route(f, _) | Self::Rule(f) => f,
+            Self::Route(f, _)
+            | Self::Rule(f)
+            | Self::WireguardRule(f)
+            | Self::WireguardCapture(f) => *f,
+            Self::WireguardRoute { prefix, .. } if prefix.contains(':') => 6,
+            Self::WireguardEndpoint(IpAddr::V6(_)) => 6,
+            _ => 4,
         }
     }
-    fn args(self, action: &str) -> Vec<String> {
+    fn is_rule(&self) -> bool {
+        matches!(
+            self,
+            Self::Rule(_) | Self::WireguardRule(_) | Self::WireguardCapture(_)
+        )
+    }
+    fn table(&self) -> u32 {
+        match self {
+            Self::WireguardRule(_) | Self::WireguardRoute { .. } => WIREGUARD_TABLE,
+            _ => TABLE,
+        }
+    }
+    fn args(&self, action: &str) -> Vec<String> {
         let mut args = vec![format!("-{}", self.family())];
         match self {
+            Self::WireguardRule(_) | Self::WireguardCapture(_) => {
+                args.extend([
+                    "rule".into(),
+                    action.into(),
+                    "from".into(),
+                    "all".into(),
+                    "iif".into(),
+                    "lo".into(),
+                ]);
+                let priority = if matches!(self, Self::WireguardCapture(_)) {
+                    args.extend(["fwmark".into(), "0/0xffffffff".into()]);
+                    PRIORITY
+                } else {
+                    WIREGUARD_PRIORITY
+                };
+                args.extend([
+                    "table".into(),
+                    self.table().to_string(),
+                    "priority".into(),
+                    priority.to_string(),
+                    "protocol".into(),
+                    PROTOCOL.to_string(),
+                ]);
+            }
+            Self::WireguardRoute { prefix, link } => {
+                args.extend(["route".into(), action.into()]);
+                if link.is_none() {
+                    args.push("unreachable".into());
+                }
+                args.push(prefix.clone());
+                if let Some((device, _)) = link {
+                    args.extend(["dev".into(), device.clone()]);
+                }
+                let metric = if link.is_some() {
+                    WIREGUARD_METRIC
+                } else {
+                    WIREGUARD_UNREACHABLE_METRIC
+                };
+                args.extend([
+                    "table".into(),
+                    WIREGUARD_TABLE.to_string(),
+                    "proto".into(),
+                    PROTOCOL.to_string(),
+                    "metric".into(),
+                    metric.to_string(),
+                ]);
+            }
+            Self::WireguardEndpoint(endpoint) => {
+                args.extend([
+                    "route".into(),
+                    action.into(),
+                    "throw".into(),
+                    Self::endpoint_prefix(*endpoint),
+                    "table".into(),
+                    TABLE.to_string(),
+                    "proto".into(),
+                    PROTOCOL.to_string(),
+                ]);
+                if endpoint.is_ipv6() {
+                    args.extend(["metric".into(), "1024".into()]);
+                }
+            }
             Self::Rule(_) => args.extend([
                 "rule".into(),
                 action.into(),
@@ -505,11 +680,11 @@ impl Resource {
             ]),
             Self::Route(f, index) => {
                 args.extend(["route".into(), action.into()]);
-                if index != 0 {
+                if *index != 0 {
                     args.push("throw".into());
                 }
-                args.push(prefixes(f)[index].into());
-                if index == 0 {
+                args.push(prefixes(*f)[*index].into());
+                if *index == 0 {
                     args.extend(["dev".into(), DEVICE.into()]);
                 }
                 args.extend([
@@ -518,14 +693,14 @@ impl Resource {
                     "proto".into(),
                     PROTOCOL.to_string(),
                 ]);
-                if f == 6 {
+                if *f == 6 {
                     args.extend(["metric".into(), "1024".into()]);
                 }
             }
         }
         args
     }
-    fn matches(self, row: &Value) -> bool {
+    fn matches(&self, row: &Value) -> bool {
         let number = |key: &str, n: u32| {
             row[key].as_u64() == Some(n as u64)
                 || row[key].as_str().and_then(|s| s.parse::<u32>().ok()) == Some(n)
@@ -534,6 +709,49 @@ impl Resource {
             return false;
         }
         match self {
+            Self::WireguardRule(_) | Self::WireguardCapture(_) => {
+                let capture = matches!(self, Self::WireguardCapture(_));
+                number(
+                    "priority",
+                    if capture {
+                        PRIORITY
+                    } else {
+                        WIREGUARD_PRIORITY
+                    },
+                ) && number("table", self.table())
+                    && row["src"] == "all"
+                    && row["iif"] == "lo"
+                    && (!capture
+                        || (number("fwmark", 0)
+                            && row.get("fwmask").is_none_or(|mask| mask == "0xffffffff")))
+                    && row.as_object().is_some_and(|fields| {
+                        fields.keys().all(|key| {
+                            matches!(
+                                key.as_str(),
+                                "priority" | "src" | "table" | "protocol" | "iif"
+                            ) || (capture && matches!(key.as_str(), "fwmark" | "fwmask"))
+                        })
+                    })
+            }
+            Self::WireguardRoute { prefix, link } => {
+                let (kind, device, metric) = if let Some((device, _)) = link {
+                    ("unicast", Some(device.as_str()), WIREGUARD_METRIC)
+                } else {
+                    (
+                        "unreachable",
+                        (self.family() == 6).then_some("lo"),
+                        WIREGUARD_UNREACHABLE_METRIC,
+                    )
+                };
+                self.matches_route(row, prefix, kind, device, metric)
+            }
+            Self::WireguardEndpoint(endpoint) => self.matches_route(
+                row,
+                &Self::endpoint_prefix(*endpoint),
+                "throw",
+                endpoint.is_ipv6().then_some("lo"),
+                if endpoint.is_ipv6() { 1024 } else { 0 },
+            ),
             Self::Rule(_) => {
                 number("priority", PRIORITY)
                     && number("table", TABLE)
@@ -557,10 +775,10 @@ impl Resource {
                     })
             }
             Self::Route(f, index) => {
-                let prefix = prefixes(f)[index];
+                let prefix = prefixes(*f)[*index];
                 // iproute2 omits the host-length suffix in its JSON output.
                 let printed = prefix
-                    .strip_suffix(if f == 4 { "/32" } else { "/128" })
+                    .strip_suffix(if *f == 4 { "/32" } else { "/128" })
                     .unwrap_or(prefix);
                 row["dst"] == printed
                     && row.as_object().is_some_and(|m| {
@@ -579,16 +797,16 @@ impl Resource {
                             )
                         })
                     })
-                    && if f == 6 {
+                    && if *f == 6 {
                         number("metric", 1024)
                     } else {
                         row.get("metric").is_none_or(|metric| metric == 0)
                     }
-                    && if index == 0 {
+                    && if *index == 0 {
                         row["dev"] == DEVICE && row.get("type").is_none_or(|kind| kind == "unicast")
                     } else {
                         row["type"] == "throw"
-                            && if f == 6 {
+                            && if *f == 6 {
                                 row["dev"] == "lo"
                             } else {
                                 row.get("dev").is_none()
@@ -597,28 +815,56 @@ impl Resource {
             }
         }
     }
-    fn exists(self) -> Result<bool, String> {
-        self.exists_in(&resource_rows(
-            self.family(),
-            matches!(self, Self::Rule(_)),
-        )?)
+    fn matches_route(
+        &self,
+        row: &Value,
+        prefix: &str,
+        kind: &str,
+        device: Option<&str>,
+        metric: u32,
+    ) -> bool {
+        let printed = prefix.strip_suffix(if self.family() == 4 { "/32" } else { "/128" });
+        (row["dst"] == prefix || printed.is_some_and(|ip| row["dst"] == ip))
+            && row["type"].as_str().unwrap_or("unicast") == kind
+            && row["dev"].as_str() == device
+            && row["metric"].as_u64().unwrap_or(0) == u64::from(metric)
+            && row.as_object().is_some_and(|fields| {
+                fields.keys().all(|key| {
+                    matches!(
+                        key.as_str(),
+                        "dst"
+                            | "dev"
+                            | "protocol"
+                            | "scope"
+                            | "flags"
+                            | "metric"
+                            | "pref"
+                            | "type"
+                            | "table"
+                    )
+                })
+            })
     }
-    fn exists_in(self, rows: &[Value]) -> Result<bool, String> {
-        let table = TABLE.to_string();
+    fn exists(&self) -> Result<bool, String> {
+        self.exists_in(&network::routing_rows(self.family(), self.is_rule())?)
+    }
+    fn exists_in(&self, rows: &[Value]) -> Result<bool, String> {
         let count = rows
             .iter()
-            .filter(|row| {
-                let in_table = matches!(self, Self::Rule(_))
-                    || row["table"] == table
-                    || row["table"].as_u64() == Some(TABLE as u64);
-                in_table && self.matches(row)
-            })
+            .filter(|row| in_table(row, self.table()) && self.matches(row))
             .count();
         if count > 1 {
             return Err("发现重复网络资源，保留记录供核查".into());
         }
         Ok(count == 1)
     }
+}
+fn in_table(row: &Value, table: u32) -> bool {
+    row["table"].as_u64() == Some(u64::from(table))
+        || row["table"]
+            .as_str()
+            .and_then(|value| value.parse::<u32>().ok())
+            == Some(table)
 }
 fn prefixes(family: u8) -> &'static [&'static str] {
     if family == 4 {
@@ -627,18 +873,19 @@ fn prefixes(family: u8) -> &'static [&'static str] {
         V6
     }
 }
-fn resource_rows(family: u8, rule: bool) -> Result<Vec<Value>, String> {
-    let family = format!("-{family}");
-    let args = if rule {
-        vec![family.as_str(), "-j", "rule", "show"]
-    } else {
-        vec![family.as_str(), "-j", "route", "show", "table", "all"]
-    };
-    serde_json::from_str(&network::ip(&args)?).map_err(|e| e.to_string())
-}
-fn change(resource: Resource, action: &str) -> Result<(), String> {
+fn change(resource: &Resource, action: &str) -> Result<(), String> {
     let args = resource.args(action);
-    network::ip(&args.iter().map(String::as_str).collect::<Vec<_>>()).map(|_| ())
+    network::ip(&args.iter().map(String::as_str).collect::<Vec<_>>())
+        .map(|_| ())
+        .map_err(|error| {
+            if matches!(resource, Resource::Route(_, _) | Resource::Rule(_)) {
+                error
+            } else if action == "add" {
+                "无法添加 WireGuard 共存路由资源".into()
+            } else {
+                "无法清理 WireGuard 共存路由资源".into()
+            }
+        })
 }
 
 struct Journal {
@@ -649,7 +896,11 @@ struct Journal {
 impl Journal {
     fn decode(bytes: &[u8]) -> Result<Self, String> {
         let value: Value = serde_json::from_slice(bytes).map_err(|_| "网络恢复记录损坏")?;
-        if value["version"] != 1 || value["uid"] != uid() {
+        let version = value["version"]
+            .as_u64()
+            .filter(|version| matches!(version, 1 | 2))
+            .ok_or("网络恢复记录版本不受支持")?;
+        if value["uid"] != uid() {
             return Err("网络恢复记录不属于当前服务用户".into());
         }
         let ifindex = value["ifindex"]
@@ -658,10 +909,14 @@ impl Journal {
             .filter(|n| *n > 0)
             .ok_or("invalid interface record")?;
         let mut resources = Vec::new();
-        for id in value["resources"].as_array().ok_or("invalid resources")? {
+        let ids = value["resources"].as_array().ok_or("invalid resources")?;
+        if ids.len() > MAX_RESOURCES {
+            return Err("too many network resources".into());
+        }
+        for id in ids {
             let resource = id
                 .as_str()
-                .and_then(Resource::parse)
+                .and_then(|id| Resource::parse(id, version))
                 .ok_or("unknown resource in journal")?;
             if resources.contains(&resource) {
                 return Err("duplicate journal resource".into());
@@ -674,7 +929,7 @@ impl Journal {
             Some(
                 value["pending"]
                     .as_str()
-                    .and_then(Resource::parse)
+                    .and_then(|id| Resource::parse(id, version))
                     .ok_or("invalid pending resource")?,
             )
         };
@@ -685,8 +940,14 @@ impl Journal {
         })
     }
     fn save(&self) -> Result<(), String> {
-        let value = json!({"version":1,"uid":uid(),"ifindex":self.ifindex,
-            "resources":self.resources.iter().map(|r|r.id()).collect::<Vec<_>>(),"pending":self.pending.map(Resource::id)});
+        let has_wireguard = self
+            .resources
+            .iter()
+            .chain(self.pending.as_ref())
+            .any(|resource| !matches!(resource, Resource::Route(_, _) | Resource::Rule(_)));
+        let value = json!({"version":if has_wireguard { 2 } else { 1 },"uid":uid(),"ifindex":self.ifindex,
+            "resources":self.resources.iter().map(Resource::id).collect::<Vec<_>>(),
+            "pending":self.pending.as_ref().map(Resource::id)});
         let temp = Path::new(RUNTIME).join("network.json.tmp");
         write_private(
             &temp,
@@ -697,11 +958,11 @@ impl Journal {
             .and_then(|f| f.sync_all())
             .map_err(|e| e.to_string())
     }
-    fn install(&mut self) -> Result<(), String> {
+    fn install(&mut self, resources: &[Resource]) -> Result<(), String> {
         self.save()?;
-        for resource in Resource::all() {
+        for resource in resources {
             self.install_one(
-                resource,
+                resource.clone(),
                 || resource.exists(),
                 || change(resource, "add"),
                 Self::save,
@@ -719,7 +980,7 @@ impl Journal {
         if exists()? {
             return Err("所需网络资源已存在，没有接管该资源".into());
         }
-        self.pending = Some(resource);
+        self.pending = Some(resource.clone());
         save(self)?;
         if let Err(error) = add() {
             // An unsuccessful add (notably EEXIST) does not establish ownership.
@@ -756,8 +1017,17 @@ fn cleanup() -> Result<(), String> {
         if network::device_index()?.is_some_and(|index| index != journal.ifindex) {
             return Err("Crossbow 接口身份已变化，没有删除其他接口或网络记录".into());
         }
-        while let Some(resource) = journal.resources.last().copied() {
+        while let Some(resource) = journal.resources.last() {
             if resource.exists()? {
+                if let Resource::WireguardRoute {
+                    link: Some((name, index)),
+                    ..
+                } = resource
+                {
+                    if network::interface_index(name)? != Some(*index) {
+                        return Err("WireGuard 接口身份已变化，保留待核查的网络记录".into());
+                    }
+                }
                 change(resource, "del")?;
                 if resource.exists()? {
                     return Err("网络资源尚未移除，保留恢复记录".into());
@@ -769,7 +1039,7 @@ fn cleanup() -> Result<(), String> {
         // An intent recorded before `ip add` is not proof that the add succeeded.
         // In the crash window, prefer an explicit recovery error to deleting a
         // resource another network manager might have created concurrently.
-        if let Some(pending) = journal.pending {
+        if let Some(pending) = &journal.pending {
             if pending.exists()? {
                 return Err(
                     "网络恢复记录含有未确认创建的资源，已保留；请管理员核查并恢复后重试".into(),
@@ -793,17 +1063,37 @@ fn cleanup() -> Result<(), String> {
 struct Session {
     child: Option<Child>,
     ifindex: Option<u32>,
+    wireguard: Option<WireguardPlan>,
+    resources: Vec<Resource>,
 }
 impl Session {
     fn new() -> Self {
         Self {
             child: None,
             ifindex: None,
+            wireguard: None,
+            resources: Vec::new(),
         }
     }
     fn start(&mut self, request: &Value) -> Result<(), String> {
-        network::ensure_available(None, &[std::process::id()])?;
-        let (controller, secret, log) = prepare(request)?;
+        let enabled = match request.get("wireguard_coexist") {
+            None => false,
+            Some(value) => value
+                .as_bool()
+                .ok_or("invalid WireGuard coexistence setting")?,
+        };
+        let own_pids = [std::process::id()];
+        self.wireguard = if enabled {
+            Some(network::wireguard_plan(None, &own_pids)?)
+        } else {
+            network::ensure_available(None, &own_pids)?;
+            None
+        };
+        self.resources = Resource::for_session(self.wireguard.as_ref());
+        if self.resources.len() > MAX_RESOURCES {
+            return Err("WireGuard 共存所需的路由资源过多".into());
+        }
+        let (controller, secret, log) = prepare(request, enabled)?;
         let stderr = log.try_clone().map_err(|e| e.to_string())?;
         let child = Command::new(CORE)
             .args([
@@ -860,17 +1150,15 @@ impl Session {
             }
             std::thread::sleep(Duration::from_millis(100));
         }
-        network::ensure_available(
-            self.ifindex,
-            &[std::process::id(), self.child.as_ref().unwrap().id()],
-        )?;
+        self.verify_network(&[std::process::id(), self.child.as_ref().unwrap().id()])?;
         Journal {
             ifindex: self.ifindex.unwrap(),
             resources: Vec::new(),
             pending: None,
         }
-        .install()?;
-        Ok(())
+        .install(&self.resources)?;
+        self.verify_network(&[std::process::id(), self.child.as_ref().unwrap().id()])?;
+        self.verify_session()
     }
     fn stop(&mut self) -> Result<(), String> {
         if let Some(child) = self.child.as_mut() {
@@ -904,10 +1192,22 @@ impl Session {
         }
         cleanup()?;
         self.ifindex = None;
+        self.wireguard = None;
+        self.resources.clear();
         Ok(())
     }
+    fn verify_network(&self, pids: &[u32]) -> Result<(), String> {
+        if let Some(expected) = &self.wireguard {
+            if network::wireguard_plan(self.ifindex, pids)? != *expected {
+                return Err("WireGuard 接口、路由或固定端点发生变化，正在退出本次接管".into());
+            }
+            Ok(())
+        } else {
+            network::ensure_available(self.ifindex, pids)
+        }
+    }
     fn status(&self) -> Value {
-        json!({"ok":true,"active":self.child.is_some(),"pid":self.child.as_ref().map(Child::id),"ifindex":self.ifindex,"stopped":self.child.is_none() && self.ifindex.is_none()})
+        json!({"ok":true,"wireguard_coexist_supported":true,"active":self.child.is_some(),"pid":self.child.as_ref().map(Child::id),"ifindex":self.ifindex,"stopped":self.child.is_none() && self.ifindex.is_none()})
     }
     fn verify_session(&self) -> Result<(), String> {
         if !cache_ready(Path::new(SESSION))? {
@@ -918,16 +1218,31 @@ impl Session {
             return Err("TUN 接口已消失或身份发生变化".into());
         }
         for family in [4, 6] {
-            let routes = resource_rows(family, false)?;
-            let rules = resource_rows(family, true)?;
-            for resource in Resource::all().into_iter().filter(|r| r.family() == family) {
-                let rows = if matches!(resource, Resource::Rule(_)) {
-                    &rules
-                } else {
-                    &routes
-                };
+            let routes = network::routing_rows(family, false)?;
+            let rules = network::routing_rows(family, true)?;
+            let resources: Vec<_> = self
+                .resources
+                .iter()
+                .filter(|r| r.family() == family)
+                .collect();
+            for resource in &resources {
+                let rows = if resource.is_rule() { &rules } else { &routes };
                 if !resource.exists_in(rows)? {
                     return Err("TUN 路由已变化，正在退出本次接管".into());
+                }
+            }
+            if self.wireguard.is_some() {
+                for (rows, is_rule) in [(&routes, false), (&rules, true)] {
+                    if rows.iter().any(|row| {
+                        (in_table(row, TABLE) || in_table(row, WIREGUARD_TABLE))
+                            && !resources.iter().any(|resource| {
+                                resource.is_rule() == is_rule
+                                    && in_table(row, resource.table())
+                                    && resource.matches(row)
+                            })
+                    }) {
+                        return Err("Crossbow 路由表出现未登记的资源，正在退出本次接管".into());
+                    }
                 }
             }
         }
@@ -1013,7 +1328,6 @@ fn connection(mut stream: UnixStream) -> Result<bool, String> {
             return Ok(true);
         }
     } else {
-        session.verify_session()?;
         reply(&mut stream, session.status())?;
     }
     loop {
@@ -1031,9 +1345,7 @@ fn connection(mut stream: UnixStream) -> Result<bool, String> {
                 );
                 return Ok(false);
             }
-            if let Err(error) =
-                network::ensure_available(session.ifindex, &[std::process::id(), pid])
-            {
+            if let Err(error) = session.verify_network(&[std::process::id(), pid]) {
                 let recovery = session.stop();
                 let _ = reply(
                     &mut stream,
@@ -1145,7 +1457,7 @@ mod tests {
     #[test]
     fn privileged_config_replaces_network_controls_after_yaml_merge() {
         let input = format!("{}defaults: &d {{auto-route: true, auto-redirect: true, device: foreign}}\ntun: {{<<: *d}}\nlisteners: [{{type: tun, name: extra}}]\niptables: {{enable: true}}\nrouting-mark: 1\nallow-lan: true\ndns: {{enable: false, listen: '0.0.0.0:53', nameserver: ['https://example.invalid/dns']}}\n", base());
-        let (output, _, _, _, _) = controlled_config(input.as_bytes()).unwrap();
+        let (output, _, _, _, _) = controlled_config(input.as_bytes(), false).unwrap();
         let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
         assert_eq!(value["tun"]["device"].as_str(), Some(DEVICE));
         assert_eq!(value["tun"]["auto-route"].as_bool(), Some(false));
@@ -1167,15 +1479,19 @@ mod tests {
     #[test]
     fn config_rejects_unsafe_provider_and_controller_inputs() {
         assert!(controlled_config(
-            format!("{}rule-providers: {{bad: {{path: ../outside}}}}", base()).as_bytes()
+            format!("{}rule-providers: {{bad: {{path: ../outside}}}}", base()).as_bytes(),
+            false
         )
         .is_err());
-        assert!(controlled_config(base().replace("127.0.0.1", "0.0.0.0").as_bytes()).is_err());
-        assert!(controlled_config(base().replace("19080", "80").as_bytes()).is_err());
+        assert!(
+            controlled_config(base().replace("127.0.0.1", "0.0.0.0").as_bytes(), false).is_err()
+        );
+        assert!(controlled_config(base().replace("19080", "80").as_bytes(), false).is_err());
         assert!(controlled_config(
             base()
                 .replace("abcdef0123456789abcdef", "bad secret with spaces")
-                .as_bytes()
+                .as_bytes(),
+            false
         )
         .is_err());
     }
@@ -1277,26 +1593,65 @@ mod tests {
         assert!(!Resource::Rule(4).matches(&foreign));
     }
     #[test]
+    fn wireguard_journal_keeps_guard_ahead_of_capture_and_rejects_unknown_resources() {
+        let plan = WireguardPlan {
+            device: "wg-test".into(),
+            ifindex: 12,
+            prefixes: vec!["198.51.100.2/32".into(), "2001:db8:4::2/128".into()],
+            endpoints: vec!["198.18.0.2".parse().unwrap()],
+        };
+        let resources = Resource::for_session(Some(&plan));
+        assert_eq!(resources.last(), Some(&Resource::WireguardCapture(6)),);
+        let ids: Vec<_> = resources.iter().map(Resource::id).collect();
+        let record =
+            json!({"version":2, "uid":uid(), "ifindex":7, "resources":ids, "pending":null});
+        assert_eq!(
+            Journal::decode(record.to_string().as_bytes())
+                .unwrap()
+                .resources,
+            resources
+        );
+        for bad in [
+            "wg-route|../../eth0|12|198.51.100.2/32",
+            "wg-route|wg-test|0|198.51.100.2/32",
+            "wg-block|0.0.0.0/0",
+            "wg-block|198.51.100.3/24",
+            "wg-endpoint|127.0.0.1",
+            "6:wg-capture|other-table",
+        ] {
+            assert!(Resource::parse(bad, 2).is_none(), "{bad}");
+        }
+        assert!(Resource::parse("4:wg-rule", 1).is_none());
+        let (yaml, _, _, _, _) = controlled_config(base().as_bytes(), true).unwrap();
+        let config: serde_yaml::Value = serde_yaml::from_str(&yaml).unwrap();
+        assert!(config["tun"]["dns-hijack"]
+            .as_sequence()
+            .unwrap()
+            .is_empty());
+        assert_eq!(config["dns"]["enhanced-mode"].as_str(), Some("redir-host"));
+    }
+
+    #[test]
     fn failed_add_never_records_another_owners_resource() {
         let old = Resource::Route(4, 0);
         let candidate = Resource::Rule(4);
         let mut journal = Journal {
             ifindex: 7,
-            resources: vec![old],
+            resources: vec![old.clone()],
             pending: None,
         };
         let mut saved = Vec::new();
         let result = journal.install_one(
-            candidate,
+            candidate.clone(),
             || Ok(false),
             || Err("EEXIST".into()),
             |state| {
-                saved.push((state.resources.clone(), state.pending));
+                saved.push((state.resources.clone(), state.pending.clone()));
                 Ok(())
             },
         );
         assert!(result.is_err());
-        assert_eq!(journal.resources, [old]);
+        assert_eq!(journal.resources.as_slice(), std::slice::from_ref(&old));
         assert_eq!(journal.pending, None);
         assert_eq!(saved.last(), Some(&(vec![old], None)));
         let result = journal.install_one(

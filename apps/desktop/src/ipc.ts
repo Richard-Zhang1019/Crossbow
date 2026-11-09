@@ -71,6 +71,7 @@ export interface EngineConfigView {
   mixed_port: number;
   allow_lan: boolean;
   flag_emoji: boolean;
+  linux_wireguard_coexist: boolean;
   core_installed: boolean;
 }
 
@@ -309,6 +310,8 @@ export const ipc = {
   tunStatus: () =>
     invoke<{ enabled: boolean; ready: boolean; coreRunning: boolean }>("tun_status"),
   setTun: (enable: boolean) => invoke<void>("set_tun", { enable }),
+  setLinuxWireguardCoexist: (enabled: boolean) =>
+    invoke<void>("set_linux_wireguard_coexist", { enabled }),
   setAllowLan: (enabled: boolean) => invoke<void>("set_allow_lan", { enabled }),
   autostartStatus: () => invoke<boolean>("autostart_status"),
   autostartSet: (enable: boolean) => invoke<void>("autostart_set", { enable }),
