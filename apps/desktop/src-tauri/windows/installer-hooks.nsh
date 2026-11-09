@@ -2,11 +2,22 @@
 !include "FileFunc.nsh"
 !define CROSSBOW_UPGRADE_HELPER "${__FILEDIR__}\prepare-upgrade.ps1"
 !macro NSIS_HOOK_PREINSTALL
-  ; A LocalSystem service must never execute out of a user-writable installation.
-  StrLen $0 "$PROGRAMFILES64\"
-  StrCpy $1 "$INSTDIR\" $0
-  ${If} $1 != "$PROGRAMFILES64\"
-    MessageBox MB_ICONSTOP "Crossbow TUN service requires installation under Program Files." /SD IDOK
+  ; A LocalSystem service must never execute out of a user-writable directory.
+  ; Instead of restricting the install to Program Files, harden ACLs on the
+  ; chosen path: strip inherited ACEs and grant SYSTEM/Administrators full
+  ; control, Users read-execute only. Files installed afterwards inherit
+  ; these ACEs, so the service binaries stay tamper-proof on any NTFS path.
+  ; Well-known SIDs keep this locale-independent.
+  CreateDirectory "$INSTDIR"
+  nsExec::ExecToStack 'icacls.exe "$INSTDIR" /reset /T /Q /C'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack 'icacls.exe "$INSTDIR" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F *S-1-5-32-545:(OI)(CI)RX'
+  Pop $0
+  Pop $1
+  ${If} $0 != 0
+    ; icacls fails on volumes without ACL support (exFAT/FAT32).
+    MessageBox MB_ICONSTOP "The installation path must be on an NTFS volume so the CrossbowService binaries cannot be modified by unprivileged users. Please choose a different path." /SD IDOK
     SetErrorLevel 101
     Abort
   ${EndIf}

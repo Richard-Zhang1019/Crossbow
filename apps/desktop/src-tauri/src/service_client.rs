@@ -246,7 +246,7 @@ pub mod imp {
     /// Elevated service installation belongs to the signed installer, never an
     /// arbitrary portable/user-writable executable path from the GUI.
     pub fn install_elevated() -> Result<(), String> {
-        Err("Windows TUN 需要完整安装：请重新运行 Crossbow 安装程序，以管理员权限安装到 Program Files".into())
+        Err("Windows TUN 需要完整安装：请以管理员权限重新运行 Crossbow 安装程序完成安装".into())
     }
 }
 
