@@ -20,7 +20,9 @@ use tauri_plugin_deep_link::DeepLinkExt as _;
 mod macos_icon;
 #[cfg(target_os = "macos")]
 mod macos_shutdown;
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 mod authorization;
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 mod coexist;
 mod config_transition;
 mod core_manager;
