@@ -43,7 +43,6 @@ mod sysproxy;
 #[cfg(target_os = "macos")]
 mod tray_speed;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
-#[cfg(any(target_os = "macos", target_os = "windows"))]
 mod tray_state;
 mod tray_menu;
 #[cfg(target_os = "macos")]
@@ -4141,7 +4140,6 @@ pub fn run() {
                 data_dir: data_dir.clone(),
                 app: app.handle().clone(),
                 update: Mutex::new(update_settings_init),
-                #[cfg(any(target_os = "macos", target_os = "windows"))]
                 node_menu: Mutex::new(tray_state::TrayState::default()),
                 traffic_history: Mutex::new(std::collections::VecDeque::new()),
             });
