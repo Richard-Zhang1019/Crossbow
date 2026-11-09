@@ -44,7 +44,7 @@ mod workflow;
 mod sysproxy;
 #[cfg(target_os = "macos")]
 mod tray_speed;
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 mod tray_state;
 mod tray_menu;
 #[cfg(target_os = "macos")]
@@ -312,6 +312,9 @@ pub(crate) fn start_core_locked(state: &AppState) -> Result<(), String> {
         store.data().engine.engine == crossbow_core::Engine::SingBox
     };
     let need = if is_singbox { "sing-box" } else { "mihomo" };
+    #[cfg(target_os = "linux")]
+    let _ = ensure_engine_binary(state, need)?;
+    #[cfg(not(target_os = "linux"))]
     let mut binary = ensure_engine_binary(state, need)?;
     let rendered = render_current(state, !safe)?;
     // CoreManager::start synchronously notifies the status callback, which also
