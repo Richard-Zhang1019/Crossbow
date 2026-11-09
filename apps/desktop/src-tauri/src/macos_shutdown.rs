@@ -30,6 +30,10 @@ extern "C" fn should_terminate(
             PENDING.store(false, Ordering::SeqCst);
             return NSApplicationTerminateReply::TerminateNow;
         }
+        // request_process_exit 内部 begin()==false（已有准备进行中）时是
+        // no-op：隐含依赖「进行中的那轮必然经 finish_process_exit 交付
+        // reply（成功/失败两个分支都会）」，因此这里返回 TerminateLater
+        // 不会永挂。改动退出准备流程时必须维持该前提（#369 review P3）。
         crate::request_process_exit(app, None);
         return NSApplicationTerminateReply::TerminateLater;
     }
