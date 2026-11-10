@@ -1,0 +1,14 @@
+{
+  "date": "2026-11-10",
+  "version": "v01",
+  "status": "implemented",
+  "issue": 410,
+  "base": "c9e26dbd29139bfd93e756fb0777a51f22a9bdfc",
+  "reference": "用户截图中的 13 节点卡片页及悬空分页器",
+  "data": "生产组件 + 13 个脱敏模拟节点",
+  "files": ["SPEC.md", "index.html", "preview.tsx", "mock-tauri.ts", "vite.config.mts"],
+  "previews": [
+    {"file": "previews/three-rows-light.jpg", "width": 1140, "height": 764, "theme": "light", "language": "zh"},
+    {"file": "previews/two-rows-dark.jpg", "width": 880, "height": 560, "theme": "dark", "language": "en"}
+  ]
+}

@@ -158,17 +158,39 @@
   gap: 18px;
 }
 .cb-node-toolbar-page .cb-node-group {
-  flex: none;
+  min-height: min-content;
 }
 .cb-node-results {
-  flex: none;
-  max-height: max(116px, 36vh);
-  min-height: 76px;
+  flex: 1;
+  /* Two 68px rows, an 8px gap and up to 40px for pagination. */
+  min-height: 184px;
+  /* Rendered rows must not become the minimum height during a resize. */
+  contain: size;
   display: flex;
 }
-.cb-node-toolbar-page .cb-node-results .cb-fit-items {
-  height: 100%;
-  min-height: 0;
+@media (max-height: 620px) {
+  .cb-node-toolbar-page .cb-nodes-workspace {
+    gap: 10px;
+  }
+  .cb-node-toolbar-page .cb-node-group {
+    gap: 5px;
+  }
+  .cb-node-toolbar-page .cb-node-group > .cb-node-heading {
+    margin-bottom: 0;
+  }
+  .cb-node-toolbar-page .cb-site-section {
+    padding-top: 6px;
+  }
+  .cb-node-toolbar-page .cb-site-section > div:first-child {
+    margin-bottom: 4px;
+  }
+  /* The scope note moved into the results wrapper. Keep short windows compact. */
+  .cb-node-toolbar-page #cb-site-results > p:last-child {
+    display: none;
+  }
+  .cb-node-toolbar-page .cb-site-card > span:last-child {
+    margin-top: 4px;
+  }
 }
 .cb-node-filter-empty {
   min-height: 76px;

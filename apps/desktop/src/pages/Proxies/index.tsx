@@ -1,7 +1,7 @@
 import {ChoiceChip} from "@/components/ChoiceChip";
 import {SearchField} from "@/components/Controls";
 import PopoverPanel from "@/components/PopoverPanel";
-import {friendlyKind, nodeResultHeight} from "@/layouts/layout";
+import {friendlyKind} from "@/layouts/layout";
 import "./Proxies.css";
 import Select from "@/components/Select";
 import NodeName from "@/components/NodeName";
@@ -395,10 +395,6 @@ function GroupCard({
   const [region, setRegion] = useState("all");
   const [onlyAlive, setOnlyAlive] = useState(false);
   const [sortByLatency, setSortByLatency] = useState(false);
-  const resultsRef = useRef<HTMLDivElement>(null);
-  const [resultWidth,setResultWidth] = useState(600);
-  useEffect(()=>{const el=resultsRef.current;if(!el)return;const observer=new ResizeObserver(()=>setResultWidth(el.clientWidth));observer.observe(el);setResultWidth(el.clientWidth);return()=>observer.disconnect()},[]);
-
   const infoNodes = group.nodes.filter((n) => INFO_NAME.test(n.name));
   const realNodes = useMemo(
     () => group.nodes.filter((n) => !INFO_NAME.test(n.name)),
@@ -486,16 +482,17 @@ function GroupCard({
         <ChoiceChip selected={onlyAlive} onClick={()=>setOnlyAlive(v=>!v)}>{t("proxies.onlyAlive")}</ChoiceChip>
         <span className="cb-node-result" aria-live="polite">{visible.length} {t("proxies.results")}</span>
       </div>}
-      <div ref={resultsRef} className="cb-node-results" style={{height:nodeResultHeight(visible.length,resultWidth)}}>
       {visible.length === 0 ? <div className="cb-node-filter-empty" role="status"><p>{t("proxies.noMatch")}</p>
         <Button size="small" onClick={() => { setQuery(""); setRegion("all"); setOnlyAlive(false); setSortByLatency(false); }}>{t("proxies.resetFilters")}</Button></div> :
+      <div className="cb-node-results">
       <FitItems
         key={`${query}:${region}:${onlyAlive}:${sortByLatency}`}
         items={visible}
         minWidth={200}
         maxColumns={4}
-        rowHeight={76}
-        maxRows={4}
+        rowHeight={68}
+        maxRowHeight={100}
+        maxRows={3}
         label={nodeNameText(group.name)}
         render={(n) => {
           const sel = group.now === n.name;
@@ -581,9 +578,7 @@ function GroupCard({
             </div>
           );
         }}
-      />}</div>
-
-
+      /></div>}
     </section>
   );
 }
