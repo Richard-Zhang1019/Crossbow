@@ -50,7 +50,10 @@ a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px soli
 h1, h2, h3 { font-weight: 600; letter-spacing: -.035em; line-height: 1.4; text-wrap: balance; }
 p { text-wrap: pretty; }
 svg, img { display: block; flex-shrink: 0; max-width: 100%; }
-main { min-height: 65svh; }
+/* 粘性页脚：body 弹性列撑满视口，main 弹性占据页头页脚之间的全部剩余
+   空间——内容矮于视口时页脚吸底，长内容页面自然滚动（零行为差异）。 */
+body { min-height: 100svh; display: flex; flex-direction: column; }
+main { flex: 1; }
 main:focus { outline: none; }
 .shell { width: min(1240px, calc(100% - 2 * var(--gutter))); margin-inline: auto; }
 .skip-link { position: fixed; z-index: 100; left: 16px; top: 12px; transform: translateY(-200%); padding: 10px 20px; background: var(--button); color: var(--on-button); border-radius: 6px; }
@@ -190,8 +193,33 @@ main:focus { outline: none; }
 .guide-step > div { min-width: 0; }
 .guide-step h3 { color: var(--text); font-size: 16px; margin-bottom: 8px; }
 .code-block { font: 13px/1.8 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-2); border-radius: 8px; padding: 20px; margin-block: 20px; }
-.not-found { padding-block: 100px; }
-.not-found h1 { font-size: 32px; margin-bottom: 24px; }
+/* 404：在 main 的全部剩余高度里竖直居中（main 已弹性吸住页脚），断路示意 + 目的地引导 */
+.nf { min-height: 100%; justify-content: center; display: flex; flex-direction: column; align-items: center; text-align: center; padding-block: 64px 96px; }
+/* 矮视口收紧内边距：内容 + 页头页脚仍能收进一屏，页脚保持吸底 */
+@media (max-height: 840px) {
+  .nf { padding-block: 28px 44px; }
+  .nf-art { margin-bottom: 16px; }
+}
+@media (max-height: 760px) {
+  .nf { padding-block: 8px 14px; }
+  .nf-art { margin-bottom: 4px; width: min(210px, 48vw); }
+  .nf-hint { margin-bottom: 18px; }
+}
+.nf-art { width: min(280px, 64vw); height: auto; margin-bottom: 24px; }
+.nf-dot { fill: var(--accent); }
+.nf-dot-rest { fill: var(--line-strong); }
+.nf-line { stroke: var(--line-strong); stroke-width: 3; stroke-linecap: round; }
+.nf-line-rest { stroke-dasharray: 2 9; }
+.nf-break { stroke: var(--accent); stroke-width: 3; stroke-linecap: round; }
+.nf-code { fill: var(--text); font: 600 24px Manrope, 'PingFang SC', sans-serif; letter-spacing: -.02em; text-anchor: middle; dominant-baseline: middle; }
+.nf h1 { font-size: clamp(26px, 4vw, 34px); margin-bottom: 12px; }
+.nf-hint { color: var(--dim); font-size: 15px; max-width: 46ch; margin-bottom: 30px; }
+.nf-actions { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 14px; margin-bottom: 24px; }
+.nf-ghost { display: inline-flex; align-items: center; min-height: 48px; padding: 12px 24px; border-radius: 8px; border: 1px solid var(--line-strong); color: var(--text); font-weight: 500; font-size: 16px; transition: border-color 150ms ease; }
+.nf-back { margin-top: 2px; }
+@media (hover:hover) and (pointer:fine) {
+  .nf-ghost:hover { border-color: var(--accent); }
+}
 .micro { font-size: 12px; color: var(--dim); }
 @media (hover:hover) and (pointer:fine) {
   .nav-shell nav a:hover, .nav-tool:hover, .preference-option:hover { color: var(--text); background: var(--surface-2); }
