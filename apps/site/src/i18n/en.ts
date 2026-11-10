@@ -359,8 +359,11 @@ export default {
   "layout.19": ", bring your own nodes or configuration.",
 
   "notfound.title": "Page not found · Crossbow",
-  "notfound.desc": "This path isn't connected yet.",
-  "notfound.heading": "This path isn't connected yet.",
+  "notfound.desc": "This route isn't connected. Head to Crossbow downloads and the guide instead.",
+  "notfound.heading": "This route isn't connected.",
+  "notfound.hint": "The page may have moved, or never existed. These destinations are still reachable:",
+  "notfound.download": "Download Crossbow",
+  "notfound.guide": "Read the guide",
   "notfound.back": "Back to home →",
   "nav.home": "Home",
   "nav.features": "Features",

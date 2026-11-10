@@ -11,9 +11,11 @@ export interface Props {
   path: string;
   title: string;
   description: string;
+  /** 404 等不应被索引的页面 */
+  noindex?: boolean;
 }
 
-const { lang, path, title, description } = Astro.props;
+const { lang, path, title, description, noindex } = Astro.props;
 const i18n = createI18n(lang);
 const locale = lang === "en" ? "en" : "zh-CN";
 const base = import.meta.env.BASE_URL.replace(/\/+$/, "");
@@ -37,6 +39,7 @@ const nav = [
     <meta name="color-scheme" content="light dark" />
     <title>{title}</title>
     <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex" />}
     <link rel="canonical" href={canonical.href} />
     <link rel="alternate" hreflang={locale} href={canonical.href} />
     <link rel="alternate" hreflang={lang === "en" ? "zh-CN" : "en"} href={altPath.href} />

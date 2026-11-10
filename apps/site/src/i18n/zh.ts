@@ -359,8 +359,11 @@ export default {
   "layout.19": "，自备节点或配置",
 
   "notfound.title": "页面未找到 · Crossbow",
-  "notfound.desc": "这条路径还未连接。",
-  "notfound.heading": "这条路径还未连接。",
+  "notfound.desc": "这条路由还未连接。前往 Crossbow 下载页与指南。",
+  "notfound.heading": "这条路由还未连接。",
+  "notfound.hint": "页面可能已移动，或从未存在。下面这些目的地仍然可达：",
+  "notfound.download": "下载 Crossbow",
+  "notfound.guide": "阅读指南",
   "notfound.back": "返回首页 →",
   "nav.home": "首页",
   "nav.features": "功能详解",

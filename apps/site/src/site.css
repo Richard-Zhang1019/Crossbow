@@ -190,8 +190,23 @@ main:focus { outline: none; }
 .guide-step > div { min-width: 0; }
 .guide-step h3 { color: var(--text); font-size: 16px; margin-bottom: 8px; }
 .code-block { font: 13px/1.8 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-2); border-radius: 8px; padding: 20px; margin-block: 20px; }
-.not-found { padding-block: 100px; }
-.not-found h1 { font-size: 32px; margin-bottom: 24px; }
+/* 404：在页头页脚之间的剩余视口里竖直居中，断路示意图 + 可达目的地 */
+.nf { min-height: 58svh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding-block: 64px 96px; }
+.nf-art { width: min(280px, 64vw); height: auto; margin-bottom: 24px; }
+.nf-dot { fill: var(--accent); }
+.nf-dot-rest { fill: var(--line-strong); }
+.nf-line { stroke: var(--line-strong); stroke-width: 3; stroke-linecap: round; }
+.nf-line-rest { stroke-dasharray: 2 9; }
+.nf-break { stroke: var(--accent); stroke-width: 3; stroke-linecap: round; }
+.nf-code { fill: var(--text); font: 600 24px Manrope, 'PingFang SC', sans-serif; letter-spacing: -.02em; text-anchor: middle; dominant-baseline: middle; }
+.nf h1 { font-size: clamp(26px, 4vw, 34px); margin-bottom: 12px; }
+.nf-hint { color: var(--dim); font-size: 15px; max-width: 46ch; margin-bottom: 30px; }
+.nf-actions { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 14px; margin-bottom: 24px; }
+.nf-ghost { display: inline-flex; align-items: center; min-height: 48px; padding: 12px 24px; border-radius: 8px; border: 1px solid var(--line-strong); color: var(--text); font-weight: 500; font-size: 16px; transition: border-color 150ms ease; }
+.nf-back { margin-top: 2px; }
+@media (hover:hover) and (pointer:fine) {
+  .nf-ghost:hover { border-color: var(--accent); }
+}
 .micro { font-size: 12px; color: var(--dim); }
 @media (hover:hover) and (pointer:fine) {
   .nav-shell nav a:hover, .nav-tool:hover, .preference-option:hover { color: var(--text); background: var(--surface-2); }
