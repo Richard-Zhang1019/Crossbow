@@ -10,11 +10,9 @@ use windows_sys::Win32::Foundation::*;
 use windows_sys::Win32::Security::Authorization::*;
 use windows_sys::Win32::Security::*;
 use windows_sys::Win32::Storage::FileSystem::*;
-use windows_sys::Win32::System::Com::CoTaskMemFree;
 use windows_sys::Win32::System::Pipes::*;
 use windows_sys::Win32::System::Services::*;
 use windows_sys::Win32::System::Threading::*;
-use windows_sys::Win32::UI::Shell::{FOLDERID_ProgramFiles, SHGetKnownFolderPath};
 
 const PIPE: &str = "\\\\.\\pipe\\crossbow-service";
 static STOP: AtomicBool = AtomicBool::new(false);

@@ -20,6 +20,7 @@ pub struct CoexistFinding {
 /// 判定 netstat 目的地列是否为全量默认路由。
 /// macOS 把 0.0.0.0/0 渲染为 default，mihomo/sing-box 的 auto-route
 /// 渲染为 1、2/7、4/6 … 128.0/1 的分流系列。
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 fn is_default_destination(destination: &str) -> bool {
     matches!(destination, "default" | "0" | "0/0" | "0.0.0.0/0")
         || matches!(
@@ -36,6 +37,7 @@ fn is_default_destination(destination: &str) -> bool {
 }
 
 /// 本应用内核的路径特征（不视为“其他代理”）。
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 fn is_own_core_path(line: &str) -> bool {
     line.contains("/Crossbow.app/")
         || line.contains("com.richard.crossbow")
@@ -44,6 +46,7 @@ fn is_own_core_path(line: &str) -> bool {
 
 /// 从 `ps -axo command=` 的行里识别其他代理软件。
 /// 返回 (是否发现已知常驻服务, 其他内核进程命令行列表)。
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 fn scan_process_lines(lines: &[&str]) -> (bool, Vec<String>) {
     let mut service = false;
     let mut cores: Vec<String> = Vec::new();
@@ -68,6 +71,7 @@ fn scan_process_lines(lines: &[&str]) -> (bool, Vec<String>) {
 /// 由三类原始信号组装提示：**只提示真实冲突源**——闲置的常驻服务
 /// （未拉起内核）不占端口不接管流量，单独提示只会狼来了；其内核
 /// （verge-mihomo）跑起来时自然会以 core 条目出现。
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 fn build_findings(
     tunnel: Option<String>,
     service: bool,

@@ -840,7 +840,7 @@ fn navigation_target(page:&str,source:&str)->String {
         target["settingSection"]=if source.contains("port")||source.contains("tun")||source.contains("engine") {"network"} else if source.contains("theme")||source.contains("lang") {"appearance"} else if source.contains("logs")||source.contains("retention") {"logs"} else {"app"}.into();
         if source.contains("port"){target["control"]="mixed-port".into();}
         else if source.contains("tun"){target["control"]="cb-tun-control".into();}
-        else if (source.contains("update")||source.contains("download")){target["control"]="cb-update-status".into();}
+        else if source.contains("update")||source.contains("download"){target["control"]="cb-update-status".into();}
     } else if page=="diagnostics" { target["checkId"]="first-problem".into(); }
     else if page=="logs" {target["control"]="cb-log-search".into();}
     target.to_string()
