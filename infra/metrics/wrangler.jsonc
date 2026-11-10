@@ -4,6 +4,7 @@
   "compatibility_date": "2026-11-10",
   "workers_dev": true,
   "preview_urls": false,
+  "observability": { "enabled": false },
   "triggers": {
     // 16:05 UTC is 00:05 the next day in Asia/Shanghai.
     "crons": ["5 16 * * *"]

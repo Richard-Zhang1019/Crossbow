@@ -1,4 +1,4 @@
-//! Voluntary desktop activity reporting. Keep consent and daily state outside profile backups.
+//! Anonymous desktop activity reporting. Keep preferences and daily state outside profile backups.
 
 use std::fs;
 use std::io;
@@ -27,7 +27,10 @@ struct DailyState {
     daily_id: String,
     direct_attempts: usize,
     next_direct: u64,
-    proxy_attempted: bool,
+    #[serde(default)]
+    proxy_attempts: usize,
+    #[serde(default)]
+    next_proxy: u64,
     succeeded: bool,
 }
 
@@ -51,10 +54,15 @@ pub(crate) struct Reporter {
 impl Reporter {
     pub(crate) fn open(data_dir: &Path) -> Self {
         let path = data_dir.join("activity-reporting.json");
-        let state = fs::read(&path)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            .unwrap_or_default();
+        let state = match fs::read(&path) {
+            Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => DailyState {
+                enabled: true,
+                ..DailyState::default()
+            },
+            // An unreadable preference must not override a possible opt-out.
+            Err(_) => DailyState::default(),
+        };
         Self {
             path,
             state: Mutex::new(state),
@@ -102,23 +110,31 @@ impl Reporter {
             state.clone()
         };
 
-        let proxy = if next.direct_attempts > 0 && !next.proxy_attempted {
-            proxy_port()
-        } else {
-            None
-        };
-        let route = if let Some(port) = proxy {
-            next.proxy_attempted = true;
-            Route::Proxy(port)
-        } else if next.direct_attempts <= RETRY_DELAYS.len() && now >= next.next_direct {
-            if let Some(delay) = RETRY_DELAYS.get(next.direct_attempts) {
-                next.next_direct = now.saturating_add(*delay);
-            }
-            next.direct_attempts += 1;
-            Route::Direct
+        let proxy =
+            if next.direct_attempts > 0 && retry_due(next.proxy_attempts, next.next_proxy, now) {
+                proxy_port()
+            } else {
+                None
+            };
+        let (route, attempts, next_attempt) = if let Some(port) = proxy {
+            (
+                Route::Proxy(port),
+                &mut next.proxy_attempts,
+                &mut next.next_proxy,
+            )
+        } else if retry_due(next.direct_attempts, next.next_direct, now) {
+            (
+                Route::Direct,
+                &mut next.direct_attempts,
+                &mut next.next_direct,
+            )
         } else {
             return None;
         };
+        if let Some(delay) = RETRY_DELAYS.get(*attempts) {
+            *next_attempt = now.saturating_add(*delay);
+        }
+        *attempts += 1;
 
         // Save the ID and retry budget before the request, including across restarts.
         self.save(&next).ok()?;
@@ -139,6 +155,10 @@ impl Reporter {
             let _ = self.save(&state);
         }
     }
+}
+
+fn retry_due(attempts: usize, next_attempt: u64, now: u64) -> bool {
+    attempts <= RETRY_DELAYS.len() && now >= next_attempt
 }
 
 fn mixed_port_when_proxy_ready(state: &AppState) -> Option<u16> {
@@ -205,35 +225,54 @@ mod tests {
     use super::*;
 
     #[test]
-    fn uses_five_direct_retries_and_only_one_proxy_retry_even_across_restarts() {
+    fn reporting_defaults_on_and_an_explicit_opt_out_survives_restart() {
         let dir = tempfile::tempdir().unwrap();
-        let now = 1_800_000_000;
         let reporter = Reporter::open(dir.path());
-        assert!(reporter.reserve(now, || panic!("not opted in")).is_none());
+        assert!(reporter.enabled());
+        reporter.set_enabled(false).unwrap();
+        drop(reporter);
 
-        reporter.set_enabled(true).unwrap();
+        let reporter = Reporter::open(dir.path());
+        assert!(!reporter.enabled());
+        assert!(reporter
+            .reserve(1_800_000_000, || panic!("reporting disabled"))
+            .is_none());
+    }
+
+    #[test]
+    fn proxy_can_retry_five_times_after_the_direct_budget_is_spent() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut now = 1_800_000_000;
+        let reporter = Reporter::open(dir.path());
         let first = reporter
             .reserve(now, || panic!("always start directly"))
             .unwrap();
         assert_eq!(first.route, Route::Direct);
-        drop(reporter);
 
-        let reporter = Reporter::open(dir.path());
-        let proxy = reporter.reserve(now + 10, || Some(7898)).unwrap();
-        assert_eq!(proxy.route, Route::Proxy(7898));
-        assert_eq!(proxy.daily_id, first.daily_id);
-
-        let mut next = now;
         for delay in RETRY_DELAYS {
-            next += delay;
-            assert!(reporter.reserve(next - 1, || Some(7898)).is_none());
-            let retry = reporter.reserve(next, || Some(7898)).unwrap();
+            now += delay;
+            assert!(reporter.reserve(now - 1, || None).is_none());
+            let retry = reporter.reserve(now, || None).unwrap();
             assert_eq!(retry.route, Route::Direct);
             assert_eq!(retry.daily_id, first.daily_id);
         }
-        reporter.set_enabled(false).unwrap();
-        reporter.set_enabled(true).unwrap();
-        assert!(reporter.reserve(next + 3600, || Some(7898)).is_none());
+        now += 10;
+        assert!(reporter.reserve(now, || None).is_none());
+        let proxy = reporter.reserve(now, || Some(7898)).unwrap();
+        assert_eq!(proxy.route, Route::Proxy(7898));
+        assert_eq!(proxy.daily_id, first.daily_id);
+        drop(reporter);
+
+        let reporter = Reporter::open(dir.path());
+        for delay in RETRY_DELAYS {
+            now += delay;
+            assert!(reporter.reserve(now - 1, || Some(7898)).is_none());
+            assert!(reporter.reserve(now, || None).is_none());
+            let retry = reporter.reserve(now, || Some(7898)).unwrap();
+            assert_eq!(retry.route, Route::Proxy(7898));
+            assert_eq!(retry.daily_id, first.daily_id);
+        }
+        assert!(reporter.reserve(now + 3600, || Some(7898)).is_none());
     }
 
     #[test]
@@ -241,9 +280,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let midnight = 21_000 * 86_400 - 8 * 3600;
         let reporter = Reporter::open(dir.path());
-        reporter.set_enabled(true).unwrap();
-        let first = reporter.reserve(midnight - 30, || None).unwrap();
-        reporter.record_success(&first);
+        let first = reporter.reserve(midnight - 90, || None).unwrap();
+        let proxy = reporter.reserve(midnight - 80, || Some(7898)).unwrap();
+        assert_eq!(proxy.route, Route::Proxy(7898));
+        let retry = reporter.reserve(midnight - 20, || Some(7898)).unwrap();
+        assert_eq!(retry.route, Route::Proxy(7898));
+        reporter.record_success(&retry);
         drop(reporter);
 
         let reporter = Reporter::open(dir.path());
