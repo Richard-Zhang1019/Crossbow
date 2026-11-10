@@ -1,6 +1,7 @@
 import {Icon} from "@/components/Icon";
 import { Button } from "@/components/Button";
-import { notify } from "@/notifications/service";
+import { notify, notificationText } from "@/notifications/service";
+import { useOperationNotice } from "@/notifications/NotificationProvider";
 import { useEffect, useRef, useState } from "react";
 import { ipc, type CheckResult } from "@/services/ipc";
 import { useT } from "@/i18n/i18n";
@@ -14,7 +15,12 @@ export default function DiagnosticsPage() {
   const [results, setResults] = useState<CheckResult[] | null>(previousResults);
   const [runFailed,setRunFailed]=useState(false);
   const [checking, setChecking] = useState<string | null>(null);
-  const [fixing, setFixing] = useState<string | null>(null);
+  const [fixing, setFixing] = useState<CheckResult | null>(null);
+  const restartRunning = useOperationNotice("core-restart")?.kind === "progress";
+  const repairRunning = !!fixing || restartRunning;
+  const repairLabel = restartRunning || fixing?.fix === "restart_core"
+    ? notificationText("core.restarting")
+    : fixing?.fix === "start_core" ? t("diag.startingCore") : t("diag.switchingProxy");
   const fixingRef = useRef(false);
   const coreRevision = useRef(0);
   const active = useRef(true),
@@ -42,7 +48,7 @@ export default function DiagnosticsPage() {
     };
   }, []);
   const run = async () => {
-    if (inFlight.current) return;
+    if (!active.current || inFlight.current) return;
     inFlight.current = true;
     setRunning(true);
     setRunFailed(false);
@@ -77,20 +83,17 @@ export default function DiagnosticsPage() {
     }
   };
   const fix = async (r: CheckResult) => {
-    if (!r.fix || fixingRef.current || inFlight.current) return;
+    if (!r.fix || fixingRef.current || inFlight.current || restartRunning) return;
     fixingRef.current = true;
-    setFixing(r.id);
+    setFixing(r);
     try {
       if (r.fix === "start_core") await ipc.coreStart();
-      if (r.fix === "restart_core") {
-        await ipc.coreStop();
-        await ipc.coreStart();
-      }
+      if (r.fix === "restart_core") await ipc.coreRestart();
       if (r.fix === "toggle_sysproxy") await ipc.sysproxyToggle();
       void notify.resolve("diagnostics-fix");
       await run();
     } catch (e) {
-      if (r.fix !== "toggle_sysproxy") notify.error(e, "diagnostics-fix");
+      if (r.fix === "start_core") notify.error(e, "diagnostics-fix");
     } finally {
       fixingRef.current = false;
       if (active.current) setFixing(null);
@@ -104,16 +107,15 @@ export default function DiagnosticsPage() {
       <PageHead title={t("diag.title")} meta={t("diag.hint")}>
         <Button
           variant="primary"
-          loading={running}
-          disabled={running || !!fixing}
+          loading={running || repairRunning}
           onClick={() => void run()}
         >
-          {t(running ? "diag.running" : "diag.run")}
+          <span role="status">{running ? t("diag.running") : repairRunning ? repairLabel : t("diag.run")}</span>
         </Button>
       </PageHead>
       {results === null ? (
         <div className="cb-empty">
-          <p>{t("diag.hint")}</p>
+          <p>{repairRunning ? repairLabel : t("diag.hint")}</p>
         </div>
       ) : (
         <>
@@ -144,8 +146,8 @@ export default function DiagnosticsPage() {
               </div>
               {first.fix ? (
                 <Button
-                  loading={fixing === first.id}
-                  disabled={!!fixing}
+                  loading={fixing?.id === first.id}
+                  disabled={repairRunning}
                   onClick={() => void fix(first)}
                 >
                   {t(`diag.fix.${first.fix}`)}
@@ -192,8 +194,8 @@ export default function DiagnosticsPage() {
                   {!running && row?.fix && (
                     <Button
                       size="small"
-                      loading={fixing === id}
-                      disabled={!!fixing}
+                      loading={fixing?.id === id}
+                      disabled={repairRunning}
                       onClick={() => void fix(row)}
                     >
                       {t(`diag.fix.${row.fix}`)}

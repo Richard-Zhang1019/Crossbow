@@ -55,6 +55,8 @@ pub struct AppState {
     /// start_core（连接开关 vs 引擎切换）会交错出「A 换好的核被 B 换走，
     /// A 拿 B 的管理器启动 A 的配置」——即 mihomo 进程配 sing-box JSON。
     core_op: Mutex<()>,
+    core_install_op: tauri::async_runtime::Mutex<()>,
+    core_restart_op: tauri::async_runtime::Mutex<()>,
     /// 页面与托盘的选节点/恢复自动事务串行，避免解除固定与选择互相覆盖。
     proxy_op: Mutex<()>,
     sysproxy: SysProxyManager,
@@ -390,6 +392,10 @@ pub(crate) fn start_core_locked(state: &AppState) -> Result<(), String> {
     state.core().start(&rendered.config, &rt)
 }
 
+fn missing_core_error(need: &str) -> String {
+    format!("内核「{need}」未安装 — 到设置页下载对应内核后再启动")
+}
+
 /// 管理器持有的二进制与目标引擎不一致时（引擎切换、冷启动回退），就地换核。
 /// 返回换核后实际使用的二进制路径。
 fn ensure_engine_binary(state: &AppState, need: &str) -> Result<PathBuf, String> {
@@ -403,9 +409,7 @@ fn ensure_engine_binary(state: &AppState, need: &str) -> Result<PathBuf, String>
         return Ok(cur);
     }
     let Some(p) = crate::engine::download::resolve_core_for(&state.data_dir, Some(need)) else {
-        return Err(format!(
-            "内核「{need}」未安装 — 到设置页下载对应内核后再启动"
-        ));
+        return Err(missing_core_error(need));
     };
     if !state.core().stop() {
         return Err("旧内核未退出，已中止内核切换".into());
@@ -434,9 +438,7 @@ fn ensure_unprivileged_core_binary(
     }
     let Some(binary) = crate::engine::download::resolve_core_for(&state.data_dir, Some(need))
     else {
-        return Err(format!(
-            "内核「{need}」未安装 — 到设置页下载对应内核后再启动"
-        ));
+        return Err(missing_core_error(need));
     };
     if !state.core().stop() {
         return Err("TUN 内核未退出，已中止普通内核启动".into());
@@ -1518,6 +1520,35 @@ async fn core_start(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn core_restart(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let _request = state.core_restart_op.try_lock().map_err(|_| "内核正在重启")?;
+    notifications::publish(
+        &app,
+        notifications::Notice::new(notifications::Kind::Progress, "core.restarting", "core-restart"),
+    );
+    let handle = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let state = handle.state::<AppState>();
+        let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
+        state.exit.ensure_open()?;
+        if !state.core().stop() {
+            return Err("旧内核未退出，已中止重启".into());
+        }
+        start_core_locked(&state).and_then(|()| wait_core_running(&state))
+    })
+    .await
+    .map_err(|error| error.to_string())
+    .and_then(|result| result);
+    let code = if result.is_ok() {
+        "core.restarted"
+    } else {
+        "core.restartFailed"
+    };
+    notifications::result(&app, "core-restart", code, result.clone());
+    result
+}
+
+#[tauri::command]
 async fn core_stop(state: State<'_, AppState>) -> Result<(), String> {
     let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
     state.exit.ensure_open()?;
@@ -1726,30 +1757,33 @@ fn core_binary_info(state: State<AppState>) -> CoreBinaryInfo {
 
 /// 下载安装内核（前端用 invoke 阻塞调用，期间显示进度提示）。
 #[tauri::command]
-async fn core_install(app: AppHandle, engine: Option<String>) -> Result<CoreBinaryInfo, String> {
-    notifications::publish(
-        &app,
-        notifications::Notice::new(
-            notifications::Kind::Progress,
-            "core.install",
-            "core-download",
-        ),
-    );
+async fn core_install(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    engine: Option<String>,
+) -> Result<CoreBinaryInfo, String> {
+    let _request = state.core_install_op.try_lock().map_err(|_| "内核正在下载")?;
+    let mut notice =
+        notifications::Notice::new(notifications::Kind::Progress, "core.install", "core-download");
+    notice.description = "preparing".into();
+    notifications::publish(&app, notice);
     let handle = app.clone();
     let result = tauri::async_runtime::spawn_blocking(move || core_install_inner(handle, engine))
         .await
         .map_err(|e| e.to_string())
         .and_then(|result| result);
-    notifications::result(
-        &app,
-        "core-download",
-        if result.is_ok() {
-            "core.installReady"
-        } else {
-            "core.install"
-        },
-        result.as_ref().map(|_| ()).map_err(Clone::clone),
-    );
+    if let Err(error) = &result {
+        let mut notice = notifications::Notice::new(
+            notifications::Kind::Error,
+            "core.installFailed",
+            "core-download",
+        );
+        notice.details = error.clone();
+        notice.actions = vec![notifications::Action::Settings];
+        notifications::publish(&app, notice);
+    } else {
+        notifications::result(&app, "core-download", "core.installReady", Ok(()));
+    }
     result
 }
 fn core_install_inner(app: AppHandle, engine: Option<String>) -> Result<CoreBinaryInfo, String> {
@@ -1777,7 +1811,9 @@ fn core_install_inner(app: AppHandle, engine: Option<String>) -> Result<CoreBina
     state.exit.ensure_open()?;
     let new_core = CoreManager::new(info.clone(), data_dir.join("runtime"));
     new_core.set_callback(core_status_callback(app.clone()));
-    state.core().stop();
+    if !state.core().stop() {
+        return Err("旧内核未退出，无法载入已下载的内核".into());
+    }
     *state.core_slot.lock().unwrap_or_else(|e| e.into_inner()) = new_core;
     Ok(CoreBinaryInfo {
         path: info.display().to_string(),
@@ -2322,8 +2358,25 @@ async fn sysproxy_toggle(app: AppHandle, state: State<'_, AppState>) -> Result<(
     let result = toggle_sysproxy_state(&state);
     let _ = app.emit("sysproxy://status", state.sysproxy.status());
     refresh_tray(&app);
-    notifications::result(&app, "system-proxy", "tray.proxy", result.clone());
+    publish_proxy_toggle_result(&app, "system-proxy", result.clone());
     result
+}
+
+fn publish_proxy_toggle_result(app: &AppHandle, source: &str, result: Result<(), String>) {
+    if let Err(error) = &result {
+        if ["mihomo", "sing-box"]
+            .iter()
+            .any(|engine| *error == missing_core_error(engine))
+        {
+            let mut notice =
+                notifications::Notice::new(notifications::Kind::Error, "core.missing", source);
+            notice.details = error.clone();
+            notice.actions = vec![notifications::Action::Settings];
+            notifications::publish(app, notice);
+            return;
+        }
+    }
+    notifications::result(app, source, "tray.proxy", result);
 }
 
 #[tauri::command]
@@ -3804,12 +3857,11 @@ fn handle_menu(app: &AppHandle, id: &str) {
                         "tray-proxy",
                     ),
                 );
-                if let Err(error) = toggle_sysproxy(&handle) {
+                let result = toggle_sysproxy(&handle);
+                if let Err(error) = &result {
                     eprintln!("tray system proxy toggle failed: {error}");
-                    show_tray_toggle_error(&handle, "tray-proxy", "tray.proxy", error);
-                } else {
-                    notifications::result(&handle, "tray-proxy", "tray.proxy", Ok(()));
                 }
+                publish_proxy_toggle_result(&handle, "tray-proxy", result);
             });
             Ok(())
         }
@@ -4324,6 +4376,8 @@ pub fn run() {
                 store: Mutex::new(store),
                 core_slot: Mutex::new(core),
                 core_op: Mutex::new(()),
+                core_install_op: tauri::async_runtime::Mutex::new(()),
+                core_restart_op: tauri::async_runtime::Mutex::new(()),
                 proxy_op: Mutex::new(()),
                 sysproxy,
                 mode: Mutex::new("rule".to_string()),
@@ -4488,6 +4542,7 @@ pub fn run() {
             set_active_profile,
             remove_profile,
             core_start,
+            core_restart,
             core_stop,
             core_status,
             sysproxy_status,

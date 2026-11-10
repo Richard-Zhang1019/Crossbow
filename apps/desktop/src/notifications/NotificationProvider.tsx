@@ -766,3 +766,8 @@ export function useNotificationNavigation(navigate: (page: string) => void) {
     void invoke("notification_ack_navigation").catch(console.error);
   }, [navigateTo]);
 }
+
+// History includes running tasks whose cards are queued or dismissed.
+export function useOperationNotice(operationId: string) {
+  return useContext(Context).history.find(notice => notice.operationId === operationId);
+}
