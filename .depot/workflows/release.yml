@@ -4,9 +4,9 @@
 # Changes made:
 # - Rewrote .github/ path references to .depot/
 # - Changed runs-on from "ubuntu-latest" to "depot-ubuntu-latest" in job "preflight"
-# - Changed runs-on from "windows-latest" to "depot-ubuntu-latest" in job "release-windows"
+# - Changed runs-on from "windows-latest" to "depot-windows-latest" in job "release-windows"
 # - Changed runs-on from "ubuntu-24.04" to "depot-ubuntu-24.04" in job "release-linux"
-# - Changed runs-on from "macos-15" to "depot-ubuntu-latest" in job "release-macos"
+# - Changed runs-on from "macos-15" to "depot-macos-latest" in job "release-macos"
 
 name: release
 
@@ -91,7 +91,7 @@ jobs:
     needs: [preflight, checks]
     permissions:
       contents: read
-    runs-on: depot-ubuntu-latest # was: windows-latest. Nonstandard GitHub runner label detected, changed to default Depot runner.
+    runs-on: depot-windows-latest # was: windows-latest.
     timeout-minutes: 75
     env:
       VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
@@ -207,7 +207,7 @@ jobs:
     needs: [preflight, checks, release-windows, release-linux]
     permissions:
       contents: write
-    runs-on: depot-ubuntu-latest # was: macos-15. Nonstandard GitHub runner label detected, changed to default Depot runner.
+    runs-on: depot-macos-latest # was: macos-15.
     timeout-minutes: 75
     env:
       VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}

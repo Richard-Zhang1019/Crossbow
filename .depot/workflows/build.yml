@@ -3,7 +3,7 @@
 #
 # Changes made:
 # - Rewrote .github/ path references to .depot/
-# - Changed GitHub runs-on labels to their Depot equivalents
+# - Mapped Ubuntu, macOS, and Windows runners to Depot runner labels
 
 name: build
 
@@ -186,7 +186,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15, windows-2022]
+        os: [depot-macos-latest, depot-windows-latest]
     runs-on: ${{ matrix.os }}
     needs: [changes]
     if: needs.changes.outputs.rust == 'true'
@@ -206,9 +206,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-15
+          - os: depot-macos-latest
             target: aarch64-apple-darwin
-          - os: windows-2022
+          - os: depot-windows-latest
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     needs: [changes, pipeline-check, core-test]
@@ -240,7 +240,7 @@ jobs:
         run: python scripts/ci/download_sidecar.py ${{ matrix.target }}
 
       - name: Build crossbow-service sidecar
-        if: matrix.os == 'windows-2022'
+        if: matrix.os == 'depot-windows-latest'
         shell: pwsh
         run: |
           cargo build --locked --release -p crossbow-service --target x86_64-pc-windows-msvc
@@ -260,19 +260,19 @@ jobs:
         run: python scripts/ci/build_desktop.py
 
       - name: Smoke-test Windows service installation and upgrade
-        if: matrix.os == 'windows-2022'
+        if: matrix.os == 'depot-windows-latest'
         shell: pwsh
         run: ./scripts/ci/smoke_windows_service.ps1
 
       - name: Package and smoke-test macOS app
-        if: matrix.os == 'macos-15'
+        if: matrix.os == 'depot-macos-latest'
         run: |
           python scripts/ci/release_checks.py app target/release/bundle/macos/Crossbow.app
           python scripts/ci/smoke_macos.py target/release/bundle/macos/Crossbow.app
           tar -cf target/release/bundle/macos/Crossbow.app.tar -C target/release/bundle/macos Crossbow.app
 
       - name: Upload artifacts (macOS)
-        if: matrix.os == 'macos-15'
+        if: matrix.os == 'depot-macos-latest'
         uses: actions/upload-artifact@v7
         with:
           name: crossbow-macos-aarch64
@@ -283,7 +283,7 @@ jobs:
             target/release/bundle/dmg/*.dmg
 
       - name: Upload artifacts (Windows)
-        if: always() && matrix.os == 'windows-2022'
+        if: always() && matrix.os == 'depot-windows-latest'
         uses: actions/upload-artifact@v7
         with:
           name: crossbow-windows-x64
@@ -294,7 +294,7 @@ jobs:
             target/release/bundle/msi/*.msi
 
       - name: Upload startup diagnostics
-        if: failure() && matrix.os == 'macos-15'
+        if: failure() && matrix.os == 'depot-macos-latest'
         uses: actions/upload-artifact@v7
         with:
           name: startup-diagnostics
