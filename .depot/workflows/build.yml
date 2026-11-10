@@ -3,12 +3,11 @@
 #
 # Changes made:
 # - Rewrote .github/ path references to .depot/
-# - Mapped Ubuntu runners to Depot; macOS and Windows remain on GitHub-hosted runners
+# - Keep Depot jobs on Linux; native macOS/Windows builds run in .github/workflows/build.yml
 
 name: build
 
-# 双平台构建验证：macOS (Apple Silicon) + Windows (x64)。
-# 未签名产物仅作验证；正式发版复用此工作流，通过后再签名、公证。
+# Depot runs Linux jobs; native macOS/Windows validation remains in the GitHub workflow.
 on:
   push:
     branches: [main, "feat/**"]
@@ -180,123 +179,3 @@ jobs:
         run: |
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
           "$(go env GOPATH)/bin/actionlint" -shellcheck=
-
-  core-test:
-    name: core test (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-15, windows-2022]
-    runs-on: ${{ matrix.os }}
-    needs: [changes]
-    if: needs.changes.outputs.rust == 'true'
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref || github.ref }}
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-      - run: cargo clippy --locked -p crossbow-core -- -D warnings
-      - run: cargo test --locked -p crossbow-core
-      - run: cargo test --locked -p crossbow-service
-
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-15
-            target: aarch64-apple-darwin
-          - os: windows-2022
-            target: x86_64-pc-windows-msvc
-    runs-on: ${{ matrix.os }}
-    needs: [changes, pipeline-check, core-test]
-    if: needs.changes.outputs.rust == 'true'
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref || github.ref }}
-
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
-        with:
-          version: 9
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-      - name: Download and verify mihomo sidecar
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: python scripts/ci/download_sidecar.py ${{ matrix.target }}
-
-      - name: Build crossbow-service sidecar
-        if: matrix.os == 'windows-2022'
-        shell: pwsh
-        run: |
-          cargo build --locked --release -p crossbow-service --target x86_64-pc-windows-msvc
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Copy-Item target/x86_64-pc-windows-msvc/release/crossbow-service.exe apps/desktop/src-tauri/binaries/crossbow-service-x86_64-pc-windows-msvc.exe
-
-      - name: Install frontend deps
-        run: pnpm install --frozen-lockfile
-
-      - name: Node flag display tests
-        run: node --experimental-strip-types --test apps/desktop/src/components/NodeName/nodeFlags.test.mjs apps/desktop/src/pages/Logs/logHistory.test.mjs
-
-      - name: Desktop backend tests
-        run: cargo test --locked --lib --manifest-path apps/desktop/src-tauri/Cargo.toml
-
-      - name: Build (unsigned)
-        run: python scripts/ci/build_desktop.py
-
-      - name: Smoke-test Windows service installation and upgrade
-        if: matrix.os == 'windows-2022'
-        shell: pwsh
-        run: ./scripts/ci/smoke_windows_service.ps1
-
-      - name: Package and smoke-test macOS app
-        if: matrix.os == 'macos-15'
-        run: |
-          python scripts/ci/release_checks.py app target/release/bundle/macos/Crossbow.app
-          python scripts/ci/smoke_macos.py target/release/bundle/macos/Crossbow.app
-          tar -cf target/release/bundle/macos/Crossbow.app.tar -C target/release/bundle/macos Crossbow.app
-
-      - name: Upload artifacts (macOS)
-        if: matrix.os == 'macos-15'
-        uses: actions/upload-artifact@v7
-        with:
-          name: crossbow-macos-aarch64
-          if-no-files-found: error
-          retention-days: 7
-          path: |
-            target/release/bundle/macos/Crossbow.app.tar
-            target/release/bundle/dmg/*.dmg
-
-      - name: Upload artifacts (Windows)
-        if: always() && matrix.os == 'windows-2022'
-        uses: actions/upload-artifact@v7
-        with:
-          name: crossbow-windows-x64
-          if-no-files-found: error
-          retention-days: 7
-          path: |
-            target/release/bundle/nsis/*.exe
-            target/release/bundle/msi/*.msi
-
-      - name: Upload startup diagnostics
-        if: failure() && matrix.os == 'macos-15'
-        uses: actions/upload-artifact@v7
-        with:
-          name: startup-diagnostics
-          path: target/ci-diagnostics/
-          retention-days: 7

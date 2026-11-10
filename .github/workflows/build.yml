@@ -29,6 +29,7 @@ jobs:
     outputs:
       rust: ${{ steps.final.outputs.rust }}
       frontend: ${{ steps.final.outputs.frontend }}
+      native: ${{ steps.final.outputs.native }}
     steps:
       # 路径门控只作用于 PR：push 与 workflow_call（发版链路）始终全量运行，
       # 由下面 final 步强制置 true，发版门禁不受影响。
@@ -58,18 +59,23 @@ jobs:
               - 'apps/desktop/vite.config.ts'
               - 'apps/desktop/tsconfig.json'
               - 'pnpm-lock.yaml'
+            native:
+              - '.depot/workflows/build.yml'
       - id: final
         env:
           EVENT: ${{ github.event_name }}
           FILTER_RUST: ${{ steps.filter.outputs.rust }}
           FILTER_FRONTEND: ${{ steps.filter.outputs.frontend }}
+          FILTER_NATIVE: ${{ steps.filter.outputs.native }}
         run: |
           if [ "$EVENT" = "pull_request" ]; then
             echo "rust=${FILTER_RUST:-false}" >> "$GITHUB_OUTPUT"
             echo "frontend=${FILTER_FRONTEND:-false}" >> "$GITHUB_OUTPUT"
+            echo "native=${FILTER_NATIVE:-false}" >> "$GITHUB_OUTPUT"
           else
             echo "rust=true" >> "$GITHUB_OUTPUT"
             echo "frontend=true" >> "$GITHUB_OUTPUT"
+            echo "native=true" >> "$GITHUB_OUTPUT"
           fi
 
   frontend:
@@ -182,7 +188,7 @@ jobs:
         os: [macos-15, windows-2022]
     runs-on: ${{ matrix.os }}
     needs: [changes]
-    if: needs.changes.outputs.rust == 'true'
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.native == 'true'
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -205,7 +211,7 @@ jobs:
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     needs: [changes, pipeline-check, core-test]
-    if: needs.changes.outputs.rust == 'true'
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.native == 'true'
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
