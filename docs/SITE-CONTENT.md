@@ -7,17 +7,17 @@
 
 | 官网内容 | 实际实现依据 | 呈现位置 |
 | --- | --- | --- |
-| 订阅的上次成功、下次更新/重试、失败原因和新增/移除/变化节点数量 | `apps/desktop/src/pages/Profiles.tsx` 的订阅状态；`apps/desktop/src-tauri/src/workflow.rs` 的节点差异统计 | 首页订阅摘要、功能详解、指南订阅更新 |
-| 自动选择组手动固定与恢复自动 | `apps/desktop/src/pages/Proxies.tsx` 的 automaticGroup、restoreAutomatic | 功能详解节点部分 |
-| 逐项诊断进度、通过/失败/跳过、首个阻塞项与后续操作 | `apps/desktop/src/pages/Diagnostics.tsx` 的 DIAG_STEPS 和 first blocker | 首页诊断摘要、功能详解、排障指南 |
-| 完整连接详情、逐字段/整体复制、搜索排序与暂停刷新 | `apps/desktop/src/pages/Connections.tsx` 的 connectionDetails 和 Dialog | 功能详解观测、排障指南 |
+| 订阅的上次成功、下次更新/重试、失败原因和新增/移除/变化节点数量 | `apps/desktop/src/pages/Profiles/index.tsx` 的订阅状态；`apps/desktop/src-tauri/src/workflow.rs` 的节点差异统计 | 首页订阅摘要、功能详解、指南订阅更新 |
+| 自动选择组手动固定与恢复自动 | `apps/desktop/src/pages/Proxies/index.tsx` 的 automaticGroup、restoreAutomatic | 功能详解节点部分 |
+| 逐项诊断进度、通过/失败/跳过、首个阻塞项与后续操作 | `apps/desktop/src/pages/Diagnostics/index.tsx` 的 DIAG_STEPS 和 first blocker | 首页诊断摘要、功能详解、排障指南 |
+| 完整连接详情、逐字段/整体复制、搜索排序与暂停刷新 | `apps/desktop/src/pages/Connections/index.tsx` 的 connectionDetails 和 Dialog | 功能详解观测、排障指南 |
 | 日志级别多选、关键词、暂停跟随/返回底部、单条复制与当前筛选结果脱敏导出 | `apps/desktop/src/pages/Logs/index.tsx`；`apps/desktop/src-tauri/src/workflow.rs` 的 export_log_lines | 功能详解观测、排障指南 |
-| 站点测试时间、出口、链路变化和 HTTP 限制响应的含义 | `apps/desktop/src/components/SiteConnectivity.tsx` 的 testedAt、outbound、pathChanged | 功能详解观测、排障指南 |
-| 配置恢复入口、快照时间和数量、恢复范围及重启影响 | `apps/desktop/src/components/ConfigRecovery.tsx`；`crates/crossbow-core/src/store.rs`；`workflow.rs` 的 restore_config_snapshot | 新增功能详解恢复部分与指南恢复流程 |
-| 手动检查只检查版本，下载需确认；自动下载仅用于定时检查 | `apps/desktop/src-tauri/src/lib.rs` 的 update_check_now 使用 check_once(false, false)；`update_check.rs` 的定时任务；Settings.tsx | 新增功能详解更新部分与指南更新流程 |
+| 站点测试时间、出口、链路变化和 HTTP 限制响应的含义 | `apps/desktop/src/components/SiteConnectivity/index.tsx` 的 testedAt、outbound、pathChanged | 功能详解观测、排障指南 |
+| 配置恢复入口、快照时间和数量、恢复范围及重启影响 | `apps/desktop/src/components/ConfigRecovery/index.tsx`；`crates/crossbow-core/src/store.rs`；`workflow.rs` 的 restore_config_snapshot | 新增功能详解恢复部分与指南恢复流程 |
+| 手动检查只检查版本，下载需确认；自动下载仅用于定时检查 | `apps/desktop/src-tauri/src/lib.rs` 的 update_check_now 使用 check_once(false, false)；`update_check.rs` 的定时任务；`pages/Settings/index.tsx` |  新增功能详解更新部分与指南更新流程 |
 | Windows 安装器附带 TUN 服务与文件占用/服务修复说明入口 | `docs/WINDOWS-INSTALL.md`；`apps/desktop/src-tauri/windows` | 指南 Windows 部分及仓库文档链接 |
-| 顶部直接切换配置、应用外观/语言、局域网代理共享 | `ProfileSwitcher.tsx`；`Settings.tsx` 的 theme/lang/allow-lan | 功能详解及端口指南 |
-| 端口需显式修改/应用，Enter 应用、Escape 取消，失焦不保存 | `apps/desktop/src/pages/Settings.tsx` 的端口编辑流程 | 指南端口部分 |
+| 顶部直接切换配置、应用外观/语言、局域网代理共享 | `components/ProfileSwitcher/index.tsx`；`pages/Settings/index.tsx` 的 theme/lang/allow-lan | 功能详解及端口指南 |
+| 端口需显式修改/应用，Enter 应用、Escape 取消，失焦不保存 | `apps/desktop/src/pages/Settings/index.tsx` 的端口编辑流程 | 指南端口部分 |
 
 纠正内容：移除下载区与当前版本脱节的“岩蓝 Logo”摘要；版本与资产继续来自发布 API。删除“诊断永久持久化”“所有失败一键修复”的描述，改为当前会话内结果和可用修复操作；更新“代理页/覆写组”等旧页面名称。
 

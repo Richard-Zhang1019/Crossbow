@@ -63,7 +63,7 @@ GDK_BACKEND=wayland python3 scripts/linux/smoke_desktop.py \
 ```sh
 cargo test --locked -p crossbow-core
 cargo test --locked --lib --manifest-path apps/desktop/src-tauri/Cargo.toml
-node --experimental-strip-types --test apps/desktop/src/components/nodeFlags.test.mjs apps/desktop/src/components/fitGrid.test.mjs
+node --experimental-strip-types --test apps/desktop/src/components/NodeName/nodeFlags.test.mjs apps/desktop/src/components/FitItems/fitGrid.test.mjs
 python3 -m unittest discover -s scripts/ci/tests -v
 ```
 
