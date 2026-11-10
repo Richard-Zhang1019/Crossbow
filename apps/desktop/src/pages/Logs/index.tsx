@@ -173,8 +173,41 @@ export default function LogsPage() {
   const reading = useRef(new LogReadingWindow<LogEntry>());
   const latestLines = useRef(lines);
   latestLines.current = lines;
+  // 读窗锚点：冻结开始时视口顶部的行元素与其在盒内的偏移。释放时把同一
+  // DOM 节点调回原屏幕位置——冻结期间新到的行就不会把可见内容整体顶走
+  // （hover 抖动）。贴底进入的（atBottom）释放时直接追新底部，保持原
+  // 跟随体验；锚点行已被裁出渲染尾窗时同样退回跟随。
+  const readingAnchor = useRef<
+    { el: Element; offset: number; atBottom: boolean } | null
+  >(null);
+  const readingHadWindow = useRef(false);
   const holdReading = (kind: "pointer" | "focus", hold: boolean) => {
-    setReadingLines(reading.current.hold(kind, hold, latestLines.current));
+    const box = boxRef.current;
+    if (hold && box) {
+      const boxRect = box.getBoundingClientRect();
+      const rows = box.querySelectorAll(".cb-log-row, .cb-log-raw");
+      let top: Element | null = null;
+      for (const row of rows) {
+        const r = row.getBoundingClientRect();
+        if (r.bottom <= boxRect.top + 1) continue;
+        top = row;
+        break;
+      }
+      readingAnchor.current =
+        top !== null
+          ? {
+              el: top,
+              offset: top.getBoundingClientRect().top - boxRect.top,
+              atBottom:
+                box.scrollHeight - box.scrollTop - box.clientHeight < 2,
+            }
+          : null;
+    }
+    const next = reading.current.hold(kind, hold, latestLines.current);
+    // 没有可释放的窗口（其他 hold 仍在或本就无窗）时丢弃锚点；
+    // 真正进入冻结时保留，由释放路径消费。
+    if (next === null && readingLines === null) readingAnchor.current = null;
+    setReadingLines(next);
   };
   const boxRef = useRef<HTMLDivElement>(null);
   const subscriptionGeneration = useRef(0);
@@ -316,8 +349,26 @@ export default function LogsPage() {
 
   // Follow before paint; a post-paint scroll flashes the previous position on each batch.
   useLayoutEffect(() => {
-    if (pinned.current && readingLines === null && boxRef.current) {
-      boxRef.current.scrollTop = boxRef.current.scrollHeight;
+    const box = boxRef.current;
+    if (!box) return;
+    const hadReading = readingHadWindow.current;
+    readingHadWindow.current = readingLines !== null;
+    if (readingLines === null && hadReading) {
+      // 释放读窗：DOM 已换回活数据（绘制前）。中列阅读者把锚点行调回
+      // 冻结时所在的屏幕位置，视口内容像素级静止；贴底进入的（atBottom）
+      // 或锚点行已被裁掉的直接追新底部，保持原跟随体验。
+      const anchor = readingAnchor.current;
+      readingAnchor.current = null;
+      if (anchor && !anchor.atBottom && anchor.el.isConnected) {
+        const boxRect = box.getBoundingClientRect();
+        const shift =
+          anchor.el.getBoundingClientRect().top - boxRect.top - anchor.offset;
+        if (Math.abs(shift) > 0.5) box.scrollTop += shift;
+        return;
+      }
+    }
+    if (pinned.current && readingLines === null) {
+      box.scrollTop = box.scrollHeight;
     }
   }, [lines, readingLines]);
 

@@ -2505,7 +2505,9 @@ body,
   align-items: center;
 }
 /* One subtle input focus treatment, instead of separated double outlines. */
-input:not([type="checkbox"]):not([type="radio"]):focus-visible,
+/* 壳内搜索输入（cb-input-inner）不参与：外壳用 :focus-within 统一画焦点环，
+   内层再画一圈会露出左右两条竖边（#388 审核发现）。 */
+input:not([type="checkbox"]):not([type="radio"]):not(.cb-input-inner):focus-visible,
 textarea:focus-visible,
 .cb-input:focus-visible {
   outline: none;
@@ -2703,7 +2705,7 @@ textarea:focus-visible,
 .cb-log-reading-tools > div { display:flex; align-items:center; gap:8px; min-width:0; }
 .cb-log-reading-tools span { color:var(--cb-text-dim); font-size:11px; }
 .cb-log-row,.cb-log-raw { position:relative; padding-right:48px; overflow-anchor:none; }
-.cb-log-copy { position:absolute; right:6px; top:8px; width:36px; height:20px; white-space:nowrap; font:10px/20px system-ui; color:var(--cb-text-dim); padding:0 4px; border-radius:4px; opacity:0; transition:opacity 130ms ease,background-color 130ms ease; }
+.cb-log-copy { position:absolute; right:6px; top:0; bottom:0; margin-block:auto; height:20px; width:36px; white-space:nowrap; font:10px/20px system-ui; color:var(--cb-text-dim); padding:0 4px; border-radius:4px; opacity:0; transition:opacity 130ms ease,background-color 130ms ease; }
 .cb-log-row:hover .cb-log-copy,.cb-log-raw:hover .cb-log-copy,.cb-log-copy:focus-visible { opacity:1; background:var(--cb-surface-2); }
 .cb-site-context { display:flex; flex-direction:column; gap:2px; margin-top:6px; color:var(--cb-text-dim); font-size:10px; text-align:left; min-width:0; }
 .cb-site-context > span { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
