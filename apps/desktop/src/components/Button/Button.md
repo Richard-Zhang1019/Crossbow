@@ -26,5 +26,5 @@ Pages own placement and business state. Do not override button paint, padding, h
 All hand-authored desktop `<button>` elements must be inside ButtonBase. Guard:
 
 ```sh
-node --test apps/desktop/src/components/buttonUsage.test.mjs
+node --test apps/desktop/src/components/Button/buttonUsage.test.mjs
 ```
