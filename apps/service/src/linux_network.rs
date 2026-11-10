@@ -1,8 +1,12 @@
 //! Read-only conflict checks shared by the desktop and Linux service.
 use serde_json::Value;
+use std::io;
 use std::net::{IpAddr, SocketAddr};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::process::Command;
+use std::time::{Duration, Instant};
 
 pub const DEVICE: &str = "Crossbow";
 pub const TABLE: u32 = 20220;
@@ -513,12 +517,45 @@ fn verify_allowed_ips(output: &str, protected: &[Prefix]) -> Result<(), String> 
     Ok(())
 }
 
+fn mihomo_version_probe(cmdline: &[u8]) -> bool {
+    let Some(cmdline) = cmdline.strip_suffix(b"\0") else {
+        return false;
+    };
+    let mut args = cmdline.split(|byte| *byte == 0);
+    let Some(program) = args.next() else {
+        return false;
+    };
+    Path::new(std::ffi::OsStr::from_bytes(program)).file_name()
+        == Some(std::ffi::OsStr::new("mihomo"))
+        && args.next() == Some(b"-v")
+        && args.next().is_none()
+}
+
+fn proxy_exited(pid: u32, deadline: Instant) -> bool {
+    // A process pidfd stays tied to the same PID and becomes readable only
+    // after every thread exits. Never use a name or an empty cmdline as proof.
+    let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid as libc::pid_t, 0u32) };
+    if fd < 0 {
+        return io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);
+    }
+    let fd = unsafe { OwnedFd::from_raw_fd(fd as i32) };
+    let mut pollfd = libc::pollfd {
+        fd: fd.as_raw_fd(),
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    let timeout = deadline.saturating_duration_since(Instant::now()).as_millis() as i32;
+    let ready = unsafe { libc::poll(&mut pollfd, 1, timeout) };
+    ready > 0 && pollfd.revents & (libc::POLLIN | libc::POLLHUP) != 0
+}
+
 fn proxy_processes(own_pids: &[u32], wireguard: bool) -> Vec<String> {
     let mut found = Vec::new();
     let our_net = std::fs::read_link("/proc/self/ns/net").ok();
     let Ok(entries) = std::fs::read_dir("/proc") else {
         return found;
     };
+    let mut confirmation_deadline = None;
     for entry in entries.flatten() {
         let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
             continue;
@@ -526,7 +563,8 @@ fn proxy_processes(own_pids: &[u32], wireguard: bool) -> Vec<String> {
         if own_pids.contains(&pid) {
             continue;
         }
-        let Ok(name) = std::fs::read_to_string(entry.path().join("comm")) else {
+        let path = entry.path();
+        let Ok(name) = std::fs::read_to_string(path.join("comm")) else {
             continue;
         };
         let lower = name.trim().to_ascii_lowercase();
@@ -537,9 +575,35 @@ fn proxy_processes(own_pids: &[u32], wireguard: bool) -> Vec<String> {
         {
             continue;
         }
+        if lower == "mihomo" {
+            match std::fs::read(path.join("cmdline")) {
+                // Settings refreshes the version after toggling TUN. This
+                // exact command prints the version and never starts a proxy.
+                Ok(args) if mihomo_version_probe(&args)
+                    && std::fs::read_link(path.join("exe")).is_ok_and(|exe| {
+                        exe.file_name().is_some_and(|name| name == "mihomo")
+                    }) =>
+                {
+                    #[cfg(debug_assertions)]
+                    eprintln!("Ignoring mihomo -v version probe (pid {pid})");
+                    continue;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                _ => {}
+            }
+        }
         // Ignore processes proven to belong to another network namespace.
-        let other_net = std::fs::read_link(entry.path().join("ns/net")).ok();
+        let other_net = std::fs::read_link(path.join("ns/net")).ok();
         if our_net.is_some() && other_net.is_some() && our_net != other_net {
+            continue;
+        }
+        // A read-only version command can exit while procfs metadata is
+        // sampled. Bound the whole scan's exit confirmation to 25 ms.
+        let deadline = *confirmation_deadline
+            .get_or_insert_with(|| Instant::now() + Duration::from_millis(25));
+        if proxy_exited(pid, deadline) {
+            #[cfg(debug_assertions)]
+            eprintln!("Ignoring exited proxy task {} (pid {pid})", name.trim());
             continue;
         }
         found.push(format!("已有代理进程 {}（pid {pid}）", name.trim()));
@@ -733,6 +797,33 @@ pub fn wireguard_plan(own_ifindex: Option<u32>, own_pids: &[u32]) -> Result<Wire
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn recognizes_only_the_mihomo_version_query() {
+        assert!(mihomo_version_probe(b"/usr/lib/crossbow/mihomo\0-v\0"));
+        for args in [
+            b"mihomo\0".as_slice(),
+            b"mihomo\0-d\0/run/crossbow-tun/session\0",
+            b"mihomo\0-v\0-f\0/config.yaml\0",
+            b"clash\0-v\0",
+            b"mihomo\0-v",
+            b"",
+        ] {
+            assert!(!mihomo_version_probe(args));
+        }
+    }
+
+    #[test]
+    fn confirms_exit_without_exempting_a_live_process() {
+        let mut live = Command::new("/bin/sleep").arg("5").spawn().unwrap();
+        let conflicts = !proxy_exited(live.id(), Instant::now());
+        live.kill().unwrap();
+        let exited = proxy_exited(live.id(), Instant::now() + Duration::from_secs(1));
+        live.wait().unwrap();
+        assert!(conflicts);
+        assert!(exited);
+    }
+
     #[test]
     fn detects_vpn_policy_routes_and_occupied_resources() {
         let links =

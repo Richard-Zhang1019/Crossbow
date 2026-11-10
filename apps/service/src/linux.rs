@@ -1328,11 +1328,13 @@ fn connection(mut stream: UnixStream) -> Result<bool, String> {
     }
     loop {
         if STOP.load(Ordering::Relaxed) {
+            eprintln!("TUN session stopping on service shutdown");
             session.stop()?;
             return Ok(false);
         }
         if let Some(child) = session.child.as_mut() {
-            if child.try_wait().map_err(|e| e.to_string())?.is_some() {
+            if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+                eprintln!("TUN session stopping because mihomo exited: {status}");
                 session.stop()?;
                 let _ = reply(
                     &mut stream,
@@ -1341,6 +1343,7 @@ fn connection(mut stream: UnixStream) -> Result<bool, String> {
                 return Ok(false);
             }
             if let Err(error) = session.verify_network() {
+                eprintln!("TUN network verification failed: {error}");
                 let recovery = session.stop();
                 let _ = reply(
                     &mut stream,
@@ -1350,6 +1353,7 @@ fn connection(mut stream: UnixStream) -> Result<bool, String> {
                 return Ok(false);
             }
             if let Err(error) = session.verify_session() {
+                eprintln!("TUN session verification failed: {error}");
                 let recovery = session.stop();
                 let _ = reply(
                     &mut stream,
@@ -1375,7 +1379,8 @@ fn connection(mut stream: UnixStream) -> Result<bool, String> {
                 _ => reply(&mut stream, json!({"ok":false,"error":"unknown command"}))?,
             },
             Ok(None) => {}
-            Err(_) => {
+            Err(error) => {
+                eprintln!("TUN session stopping on control connection error: {error}");
                 session.stop()?;
                 return Ok(false);
             }
