@@ -1,3 +1,4 @@
+import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -9,6 +10,10 @@ export default defineConfig({
   resolve: {
     // 防止 dev 预打包出现两份 React（Invalid hook call 白屏）
     dedupe: ["react", "react-dom"],
+    // @/ → src/（与 tsconfig paths 保持一致）
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
   },
   optimizeDeps: {
     // 显式列出全部依赖，确保首轮一次性完成预打包。

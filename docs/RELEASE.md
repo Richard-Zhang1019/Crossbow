@@ -50,7 +50,7 @@
 
 - DMG 公证失败时保存提交结果，并按 submission id 获取 Apple 的详细日志；应用公证失败见 Tauri 构建步骤输出。
 - `release-diagnostics-*` / `startup-diagnostics` artifact 保留 7 天；验证后的发布产物保留 30 天。
-- 更新 sidecar 版本时，必须同步更新 `scripts/ci/download_sidecar.py` 的目标文件名、SHA-256 和 `core_download.rs` 的版本。摘要来自上游对应 Release 的资产 digest；镜像也必须通过同一摘要校验。
+- 更新 sidecar 版本时，必须同步更新 `scripts/ci/download_sidecar.py` 的目标文件名、SHA-256 和 `src-tauri/src/engine/download.rs` 的版本。摘要来自上游对应 Release 的资产 digest；镜像也必须通过同一摘要校验。
 - CI macOS `.app` 使用 tar 上传，以保留执行权限与符号链接；它是未正式签名的测试产物。
 - 下载全部发布文件后可执行：`shasum -a 256 -c SHA256SUMS`。SHA-256 便于检测文件损坏，不替代 Developer ID 和更新器签名。
 

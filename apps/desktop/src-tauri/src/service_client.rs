@@ -204,7 +204,7 @@ pub mod imp {
         binary: &Path,
     ) -> Result<impl FnOnce(&Path, &Path) -> Result<u32, String> + Send, String> {
         let selected = binary.canonicalize().map_err(|e| e.to_string())?;
-        if !crate::core_download::is_core_bin(&selected, "mihomo") {
+        if !crate::engine::download::is_core_bin(&selected, "mihomo") {
             return Err(
                 "Windows TUN 仅支持 mihomo 内核；当前引擎是 sing-box，请先在设置中切换".into(),
             );

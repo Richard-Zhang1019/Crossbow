@@ -32,7 +32,7 @@ python3 scripts/coordination.py status
 
 # 进入自己的工作分支、创建 issue 后认领；123/456 是示例编号
 python3 scripts/coordination.py claim --session codex --issue 123 \
-  --file apps/desktop/src/pages/Home.tsx --file apps/desktop/src/index.css \
+  --file apps/desktop/src/pages/Home --file apps/desktop/src/index.css \
   --summary "优化首页更新提示"
 
 # 推送工作分支、创建 PR 后完成本次任务
