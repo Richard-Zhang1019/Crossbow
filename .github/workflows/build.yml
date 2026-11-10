@@ -53,7 +53,7 @@ jobs:
       - run: cargo test --locked -p crossbow-service
       - run: cargo build --locked --release -p crossbow-service
       - run: cargo test --locked --lib -p crossbow-desktop
-      - run: node --experimental-strip-types --test apps/desktop/src/components/nodeFlags.test.mjs apps/desktop/src/components/fitGrid.test.mjs apps/desktop/src/pages/logHistory.test.mjs
+      - run: node --experimental-strip-types --test apps/desktop/src/components/NodeName/nodeFlags.test.mjs apps/desktop/src/components/FitItems/fitGrid.test.mjs apps/desktop/src/pages/Logs/logHistory.test.mjs
       - name: Build Linux executable (no public installer yet)
         working-directory: apps/desktop
         run: pnpm tauri build --no-bundle --config tauri.ci.conf.json
@@ -155,7 +155,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Node flag display tests
-        run: node --experimental-strip-types --test apps/desktop/src/components/nodeFlags.test.mjs apps/desktop/src/pages/logHistory.test.mjs
+        run: node --experimental-strip-types --test apps/desktop/src/components/NodeName/nodeFlags.test.mjs apps/desktop/src/pages/Logs/logHistory.test.mjs
 
       - name: Desktop backend tests
         run: cargo test --locked --lib --manifest-path apps/desktop/src-tauri/Cargo.toml

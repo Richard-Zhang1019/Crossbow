@@ -41,10 +41,10 @@ def github_request(url, accept='application/vnd.github+json'):
 
 
 def main():
-    runtime_source = (ROOT / 'apps/desktop/src-tauri/src/core_download.rs').read_text(encoding='utf-8')
+    runtime_source = (ROOT / 'apps/desktop/src-tauri/src/engine/download.rs').read_text(encoding='utf-8')
     runtime_version = re.search(r'CORE_VERSION: &str = "([^"]+)"', runtime_source)
     if runtime_version is None or runtime_version.group(1) != VERSION:
-        raise ValueError('CI sidecar version must match core_download.rs CORE_VERSION')
+        raise ValueError('CI sidecar version must match engine/download.rs CORE_VERSION')
     target = sys.argv[1]
     asset, digest = ASSETS[target]
     url = f'https://github.com/MetaCubeX/mihomo/releases/download/{VERSION}/{asset}'

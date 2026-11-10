@@ -145,7 +145,7 @@ class ReleaseChecks(unittest.TestCase):
         self.assertEqual(checks.source_version(self.root), '1.2.3')
 
     def test_windows_default_encoding_does_not_break_sidecar_download(self):
-        source = self.root / 'apps/desktop/src-tauri/src/core_download.rs'
+        source = self.root / 'apps/desktop/src-tauri/src/engine/download.rs'
         source.parent.mkdir(parents=True)
         source.write_text('# 源码包含中文注释\npub const CORE_VERSION: &str = "v1.19.32";', encoding='utf-8')
         # Prove this fixture reproduces the hosted runner's cp1252 failure.

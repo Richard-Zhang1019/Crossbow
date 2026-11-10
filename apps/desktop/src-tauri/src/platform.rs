@@ -1,5 +1,11 @@
 //! Capabilities of this build, shared by commands, diagnostics and the UI.
 //! Linux keeps system proxy settings untouched; TUN uses its separate service.
+//!
+//! 平台窗口行为细节位于子模块（platform/window_focus.rs、platform/windows_appearance.rs）。
+
+pub mod window_focus;
+#[cfg(windows)]
+pub mod windows_appearance;
 
 #[derive(Debug, Clone, Copy, serde::Serialize)]
 pub struct Capabilities {
@@ -42,9 +48,12 @@ pub fn validate_config(engine: crossbow_core::Engine, config: &str) -> Result<()
                 })
         }
         crossbow_core::Engine::SingBox => {
-            let value: serde_json::Value = serde_json::from_str(config).map_err(|e| e.to_string())?;
+            let value: serde_json::Value =
+                serde_json::from_str(config).map_err(|e| e.to_string())?;
             value["inbounds"].as_array().is_some_and(|inbounds| {
-                inbounds.iter().any(|inbound| inbound["type"].as_str() == Some("tun"))
+                inbounds
+                    .iter()
+                    .any(|inbound| inbound["type"].as_str() == Some("tun"))
             })
         }
     };
