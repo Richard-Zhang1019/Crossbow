@@ -22,10 +22,96 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')) }}
 
 jobs:
+  changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      rust: ${{ steps.final.outputs.rust }}
+      frontend: ${{ steps.final.outputs.frontend }}
+    steps:
+      # 路径门控只作用于 PR：push 与 workflow_call（发版链路）始终全量运行，
+      # 由下面 final 步强制置 true，发版门禁不受影响。
+      - uses: actions/checkout@v7
+        if: github.event_name == 'pull_request'
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: dorny/paths-filter@15192bc058cc28a13dbf6cde61f19e18988b7af6 # v3
+        if: github.event_name == 'pull_request'
+        id: filter
+        with:
+          filters: |
+            rust:
+              - 'crates/**'
+              - 'apps/service/**'
+              - 'apps/desktop/src-tauri/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - '.cargo/**'
+              - 'scripts/ci/**'
+              - '.github/workflows/build.yml'
+            frontend:
+              - 'apps/desktop/src/**'
+              - 'apps/desktop/index.html'
+              - 'apps/desktop/package.json'
+              - 'apps/desktop/vite.config.ts'
+              - 'apps/desktop/tsconfig.json'
+              - 'pnpm-lock.yaml'
+      - id: final
+        env:
+          EVENT: ${{ github.event_name }}
+          FILTER_RUST: ${{ steps.filter.outputs.rust }}
+          FILTER_FRONTEND: ${{ steps.filter.outputs.frontend }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            echo "rust=${FILTER_RUST:-false}" >> "$GITHUB_OUTPUT"
+            echo "frontend=${FILTER_FRONTEND:-false}" >> "$GITHUB_OUTPUT"
+          else
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  frontend:
+    name: Frontend (typecheck, build, tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [changes]
+    # 纯前端 PR：跳过三平台桌面矩阵，用轻量 Linux job 反馈 tsc/vite/前端测试。
+    if: needs.changes.outputs.frontend == 'true' && needs.changes.outputs.rust != 'true'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+        with:
+          version: 9
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck and build frontend
+        working-directory: apps/desktop
+        run: npm run build
+      - name: Frontend node tests
+        run: |
+          node --experimental-strip-types --test \
+            apps/desktop/src/lib/stateReliability.test.mjs \
+            apps/desktop/src/lib/workflow.test.mjs \
+            apps/desktop/src/layouts/layout.test.mjs \
+            apps/desktop/src/components/Button/buttonUsage.test.mjs \
+            apps/desktop/src/components/NodeName/nodeFlags.test.mjs \
+            apps/desktop/src/components/FitItems/fitGrid.test.mjs \
+            apps/desktop/src/pages/Logs/logHistory.test.mjs \
+            apps/desktop/src/pages/Logs/logReading.test.mjs
+
   linux-foundation:
     name: Linux foundation (build and tests)
     runs-on: ubuntu-24.04
     timeout-minutes: 35
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
     env:
       CARGO_BUILD_JOBS: 2
     steps:
@@ -53,7 +139,7 @@ jobs:
       - run: cargo test --locked -p crossbow-service
       - run: cargo build --locked --release -p crossbow-service
       - run: cargo test --locked --lib -p crossbow-desktop
-      - run: node --experimental-strip-types --test apps/desktop/src/components/nodeFlags.test.mjs apps/desktop/src/components/fitGrid.test.mjs apps/desktop/src/pages/logHistory.test.mjs
+      - run: node --experimental-strip-types --test apps/desktop/src/components/NodeName/nodeFlags.test.mjs apps/desktop/src/components/FitItems/fitGrid.test.mjs apps/desktop/src/pages/Logs/logHistory.test.mjs
       - name: Build Linux executable (no public installer yet)
         working-directory: apps/desktop
         run: pnpm tauri build --no-bundle --config tauri.ci.conf.json
@@ -95,6 +181,8 @@ jobs:
       matrix:
         os: [macos-15, windows-2022]
     runs-on: ${{ matrix.os }}
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -116,7 +204,8 @@ jobs:
           - os: windows-2022
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
-    needs: [pipeline-check, core-test]
+    needs: [changes, pipeline-check, core-test]
+    if: needs.changes.outputs.rust == 'true'
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
@@ -155,7 +244,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Node flag display tests
-        run: node --experimental-strip-types --test apps/desktop/src/components/nodeFlags.test.mjs apps/desktop/src/pages/logHistory.test.mjs
+        run: node --experimental-strip-types --test apps/desktop/src/components/NodeName/nodeFlags.test.mjs apps/desktop/src/pages/Logs/logHistory.test.mjs
 
       - name: Desktop backend tests
         run: cargo test --locked --lib --manifest-path apps/desktop/src-tauri/Cargo.toml

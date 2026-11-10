@@ -204,7 +204,7 @@ pub mod imp {
         binary: &Path,
     ) -> Result<impl FnOnce(&Path, &Path) -> Result<u32, String> + Send, String> {
         let selected = binary.canonicalize().map_err(|e| e.to_string())?;
-        if !crate::core_download::is_core_bin(&selected, "mihomo") {
+        if !crate::engine::download::is_core_bin(&selected, "mihomo") {
             return Err(
                 "Windows TUN 仅支持 mihomo 内核；当前引擎是 sing-box，请先在设置中切换".into(),
             );
@@ -246,7 +246,7 @@ pub mod imp {
     /// Elevated service installation belongs to the signed installer, never an
     /// arbitrary portable/user-writable executable path from the GUI.
     pub fn install_elevated() -> Result<(), String> {
-        Err("Windows TUN 需要完整安装：请重新运行 Crossbow 安装程序，以管理员权限安装到 Program Files".into())
+        Err("Windows TUN 需要完整安装：请以管理员权限重新运行 Crossbow 安装程序完成安装".into())
     }
 }
 

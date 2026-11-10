@@ -1,4 +1,4 @@
-import { ButtonBase, Button } from "../components/Button";
+import { ButtonBase, Button } from "@/components/Button";
 import {
   createContext,
   useContext,
@@ -10,10 +10,10 @@ import {
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { currentLang, initLang, useT } from "../i18n";
-import { ProgressRing } from "../components/ProgressRing";
-import { Icon } from "../components/Icon";
-import { ipc } from "../ipc";
+import { currentLang, initLang, useT } from "@/i18n/i18n";
+import { ProgressRing } from "@/components/ProgressRing";
+import { Icon } from "@/components/Icon";
+import { ipc } from "@/services/ipc";
 import {
   notificationText as text,
   type Notification,

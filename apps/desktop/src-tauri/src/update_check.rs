@@ -297,6 +297,7 @@ pub fn update_settings(app: &AppHandle) -> (bool, bool) {
 }
 
 /// 设置页展示用的双语摘要（托盘菜单项标题同源）。
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub fn tray_label(app: &AppHandle) -> Option<String> {
     let info = current(app)?;
     let lang = app

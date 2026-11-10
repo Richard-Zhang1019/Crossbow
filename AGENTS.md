@@ -19,7 +19,7 @@
 3. **提交**：禁止 `git add -A`；逐文件 `git add <path>`；commit message
    用约定式格式并关联 issue（`Closes #NN` / `Refs #NN`）。
 4. **禁止**：
-   - 直接推送 `main` / `master`，包括代码、文档、协作规则和历史记录；
+   - 直接推送 `main`，包括代码、文档、协作规则和历史记录；
    - 切换他人认领中的分支，或修改他人的 worktree；
    - force-push `main` 或他人分支；
    - 未经用户确认自行合并 PR；

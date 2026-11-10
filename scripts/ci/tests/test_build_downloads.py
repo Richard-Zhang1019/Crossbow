@@ -63,7 +63,7 @@ class BuildDownloadsTests(unittest.TestCase):
     def test_api_fallback_authenticates_metadata_and_asset_without_redirecting_token(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            source = root / 'apps/desktop/src-tauri/src/core_download.rs'
+            source = root / 'apps/desktop/src-tauri/src/engine/download.rs'
             source.parent.mkdir(parents=True)
             source.write_text('pub const CORE_VERSION: &str = "v1.19.32";', encoding='utf-8')
             data = gzip.compress(b'fixture-mihomo')

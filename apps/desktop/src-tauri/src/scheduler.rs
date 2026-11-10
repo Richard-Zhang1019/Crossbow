@@ -5,8 +5,8 @@
 //! 失败后按指数退避重试（15min 起，×2，封顶 6h）。
 
 use std::collections::HashMap;
-use std::time::Duration;
 use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -33,10 +33,32 @@ struct RetryState {
     fails: HashMap<String, (u32, u64)>,
 }
 
-fn shared_retry() -> &'static Mutex<RetryState> { static VALUE: OnceLock<Mutex<RetryState>> = OnceLock::new(); VALUE.get_or_init(|| Mutex::new(RetryState::default())) }
-pub fn retry_at(id: &str) -> Option<u64> { shared_retry().lock().unwrap_or_else(|e|e.into_inner()).fails.get(id).map(|v|v.1) }
-pub fn clear_all_retries() {shared_retry().lock().unwrap_or_else(|e|e.into_inner()).fails.clear();}
-pub fn clear_retry(id: &str) { shared_retry().lock().unwrap_or_else(|e|e.into_inner()).fails.remove(id); }
+fn shared_retry() -> &'static Mutex<RetryState> {
+    static VALUE: OnceLock<Mutex<RetryState>> = OnceLock::new();
+    VALUE.get_or_init(|| Mutex::new(RetryState::default()))
+}
+pub fn retry_at(id: &str) -> Option<u64> {
+    shared_retry()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .fails
+        .get(id)
+        .map(|v| v.1)
+}
+pub fn clear_all_retries() {
+    shared_retry()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .fails
+        .clear();
+}
+pub fn clear_retry(id: &str) {
+    shared_retry()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .fails
+        .remove(id);
+}
 
 /// 判定某 Profile 本次 tick 是否到期。
 fn is_due(profile: &crossbow_core::Profile, retry: Option<&(u32, u64)>, now: u64) -> bool {
@@ -71,18 +93,20 @@ impl NonZeroInterval {
 
 /// 后台线程入口：随应用启动，随进程退出结束。
 pub fn spawn(app: AppHandle) {
-    std::thread::spawn(move || {
-        loop {
-            std::thread::sleep(Duration::from_secs(TICK_SECS));
-            tick(&app);
-        }
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_secs(TICK_SECS));
+        tick(&app);
     });
 }
 
 fn tick(app: &AppHandle) {
     let state = app.state::<crate::AppState>();
     let now = now_secs();
-    let retry = shared_retry().lock().unwrap_or_else(|e|e.into_inner()).fails.clone();
+    let retry = shared_retry()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .fails
+        .clone();
 
     // 1) 快照到期列表（短锁，不做网络）
     let due: Vec<String> = {
@@ -109,7 +133,7 @@ fn tick(app: &AppHandle) {
                 crate::notifications::resolve(app, &format!("profile-auto-update-{id}"));
             }
             Err(e) => {
-                let mut retries = shared_retry().lock().unwrap_or_else(|e|e.into_inner());
+                let mut retries = shared_retry().lock().unwrap_or_else(|e| e.into_inner());
                 let entry = retries.fails.entry(id.clone()).or_insert((0, 0));
                 entry.0 = entry.0.saturating_add(1);
                 let delay = backoff_delay_secs(entry.0);

@@ -11,7 +11,7 @@
 | 自动选择组手动固定与恢复自动 | `apps/desktop/src/pages/Proxies.tsx` 的 automaticGroup、restoreAutomatic | 功能详解节点部分 |
 | 逐项诊断进度、通过/失败/跳过、首个阻塞项与后续操作 | `apps/desktop/src/pages/Diagnostics.tsx` 的 DIAG_STEPS 和 first blocker | 首页诊断摘要、功能详解、排障指南 |
 | 完整连接详情、逐字段/整体复制、搜索排序与暂停刷新 | `apps/desktop/src/pages/Connections.tsx` 的 connectionDetails 和 Dialog | 功能详解观测、排障指南 |
-| 日志级别多选、关键词、暂停跟随/返回底部、单条复制与当前筛选结果脱敏导出 | `apps/desktop/src/pages/Logs.tsx`；`apps/desktop/src-tauri/src/workflow.rs` 的 export_log_lines | 功能详解观测、排障指南 |
+| 日志级别多选、关键词、暂停跟随/返回底部、单条复制与当前筛选结果脱敏导出 | `apps/desktop/src/pages/Logs/index.tsx`；`apps/desktop/src-tauri/src/workflow.rs` 的 export_log_lines | 功能详解观测、排障指南 |
 | 站点测试时间、出口、链路变化和 HTTP 限制响应的含义 | `apps/desktop/src/components/SiteConnectivity.tsx` 的 testedAt、outbound、pathChanged | 功能详解观测、排障指南 |
 | 配置恢复入口、快照时间和数量、恢复范围及重启影响 | `apps/desktop/src/components/ConfigRecovery.tsx`；`crates/crossbow-core/src/store.rs`；`workflow.rs` 的 restore_config_snapshot | 新增功能详解恢复部分与指南恢复流程 |
 | 手动检查只检查版本，下载需确认；自动下载仅用于定时检查 | `apps/desktop/src-tauri/src/lib.rs` 的 update_check_now 使用 check_once(false, false)；`update_check.rs` 的定时任务；Settings.tsx | 新增功能详解更新部分与指南更新流程 |

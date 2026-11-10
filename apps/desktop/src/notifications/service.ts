@@ -1,6 +1,6 @@
-import { notificationDestination } from "../workflow";
+import { notificationDestination } from "@/lib/workflow";
 import { invoke } from "@tauri-apps/api/core";
-import { currentLang } from "../i18n";
+import { currentLang } from "@/i18n/i18n";
 
 export type NotificationKind =
   | "success"
