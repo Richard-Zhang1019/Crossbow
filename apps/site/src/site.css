@@ -190,8 +190,25 @@ main:focus { outline: none; }
 .guide-step > div { min-width: 0; }
 .guide-step h3 { color: var(--text); font-size: 16px; margin-bottom: 8px; }
 .code-block { font: 13px/1.8 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-2); border-radius: 8px; padding: 20px; margin-block: 20px; }
-/* 404：在页头页脚之间的剩余视口里竖直居中，断路示意图 + 可达目的地 */
-.nf { min-height: 58svh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding-block: 64px 96px; }
+/* 404：页头页脚之间的剩余视口里竖直居中，断路示意图 + 可达目的地。
+   404 是全站唯一内容可能矮于视口的页面：body 撑满视口、main 弹性占满、
+   页脚始终吸底（:has 门控，长内容页面零影响）。 */
+body:has(.nf) { display: flex; flex-direction: column; min-height: 100svh; }
+/* main 的全局 min-height:65svh 在矮视口会顶破弹性分配，404 高度交给 flex:1 */
+body:has(.nf) main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* 页脚在长页面用 margin-top 分隔；404 的弹性布局里 main 已撑满，margin
+   不折叠会精确计入高度把页脚顶出视口，归零。 */
+body:has(.nf) .site-footer { margin-top: 0; }
+.nf { flex: 1; justify-content: center; display: flex; flex-direction: column; align-items: center; text-align: center; padding-block: 64px 96px; }
+/* 矮视口收紧内边距：内容 + 页头页脚仍能收进一屏，页脚保持吸底 */
+@media (max-height: 840px) {
+  .nf { padding-block: 28px 44px; }
+  .nf-art { margin-bottom: 16px; }
+}
+@media (max-height: 760px) {
+  .nf { padding-block: 10px 20px; }
+  .nf-art { margin-bottom: 6px; width: min(230px, 52vw); }
+}
 .nf-art { width: min(280px, 64vw); height: auto; margin-bottom: 24px; }
 .nf-dot { fill: var(--accent); }
 .nf-dot-rest { fill: var(--line-strong); }
