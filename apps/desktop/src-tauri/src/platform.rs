@@ -3,6 +3,7 @@
 //!
 //! 平台窗口行为细节位于子模块（platform/window_focus.rs、platform/windows_appearance.rs）。
 
+pub mod process_resolve;
 pub mod window_focus;
 #[cfg(windows)]
 pub mod windows_appearance;

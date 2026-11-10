@@ -229,7 +229,10 @@ impl WsHub {
                             if last_emit.elapsed() < CONN_MIN_INTERVAL {
                                 return;
                             }
-                            if let Some(payload) = compact_connections(&txt) {
+                            if let Some(payload) = compact_connections(
+                                &txt,
+                                Some(&crate::platform::process_resolve::resolve_processes),
+                            ) {
                                 last_emit = Instant::now();
                                 emit(EV_CONNECTIONS, payload);
                             }
@@ -486,10 +489,37 @@ struct ConnPayload {
 }
 
 /// mihomo connections 快照 → 紧凑结构（字段裁剪让大快照的 IPC 载荷可控）。
-fn compact_connections(raw: &str) -> Option<serde_json::Value> {
+/// `process_fallback`：mihomo 进程识别缺失时按源端口批量补齐（#418，macOS
+/// 全失效 / Windows UDP 竞态）；传 None 跳过补齐（测试路径）。
+fn compact_connections(
+    raw: &str,
+    process_fallback: Option<&dyn Fn(&[u16]) -> std::collections::HashMap<u16, String>>,
+) -> Option<serde_json::Value> {
     let v: serde_json::Value = serde_json::from_str(raw).ok()?;
     let now_ms = now_unix_ms();
     let mut rows = Vec::new();
+    // 先收集需要补齐的源端口（进程为空且非内核自身出站），一次批量反查。
+    let mut missing_ports: Vec<u16> = Vec::new();
+    if process_fallback.is_some() {
+        if let Some(conns) = v.get("connections").and_then(|c| c.as_array()) {
+            for c in conns {
+                let md = c.get("metadata").cloned().unwrap_or_default();
+                let str_at = |k: &str| md.get(k).and_then(|x| x.as_str()).unwrap_or("");
+                if !str_at("processPath").is_empty() {
+                    continue;
+                }
+                // 源端口 0（TUN 场景无本机 socket）没有反查意义。
+                if let Ok(port) = str_at("sourcePort").parse::<u16>() {
+                    if port != 0 {
+                        missing_ports.push(port);
+                    }
+                }
+            }
+        }
+    }
+    let resolved = process_fallback
+        .map(|f| f(&missing_ports))
+        .unwrap_or_default();
     if let Some(conns) = v.get("connections").and_then(|c| c.as_array()) {
         for c in conns {
             let md = c.get("metadata").cloned().unwrap_or_default();
@@ -502,6 +532,17 @@ fn compact_connections(raw: &str) -> Option<serde_json::Value> {
                 } else {
                     format!("{h}:{port}")
                 }
+            };
+            // 进程补齐：内核没给时用反查表；反查命中的进程可能就是 mihomo
+            // 自身（内核自身出站连接），这正好如实呈现，无需排除。
+            let process_path = if str_at("processPath").is_empty() {
+                str_at("sourcePort")
+                    .parse::<u16>()
+                    .ok()
+                    .and_then(|p| resolved.get(&p).cloned())
+                    .unwrap_or_default()
+            } else {
+                str_at("processPath").to_string()
             };
             rows.push(ConnRow {
                 id: c
@@ -532,12 +573,12 @@ fn compact_connections(raw: &str) -> Option<serde_json::Value> {
                 down: c.get("download").and_then(|x| x.as_u64()).unwrap_or(0),
                 network: str_at("network").to_string(),
                 kind: str_at("type").to_string(),
-                process_path: str_at("processPath").to_string(),
-                process: str_at("processPath")
+                process: process_path
                     .rsplit(['/', '\\'])
                     .next()
                     .unwrap_or("")
                     .to_string(),
+                process_path,
                 elapsed_ms: c
                     .get("start")
                     .and_then(|x| x.as_str())
@@ -685,12 +726,16 @@ pub(crate) mod tests {
 
     #[test]
     fn missing_connection_metrics_stay_null_and_zero_stays_zero() {
-        let data = compact_connections(r#"{"connections":[{"id":"missing"},{"id":"future","start":"9999-01-01T00:00:00Z"}],"memory":0}"#).unwrap();
+        let data = compact_connections(
+            r#"{"connections":[{"id":"missing"},{"id":"future","start":"9999-01-01T00:00:00Z"}],"memory":0}"#,
+            None,
+        )
+        .unwrap();
         assert_eq!(data["memory"], 0);
         assert!(data["upload_total"].is_null());
         assert!(data["rows"][0]["elapsed_ms"].is_null());
         assert!(data["rows"][1]["elapsed_ms"].is_null());
-        assert!(compact_connections(r#"{"connections":[]}"#).unwrap()["memory"].is_null());
+        assert!(compact_connections(r#"{"connections":[]}"#, None).unwrap()["memory"].is_null());
     }
 
     #[test]
@@ -846,7 +891,7 @@ pub(crate) mod tests {
                           "destinationPort": "443", "processPath": "/Applications/Curl.app/x/curl" }
           }]
         }"#;
-        let v: serde_json::Value = compact_connections(raw).unwrap();
+        let v: serde_json::Value = compact_connections(raw, None).unwrap();
         let row = &v["rows"][0];
         assert_eq!(row["host"], "example.com:443");
         assert_eq!(row["rule"], "DomainSuffix example.com");
@@ -857,11 +902,63 @@ pub(crate) mod tests {
         assert_eq!(v["memory"], 2048);
     }
 
+    /// #418：内核进程元数据缺失时按源端口走 fallback 反查；命中与未命中
+    /// 各留原始形态（命中 → 进程名，未命中 → 空串）。
+    #[test]
+    fn compact_connections_falls_back_to_port_resolver() {
+        let raw = r#"{
+          "connections": [{
+            "id": "c1", "metadata": { "network": "tcp", "type": "HTTPS",
+                          "host": "example.com", "destinationPort": "443",
+                          "sourcePort": "59478" }
+          },{
+            "id": "c2", "metadata": { "network": "tcp", "type": "HTTPS",
+                          "host": "unknown.test", "destinationPort": "443",
+                          "sourcePort": "1234" }
+          },{
+            "id": "c3", "metadata": { "network": "tcp", "type": "HTTPS",
+                          "host": "hasproc.test", "destinationPort": "443",
+                          "processPath": "/Applications/Safari.app/Safari" }
+          }]
+        }"#;
+        let resolved = |ports: &[u16]| {
+            assert_eq!(ports, &[59478, 1234], "应只批量反查缺失且端口非零的连接");
+            let mut m = std::collections::HashMap::new();
+            m.insert(59478u16, "Safari".to_string());
+            m
+        };
+        let v: serde_json::Value = compact_connections(raw, Some(&resolved)).unwrap();
+        let rows = v["rows"].as_array().unwrap();
+        assert_eq!(rows[0]["process"], "Safari");
+        assert_eq!(rows[1]["process"], "");
+        assert_eq!(rows[2]["process"], "Safari");
+    }
+
+    /// TUN 场景 sourcePort=0 无本机 socket，不应进入反查列表。
+    #[test]
+    fn compact_connections_skips_zero_source_port() {
+        let raw = r#"{
+          "connections": [{
+            "id": "tun", "metadata": { "network": "tcp", "type": "HTTPS",
+                          "host": "tun.test", "destinationPort": "443",
+                          "sourcePort": "0" }
+          }]
+        }"#;
+        let resolved = |ports: &[u16]| {
+            assert!(ports.is_empty(), "零端口不应参与反查");
+            std::collections::HashMap::new()
+        };
+        let v: serde_json::Value = compact_connections(raw, Some(&resolved)).unwrap();
+        assert_eq!(v["rows"][0]["process"], "");
+    }
+
     #[test]
     fn compact_connections_handles_empty() {
-        let v: serde_json::Value =
-            compact_connections(r#"{"downloadTotal":0,"uploadTotal":0,"connections":null}"#)
-                .unwrap();
+        let v: serde_json::Value = compact_connections(
+            r#"{"downloadTotal":0,"uploadTotal":0,"connections":null}"#,
+            None,
+        )
+        .unwrap();
         assert_eq!(v["rows"].as_array().unwrap().len(), 0);
     }
 
