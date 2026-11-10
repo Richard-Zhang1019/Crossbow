@@ -16,6 +16,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt as _};
 use tauri_plugin_deep_link::DeepLinkExt as _;
 
+mod activity_reporting;
 mod diagnostics;
 mod engine;
 mod lifecycle;
@@ -60,6 +61,7 @@ pub struct AppState {
     /// 页面与托盘的选节点/恢复自动事务串行，避免解除固定与选择互相覆盖。
     proxy_op: Mutex<()>,
     sysproxy: SysProxyManager,
+    activity_reporting: activity_reporting::Reporter,
     /// 内核运行模式：direct / rule / global。
     mode: Mutex<String>,
     #[cfg(not(target_os = "macos"))]
@@ -1947,6 +1949,19 @@ async fn test_node_delay(state: State<'_, AppState>, node: String) -> Result<u64
 #[tauri::command]
 fn get_ui_settings(state: State<AppState>) -> UiSettings {
     state.store.lock().unwrap().data().ui.clone()
+}
+
+#[tauri::command]
+fn get_activity_reporting(state: State<AppState>) -> bool {
+    state.activity_reporting.enabled()
+}
+
+#[tauri::command]
+fn set_activity_reporting(state: State<AppState>, enabled: bool) -> Result<(), String> {
+    state
+        .activity_reporting
+        .set_enabled(enabled)
+        .map_err(|error| error.to_string())
 }
 
 #[derive(serde::Serialize)]
@@ -4384,6 +4399,7 @@ pub fn run() {
                 #[cfg(not(target_os = "macos"))]
                 tray: Mutex::new(None),
                 ws: WsHub::default(),
+                activity_reporting: activity_reporting::Reporter::open(&data_dir),
                 data_dir: data_dir.clone(),
                 app: app.handle().clone(),
                 update: Mutex::new(update_settings_init),
@@ -4443,6 +4459,7 @@ pub fn run() {
             spawn_logs_sweeper(app.handle());
             // 更新检查线程（启动 30s 后首查，之后每 6h）
             update_check::spawn_checker(app.handle());
+            activity_reporting::spawn(app.handle());
             #[cfg(target_os = "macos")]
             refresh_tray_nodes(app.handle(), false);
 
@@ -4574,6 +4591,8 @@ pub fn run() {
             set_update_auto_download,
             set_lang,
             set_lightweight_close,
+            get_activity_reporting,
+            set_activity_reporting,
             set_mixed_port,
             set_allow_lan,
             autostart_status,
