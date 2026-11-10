@@ -307,6 +307,9 @@ export const ipc = {
   setLang: (lang: string) => invoke<void>("set_lang", { lang }),
   setLightweightClose: (enabled: boolean) =>
     invoke<void>("set_lightweight_close", { enabled }),
+  getActivityReporting: () => invoke<boolean>("get_activity_reporting"),
+  setActivityReporting: (enabled: boolean) =>
+    invoke<void>("set_activity_reporting", { enabled }),
   setMixedPort: (port: number) => invoke<void>("set_mixed_port", { port }),
   tunStatus: () =>
     invoke<{ enabled: boolean; ready: boolean; coreRunning: boolean }>("tun_status"),

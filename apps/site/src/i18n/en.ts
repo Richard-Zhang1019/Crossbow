@@ -27,6 +27,8 @@ export default {
   "home.25": ". iOS is being tested on physical devices and is not publicly distributed yet.",
   "home.26": "Will an upgrade keep my configuration?",
   "home.27": "On macOS, data stays in ~/Library/Application Support/com.richard.crossbow/. Older com.crossbow.app data is migrated during upgrades. Snapshots are created before saving, but a separate backup before upgrading is still recommended.",
+  "home.usageStatsQuestion": "What does anonymous usage reporting collect?",
+  "home.usageStatsAnswer": "On desktop versions that support usage statistics, reporting is on by default. It sends only the date, platform, app version, and a random ID that changes daily to prevent double counting. Reports contain no subscription URLs, proxy nodes, browsing history, account details, or hardware identifiers. The metrics database does not store IP addresses. Turn reporting off at any time in Settings → Application & updates → Anonymous usage statistics.",
   "home.28": "It says \"running\", but the browser can't open websites?",
   "home.29": "A running core ≠ a working browser. Open the",
   "home.30": ", then work through the first blocking item (system proxy target, TUN, DNS); more evidence-based troubleshooting in",

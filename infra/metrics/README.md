@@ -1,4 +1,4 @@
-# Crossbow 下载量和 Star 快照
+# Crossbow 项目统计
 
 Worker 每天北京时间 00:05 读取公开的 GitHub Release 和仓库数据，在 D1 写入一条完整快照。范围包括正式版的 Windows 安装包、macOS DMG 和 Linux 安装归档。签名、更新索引、校验文件和独立更新归档不计入。Windows 更新器也会下载同一个安装包，GitHub 无法区分这部分请求。
 
@@ -44,4 +44,20 @@ ORDER BY day DESC
 LIMIT 7;
 ```
 
-Worker 的定时触发器和数据库绑定均以 `wrangler.jsonc` 为准。若查询没有记录，检查 Worker 的 Cron 运行结果；GitHub 或 D1 请求失败时会保留已有快照，失败的日期不会写入半份数据。当前 HTTP 路由只提供健康检查。
+Worker 的定时触发器和数据库绑定均以 `wrangler.jsonc` 为准。若查询没有记录，检查 Worker 的 Cron 运行结果；GitHub 或 D1 请求失败时会保留已有快照，失败的日期不会写入半份数据。
+
+## 每日活跃设备
+
+桌面端默认开启，可随时在「设置 → 应用与更新 → 匿名使用统计」关闭。按北京时间每天先尝试一次不使用显式代理的请求。当天尚未成功且 Crossbow 内核和系统代理或 TUN 已就绪时，改用本地混合端口补报。两条路径各有一次首发和最多五次重试，重试间隔依次为 1、2、5、15、30 分钟。代理关闭期间不消耗代理重试次数。当天成功后停止上报，重启应用也不会重复发送。
+
+`POST /api/v1/active` 只接收 JSON 中的 `day`（北京时间当天对应的 Unix 日序号）、`daily_id`（当日生成的 32 位十六进制随机标识）、`platform`（`macos`、`windows`、`linux`）和 `version`（应用版本）。首次写入及重复请求均返回 HTTP 204。D1 每天清理过期去重记录，保留最近 7 天的记录和历史汇总。数据库不保存 IP、订阅、节点或访问记录。Worker 的部署配置关闭了请求日志和跟踪。指标统计的是开启统计且成功上报的活跃安装数。
+
+请在分发带统计开关的客户端前先应用远程迁移并重新部署 Worker。部署后的汇总可在 D1 控制台查询：
+
+```sql
+SELECT date(day * 86400, 'unixepoch') AS beijing_day, SUM(devices) AS active_devices
+FROM activity_daily_totals
+GROUP BY day
+ORDER BY day DESC
+LIMIT 7;
+```

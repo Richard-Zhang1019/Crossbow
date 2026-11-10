@@ -43,6 +43,12 @@ macOS 测试网络配置时可先阅读 [TUN 离线恢复说明](docs/TUN-RECOVE
 macOS 配置和日志位于 `~/Library/Application Support/com.richard.crossbow/`。旧版
 `com.crossbow.app` 数据会自动迁移，升级前仍建议备份数据目录。
 
+## 匿名使用统计
+
+支持使用统计的桌面版本默认开启此功能。Crossbow 仅上报日期、系统平台、应用版本和每天更换的随机标识。随机标识只用于当天去重，无法用于跨天追踪同一安装。
+
+上报不包含订阅链接、代理节点、访问记录、账号信息或硬件标识。统计数据库不保存 IP 地址。你可以随时在「设置 → 应用与更新 → 匿名使用统计」关闭。
+
 ## 开发
 
 依赖 Node.js 20+、pnpm 和 Rust stable；macOS 本地构建还需 Xcode Command Line Tools。

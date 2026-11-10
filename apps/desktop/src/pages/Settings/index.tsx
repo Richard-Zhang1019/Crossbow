@@ -37,6 +37,7 @@ export default function SettingsPage({
   const portInFlight = useRef(false);
   const [portInvalid, setPortInvalid] = useState(false);
   const [theme, setTheme] = useState<UiSettings["theme"]>("system");
+  const [activityReporting, setActivityReporting] = useState(false);
   const [autostart, setAutostart] = useState(false);
   const [appVersion, setAppVersion] = useState<string>("…");
   const [version, setVersion] = useState<string>("…");
@@ -78,7 +79,7 @@ export default function SettingsPage({
 
   const [settingsKnown, setSettingsKnown] = useState<Set<string>>(new Set());
   const [settingsErrors, setSettingsErrors] = useState<Set<string>>(new Set());
-  const requiredSettings = { network: ["engine", "tun", "binary"], appearance: ["ui"], logs: ["logs"], app: ["ui", "autostart", "updates"] }[section];
+  const requiredSettings = { network: ["engine", "tun", "binary"], appearance: ["ui"], logs: ["logs"], app: ["ui", "autostart", "activity", "updates"] }[section];
   const settingsReady = requiredSettings.every(key => settingsKnown.has(key) && !settingsErrors.has(key));
   const settingsReadFailed = requiredSettings.some(key => settingsErrors.has(key));
   useEffect(()=>{
@@ -124,6 +125,7 @@ export default function SettingsPage({
         if (!engineTouched.current) { setSelectedEngine(e.engine); selectedEngineRef.current = e.engine; }
       }),
       read("ui", ipc.getUiSettings, ui => { setLangState(ui.lang as "zh" | "en"); setLightweight(ui.lightweight_close); setTheme(ui.theme); }),
+      read("activity", ipc.getActivityReporting, setActivityReporting),
       read("autostart", ipc.autostartStatus, setAutostart),
       read("tun", ipc.tunStatus, value => setTun({ ...value, enabled: latestTunEvent.current ?? value.enabled })),
       read("logs", ipc.logsSettings, lg => { setLogsSave(lg.save_enabled); setLogsRetention(lg.retention_days); }),
@@ -650,6 +652,19 @@ export default function SettingsPage({
                   v ? t("settings.autostartOn") : t("settings.autostartOff"),
                 );
               }}
+            />
+          </Row>
+          <Row label={t("settings.activityReporting")} hint={t("settings.activityReportingHint")}>
+            <Switch
+              checked={activityReporting}
+              onChange={(enabled) =>
+                saveSetting(
+                  "activityReporting",
+                  t("settings.activityReporting"),
+                  () => ipc.setActivityReporting(enabled),
+                  () => setActivityReporting(enabled),
+                )
+              }
             />
           </Row>
         </Group><Group title={t("layout.maintenance")}>

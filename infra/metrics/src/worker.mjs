@@ -1,3 +1,5 @@
+import { pruneActivity, receiveActivity } from "./activity.mjs";
+
 const GITHUB_API = "https://api.github.com";
 const REPOSITORY = `${GITHUB_API}/repos/Richard-Zhang1019/Crossbow`;
 const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000;
@@ -88,8 +90,9 @@ export async function collectSnapshot(db, scheduledTime, request = fetch) {
 }
 
 export default {
-  fetch(request) {
+  fetch(request, env) {
     const { pathname } = new URL(request.url);
+    if (pathname === "/api/v1/active") return receiveActivity(request, env.DB);
     if (pathname !== "/" && pathname !== "/healthz") {
       return new Response(null, { status: 404 });
     }
@@ -98,7 +101,9 @@ export default {
     }
     return Response.json({ service: "crossbow-metrics", status: "ok" });
   },
-  async scheduled(controller, env) {
-    console.log("GitHub snapshot", await collectSnapshot(env.DB, controller.scheduledTime));
+  scheduled(controller, env, ctx) {
+    const time = controller.scheduledTime;
+    ctx.waitUntil(collectSnapshot(env.DB, time).then(snapshot => console.log("GitHub snapshot", snapshot)));
+    ctx.waitUntil(pruneActivity(env.DB, time));
   },
 };

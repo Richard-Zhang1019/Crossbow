@@ -56,6 +56,12 @@ first; recovery commands need a still-running backup proxy. macOS configs and lo
 `com.crossbow.app` directory migrates automatically; backing up the data directory before
 upgrading is still recommended.
 
+## Anonymous usage statistics
+
+On desktop versions that support usage statistics, the setting is on by default. Crossbow sends only the date, platform, app version, and a random ID that changes daily. The ID prevents double counting and cannot track an installation across days.
+
+Reports contain no subscription URLs, proxy nodes, browsing history, account details, or hardware identifiers. The metrics database does not store IP addresses. You can turn reporting off at any time in **Settings → Application & updates → Anonymous usage statistics**.
+
 ## Development
 
 Requires Node.js 20+, pnpm and Rust stable; local macOS builds also need Xcode Command Line
