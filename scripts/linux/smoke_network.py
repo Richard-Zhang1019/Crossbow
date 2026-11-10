@@ -21,6 +21,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVICE = '/usr/lib/crossbow/crossbow-service'
+CORE = '/usr/lib/crossbow/mihomo'
 SOCKET = '/run/crossbow-tun/control.sock'
 
 
@@ -57,6 +58,10 @@ def wait(check, timeout=12):
 
 def request(stream, value):
     stream.sendall(json.dumps(value).encode() + b'\n')
+    return read_response(stream)
+
+
+def read_response(stream):
     data = bytearray()
     while not data.endswith(b'\n'):
         part = stream.recv(1)
@@ -274,7 +279,7 @@ dns:
 
     def ordinary():
         log = (output / 'ordinary.log').open('wb')
-        process = subprocess.Popen(['/usr/lib/crossbow/mihomo', '-d', str(output), '-f', str(config)],
+        process = subprocess.Popen([CORE, '-d', str(output), '-f', str(config)],
                                    stdout=log, stderr=log)
         log.close()
         processes.append(process)
@@ -454,12 +459,96 @@ dns:
         check_public_data()
         check_wireguard_data()
         checks.append('real dual-stack WireGuard TCP and private DNS coexist with dual-stack mihomo TUN')
-        assert request(stream, {'cmd': 'stop'})['stopped']
+
+        # A full stdout pipe keeps the real version command visible to the
+        # watchdog without racing its normally short lifetime.
+        read_fd, write_fd = os.pipe()
+        with os.fdopen(read_fd, 'rb') as version_output, os.fdopen(write_fd, 'wb') as blocked:
+            os.set_blocking(write_fd, False)
+            padding_size = 0
+            while True:
+                try:
+                    padding_size += os.write(write_fd, b'\0' * 4096)
+                except BlockingIOError:
+                    break
+            os.set_blocking(write_fd, True)
+            version = subprocess.Popen(['setpriv', '--bounding-set=-all', '--inh-caps=-all',
+                                        '--ambient-caps=-all', '--no-new-privs', CORE, '-v'],
+                                       stdout=blocked, stderr=subprocess.STDOUT)
+            processes.append(version)
+            blocked.close()
+            cmdline = Path(f'/proc/{version.pid}/cmdline')
+            wait(lambda: cmdline.read_bytes() == os.fsencode(CORE) + b'\0-v\0')
+            # The watchdog runs between these two status requests.
+            for _ in range(2):
+                active = request(stream, {'cmd': 'status'})
+                assert active['ok'] and active['active'], active
+                assert (active['pid'], active['ifindex']) == (state['pid'], state['ifindex']), active
+            check_public_data()
+            check_wireguard_data()
+            assert version.poll() is None
+            assert version_output.read(padding_size) == b'\0' * padding_size
+            assert version.wait(timeout=5) == 0
+            assert version_output.read().startswith(b'Mihomo Meta ')
+        checks.append('real mihomo -v stays visible to the watchdog while the same TUN core and WireGuard remain online')
+
+        stopped = request(stream, {'cmd': 'stop'})
+        assert stopped['ok'] and stopped['stopped'], stopped
         stream.close()
         clean()
         check_wireguard_data()
         checks.append('normal coexistence stop restores the original WireGuard network exactly')
 
+        stream, _ = start(wireguard=True)
+        foreign_dir = output / 'foreign'
+        foreign_dir.mkdir(exist_ok=True)
+        foreign_port = free_port()
+        foreign_config = foreign_dir / 'config.yaml'
+        foreign_config.write_text(f'''mixed-port: {foreign_port}
+allow-lan: false
+tun: {{enable: false}}
+proxies:
+  - name: fixture
+    type: http
+    server: 127.0.0.1
+    port: {server.server_address[1]}
+rules: ["MATCH,fixture"]
+''')
+        foreign_log = foreign_dir / 'core.log'
+        with stream, foreign_log.open('wb') as log:
+            foreign = subprocess.Popen([CORE, '-d', str(foreign_dir), '-f', str(foreign_config)],
+                                       stdout=log, stderr=subprocess.STDOUT)
+            processes.append(foreign)
+            stream.settimeout(12)
+            ended = read_response(stream)
+            assert not ended['ok'] and ended['stopped'], ended
+            assert f'已有代理进程 mihomo（pid {foreign.pid}）' in ended['error'], ended
+            assert process.wait(timeout=12) == 0
+
+        def foreign_ready():
+            assert foreign.poll() is None, foreign_log.read_text()
+            try:
+                with socket.create_connection(('127.0.0.1', foreign_port), timeout=1):
+                    return True
+            except OSError:
+                return False
+
+        wait(foreign_ready)
+        explicit = http.client.HTTPConnection('127.0.0.1', foreign_port, timeout=5)
+        try:
+            explicit.set_tunnel('203.0.113.77', 80)
+            explicit.request('GET', '/')
+            response = explicit.getresponse()
+            assert response.status == 200 and response.read() == b'crossbow-isolated-tun-ok'
+        finally:
+            explicit.close()
+        clean()
+        check_wireguard_data()
+        foreign.terminate()
+        foreign.wait(timeout=5)
+        checks.append('independent live mihomo triggers safe TUN cleanup while its own proxy and WireGuard keep working')
+
+        process = launch()
         stream, state = start(wireguard=True)
         run('ip', '-4', 'route', 'del', f'{WG_DESTINATIONS[0]}/32', 'dev', 'wg-test')
         process.wait(timeout=12)

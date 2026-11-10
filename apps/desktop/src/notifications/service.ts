@@ -91,6 +91,10 @@ const copy = {
   ],
   "tray.proxy": ["系统代理切换", "Switch system proxy"],
   "tray.tun": ["TUN 模式切换", "Switch TUN mode"],
+  "linux.wireguardCoexist": [
+    "WireGuard 分流设置失败",
+    "Could not change WireGuard split-tunnel setting",
+  ],
   "tray.profile": ["切换配置", "Switch profile"],
   "tray.node": ["节点切换", "Select node"],
   "tray.action": ["托盘操作", "Tray action"],
