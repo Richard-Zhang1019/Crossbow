@@ -856,8 +856,14 @@ fn navigation_target(page: &str, source: &str) -> String {
             }
         }
     } else if page == "settings" {
-        target["settingSection"] =
-            if source.contains("port") || source.contains("tun") || source.contains("engine") {
+        if matches!(source, "core-download" | "system-proxy" | "tray-proxy") {
+            target["settingSection"] = "network".into();
+            target["control"] = "cb-core-download".into();
+        } else {
+            target["settingSection"] = if source.contains("port")
+                || source.contains("tun")
+                || source.contains("engine")
+            {
                 "network"
             } else if source.contains("theme") || source.contains("lang") {
                 "appearance"
@@ -867,12 +873,13 @@ fn navigation_target(page: &str, source: &str) -> String {
                 "app"
             }
             .into();
-        if source.contains("port") {
-            target["control"] = "mixed-port".into();
-        } else if source.contains("tun") {
-            target["control"] = "cb-tun-control".into();
-        } else if source.contains("update") || source.contains("download") {
-            target["control"] = "cb-update-status".into();
+            if source.contains("port") {
+                target["control"] = "mixed-port".into();
+            } else if source.contains("tun") {
+                target["control"] = "cb-tun-control".into();
+            } else if source.contains("update") || source.contains("download") {
+                target["control"] = "cb-update-status".into();
+            }
         }
     } else if page == "diagnostics" {
         target["checkId"] = "first-problem".into();
@@ -1278,6 +1285,12 @@ mod workflow_navigation_tests {
             serde_json::from_str(&super::navigation_target("settings", "setting-port")).unwrap();
         assert_eq!(settings["control"], "mixed-port");
         assert_eq!(settings["settingSection"], "network");
+        for source in ["core-download", "system-proxy", "tray-proxy"] {
+            let target: serde_json::Value =
+                serde_json::from_str(&super::navigation_target("settings", source)).unwrap();
+            assert_eq!(target["settingSection"], "network");
+            assert_eq!(target["control"], "cb-core-download");
+        }
         let unknown: serde_json::Value =
             serde_json::from_str(&super::navigation_target("profiles", "unrelated")).unwrap();
         assert!(unknown.get("profileId").is_none());

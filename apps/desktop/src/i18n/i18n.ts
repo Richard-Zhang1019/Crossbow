@@ -236,6 +236,8 @@ const dict: Record<Lang, Record<string, string>> = {
     "diag.hint": "按依赖顺序逐项自检；失败项给出可执行的修复动作",
     "diag.run": "开始诊断",
     "diag.running": "诊断中…",
+    "diag.startingCore": "正在启动内核…",
+    "diag.switchingProxy": "正在切换系统代理…",
     "diag.allOk": "全部通过 — 链路看起来是健康的",
     "diag.fix.start_core": "启动内核",
     "diag.fix.restart_core": "重启内核",
@@ -377,6 +379,7 @@ const dict: Record<Lang, Record<string, string>> = {
     "settings.coreMissing":
       "内核未安装 — 点「下载内核」自动获取（约 20MB，失败时可换源重试）",
     "settings.downloadCore": "下载内核",
+    "settings.activatingCore": "正在启用内核…",
     "settings.downloading": "下载中…",
     "settings.coreReady": "就绪",
     "settings.coreSource": "来源",
@@ -676,6 +679,8 @@ const dict: Record<Lang, Record<string, string>> = {
       "Checks run in dependency order; failed items offer fix actions",
     "diag.run": "Run diagnosis",
     "diag.running": "running…",
+    "diag.startingCore": "Starting core…",
+    "diag.switchingProxy": "Switching system proxy…",
     "diag.allOk": "All passed — the chain looks healthy",
     "diag.fix.start_core": "Start core",
     "diag.fix.restart_core": "Restart core",
@@ -843,6 +848,7 @@ const dict: Record<Lang, Record<string, string>> = {
     "settings.coreMissing":
       "Core not installed — click Download (~20MB, retry switches source)",
     "settings.downloadCore": "Download core",
+    "settings.activatingCore": "Activating core…",
     "settings.downloading": "downloading…",
     "settings.coreReady": "ready",
     "settings.coreSource": "source",

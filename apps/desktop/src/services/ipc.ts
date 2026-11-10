@@ -287,6 +287,7 @@ export const ipc = {
   setActiveProfile: (id: string) => invoke<void>("set_active_profile", { id }),
   removeProfile: (id: string) => invoke<void>("remove_profile", { id }),
   coreStart: () => invoke<void>("core_start"),
+  coreRestart: () => invoke<void>("core_restart"),
   logsSettings: () =>
     invoke<{ save_enabled: boolean; retention_days: number }>("logs_settings"),
   setLogsSave: (enabled: boolean) => invoke<void>("set_logs_save", { enabled }),

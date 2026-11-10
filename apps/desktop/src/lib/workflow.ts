@@ -54,6 +54,7 @@ export function parseNavigation(raw: string): NavigationTarget | null {
           "mixed-port",
           "cb-update-status",
           "cb-tun-control",
+          "cb-core-download",
           "cb-log-search",
           "cb-profile-detail",
           "cb-config-recovery",

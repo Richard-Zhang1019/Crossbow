@@ -1,7 +1,8 @@
 import { Input, Switch, ControlRow as Row } from "@/components/Controls";
 import { createReadGate, parsePort } from "@/lib/stateReliability";
 import { Button } from "@/components/Button";
-import { notify } from "@/notifications/service";
+import { notify, notificationText } from "@/notifications/service";
+import { useOperationNotice } from "@/notifications/NotificationProvider";
 import { useEffect, useRef, useState } from "react";
 import {
   ipc,
@@ -65,7 +66,15 @@ export default function SettingsPage({
   const [updateChecking, setUpdateChecking] = useState(false);
   const updateCheckInFlight = useRef(false);
   const [lightweight, setLightweight] = useState(false);
-  const [installing, setInstalling] = useState<string | null>(null);
+  const [installing, setInstalling] = useState<"downloading" | "activating" | null>(null);
+  const installInFlight = useRef(false);
+  const installNotice = useOperationNotice("core-download");
+  const downloadRunning = installNotice?.kind === "progress";
+  const installBusy = installing !== null || downloadRunning;
+  const downloadStage = installing === "activating" ? t("settings.activatingCore") : notificationText(
+    `stage.${downloadRunning ? installNotice.description || "preparing" : "preparing"}`,
+  );
+  const previouslyDownloading = useRef(false);
 
   const [settingsKnown, setSettingsKnown] = useState<Set<string>>(new Set());
   const [settingsErrors, setSettingsErrors] = useState<Set<string>>(new Set());
@@ -146,6 +155,14 @@ export default function SettingsPage({
       settingsGate.current.invalidate("load");
     };
   }, []);
+
+  useEffect(() => {
+    // A download started before this Settings page was mounted may finish here.
+    if (previouslyDownloading.current && !downloadRunning && !installInFlight.current) {
+      void load();
+    }
+    previouslyDownloading.current = downloadRunning;
+  }, [downloadRunning]);
 
   useEffect(() => {
     let alive = true;
@@ -281,6 +298,7 @@ export default function SettingsPage({
             <Select
               label={t("settings.engine")}
               value={selectedEngine}
+              disabled={installBusy}
               onChange={(v) => {
                 // 仅更新本地选择：安装状态随所选引擎显示；
                 // 已安装的引擎在下载行位置出现「启用」按钮
@@ -301,21 +319,23 @@ export default function SettingsPage({
               ]}
             />
           </Row>
-          {engineBin?.source === "missing" ? (
+          {engineBin?.source === "missing" || installBusy ? (
             <Row
-              label={t("settings.coreMissingEngine", {
+              id="cb-core-download"
+              label={installBusy ? notificationText("core.install") : t("settings.coreMissingEngine", {
                 engine: selectedEngine === "singbox" ? "sing-box" : "mihomo",
               })}
             >
-              <Button variant="primary" loading={installing !== null}
-                disabled={installing !== null}
+              <Button variant="primary" loading={installBusy}
                 onClick={async () => {
-                  if (installing !== null) return;
-                  setInstalling("starting…");
+                  if (installInFlight.current || downloadRunning) return;
+                  installInFlight.current = true;
+                  setInstalling("downloading");
                   try {
                     const info = await ipc.coreInstall(selectedEngine);
                     setEngineBin(info);
                     setVersion(info.version || t("settings.coreReady"));
+                    setInstalling("activating");
                     // Activation has its own lifecycle after the download completes.
                     await saveSetting(
                       "engine",
@@ -325,25 +345,16 @@ export default function SettingsPage({
                         void load();
                       },
                     );
-                  } catch (e) {
-                    // 失败：回下载行（engineBin 重新查询所选引擎 → 仍是 missing）
-                    notify.error(
-                      e,
-                      "core-download",
-                      t("settings.downloadCore"),
-                    );
+                  } catch {
+                    // The download command owns progress and failures.
                   } finally {
-                    setInstalling(null);
-                    setEngineBin(
-                      await ipc
-                        .coreBinaryInfoFor(selectedEngineRef.current)
-                        .catch(() => null),
-                    );
                     await load();
+                    installInFlight.current = false;
+                    setInstalling(null);
                   }
                 }}
               >
-                {installing ?? t("settings.downloadCore")}
+                <span role="status">{installBusy ? downloadStage : t("settings.downloadCore")}</span>
               </Button>
             </Row>
           ) : (
