@@ -1,13 +1,3 @@
-/** Match the card grid's minimum widths and gaps without stretching sparse results. */
-export function nodeResultHeight(
-  length: number,
-  width: number,
-): number {
-  const columns = Math.max(1, Math.min(4, Math.floor((width + 10) / 210)));
-  const row = 76, limit = 4;
-  const rows = Math.max(1, Math.ceil(length / columns));
-  return Math.min(rows, limit) * (row + 8) - 8 + (rows > limit ? 40 : 0);
-}
 export function friendlyKind(kind: string, t: (key: string) => string): string {
   const group: Record<string, string> = {
     Selector: "layout.manual",

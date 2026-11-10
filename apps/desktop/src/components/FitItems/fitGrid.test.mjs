@@ -13,14 +13,21 @@ test('reserves pager height only when required; empty and small lists stay valid
  assert.equal(fitGrid(400,400,2,200,4,76,4).rows,2);
 });
 
-test('small lists and sparse last pages keep natural card height',()=>{
- assert.equal(fitRowHeight(600,76,2,1,8,8),76);
- assert.equal(fitRowHeight(900,76,1,1,1,1),76);
- assert.equal(fitRowHeight(600,76,4,7,5,16),76);
- assert.equal(fitRowHeight(600,76,4,7,15,16),76);
+test('13 nodes gain a third row only when the cards and pager fit', () => {
+  const compact = fitGrid(900, 259, 13, 200, 4, 68, 3);
+  assert.deepEqual(compact, { columns: 4, rows: 2, count: 8, pages: 2 });
+  assert.equal(fitRowHeight(259, 68, 100, compact.rows, compact.pages, 2), 100);
+
+  const regular = fitGrid(900, 260, 13, 200, 4, 68, 3);
+  assert.deepEqual(regular, { columns: 4, rows: 3, count: 12, pages: 2 });
+  assert.equal(fitRowHeight(260, 68, 100, regular.rows, regular.pages, 3), 68);
+  assert.equal(fitRowHeight(260, 68, 100, regular.rows, regular.pages, 1), 68);
 });
-test('only full paginated pages fill extra space, with bounded row height',()=>{
- assert.equal(fitRowHeight(240,76,2,17,6,6),96);
- assert.equal(fitRowHeight(1000,76,4,7,16,16),114);
- assert.equal(fitRowHeight(100,76,1,20,4,4),76);
+
+test('card heights absorb space within bounds and omit pager space on a single page', () => {
+  assert.equal(fitRowHeight(208, 68, 100, 2, 2, 2), 80);
+  assert.equal(fitRowHeight(208, 68, 100, 2, 1, 2), 100);
+  assert.equal(fitRowHeight(100, 68, 100, 2, 2, 2), 68);
+  assert.equal(fitRowHeight(600, 68, 100, 3, 2, 3), 100);
+  assert.equal(fitRowHeight(600, 68, 100, 1, 1, 1), 68);
 });

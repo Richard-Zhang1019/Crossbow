@@ -12,7 +12,7 @@ export default function FitItems<T>({
   minWidth = 0,
   maxColumns = 1,
   label,
-  stretch = false,
+  maxRowHeight,
   maxRows,
 }: {
   items: T[];
@@ -21,7 +21,7 @@ export default function FitItems<T>({
   minWidth?: number;
   maxColumns?: number;
   label: string;
-  stretch?: boolean;
+  maxRowHeight?: number;
   maxRows?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -42,17 +42,16 @@ export default function FitItems<T>({
   const active = Math.min(page, pages - 1);
   const pageItems = items.slice(active * count, (active + 1) * count);
   const visibleRows = Math.max(1, Math.ceil(pageItems.length / columns));
-  const height = stretch
-    ? fitRowHeight(size.height, rowHeight, rows, pages, pageItems.length, count)
-    : rowHeight;
+  const height = maxRowHeight === undefined
+    ? rowHeight
+    : fitRowHeight(size.height, rowHeight, maxRowHeight, rows, pages, visibleRows);
   return (
-    <div ref={ref} className={`cb-fit-items ${stretch ? "cb-fit-stretch" : ""}`} aria-label={label}>
+    <div ref={ref} className={`cb-fit-items ${maxRowHeight !== undefined ? "cb-fit-adaptive" : ""}`} aria-label={label}>
       <div
         className="cb-fit-cells"
         style={{
           gridTemplateColumns: `repeat(${columns},minmax(0,1fr))`,
           gridAutoRows: height,
-          gridTemplateRows: stretch ? `repeat(${visibleRows}, ${height}px)` : undefined,
         }}
       >
         {pageItems.map(render)}
