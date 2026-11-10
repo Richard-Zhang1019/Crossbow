@@ -1,0 +1,423 @@
+# Depot CI Migration
+# Source: .github/workflows/release.yml
+#
+# Changes made:
+# - Rewrote .github/ path references to .depot/
+# - Changed runs-on from "ubuntu-latest" to "depot-ubuntu-latest" in job "preflight"
+# - Changed runs-on from "windows-latest" to "depot-ubuntu-latest" in job "release-windows"
+# - Changed runs-on from "ubuntu-24.04" to "depot-ubuntu-24.04" in job "release-linux"
+# - Changed runs-on from "macos-15" to "depot-ubuntu-latest" in job "release-macos"
+
+name: release
+
+# 正式发版：macOS 签名 + 公证 + 更新器产物 + GitHub Release。
+# 触发方式（二选一，均需手动发起）：
+#   1. 推送 tag：git tag v0.9.2 && git push origin v0.9.2
+#   2. Actions 页 → release → Run workflow → 填版本号
+# 所需 Secrets：
+#   APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID      —— 公证（Apple ID + App 专用密码）
+#   APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD —— Developer ID 证书 .p12（base64）
+#   TAURI_SIGNING_PRIVATE_KEY                      —— 更新器签名私钥（~/.tauri/crossbow.key 内容）
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（如 v0.9.2）"
+        required: true
+
+permissions:
+  contents: read
+
+# Never interrupt an in-flight signing/notarization of the same release.
+concurrency:
+  group: release-${{ inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
+    timeout-minutes: 5
+    outputs:
+      commit: ${{ steps.tag.outputs.commit }}
+    steps:
+      - name: Check version input and credentials
+        env:
+          VERSION: ${{ inputs.version || github.ref_name }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          python3 - <<'PYCODE'
+          import os, re
+          required = ['APPLE_CERTIFICATE', 'APPLE_ID', 'APPLE_PASSWORD', 'APPLE_TEAM_ID', 'TAURI_SIGNING_PRIVATE_KEY']
+          missing = [key for key in required if not os.environ.get(key)]
+          for key in missing:
+              print(f'::error::Missing release secret: {key}')
+          if not re.fullmatch(r'v\d+\.\d+\.\d+', os.environ['VERSION']):
+              raise SystemExit('Only an existing stable version tag vX.Y.Z may be released')
+          if missing:
+              raise SystemExit(1)
+          PYCODE
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.version || github.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - id: tag
+        name: Resolve immutable release commit
+        env:
+          VERSION: ${{ inputs.version || github.ref_name }}
+        run: |
+          COMMIT=$(git rev-parse "refs/tags/${VERSION}^{commit}")
+          test "$COMMIT" = "$(git rev-parse HEAD)"
+          python scripts/ci/release_checks.py source --tag "$VERSION"
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
+
+  checks:
+    needs: preflight
+    uses: ./.depot/workflows/build.yml
+    with:
+      ref: ${{ needs.preflight.outputs.commit }}
+
+  # Windows：NSIS 安装包 + 更新器签名（无代码签名证书，SmartScreen
+    # 策略见 #82；升级渠道 #79）
+  release-windows:
+    needs: [preflight, checks]
+    permissions:
+      contents: read
+    runs-on: depot-ubuntu-latest # was: windows-latest. Nonstandard GitHub runner label detected, changed to default Depot runner.
+    timeout-minutes: 75
+    env:
+      VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.preflight.outputs.commit }}
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 9
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Download and verify mihomo sidecar
+        shell: pwsh
+        run: python scripts/ci/download_sidecar.py x86_64-pc-windows-msvc
+
+      - name: Build crossbow-service sidecar
+        shell: pwsh
+        run: |
+          cargo build --locked --release -p crossbow-service --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item target/x86_64-pc-windows-msvc/release/crossbow-service.exe apps/desktop/src-tauri/binaries/crossbow-service-x86_64-pc-windows-msvc.exe
+
+      - name: Prepare Authenticode certificate (optional, B-plan self-signed)
+        shell: pwsh
+        env:
+          WINDOWS_SIGN_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
+          WINDOWS_SIGN_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
+        run: |
+          if (-not $env:WINDOWS_SIGN_PFX_BASE64) {
+            Write-Host "WINDOWS_PFX_BASE64 not set; building unsigned"
+            exit 0
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP "crossbow-win-sign.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_SIGN_PFX_BASE64))
+          "WINDOWS_SIGN_PFX_PATH=$pfx" >> $env:GITHUB_ENV
+          "WINDOWS_SIGN_PFX_PASSWORD=$env:WINDOWS_SIGN_PFX_PASSWORD" >> $env:GITHUB_ENV
+
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (updater-signed NSIS)
+        working-directory: apps/desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: pnpm tauri build
+
+      - name: Verify updater signature files exist
+        shell: pwsh
+        run: |
+          Get-ChildItem target/release/bundle/nsis/*.exe, target/release/bundle/nsis/*.sig
+          if (-not (Test-Path "target/release/bundle/nsis/*.sig" -ErrorAction SilentlyContinue) -and -not (Get-ChildItem target/release/bundle/nsis -Filter *.sig)) { throw "missing updater signature" }
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-release-${{ env.VERSION }}
+          path: |
+            target/release/bundle/nsis/Crossbow_*_x64-setup.exe
+            target/release/bundle/nsis/Crossbow_*_x64-setup.exe.sig
+          if-no-files-found: error
+          retention-days: 30
+
+  release-linux:
+    name: Linux x86_64 experimental archive
+    needs: [preflight, checks]
+    runs-on: depot-ubuntu-24.04 # was: ubuntu-24.04. Mapped standard GitHub runner to Depot equivalent.
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: 2
+      VERSION: ${{ inputs.version || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.preflight.outputs.commit }}
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+        with:
+          version: 9
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf
+      - run: python3 scripts/ci/download_sidecar.py x86_64-unknown-linux-gnu
+      - run: pnpm install --frozen-lockfile
+      - run: cargo build --locked --release -p crossbow-service
+      - name: Build Linux desktop without updater artifacts
+        working-directory: apps/desktop
+        run: pnpm tauri build --no-bundle --config '{"bundle":{"createUpdaterArtifacts":false}}'
+      - name: Package and verify Linux archive
+        run: python3 scripts/ci/package_linux.py --tag "$VERSION"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-release-${{ env.VERSION }}
+          path: dist-linux/Crossbow_*_linux_x86_64.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+
+  release-macos:
+    needs: [preflight, checks, release-windows, release-linux]
+    permissions:
+      contents: write
+    runs-on: depot-ubuntu-latest # was: macos-15. Nonstandard GitHub runner label detected, changed to default Depot runner.
+    timeout-minutes: 75
+    env:
+      VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.preflight.outputs.commit }}
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 9
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Download and verify mihomo sidecar
+        run: python scripts/ci/download_sidecar.py aarch64-apple-darwin
+
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      # 签名（证书自动导入临时钥匙串，含 unlock）+ 公证 + 更新器产物
+      # 全部由 tauri-bundler 依据以下环境变量完成（勿再手动导入证书：
+      # keychain 未 unlock 时 codesign 在无 GUI runner 上永久挂起）
+      - name: Build (signed + notarized)
+        working-directory: apps/desktop
+        env:
+          APPLE_SIGNING_IDENTITY: "Developer ID Application: Xueyu Zhang (M8H9MSJT3S)"
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: pnpm tauri build
+
+      # tauri 只公证 .app；DMG 单独公证 + 装订（离线安装也有有效票据）
+      - name: Notarize & staple DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bash scripts/ci/notarize_macos.sh "target/release/bundle/dmg/Crossbow_${VERSION#v}_aarch64.dmg"
+
+      # 中文 changelog：上个 tag → 本 tag 的提交按类型归纳；
+      # PR 标题优先（合并提交信息即 PR 标题），无 tag 时回退为提交数摘要
+      - name: Generate Chinese changelog
+        env:
+          VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          PREV=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "${VERSION}^" 2>/dev/null || true)
+          RANGE="${PREV:+${PREV}..}${VERSION}"
+          echo "changelog range: $RANGE"
+          python3 - "$RANGE" "/tmp/changelog.md" <<'PYEOF'
+          import subprocess, sys, collections
+          rng, out = sys.argv[1], sys.argv[2]
+          git_log = subprocess.run(
+              ["git", "log", "--pretty=%s", rng],
+              capture_output=True, text=True, check=True).stdout
+          CATS = collections.OrderedDict([
+              ("feat", "### 🚀 新功能"),
+              ("fix", "### 🐛 修复"),
+              ("perf", "### ⚡ 性能"),
+              ("refactor", "### ♻️ 重构"),
+              ("style", "### 🎨 界面"),
+              ("docs", "### 📝 文档"),
+          ])
+          buckets = collections.OrderedDict((k, []) for k in CATS)
+          other = []
+          for line in git_log.splitlines():
+              s = line.strip()
+              if not s:
+                  continue
+              low = s.lower()
+              placed = False
+              for cat in CATS:
+                  if low.startswith(cat + "(") or low.startswith(cat + ":") or low.startswith(cat + " "):
+                      buckets[cat].append(s)
+                      placed = True
+                      break
+              if not placed:
+                  continue
+          md = ["## 更新内容", ""]
+          any_cat = False
+          for cat, title in CATS.items():
+              items = buckets[cat]
+              if not items:
+                  continue
+              any_cat = True
+              md.append(title)
+              for it in items[:40]:
+                  md.append(f"- {it}")
+              md.append("")
+          if not any_cat:
+              md.append("- 本次更新包含稳定性与体验优化")
+              md.append("")
+          open(out, "w").write("\n".join(md))
+          PYEOF
+          cat /tmp/changelog.md
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: windows-release-${{ env.VERSION }}
+          path: dist-windows/
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: linux-release-${{ env.VERSION }}
+          path: dist-linux/
+
+      - name: Prepare latest.json
+        env:
+          VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          SIG=$(cat target/release/bundle/macos/Crossbow.app.tar.gz.sig)
+          WIN_SIG=$(cat dist-windows/Crossbow_*_x64-setup.exe.sig)
+          NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          python3 - "$SIG" "$WIN_SIG" "$NOW" "$VERSION" <<'EOF'
+          import json, sys
+          # 具名变量贯穿全文，勿用内联 sys.argv——#91 加 WIN_SIG 时 3→4 参数
+          # 曾让 argv 引用整体右移（darwin URL 填成时间戳、win 签名填成版本串）
+          sig, win_sig, now, tag = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+          version = tag.lstrip("v")
+          notes = ""
+          try:
+              notes = open("/tmp/changelog.md").read().strip()
+          except OSError:
+              pass
+          manifest = {
+              "version": version,
+              "notes": notes or f"Crossbow v{version}",
+              "pub_date": now,
+              "platforms": {
+                  "darwin-aarch64": {
+                      "signature": sig,
+                      "url": "https://github.com/Richard-Zhang1019/Crossbow/releases/download/"
+                      + tag
+                      + "/Crossbow.app.tar.gz",
+                  },
+                  "windows-x86_64": {
+                      "signature": win_sig,
+                      "url": "https://github.com/Richard-Zhang1019/Crossbow/releases/download/"
+                      + tag
+                      + "/Crossbow_"
+                      + version
+                      + "_x64-setup.exe",
+                  },
+              },
+          }
+          open("latest.json", "w").write(json.dumps(manifest, indent=2))
+          EOF
+
+      - name: Verify installed and updater packages
+        run: bash scripts/ci/verify_macos_release.sh
+
+      # 必须在 verify_macos_release.sh 之后：dist-release/ 由该脚本创建，
+      # 且其第 43 行会重写 SHA256SUMS——先汇入会被冲掉
+      - name: Stage Windows installer into release set
+        run: |
+          cp dist-windows/Crossbow_*_x64-setup.exe dist-windows/Crossbow_*_x64-setup.exe.sig dist-release/
+          (cd dist-release && shasum -a 256 Crossbow_*_x64-setup.exe Crossbow_*_x64-setup.exe.sig >> SHA256SUMS && shasum -a 256 -c SHA256SUMS)
+
+      - name: Stage Linux archive into release set
+        run: |
+          cp "dist-linux/Crossbow_${VERSION#v}_linux_x86_64.tar.gz" dist-release/
+          (cd dist-release && shasum -a 256 "Crossbow_${VERSION#v}_linux_x86_64.tar.gz" >> SHA256SUMS && shasum -a 256 -c SHA256SUMS)
+
+      - name: Upload verified release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: verified-release-${{ env.VERSION }}
+          path: dist-release/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish verified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            cat /tmp/changelog.md
+            echo ""
+            echo "## 下载"
+            echo ""
+            echo "- Apple Silicon：[Crossbow_${VERSION#v}_aarch64.dmg](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/Crossbow_${VERSION#v}_aarch64.dmg)"
+            echo "- Windows x64：[Crossbow_${VERSION#v}_x64-setup.exe](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/Crossbow_${VERSION#v}_x64-setup.exe)（未做代码签名，SmartScreen 提示「仍要运行」即可）"
+            echo "- Linux x86_64（实验性）：[下载压缩包](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/Crossbow_${VERSION#v}_linux_x86_64.tar.gz)，含桌面程序、mihomo 与可选 TUN 服务。解压后运行 run.sh，TUN 安装见包内 README.txt。"
+            echo '- Linux：基于 Ubuntu 24.04 构建，需要 GTK3、WebKitGTK 4.1、AppIndicator；尚无系统代理集成、AppImage/DEB 和自动更新。niri/Wayland 实网 TUN 仍需验收。'
+            echo '- 自动更新：已签名 `Crossbow.app.tar.gz` / NSIS 安装包与 `latest.json`'
+            echo '- 完整性校验：下载 SHA256SUMS 后执行 `shasum -a 256 -c SHA256SUMS`'
+          } > /tmp/release-notes.md
+          # Existing releases are not overwritten, including on workflow reruns.
+          gh release create "$VERSION" dist-release/* --verify-tag \
+            --repo "$GITHUB_REPOSITORY" --title "Crossbow $VERSION" \
+            --notes-file /tmp/release-notes.md
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-diagnostics-${{ env.VERSION }}
+          path: target/ci-diagnostics/
+          retention-days: 7
