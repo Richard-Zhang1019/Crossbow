@@ -1780,7 +1780,7 @@ fn watch_linux_service(shared: Arc<Shared>, pid: u32) {
             let inner = shared.inner.lock().unwrap_or_else(|e| e.into_inner());
             if inner.stopping || inner.external_pid != Some(pid) { return; }
         }
-        let result = crate::linux_service::status();
+        let (result, cleanup_confirmed) = crate::linux_service::watch_status(pid);
         if result.as_ref().ok().and_then(|s| s.as_ref())
             .is_some_and(|s| s.pid == pid && s.active) { continue; }
         let message = match result {
@@ -1788,7 +1788,7 @@ fn watch_linux_service(shared: Arc<Shared>, pid: u32) {
             Ok(Some(_)) => "Linux TUN 服务状态异常，尚未确认清理完成".to_string(),
             Err(error) => {
                 // A terminal failure can confirm cleanup and still return its cause.
-                if crate::linux_service::status().is_ok_and(|session| session.is_none()) {
+                if cleanup_confirmed {
                     format!("Linux TUN 服务已停止，接管资源已释放：{error}")
                 } else {
                     format!("Linux TUN 服务异常，尚未确认清理完成：{error}")

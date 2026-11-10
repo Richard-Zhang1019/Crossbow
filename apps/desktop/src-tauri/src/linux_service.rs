@@ -25,7 +25,15 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const START_TIMEOUT: Duration = Duration::from_secs(35);
 const STOP_TIMEOUT: Duration = Duration::from_secs(12);
 
-static SESSION: Mutex<Option<Session>> = Mutex::new(None);
+static CLIENT: Mutex<ServiceClient> = Mutex::new(ServiceClient {
+    session: None,
+    terminal_failure: None,
+});
+
+struct ServiceClient {
+    session: Option<Session>,
+    terminal_failure: Option<(u32, String)>,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct ServiceStatus {
@@ -187,7 +195,7 @@ fn exchange(stream: &mut UnixStream, payload: &Value, timeout: Duration) -> Resu
     }
     frame.push(b'\n');
     let deadline = Instant::now() + timeout;
-    let mut read_write = || -> io::Result<Vec<u8>> {
+    let write = (|| -> io::Result<()> {
         let mut written = 0;
         while written < frame.len() {
             stream.set_write_timeout(Some(remaining(deadline)?))?;
@@ -197,6 +205,34 @@ fn exchange(stream: &mut UnixStream, payload: &Value, timeout: Duration) -> Resu
             }
             written += count;
         }
+        Ok(())
+    })();
+    let write_error = match write {
+        Ok(()) => None,
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::BrokenPipe | io::ErrorKind::ConnectionReset
+            ) =>
+        {
+            Some(error)
+        }
+        Err(error) => return Err(format!("Linux 服务通信失败：{error}")),
+    };
+    let response = read_response(stream, deadline);
+    if let Some(error) = write_error {
+        // The authenticated service may have sent its failure before closing.
+        // A buffered success cannot acknowledge a request we failed to send.
+        return response
+            .ok()
+            .filter(terminal_failure_frame)
+            .ok_or_else(|| format!("Linux 服务通信失败：{error}"));
+    }
+    response
+}
+
+fn read_response(stream: &mut UnixStream, deadline: Instant) -> Result<Value, String> {
+    let mut read = || -> io::Result<Vec<u8>> {
         let mut response = Vec::new();
         loop {
             stream.set_read_timeout(Some(remaining(deadline)?))?;
@@ -214,7 +250,7 @@ fn exchange(stream: &mut UnixStream, payload: &Value, timeout: Duration) -> Resu
             response.push(byte[0]);
         }
     };
-    let response = read_write().map_err(|error| format!("Linux 服务通信失败：{error}"))?;
+    let response = read().map_err(|error| format!("Linux 服务通信失败：{error}"))?;
     let value: Value = serde_json::from_slice(&response).map_err(|_| "Linux 服务返回了无效响应")?;
     if value.get("ok").and_then(Value::as_bool).is_none() {
         return Err("Linux 服务响应缺少结果状态".into());
@@ -303,6 +339,13 @@ fn confirmed_stop(response: &Value) -> bool {
     response["ok"].is_boolean()
         && response["stopped"] == true
         && matches!(response.get("active"), None | Some(Value::Bool(false)))
+}
+
+fn terminal_failure_frame(response: &Value) -> bool {
+    response["ok"] == false
+        && response["stopped"].is_boolean()
+        && matches!(response.get("active"), None | Some(Value::Bool(false)))
+        && response["error"].as_str().is_some_and(|error| !error.is_empty())
 }
 
 fn positive_u32(response: &Value, field: &str) -> Result<u32, String> {
@@ -405,7 +448,8 @@ pub fn make_core_spawner(
         if wireguard_coexist {
             payload["wireguard_coexist"] = json!(true);
         }
-        let mut guard = SESSION.lock().unwrap_or_else(|error| error.into_inner());
+        let mut client = CLIENT.lock().unwrap_or_else(|error| error.into_inner());
+        let guard = &mut client.session;
         if guard.is_some() {
             return Err("上次 Linux 服务会话尚未确认清理，请先停止后重试".into());
         }
@@ -440,55 +484,86 @@ pub fn make_core_spawner(
             active: true,
         };
         guard.as_mut().unwrap().core = Some(status);
+        client.terminal_failure = None;
         Ok(status.pid)
     })
 }
 
 /// A transport error remains an error, not an inactive or successfully cleaned session.
 pub fn status() -> Result<Option<ServiceStatus>, String> {
-    let mut guard = SESSION.lock().unwrap_or_else(|error| error.into_inner());
-    let Some(session) = guard.as_mut() else {
-        return Ok(None);
-    };
-    let response = match session.request(json!({"cmd":"status"}), REQUEST_TIMEOUT) {
-        Ok(response) => response,
-        Err(error) => {
-            if session.cleanup_confirmed()? {
-                *guard = None;
-                return Ok(None);
-            }
-            return Err(error);
-        }
-    };
-    if confirmed_stop(&response) {
-        // A runtime failure can include a trusted cleanup acknowledgement.
-        // Keep its reason for the watcher, but release the confirmed session.
-        *guard = None;
-        return if response["ok"] == true {
-            Ok(None)
-        } else {
-            Err(response_error(&response))
+    CLIENT
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .status()
+}
+
+impl ServiceClient {
+    fn status(&mut self) -> Result<Option<ServiceStatus>, String> {
+        let Some(session) = self.session.as_mut() else {
+            return Ok(None);
         };
+        let response = match session.request(json!({"cmd":"status"}), REQUEST_TIMEOUT) {
+            Ok(response) => response,
+            Err(error) => {
+                if session.cleanup_confirmed()? {
+                    self.session = None;
+                    return Ok(None);
+                }
+                return Err(error);
+            }
+        };
+        if terminal_failure_frame(&response) {
+            if let Some(core) = session.core {
+                // Status and tray reads can reach the socket before the watcher.
+                self.terminal_failure = Some((core.pid, response_error(&response)));
+            }
+        }
+        if confirmed_stop(&response) {
+            self.session = None;
+            return if response["ok"] == true {
+                Ok(None)
+            } else {
+                Err(response_error(&response))
+            };
+        }
+        if response["ok"] != true {
+            return Err(response_error(&response));
+        }
+        let status = ServiceStatus {
+            pid: positive_u32(&response, "pid")?,
+            ifindex: positive_u32(&response, "ifindex")?,
+            active: response
+                .get("active")
+                .and_then(Value::as_bool)
+                .ok_or("Linux 服务响应缺少接管状态")?,
+        };
+        if session
+            .core
+            .is_some_and(|core| core.pid != status.pid || core.ifindex != status.ifindex)
+        {
+            return Err("Linux 服务会话身份发生变化，未确认原会话已清理".into());
+        }
+        session.core = Some(status);
+        Ok(Some(status))
     }
-    if response["ok"] != true {
-        return Err(response_error(&response));
+
+    fn watch_status(&mut self, pid: u32) -> (Result<Option<ServiceStatus>, String>, bool) {
+        if let Some(core) = self.session.as_ref().and_then(|session| session.core) {
+            if core.pid != pid {
+                return (Ok(Some(core)), false);
+            }
+        }
+        let result = self.status();
+        let failure = self.terminal_failure.take_if(|(core_pid, _)| *core_pid == pid);
+        (failure.map_or(result, |(_, error)| Err(error)), self.session.is_none())
     }
-    let status = ServiceStatus {
-        pid: positive_u32(&response, "pid")?,
-        ifindex: positive_u32(&response, "ifindex")?,
-        active: response
-            .get("active")
-            .and_then(Value::as_bool)
-            .ok_or("Linux 服务响应缺少接管状态")?,
-    };
-    if session
-        .core
-        .is_some_and(|core| core.pid != status.pid || core.ifindex != status.ifindex)
-    {
-        return Err("Linux 服务会话身份发生变化，未确认原会话已清理".into());
-    }
-    session.core = Some(status);
-    Ok(Some(status))
+}
+
+pub fn watch_status(pid: u32) -> (Result<Option<ServiceStatus>, String>, bool) {
+    CLIENT
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .watch_status(pid)
 }
 
 pub fn active() -> bool {
@@ -496,9 +571,10 @@ pub fn active() -> bool {
 }
 
 pub fn managed_pid() -> Option<u32> {
-    SESSION
+    CLIENT
         .lock()
         .unwrap_or_else(|error| error.into_inner())
+        .session
         .as_ref()
         .and_then(|session| session.core.map(|core| core.pid))
 }
@@ -506,7 +582,8 @@ pub fn managed_pid() -> Option<u32> {
 /// `false` means no client-owned service session; callers may stop a normal core.
 /// Once a session exists, only a confirmed service acknowledgement releases it.
 pub fn stop_core() -> Result<bool, String> {
-    let mut guard = SESSION.lock().unwrap_or_else(|error| error.into_inner());
+    let mut client = CLIENT.lock().unwrap_or_else(|error| error.into_inner());
+    let guard = &mut client.session;
     let Some(session) = guard.as_mut() else {
         return Ok(false);
     };
@@ -658,6 +735,71 @@ mod tests {
         )
         .is_err());
         assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn closed_broker_preserves_terminal_failure_for_the_owning_watcher() {
+        let (stream, mut broker) = UnixStream::pair().unwrap();
+        let pid = 123;
+        let mut client = ServiceClient {
+            session: Some(Session {
+                stream,
+                service_pid: std::process::id(),
+                core: Some(ServiceStatus { pid, ifindex: 7, active: true }),
+                wireguard_coexist: true,
+                broken: false,
+            }),
+            terminal_failure: None,
+        };
+        let reason = "WireGuard route changed";
+        writeln!(broker, "{}", json!({"ok":false,"stopped":true,"error":reason})).unwrap();
+        drop(broker);
+
+        // Simulate a settings or tray refresh reaching the closed socket first.
+        assert_eq!(client.status().unwrap_err(), reason);
+        assert!(client.status().unwrap().is_none());
+        assert!(client.watch_status(pid + 1).0.unwrap().is_none());
+        let (result, cleanup_confirmed) = client.watch_status(pid);
+        assert_eq!(result.unwrap_err(), reason);
+        assert!(cleanup_confirmed);
+        assert!(client.watch_status(pid).0.unwrap().is_none());
+    }
+
+    #[test]
+    fn closed_broker_does_not_turn_a_buffered_success_into_an_acknowledgement() {
+        for reply in [
+            json!({"ok":true,"stopped":true}),
+            json!({"ok":false,"stopped":true,"active":true,"error":"inconsistent"}),
+        ] {
+            let (mut client, mut broker) = UnixStream::pair().unwrap();
+            writeln!(broker, "{reply}").unwrap();
+            drop(broker);
+            assert!(exchange(&mut client, &json!({"cmd":"stop"}), REQUEST_TIMEOUT).is_err());
+        }
+    }
+
+    #[test]
+    fn closed_broker_preserves_error_without_confirming_failed_cleanup() {
+        let (stream, mut broker) = UnixStream::pair().unwrap();
+        let pid = 123;
+        let mut client = ServiceClient {
+            session: Some(Session {
+                stream,
+                service_pid: std::process::id(),
+                core: Some(ServiceStatus { pid, ifindex: 7, active: true }),
+                wireguard_coexist: true,
+                broken: false,
+            }),
+            terminal_failure: None,
+        };
+        let reason = "TUN route cleanup failed";
+        writeln!(broker, "{}", json!({"ok":false,"stopped":false,"error":reason})).unwrap();
+        drop(broker);
+
+        let (result, cleanup_confirmed) = client.watch_status(pid);
+        assert_eq!(result.unwrap_err(), reason);
+        assert!(!cleanup_confirmed);
+        assert!(client.session.is_some());
     }
 
     #[test]
