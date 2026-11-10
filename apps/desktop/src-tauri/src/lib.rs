@@ -4581,6 +4581,15 @@ pub fn run() {
                         }
                     }
                 }
+                // macOS：Spotlight/访达/Dock 对已运行应用再次「打开」不会产生
+                // 第二个进程，LaunchServices 只激活现有实例并投递 reopen 事件
+                // （single-instance 插件拦截的是真第二进程，macOS 上沾不上边）。
+                // 轻量待机中主窗口已销毁，必须在这里重建/呈现，否则 Dock 图标
+                // 弹一下就没了下文（与托盘「打开主界面」同一条路径）。
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Reopen { .. } => {
+                    show_main_window(app);
+                }
                 // 所有可失败的网络恢复都已在 ExitRequested 前置阶段完成。
                 tauri::RunEvent::Exit => {
                     #[cfg(target_os = "linux")]
