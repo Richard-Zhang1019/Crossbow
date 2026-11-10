@@ -188,7 +188,12 @@ fn remaining(deadline: Instant) -> io::Result<Duration> {
 }
 
 /// One bounded frame and one deadline, including a peer that sends slowly.
-fn exchange(stream: &mut UnixStream, payload: &Value, timeout: Duration) -> Result<Value, String> {
+/// The second result records a disconnect even if a terminal error was readable.
+fn exchange(
+    stream: &mut UnixStream,
+    payload: &Value,
+    timeout: Duration,
+) -> Result<(Value, bool), String> {
     let mut frame = serde_json::to_vec(payload).map_err(|error| error.to_string())?;
     if frame.len() >= MAX_FRAME {
         return Err("Linux 服务请求过长".into());
@@ -226,9 +231,10 @@ fn exchange(stream: &mut UnixStream, payload: &Value, timeout: Duration) -> Resu
         return response
             .ok()
             .filter(terminal_failure_frame)
+            .map(|response| (response, true))
             .ok_or_else(|| format!("Linux 服务通信失败：{error}"));
     }
-    response
+    response.map(|response| (response, false))
 }
 
 fn read_response(stream: &mut UnixStream, deadline: Instant) -> Result<Value, String> {
@@ -264,11 +270,11 @@ impl Session {
             return Err("Linux 服务连接已断开，清理结果尚未确认".into());
         }
         let result = exchange(&mut self.stream, &payload, timeout);
-        if result.is_err() {
+        if result.as_ref().map_or(true, |(_, disconnected)| *disconnected) {
             self.broken = true;
             let _ = self.stream.shutdown(std::net::Shutdown::Both);
         }
-        result
+        result.map(|(response, _)| response)
     }
 
     fn cleanup_confirmed(&self) -> Result<bool, String> {
@@ -814,7 +820,7 @@ mod tests {
         let (result, cleanup_confirmed) = client.watch_status(pid);
         assert_eq!(result.unwrap_err(), reason);
         assert!(!cleanup_confirmed);
-        assert!(client.session.is_some());
+        assert!(client.session.as_ref().is_some_and(|session| session.broken));
     }
 
     #[test]
