@@ -8,3 +8,4 @@ pub mod menu;
 pub mod speed;
 #[cfg_attr(target_os = "linux", allow(dead_code))]
 pub mod state;
+pub(crate) mod wiring;
