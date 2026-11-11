@@ -1,3 +1,4 @@
+import { useTimeout } from "../../hooks/useTimers";
 import SegmentedControl from "@/components/SegmentedControl";
 import {SearchField} from "@/components/Controls";
 import Dialog from "@/components/Dialog";
@@ -80,7 +81,8 @@ export default function ConnectionsPage() {
 
   const apps = useMemo(() => aggregateByProcess(rows), [rows]);
   const selected = snapshot.rows.find(r => r.id === inspected?.id) ?? inspected;
-  const copyDetails = async (value:string) => {try {await navigator.clipboard.writeText(value); setCopied(true); window.setTimeout(()=>setCopied(false),1500);}catch(e){notify.error(e,"connection-copy");}};
+  const scheduleCopiedReset = useTimeout();
+  const copyDetails = async (value:string) => {try {await navigator.clipboard.writeText(value); setCopied(true); scheduleCopiedReset(()=>setCopied(false),1500);}catch(e){notify.error(e,"connection-copy");}};
 
   return (
     <div className="cb-connections-page">
