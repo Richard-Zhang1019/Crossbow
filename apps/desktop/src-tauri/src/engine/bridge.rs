@@ -41,6 +41,8 @@ pub struct WsHub {
     /// 内核重启后据此重订——覆盖「页面在内核 Starting 期间挂载、订阅
     /// 命令失败」的窗口，保证 Running 后自动补上。
     wanted: Arc<Mutex<std::collections::HashSet<&'static str>>>,
+    /// Keep the lookup rate and in-flight scan across connection view subscriptions.
+    connection_process_lookup: Arc<Mutex<ProcessLookup>>,
     logs: Arc<Mutex<crate::diagnostics::log_cache::LogCache>>,
     log_source: Mutex<Option<(u16, String)>>,
     log_view: Mutex<Option<String>>,
@@ -237,13 +239,13 @@ impl WsHub {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .contains("connection-processes");
+        let process_lookup = include_processes.then(|| self.connection_process_lookup.clone());
         self.subscribe("connections", move |flag, last_seen| {
             std::thread::spawn(move || {
                 let mut last_emit = Instant::now() - CONN_MIN_INTERVAL;
-                let mut process_lookup = include_processes.then(ProcessLookup::default);
                 read_loop(
                     &url,
-                    flag,
+                    flag.clone(),
                     Some(Duration::from_secs(5)),
                     Some(last_seen),
                     None,
@@ -252,9 +254,16 @@ impl WsHub {
                             if last_emit.elapsed() < CONN_MIN_INTERVAL {
                                 return;
                             }
-                            if let Some(payload) =
-                                compact_connections(&txt, process_lookup.as_mut())
-                            {
+                            let payload = {
+                                let mut lookup = process_lookup.as_ref().map(|lookup| {
+                                    lookup.lock().unwrap_or_else(|error| error.into_inner())
+                                });
+                                if !flag.load(Ordering::SeqCst) {
+                                    return;
+                                }
+                                compact_connections(&txt, lookup.as_deref_mut())
+                            };
+                            if let Some(payload) = payload {
                                 last_emit = Instant::now();
                                 emit(EV_CONNECTIONS, payload);
                             }

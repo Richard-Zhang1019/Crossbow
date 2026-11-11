@@ -24,25 +24,47 @@ pub(crate) struct Process {
 }
 
 type Matches = HashMap<ConnectionSocket, Process>;
-const SCAN_INTERVAL: Duration = Duration::from_secs(3);
+const SCAN_INTERVAL: Duration = Duration::from_secs(5);
+const MISS_INTERVAL: Duration = Duration::from_secs(10);
+const MISSES_BEFORE_BACKOFF: u8 = 3;
 
 #[derive(Default)]
 pub(crate) struct ProcessLookup {
     matches: Matches,
     pending: Option<Receiver<Matches>>,
     last_scan: Option<Instant>,
+    consecutive_misses: u8,
 }
 
 impl ProcessLookup {
+    fn scan_due(&self, now: Instant) -> bool {
+        let interval = if self.consecutive_misses >= MISSES_BEFORE_BACKOFF {
+            MISS_INTERVAL
+        } else {
+            SCAN_INTERVAL
+        };
+        self.pending.is_none()
+            && self
+                .last_scan
+                .is_none_or(|scan| now.duration_since(scan) >= interval)
+    }
+
     pub fn update(&mut self, mut requests: HashSet<ConnectionSocket>) -> &Matches {
         if let Some(pending) = &self.pending {
-            match pending.try_recv() {
-                Ok(matches) => {
+            let result = match pending.try_recv() {
+                Ok(matches) => Some(matches),
+                Err(TryRecvError::Disconnected) => Some(Matches::new()),
+                Err(TryRecvError::Empty) => None,
+            };
+            if let Some(mut matches) = result {
+                self.pending = None;
+                matches.retain(|key, _| requests.contains(key));
+                if matches.is_empty() {
+                    self.consecutive_misses = self.consecutive_misses.saturating_add(1);
+                } else {
+                    self.consecutive_misses = 0;
                     self.matches.extend(matches);
-                    self.pending = None;
                 }
-                Err(TryRecvError::Disconnected) => self.pending = None,
-                Err(TryRecvError::Empty) => {}
             }
         }
 
@@ -50,16 +72,17 @@ impl ProcessLookup {
         // that reuses a socket address must wait for its own lookup.
         self.matches.retain(|key, _| requests.contains(key));
         requests.retain(|key| !self.matches.contains_key(key));
-        if requests.is_empty()
-            || self.pending.is_some()
-            || self
-                .last_scan
-                .is_some_and(|scan| scan.elapsed() < SCAN_INTERVAL)
-        {
+        if requests.is_empty() {
+            self.consecutive_misses = 0;
             return &self.matches;
         }
 
-        self.last_scan = Some(Instant::now());
+        let now = Instant::now();
+        if !self.scan_due(now) {
+            return &self.matches;
+        }
+
+        self.last_scan = Some(now);
         let (send, receive) = mpsc::sync_channel(1);
         if std::thread::Builder::new()
             .name("connection-process-lookup".into())
@@ -412,6 +435,58 @@ mod tests {
         let ambiguous =
             format!("{output}p400\0cShared\0\nf1\0n127.0.0.1:59478->127.0.0.1:7898\0\n");
         assert!(!parse_lsof_output(&ambiguous, &wanted).contains_key(&v4));
+    }
+
+    #[test]
+    fn process_lookup_limits_scans_backs_off_and_recovers_after_a_hit() {
+        let socket = SocketKey::Tcp {
+            local: "127.0.0.1:59478".parse().unwrap(),
+            peer: "127.0.0.1:7898".parse().unwrap(),
+        };
+        let request = |id: &str| ConnectionSocket {
+            id: id.into(),
+            socket,
+        };
+        let requests = || HashSet::from([request("one"), request("two")]);
+        let start = Instant::now();
+        let mut lookup = ProcessLookup {
+            last_scan: Some(start),
+            ..ProcessLookup::default()
+        };
+        assert!(!lookup.scan_due(start + Duration::from_secs(4)));
+        assert!(lookup.scan_due(start + Duration::from_secs(5)));
+
+        for _ in 0..3 {
+            let (send, receive) = mpsc::sync_channel(1);
+            lookup.pending = Some(receive);
+            assert!(!lookup.scan_due(start + Duration::from_secs(20)));
+            send.send(Matches::new()).unwrap();
+            assert!(lookup.update(requests()).is_empty());
+        }
+        assert!(!lookup.scan_due(start + Duration::from_secs(9)));
+        assert!(lookup.scan_due(start + Duration::from_secs(10)));
+
+        let process = Process {
+            name: "Browser".into(),
+            path: String::new(),
+        };
+        let (send, receive) = mpsc::sync_channel(1);
+        send.send(Matches::from([(request("one"), process.clone())]))
+            .unwrap();
+        lookup.pending = Some(receive);
+        assert_eq!(
+            lookup.update(requests()).get(&request("one")),
+            Some(&process)
+        );
+        assert!(lookup.scan_due(start + Duration::from_secs(5)));
+
+        lookup.last_scan = None;
+        assert!(lookup
+            .update(HashSet::from([request("one")]))
+            .contains_key(&request("one")));
+        assert!(lookup.pending.is_none());
+        assert!(lookup.update(HashSet::new()).is_empty());
+        assert!(lookup.pending.is_none());
     }
 
     #[test]
