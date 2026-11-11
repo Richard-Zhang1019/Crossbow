@@ -70,9 +70,6 @@ fn apply_runtime_mihomo(base_yaml: &str, rt: &RuntimeConfig) -> Result<String, S
     );
     patch.insert(Value::from("mode"), Value::from("rule"));
     patch.insert(Value::from("log-level"), Value::from(rt.log_level.as_str()));
-    // 显式钉住 strict（= mihomo 默认）：进程元数据由连接页的应用侧补齐兜底
-    // （#418），这里防上游默认值漂移；always 在新版 macOS 上实测全失效。
-    patch.insert(Value::from("find-process-mode"), Value::from("strict"));
     if rt.tun_enable {
         // mihomo 内置 sing-tun：gVisor 网栈 + 自动路由；TUN 必须配 DNS（fake-ip）。
         // 覆盖默认路由时保留本机物理网关，睡眠唤醒或出口断开时可继续管理路由。
@@ -286,16 +283,6 @@ fn sb_log_level(level: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// #418：find-process-mode 显式钉 strict——订阅自带该键时被覆盖，
-    /// 防上游默认值漂移或订阅侧改写。
-    #[test]
-    fn find_process_mode_is_pinned_to_strict() {
-        let base = "find-process-mode: always\nmixed-port: 7897\nproxies: []\n";
-        let out = apply_runtime(base, &RuntimeConfig::default()).unwrap();
-        assert!(out.contains("find-process-mode: strict"));
-        assert!(!out.contains("always"));
-    }
 
     /// #136：无原生 v6 时 TUN 不注入 inet6 地址/分流路由，dns.ipv6 关闭；
     /// 有原生 v6（默认）时维持 #59 双栈注入。

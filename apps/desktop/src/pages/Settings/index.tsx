@@ -125,7 +125,7 @@ export default function SettingsPage({
         if (!dirtyPort.current) setPortDraft(String(e.mixed_port));
         if (!engineTouched.current) { setSelectedEngine(e.engine); selectedEngineRef.current = e.engine; }
       }),
-      read("ui", ipc.getUiSettings, ui => { setLangState(ui.lang as "zh" | "en"); setLightweight(ui.lightweight_close); setDeeplinkConfirm(ui.deep_link_import_confirm); setTheme(ui.theme); }),
+      read("ui", ipc.getUiSettings, ui => { setLangState(ui.lang as "zh" | "en"); setLightweight(ui.lightweight_close); setDeeplinkConfirm(ui.deep_link_import_confirm ?? true); setTheme(ui.theme); }),
       read("activity", ipc.getActivityReporting, setActivityReporting),
       read("autostart", ipc.autostartStatus, setAutostart),
       read("tun", ipc.tunStatus, value => setTun({ ...value, enabled: latestTunEvent.current ?? value.enabled })),
@@ -646,7 +646,7 @@ export default function SettingsPage({
               checked={deeplinkConfirm}
               onChange={async (v) => {
                 await saveSetting(
-                  "deeplinkConfirm",
+                  "deepLinkConfirm",
                   t("settings.deepLinkConfirm"),
                   () => ipc.setDeepLinkImportConfirm(v),
                   () => setDeeplinkConfirm(v),
