@@ -5,7 +5,7 @@ pub(crate) fn render_current(
     state: &AppState,
     use_overrides: bool,
 ) -> Result<crossbow_core::Rendered, String> {
-    let mut store = state.store.lock().unwrap();
+    let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
     match crossbow_core::render_config_with(store.data(), use_overrides) {
         Ok(r) => {
             platform::validate_config(store.data().engine.engine, &r.config)?;
@@ -63,7 +63,7 @@ pub(crate) fn wait_core_running(state: &AppState) -> Result<(), String> {
 pub(crate) fn start_core_locked(state: &AppState) -> Result<(), String> {
     let safe = state.safe_mode.load(std::sync::atomic::Ordering::SeqCst);
     let is_singbox = {
-        let store = state.store.lock().unwrap();
+        let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         store.data().engine.engine == crossbow_core::Engine::SingBox
     };
     let need = if is_singbox { "sing-box" } else { "mihomo" };
@@ -75,7 +75,7 @@ pub(crate) fn start_core_locked(state: &AppState) -> Result<(), String> {
     // CoreManager::start synchronously notifies the status callback, which also
     // reads the store. Release this guard before either TUN or regular startup.
     let rt = {
-        let store = state.store.lock().unwrap();
+        let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         let tun_enable = store.data().engine.tun_enable;
         // v6 双栈注入与原生 v6 可达性联动（#136）：v4-only 网络上 DIRECT
         // 的 v6 目的地发不出去，只会在日志里刷 no route to host。
@@ -141,7 +141,7 @@ pub(crate) fn start_core_locked(state: &AppState) -> Result<(), String> {
             let wireguard_coexist = state
                 .store
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .data()
                 .engine
                 .linux_wireguard_coexist;

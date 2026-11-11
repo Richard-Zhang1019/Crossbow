@@ -120,3 +120,16 @@ class StartupFailures(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class UnwrapGuardTest(unittest.TestCase):
+    """#422：unwrap 护栏——毒锁清零 + command 入口零 unwrap 的阈值不被回潮。"""
+
+    def test_guard_passes_on_current_tree(self):
+        import subprocess, sys
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[3]
+        result = subprocess.run(
+            [sys.executable, str(root / "scripts/ci/check_unwraps.py")],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)

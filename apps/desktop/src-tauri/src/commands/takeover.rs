@@ -106,11 +106,11 @@ pub(crate) fn tun_status(state: State<AppState>) -> TunStatus {
     #[cfg(target_os = "macos")]
     {
         let enabled = {
-            let store = state.store.lock().unwrap();
+            let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
             store.data().engine.tun_enable
         };
         let is_singbox = {
-            let store = state.store.lock().unwrap();
+            let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
             store.data().engine.engine == crossbow_core::Engine::SingBox
         };
         let need = if is_singbox { "sing-box" } else { "mihomo" };
@@ -125,7 +125,7 @@ pub(crate) fn tun_status(state: State<AppState>) -> TunStatus {
     #[cfg(target_os = "windows")]
     {
         let enabled = {
-            let store = state.store.lock().unwrap();
+            let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
             store.data().engine.tun_enable
         };
         TunStatus {
@@ -140,7 +140,15 @@ pub(crate) fn tun_status(state: State<AppState>) -> TunStatus {
         TunStatus {
             enabled: crate::network::linux_service::status()
                 .map(|s| s.is_some_and(|s| s.active))
-                .unwrap_or_else(|_| state.store.lock().unwrap().data().engine.tun_enable),
+                .unwrap_or_else(|_| {
+                    state
+                        .store
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .data()
+                        .engine
+                        .tun_enable
+                }),
             ready: crate::network::linux_service::installed(),
             core_running: state.core().status() == CoreStatus::Running,
         }
@@ -169,7 +177,13 @@ pub(crate) async fn set_tun(
         );
         let result = crate::network::tun::toggle_tun(&state, enable);
         notifications::result(&app, "tun-switch", "tray.tun", result.clone());
-        let actual = state.store.lock().unwrap().data().engine.tun_enable;
+        let actual = state
+            .store
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .data()
+            .engine
+            .tun_enable;
         let _ = app.emit("tun://status", actual);
         let _ = app.emit("sysproxy://status", state.sysproxy.status());
         refresh_tray(&app);
@@ -183,7 +197,13 @@ pub(crate) async fn set_tun(
         );
         let result = crate::network::tun_windows::toggle_tun(&state, enable);
         notifications::result(&app, "tun-switch", "tray.tun", result.clone());
-        let actual = state.store.lock().unwrap().data().engine.tun_enable;
+        let actual = state
+            .store
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .data()
+            .engine
+            .tun_enable;
         let _ = app.emit("tun://status", actual);
         let _ = app.emit("sysproxy://status", state.sysproxy.status());
         refresh_tray(&app);
@@ -195,7 +215,15 @@ pub(crate) async fn set_tun(
         notifications::result(&app, "tun-switch", "tray.tun", result.clone());
         let actual = crate::network::linux_service::status()
             .map(|s| s.is_some_and(|s| s.active))
-            .unwrap_or_else(|_| state.store.lock().unwrap().data().engine.tun_enable);
+            .unwrap_or_else(|_| {
+                state
+                    .store
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .data()
+                    .engine
+                    .tun_enable
+            });
         let _ = app.emit("tun://status", actual);
         refresh_tray(&app);
         result

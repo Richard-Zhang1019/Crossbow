@@ -122,7 +122,7 @@ fn profile_group_order(handle: &AppHandle) -> Vec<String> {
         return Vec::new();
     };
     let content = {
-        let store = state.store.lock().unwrap();
+        let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         store
             .data()
             .active_profile
@@ -250,7 +250,7 @@ fn toggle_sysproxy_state(state: &AppState) -> Result<(), String> {
     }
     let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
     state.exit.ensure_open()?;
-    let store = state.store.lock().unwrap();
+    let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
     let port = store.data().engine.mixed_port;
     let tun_enabled = store.data().engine.tun_enable;
     drop(store);
@@ -588,7 +588,14 @@ pub fn run() {
                 let app = window.app_handle();
                 let lightweight = app
                     .try_state::<AppState>()
-                    .map(|s| s.store.lock().unwrap().data().ui.lightweight_close)
+                    .map(|s| {
+                        s.store
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .data()
+                            .ui
+                            .lightweight_close
+                    })
                     .unwrap_or(false);
                 if lightweight {
                     lightweight_quit(app);

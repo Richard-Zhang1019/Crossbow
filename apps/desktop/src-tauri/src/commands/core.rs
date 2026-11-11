@@ -12,14 +12,14 @@ pub(crate) fn set_core_mode(
     if let Some((port, secret)) = state.core().controller() {
         crate::engine::api::Controller { port, secret }.patch_mode(&mode)?;
     }
-    *state.mode.lock().unwrap() = mode.clone();
+    *state.mode.lock().unwrap_or_else(|e| e.into_inner()) = mode.clone();
     let _ = app.emit("core://mode", mode);
     refresh_tray(&app);
     Ok(())
 }
 #[tauri::command]
 pub(crate) fn core_mode(state: State<AppState>) -> String {
-    state.mode.lock().unwrap().clone()
+    state.mode.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 /// 内核版本（执行 `<bin> -v` 首行）。
 #[tauri::command]

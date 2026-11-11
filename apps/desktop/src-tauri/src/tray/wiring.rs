@@ -38,7 +38,7 @@ pub(crate) fn core_status_callback(handle: AppHandle) -> crate::engine::manager:
             if crate::network::linux_service::status()
                 .is_ok_and(|session| session.is_none_or(|s| !s.active))
             {
-                let mut store = state.store.lock().unwrap();
+                let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
                 if store.data().engine.tun_enable {
                     store.data_mut().engine.tun_enable = false;
                     if let Err(error) = store.save() {
@@ -64,14 +64,14 @@ pub(crate) fn core_status_callback(handle: AppHandle) -> crate::engine::manager:
                     .safe_mode
                     .store(true, std::sync::atomic::Ordering::SeqCst);
                 {
-                    let mut store = state.store.lock().unwrap();
+                    let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
                     for o in store.data_mut().overrides.iter_mut() {
                         o.enabled = false;
                     }
                     let _ = store.save();
                 }
                 let (port, tun_enabled) = {
-                    let store = state.store.lock().unwrap();
+                    let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
                     (
                         store.data().engine.mixed_port,
                         store.data().engine.tun_enable,
@@ -368,7 +368,13 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
         loop {
             let cycle_started = std::time::Instant::now();
             if let Some(state) = handle.try_state::<AppState>() {
-                let tun_enabled = state.store.lock().unwrap().data().engine.tun_enable;
+                let tun_enabled = state
+                    .store
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .data()
+                    .engine
+                    .tun_enable;
                 let core_status = state.core().status();
                 #[cfg(unix)]
                 let core_pid = state.core().pid();
@@ -395,7 +401,13 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                             let _operation =
                                 state.core_op.lock().unwrap_or_else(|e| e.into_inner());
                             if state.exit.ensure_open().is_ok()
-                                && !state.store.lock().unwrap().data().engine.tun_enable
+                                && !state
+                                    .store
+                                    .lock()
+                                    .unwrap_or_else(|e| e.into_inner())
+                                    .data()
+                                    .engine
+                                    .tun_enable
                                 && matches!(
                                     state.core().status(),
                                     CoreStatus::Crashed(_) | CoreStatus::Stopped
@@ -531,7 +543,13 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                             &state.core_op,
                             || {
                                 state.exit.ensure_open().is_ok()
-                                    && state.store.lock().unwrap().data().engine.tun_enable
+                                    && state
+                                        .store
+                                        .lock()
+                                        .unwrap_or_else(|e| e.into_inner())
+                                        .data()
+                                        .engine
+                                        .tun_enable
                             },
                             || state.sysproxy.external_proxy_conflict_for_tun(),
                         );
@@ -578,8 +596,13 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                                 "tun health check failed ({failures}/{MAX_CONSECUTIVE_FAILURES}): {error}"
                             );
                             if failures >= MAX_CONSECUTIVE_FAILURES {
-                                let still_enabled =
-                                    state.store.lock().unwrap().data().engine.tun_enable;
+                                let still_enabled = state
+                                    .store
+                                    .lock()
+                                    .unwrap_or_else(|e| e.into_inner())
+                                    .data()
+                                    .engine
+                                    .tun_enable;
                                 if still_enabled && wedge_restarts < MAX_WEDGE_RESTARTS {
                                     // 重启内核优先（#350）：SIGTERM 让 mihomo 走退出钩子
                                     // 恢复路由，崩溃自动重启链路拉起新内核重建 TUN——
@@ -603,7 +626,13 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                                         let _operation =
                                             state.core_op.lock().unwrap_or_else(|e| e.into_inner());
                                         state.exit.ensure_open().is_ok()
-                                            && state.store.lock().unwrap().data().engine.tun_enable
+                                            && state
+                                                .store
+                                                .lock()
+                                                .unwrap_or_else(|e| e.into_inner())
+                                                .data()
+                                                .engine
+                                                .tun_enable
                                             && state.core().status() == CoreStatus::Running
                                             && core_pid.is_some()
                                             && state.core().pid() == core_pid
@@ -641,7 +670,7 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                                             let actual = state
                                                 .store
                                                 .lock()
-                                                .unwrap()
+                                                .unwrap_or_else(|e| e.into_inner())
                                                 .data()
                                                 .engine
                                                 .tun_enable;
@@ -992,7 +1021,14 @@ pub(crate) fn update_tray_node_menu(handle: &AppHandle, testing: bool) {
     let Some(state) = handle.try_state::<AppState>() else {
         return;
     };
-    let lang = state.store.lock().unwrap().data().ui.lang.clone();
+    let lang = state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .ui
+        .lang
+        .clone();
     let data = state
         .node_menu
         .lock()
@@ -1006,7 +1042,14 @@ pub(crate) fn update_tray_node_menu(handle: &AppHandle, testing: bool) {
 
 #[cfg(target_os = "macos")]
 pub(crate) fn tray_menu_data(state: &AppState) -> crate::tray::state::TrayMenuData {
-    let lang = state.store.lock().unwrap().data().ui.lang.clone();
+    let lang = state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .ui
+        .lang
+        .clone();
     let node_label = tr(&lang, "节点选择", "Nodes");
     let current_label = tr(&lang, "当前", "Current");
     let tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
@@ -1019,11 +1062,24 @@ pub(crate) fn tray_menu_entries(
 ) -> Vec<crate::tray::menu::Entry> {
     use crate::tray::menu::Entry;
     let state = app.state::<AppState>();
-    let lang = state.store.lock().unwrap().data().ui.lang.clone();
+    let lang = state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .ui
+        .lang
+        .clone();
 
     let sp = state.sysproxy.status();
     #[cfg(target_os = "macos")]
-    let tun_enabled = state.store.lock().unwrap().data().engine.tun_enable;
+    let tun_enabled = state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .engine
+        .tun_enable;
     let proxy_label = if !platform::capabilities().system_proxy {
         tr(
             &lang,
@@ -1061,7 +1117,7 @@ pub(crate) fn tray_menu_entries(
     #[cfg(target_os = "macos")]
     let tun_item = Entry::action("toggle-tun", tun_label, true);
 
-    let mode = state.mode.lock().unwrap().clone();
+    let mode = state.mode.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let mode_label = format!(
         "{}：{}",
         tr(&lang, "模式", "Mode"),
@@ -1089,7 +1145,7 @@ pub(crate) fn tray_menu_entries(
     );
 
     let (profiles, active) = {
-        let store = state.store.lock().unwrap();
+        let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         (
             store.data().profiles.clone(),
             store.data().active_profile.clone(),

@@ -65,7 +65,13 @@ pub(crate) fn set_logs_save(
 /// 日志保存设置（#29）。
 #[tauri::command]
 pub(crate) fn logs_settings(state: State<AppState>) -> crossbow_core::model::LogSettings {
-    state.store.lock().unwrap().data().logs.clone()
+    state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .logs
+        .clone()
 }
 /// 前端黑匣子：全局错误/心跳落盘，用于定位 webview 白屏类问题。
 #[tauri::command]

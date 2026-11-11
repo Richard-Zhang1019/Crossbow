@@ -45,7 +45,7 @@ pub(crate) fn proxies_snapshot(
     let mut groups = controller_client(&state)?.groups()?;
     // 按订阅声明顺序展示（与 ClashX 一致，主选择组在前）；GLOBAL 恒最后
     let order = {
-        let store = state.store.lock().unwrap();
+        let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         store
             .data()
             .active_profile

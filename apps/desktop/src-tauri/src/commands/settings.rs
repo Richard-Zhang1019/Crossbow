@@ -21,7 +21,7 @@ pub(crate) fn set_lang(app: AppHandle, state: State<AppState>, lang: String) -> 
         return Err(format!("invalid lang: {lang}"));
     }
     {
-        let mut store = state.store.lock().unwrap();
+        let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         store.data_mut().ui.lang = lang.clone();
         store.save().map_err(|e| e.to_string())?;
     }
@@ -31,7 +31,7 @@ pub(crate) fn set_lang(app: AppHandle, state: State<AppState>, lang: String) -> 
 }
 #[tauri::command]
 pub(crate) fn set_lightweight_close(state: State<AppState>, enabled: bool) -> Result<(), String> {
-    let mut store = state.store.lock().unwrap();
+    let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
     store.data_mut().ui.lightweight_close = enabled;
     store.save().map_err(|e| e.to_string())?;
     Ok(())
@@ -46,7 +46,7 @@ pub(crate) fn set_theme(
         return Err(format!("invalid theme: {theme}"));
     }
     {
-        let mut store = state.store.lock().unwrap();
+        let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         store.data_mut().ui.theme = theme.clone();
         store.save().map_err(|e| e.to_string())?;
     }
@@ -58,7 +58,7 @@ pub(crate) fn set_theme(
 }
 #[tauri::command]
 pub(crate) fn get_engine_config(state: State<AppState>) -> EngineView {
-    let store = state.store.lock().unwrap();
+    let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
     let need = match store.data().engine.engine {
         crossbow_core::Engine::SingBox => "sing-box",
         crossbow_core::Engine::Mihomo => "mihomo",
@@ -77,7 +77,13 @@ pub(crate) fn get_engine_config(state: State<AppState>) -> EngineView {
 }
 #[tauri::command]
 pub(crate) fn get_ui_settings(state: State<AppState>) -> UiSettings {
-    state.store.lock().unwrap().data().ui.clone()
+    state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .ui
+        .clone()
 }
 #[tauri::command]
 pub(crate) fn platform_capabilities() -> platform::Capabilities {
@@ -85,7 +91,7 @@ pub(crate) fn platform_capabilities() -> platform::Capabilities {
 }
 #[tauri::command]
 pub(crate) fn set_flag_emoji(state: State<AppState>, enabled: bool) -> Result<(), String> {
-    let mut store = state.store.lock().unwrap();
+    let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
     store.data_mut().engine.flag_emoji = enabled;
     store.save().map_err(|e| e.to_string())?;
     Ok(())

@@ -33,7 +33,16 @@ pub(crate) fn show_main_window(app: &AppHandle) {
             if let Ok(win) = built.as_ref() {
                 let theme = app
                     .try_state::<AppState>()
-                    .map(|state| state.store.lock().unwrap().data().ui.theme.clone())
+                    .map(|state| {
+                        state
+                            .store
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .data()
+                            .ui
+                            .theme
+                            .clone()
+                    })
                     .unwrap_or_else(|| "system".to_string());
                 apply_window_appearance(win, &theme);
                 let _ = crate::platform::window_focus::present(win);
@@ -73,7 +82,13 @@ pub(crate) fn cleanup_before_process_exit(
             || state
                 .update_handoff
                 .load(std::sync::atomic::Ordering::SeqCst));
-    let tun_enabled = state.store.lock().unwrap().data().engine.tun_enable;
+    let tun_enabled = state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .engine
+        .tun_enable;
     let result = state.exit.finish(
         handed_off,
         || state.sysproxy.prepare_exit(tun_enabled),
@@ -106,7 +121,13 @@ pub(crate) fn prepare_windows_update_exit(app: &AppHandle) -> Result<(), String>
         .core_op
         .lock()
         .unwrap_or_else(|error| error.into_inner());
-    let tun_enabled = state.store.lock().unwrap().data().engine.tun_enable;
+    let tun_enabled = state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .engine
+        .tun_enable;
     let result = state.sysproxy.prepare_exit(tun_enabled);
     if result.is_err() {
         state.exit.cancel();
@@ -296,9 +317,21 @@ pub(crate) fn handle_menu(app: &AppHandle, id: &str) {
                         ),
                     );
                     let state = handle.state::<AppState>();
-                    let enabled = state.store.lock().unwrap().data().engine.tun_enable;
+                    let enabled = state
+                        .store
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .data()
+                        .engine
+                        .tun_enable;
                     let result = crate::network::tun_windows::toggle_tun(&state, !enabled);
-                    let actual = state.store.lock().unwrap().data().engine.tun_enable;
+                    let actual = state
+                        .store
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .data()
+                        .engine
+                        .tun_enable;
                     let _ = handle.emit("tun://status", actual);
                     let _ = handle.emit("sysproxy://status", state.sysproxy.status());
                     refresh_tray(&handle);
@@ -323,9 +356,21 @@ pub(crate) fn handle_menu(app: &AppHandle, id: &str) {
                         ),
                     );
                     let state = handle.state::<AppState>();
-                    let enabled = state.store.lock().unwrap().data().engine.tun_enable;
+                    let enabled = state
+                        .store
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .data()
+                        .engine
+                        .tun_enable;
                     let result = crate::network::tun::toggle_tun(&state, !enabled);
-                    let actual = state.store.lock().unwrap().data().engine.tun_enable;
+                    let actual = state
+                        .store
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .data()
+                        .engine
+                        .tun_enable;
                     let _ = handle.emit("tun://status", actual);
                     let _ = handle.emit("sysproxy://status", state.sysproxy.status());
                     refresh_tray(&handle);
@@ -340,7 +385,10 @@ pub(crate) fn handle_menu(app: &AppHandle, id: &str) {
             Ok(())
         }
         "mode-direct" | "mode-rule" | "mode-global" => {
-            let mode = id.strip_prefix("mode-").unwrap().to_string();
+            let mode = id
+                .strip_prefix("mode-")
+                .expect("上方 starts_with 已保证 mode- 前缀")
+                .to_string();
             let handle = app.clone();
             std::thread::spawn(move || {
                 notifications::publish(
@@ -389,7 +437,7 @@ pub(crate) fn handle_menu(app: &AppHandle, id: &str) {
                     .state::<AppState>()
                     .node_menu
                     .lock()
-                    .unwrap()
+                    .unwrap_or_else(|e| e.into_inner())
                     .group()
                     .to_string();
                 let h = app.clone();

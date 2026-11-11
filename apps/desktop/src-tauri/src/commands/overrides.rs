@@ -22,7 +22,7 @@ pub(crate) async fn set_override_enabled(
     if affects_running {
         commit_config_change(&state, edit)?;
     } else {
-        let mut store = state.store.lock().unwrap();
+        let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         edit(store.data_mut())?;
         store.save().map_err(|e| e.to_string())?;
     }
@@ -37,7 +37,7 @@ pub(crate) async fn toggle_override_binding(
     enabled: bool,
 ) -> Result<(), String> {
     let affects_running = {
-        let store = state.store.lock().unwrap();
+        let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         store.data().active_profile.as_deref() == Some(profile_id.as_str())
     };
     let edit = |data: &mut crossbow_core::StoreSchema| {
@@ -58,7 +58,7 @@ pub(crate) async fn toggle_override_binding(
     if affects_running {
         commit_config_change(&state, edit)?;
     } else {
-        let mut store = state.store.lock().unwrap();
+        let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         edit(store.data_mut())?;
         store.save().map_err(|e| e.to_string())?;
     }
@@ -82,7 +82,7 @@ pub(crate) async fn remove_override(
     if affects_running {
         commit_config_change(&state, edit)?;
     } else {
-        let mut store = state.store.lock().unwrap();
+        let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         edit(store.data_mut())?;
         store.save().map_err(|e| e.to_string())?;
     }
@@ -114,7 +114,7 @@ pub(crate) fn update_override(
     if affects_running {
         commit_config_change(&state, edit)?;
     } else {
-        let mut store = state.store.lock().unwrap();
+        let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         edit(store.data_mut())?;
         store.save().map_err(|e| e.to_string())?;
     }
@@ -129,7 +129,7 @@ pub(crate) async fn apply_overrides(state: State<'_, AppState>) -> Result<(), St
 /// 校验当前覆写链（渲染一遍，错误记录到对应覆写）。
 #[tauri::command]
 pub(crate) async fn validate_overrides(state: State<'_, AppState>) -> Result<(), String> {
-    let mut store = state.store.lock().unwrap();
+    let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
     let failures = crossbow_core::validate_enabled_overrides(store.data());
     for (id, err) in &failures {
         store.data_mut().set_override_error(id, Some(err.clone()));
@@ -179,7 +179,7 @@ pub(crate) async fn create_override(
         },
     };
     {
-        let mut store = state.store.lock().unwrap();
+        let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         store.data_mut().overrides.push(def.clone());
         store.save().map_err(|e| e.to_string())?;
     }
@@ -192,5 +192,11 @@ pub(crate) async fn create_override(
 pub(crate) async fn list_overrides(
     state: State<'_, AppState>,
 ) -> Result<Vec<crossbow_core::OverrideDef>, String> {
-    Ok(state.store.lock().unwrap().data().overrides.clone())
+    Ok(state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .overrides
+        .clone())
 }

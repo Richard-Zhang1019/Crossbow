@@ -4,11 +4,23 @@ use tauri::{AppHandle, Emitter, State};
 
 #[tauri::command]
 pub(crate) fn active_profile_id(state: State<AppState>) -> Option<String> {
-    state.store.lock().unwrap().data().active_profile.clone()
+    state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .active_profile
+        .clone()
 }
 #[tauri::command]
 pub(crate) fn list_profiles(state: State<AppState>) -> Vec<Profile> {
-    state.store.lock().unwrap().data().profiles.clone()
+    state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .profiles
+        .clone()
 }
 #[tauri::command]
 pub(crate) fn remove_profile(
@@ -17,7 +29,7 @@ pub(crate) fn remove_profile(
     id: String,
 ) -> Result<(), String> {
     {
-        let mut store = state.store.lock().unwrap();
+        let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         store.data_mut().remove_profile(&id)?;
         store.save().map_err(|e| e.to_string())?;
     }
@@ -44,7 +56,7 @@ pub(crate) fn set_profile_interval(
     id: String,
     interval_min: u32,
 ) -> Result<(), String> {
-    let mut store = state.store.lock().unwrap();
+    let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
     let p = store
         .data_mut()
         .profiles
@@ -69,7 +81,7 @@ pub(crate) fn rename_profile(
         return Err("名称不能为空".into());
     }
     {
-        let mut store = state.store.lock().unwrap();
+        let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         let p = store
             .data_mut()
             .profiles

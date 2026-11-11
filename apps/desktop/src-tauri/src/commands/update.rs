@@ -29,7 +29,13 @@ pub(crate) fn set_update_auto_check(state: State<AppState>, enabled: bool) -> Re
 }
 #[tauri::command]
 pub(crate) fn update_settings_get(state: State<AppState>) -> crossbow_core::model::UpdateSettings {
-    state.store.lock().unwrap().data().update.clone()
+    state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .update
+        .clone()
 }
 #[tauri::command]
 pub(crate) async fn update_install(app: AppHandle) -> Result<(), String> {

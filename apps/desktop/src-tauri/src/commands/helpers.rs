@@ -54,7 +54,7 @@ pub(crate) fn import_url_blocking(
     profile.traffic = fetched.traffic;
     profile.last_updated = Some(now_secs());
 
-    let mut store = state.store.lock().unwrap();
+    let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
     store
         .data_mut()
         .add_profile(profile.clone())
@@ -83,7 +83,7 @@ pub(crate) fn import_content_blocking(
     profile.content = content;
     profile.last_updated = Some(now_secs());
 
-    let mut store = state.store.lock().unwrap();
+    let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
     store
         .data_mut()
         .add_profile(profile.clone())
@@ -99,7 +99,7 @@ pub(crate) fn refresh_profile_blocking(
     id: &str,
 ) -> Result<Profile, String> {
     let url = {
-        let store = state.store.lock().unwrap();
+        let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         store
             .data()
             .profile(id)
@@ -109,7 +109,31 @@ pub(crate) fn refresh_profile_blocking(
     let fetched = match fetch_subscription(&url, 30) {
         Ok(f) => f,
         Err(e) => {
-            let _ = state.store.lock().unwrap().data_mut().set_profile_outcome(
+            let _ = state
+                .store
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .data_mut()
+                .set_profile_outcome(
+                    id,
+                    crossbow_core::UpdateOutcome {
+                        ok: false,
+                        changes: None,
+                        detail: Some(e.to_string()),
+                        at: now_secs(),
+                    },
+                );
+            let _ = state.store.lock().unwrap_or_else(|e| e.into_inner()).save();
+            return Err(e.to_string());
+        }
+    };
+    if let Err(e) = validate_profile_content(&fetched.content) {
+        let _ = state
+            .store
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .data_mut()
+            .set_profile_outcome(
                 id,
                 crossbow_core::UpdateOutcome {
                     ok: false,
@@ -118,32 +142,18 @@ pub(crate) fn refresh_profile_blocking(
                     at: now_secs(),
                 },
             );
-            let _ = state.store.lock().unwrap().save();
-            return Err(e.to_string());
-        }
-    };
-    if let Err(e) = validate_profile_content(&fetched.content) {
-        let _ = state.store.lock().unwrap().data_mut().set_profile_outcome(
-            id,
-            crossbow_core::UpdateOutcome {
-                ok: false,
-                changes: None,
-                detail: Some(e.to_string()),
-                at: now_secs(),
-            },
-        );
-        let _ = state.store.lock().unwrap().save();
+        let _ = state.store.lock().unwrap_or_else(|e| e.into_inner()).save();
         return Err(e.to_string());
     }
 
     let active = {
-        let store = state.store.lock().unwrap();
+        let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         store.data().active_profile.as_deref() == Some(id)
     };
     let previous_content = state
         .store
         .lock()
-        .unwrap()
+        .unwrap_or_else(|e| e.into_inner())
         .data()
         .profile(id)
         .map(|p| p.content.clone())
@@ -158,39 +168,49 @@ pub(crate) fn refresh_profile_blocking(
             data.update_profile_content(id, content.clone(), updated_at, traffic)
         })
     } else {
-        let mut store = state.store.lock().unwrap();
+        let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         store
             .data_mut()
             .update_profile_content(id, content, updated_at, traffic)?;
         store.save().map_err(|e| e.to_string())
     };
     if let Err(error) = apply {
-        let _ = state.store.lock().unwrap().data_mut().set_profile_outcome(
+        let _ = state
+            .store
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .data_mut()
+            .set_profile_outcome(
+                id,
+                crossbow_core::UpdateOutcome {
+                    ok: false,
+                    changes: None,
+                    detail: Some(error.clone()),
+                    at: now_secs(),
+                },
+            );
+        let _ = state.store.lock().unwrap_or_else(|e| e.into_inner()).save();
+        return Err(error);
+    }
+    let _ = state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data_mut()
+        .set_profile_outcome(
             id,
             crossbow_core::UpdateOutcome {
-                ok: false,
-                changes: None,
-                detail: Some(error.clone()),
+                ok: true,
+                changes,
+                detail: None,
                 at: now_secs(),
             },
         );
-        let _ = state.store.lock().unwrap().save();
-        return Err(error);
-    }
-    let _ = state.store.lock().unwrap().data_mut().set_profile_outcome(
-        id,
-        crossbow_core::UpdateOutcome {
-            ok: true,
-            changes,
-            detail: None,
-            at: now_secs(),
-        },
-    );
-    let _ = state.store.lock().unwrap().save();
+    let _ = state.store.lock().unwrap_or_else(|e| e.into_inner()).save();
     let profile = state
         .store
         .lock()
-        .unwrap()
+        .unwrap_or_else(|e| e.into_inner())
         .data()
         .profile(id)
         .cloned()
