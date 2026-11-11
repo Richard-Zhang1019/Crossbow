@@ -270,10 +270,7 @@ impl Session {
             return Err("Linux 服务连接已断开，清理结果尚未确认".into());
         }
         let result = exchange(&mut self.stream, &payload, timeout);
-        if result
-            .as_ref()
-            .map_or(true, |(_, disconnected)| *disconnected)
-        {
+        if !matches!(result, Ok((_, false))) {
             self.broken = true;
             let _ = self.stream.shutdown(std::net::Shutdown::Both);
         }
