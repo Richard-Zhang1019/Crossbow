@@ -6,7 +6,9 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use crossbow_core::subscription::{fetch_subscription, now_secs, validate_profile_content};
 use crossbow_core::{Profile, ProfileKind, RuntimeConfig, Store, UiSettings};
@@ -2171,9 +2173,20 @@ fn set_lightweight_close(state: State<AppState>, enabled: bool) -> Result<(), St
 
 #[tauri::command]
 fn set_deep_link_import_confirm(state: State<AppState>, enabled: bool) -> Result<(), String> {
-    let mut store = state.store.lock().unwrap();
+    let mut store = state.store.lock().map_err(|e| e.to_string())?;
+    persist_deep_link_import_confirm(&mut store, enabled)
+}
+
+fn persist_deep_link_import_confirm(store: &mut Store, enabled: bool) -> Result<(), String> {
+    let previous = store.data().ui.deep_link_import_confirm;
+    if previous == enabled {
+        return Ok(());
+    }
     store.data_mut().ui.deep_link_import_confirm = enabled;
-    store.save().map_err(|e| e.to_string())?;
+    if let Err(error) = store.save() {
+        store.data_mut().ui.deep_link_import_confirm = previous;
+        return Err(error.to_string());
+    }
     Ok(())
 }
 
@@ -2260,87 +2273,152 @@ fn core_version(state: State<AppState>) -> Result<String, String> {
 
 // ---------- 深链接 ----------
 
-/// `crossbow://import?url=<订阅地址>`：后台导入并通知前端。
-/// #420：深链导入确认。设置里的 deep_link_import_confirm 默认开启；
-/// YesNo 原生对话框展示脱敏 URL 与说明。关闭确认（设置开关）时直接放行。
-/// 文案按界面语言（store ui.lang）选择；rfd 无复选框能力，「不再询问」
-/// 由设置页开关承担，对话框内提示该路径。
-fn confirm_deep_link_import(app: &AppHandle, target: &str) -> bool {
-    let (confirm_enabled, lang) = app
-        .try_state::<AppState>()
-        .map(|state| {
-            let guard = state.store.lock().unwrap();
-            let ui = guard.data().ui.clone();
-            (ui.deep_link_import_confirm, ui.lang)
-        })
-        .unwrap_or((true, String::new()));
+const DEEP_LINK_CONFIRM_TIMEOUT: Duration = Duration::from_secs(60);
+static DEEP_LINK_IMPORT_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+struct DeepLinkImportGuard<'a>(&'a AtomicBool);
+
+impl<'a> DeepLinkImportGuard<'a> {
+    fn acquire(active: &'a AtomicBool) -> Option<Self> {
+        active
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .ok()?;
+        Some(Self(active))
+    }
+}
+
+impl Drop for DeepLinkImportGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
+fn deep_link_import_target(raw: &str) -> Option<url::Url> {
+    let link = url::Url::parse(raw).ok()?;
+    if link.scheme() != "crossbow" || link.host_str() != Some("import") {
+        return None;
+    }
+    let (_, target) = link.query_pairs().find(|(key, _)| key == "url")?;
+    let target = url::Url::parse(&target).ok()?;
+    (matches!(target.scheme(), "http" | "https") && target.has_host()).then_some(target)
+}
+
+fn deep_link_confirmation_accepted(confirmed: bool, elapsed: Duration) -> bool {
+    confirmed && elapsed < DEEP_LINK_CONFIRM_TIMEOUT
+}
+
+fn confirm_deep_link_import(state: &AppState, origin: &str) -> bool {
+    let Ok(store) = state.store.lock() else {
+        return false;
+    };
+    let confirm_enabled = store.data().ui.deep_link_import_confirm;
+    let zh = store.data().ui.lang == "zh";
+    drop(store);
     if !confirm_enabled {
         return true;
     }
-    let zh = lang == "zh";
+
     let (title, hint) = if zh {
         (
             "Crossbow 导入确认",
-            "将从上方地址导入订阅并可能改变流量走向，继续吗？\n（可在 设置 → 应用 中关闭此确认）",
+            "是否从上方来源导入订阅？此操作可能改变流量走向。请在 60 秒内确认。\n可在「设置 → 应用与更新」关闭此确认。",
         )
     } else {
         (
             "Crossbow import confirmation",
-            "A subscription will be imported from the address above, which may change where your traffic goes. Continue?\n(You can disable this confirmation in Settings → App.)",
+            "Import a subscription from the source above? This may change how your traffic is routed. Confirm within 60 seconds.\nYou can turn this off in Settings → Application & updates.",
         )
     };
-    let redacted = notifications::redact(target);
-    let answer = rfd::MessageDialog::new()
+    let description = format!("{origin}\n\n{hint}");
+    let opened_at = Instant::now();
+    let confirmed = show_deep_link_confirmation(title, &description, zh);
+    deep_link_confirmation_accepted(confirmed, opened_at.elapsed())
+}
+
+#[cfg(not(windows))]
+fn show_deep_link_confirmation(title: &str, description: &str, zh: bool) -> bool {
+    let (cancel, import) = if zh {
+        ("取消", "导入")
+    } else {
+        ("Cancel", "Import")
+    };
+    // Put the safe action first so the dialog's default cannot import.
+    let result = rfd::MessageDialog::new()
         .set_title(title)
-        .set_description(&format!("{redacted}\n\n{hint}"))
-        .set_buttons(rfd::MessageButtons::YesNo)
+        .set_description(description)
+        .set_level(rfd::MessageLevel::Warning)
+        .set_buttons(rfd::MessageButtons::OkCancelCustom(
+            cancel.into(),
+            import.into(),
+        ))
         .show();
-    answer == rfd::MessageDialogResult::Yes
+    matches!(result, rfd::MessageDialogResult::Custom(label) if label == import)
+}
+
+#[cfg(windows)]
+fn show_deep_link_confirmation(title: &str, description: &str, _zh: bool) -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        MessageBoxW, IDOK, MB_DEFBUTTON2, MB_ICONWARNING, MB_OKCANCEL, MB_SETFOREGROUND,
+    };
+
+    let title: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
+    let description: Vec<u16> = description
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    // The UTF-16 buffers are NUL-terminated and live through the synchronous call.
+    let result = unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            description.as_ptr(),
+            title.as_ptr(),
+            MB_OKCANCEL | MB_DEFBUTTON2 | MB_ICONWARNING | MB_SETFOREGROUND,
+        )
+    };
+    result == IDOK
 }
 
 fn handle_crossbow_url(app: &AppHandle, raw: &str) {
-    let Ok(u) = url::Url::parse(raw) else { return };
-    if u.host_str() != Some("import") {
+    let Some(target) = deep_link_import_target(raw) else {
         return;
-    }
-    let Some(target) = u
-        .query_pairs()
-        .find(|(k, _)| k == "url")
-        .map(|(_, v)| v.to_string())
-    else {
+    };
+    let Some(guard) = DeepLinkImportGuard::acquire(&DEEP_LINK_IMPORT_ACTIVE) else {
         return;
     };
     let app = app.clone();
-    std::thread::spawn(move || {
-        // #420：crossbow:// 可被任意程序触发（浏览器/IM/邮件里的链接），
-        // 导入订阅即改变路由决策链——必须先过用户确认；拒绝则完全不碰
-        // 状态（窗口都不弹，订阅列表零变化）。
-        if !confirm_deep_link_import(&app, &target) {
-            return;
-        }
-        show_main_window(&app);
-        let state = app.state::<AppState>();
-        match import_url_blocking(&state, &target, None) {
-            Ok(_) => {
-                let mut notice = notifications::Notice::new(
-                    notifications::Kind::Success,
-                    "import.done",
-                    "deep-link-import",
-                );
-                notice.description = notifications::redact(&target);
-                notifications::publish(&app, notice);
-                refresh_tray(&app);
+    let _ = std::thread::Builder::new()
+        .name("deep-link-import".into())
+        .spawn(move || {
+            let _guard = guard;
+            let Some(state) = app.try_state::<AppState>() else {
+                return;
+            };
+            let origin = target.origin().ascii_serialization();
+            if !confirm_deep_link_import(&state, &origin) {
+                return;
             }
-            Err(e) => {
-                notifications::result(
-                    &app,
-                    "deep-link-import",
-                    "import.failed",
-                    Err(format!("{target}: {e}")),
-                );
+            show_main_window(&app);
+            match import_url_blocking(&state, target.as_str(), None) {
+                Ok(_) => {
+                    let mut notice = notifications::Notice::new(
+                        notifications::Kind::Success,
+                        "import.done",
+                        "deep-link-import",
+                    );
+                    notice.description = origin;
+                    notifications::publish(&app, notice);
+                    refresh_tray(&app);
+                }
+                Err(e) => {
+                    notifications::result(
+                        &app,
+                        "deep-link-import",
+                        "import.failed",
+                        Err(format!("{origin}: {e}")),
+                    );
+                }
             }
-        }
-    });
+        });
 }
 
 /// 首页速率图预填（#181）：返回最近 120 秒采样（旧 → 新）
@@ -4305,9 +4383,14 @@ pub fn run() {
     tauri::Builder::default()
         // 单实例必须最先注册：二次启动的 argv 里可能带 crossbow:// 深链接。
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            show_main_window(app);
-            if let Some(url) = argv.iter().find(|a| a.starts_with("crossbow://")) {
+            if let Some(url) = argv
+                .iter()
+                .skip(1)
+                .find(|arg| url::Url::parse(arg).is_ok_and(|url| url.scheme() == "crossbow"))
+            {
                 handle_crossbow_url(app, url);
+            } else {
+                show_main_window(app);
             }
         }))
         .plugin(tauri_plugin_autostart::init(
@@ -4472,10 +4555,10 @@ pub fn run() {
                         handle_crossbow_url(&handle, url.as_str());
                     }
                 });
-                // Linux delivers the initial argv before setup registers this
-                // listener. Replay that startup URL; later invocations use the
-                // single-instance callback above.
-                #[cfg(target_os = "linux")]
+                // Windows and Linux record the startup URL before setup registers
+                // this listener. Replay it here. The single-instance callback handles
+                // later argv deliveries.
+                #[cfg(any(target_os = "linux", windows))]
                 if let Some(urls) = app.deep_link().get_current()? {
                     for url in urls {
                         handle_crossbow_url(app.handle(), url.as_str());
@@ -4729,6 +4812,62 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deep_link_target_must_be_http_and_display_only_its_origin() {
+        let target = deep_link_import_target(
+            "crossbow://import?url=https%3A%2F%2Fuser%3Asecret%40example.com%3A8443%2Fprivate%3Ftoken%3Dsecret%23fragment",
+        )
+        .unwrap();
+        assert_eq!(
+            target.origin().ascii_serialization(),
+            "https://example.com:8443"
+        );
+        assert!(deep_link_import_target("https://import?url=https://example.com").is_none());
+        assert!(deep_link_import_target("crossbow://import?url=file:///etc/hosts").is_none());
+        assert!(deep_link_import_target("crossbow://other?url=https://example.com").is_none());
+        assert!(deep_link_import_target("crossbow://import").is_none());
+    }
+
+    #[test]
+    fn deep_link_import_rejects_cancel_and_late_confirmation() {
+        assert!(!deep_link_confirmation_accepted(false, Duration::ZERO));
+        assert!(deep_link_confirmation_accepted(
+            true,
+            DEEP_LINK_CONFIRM_TIMEOUT - Duration::from_millis(1),
+        ));
+        assert!(!deep_link_confirmation_accepted(
+            true,
+            DEEP_LINK_CONFIRM_TIMEOUT
+        ));
+    }
+
+    #[test]
+    fn deep_link_import_allows_one_active_request() {
+        let active = AtomicBool::new(false);
+        let guard = DeepLinkImportGuard::acquire(&active).unwrap();
+        assert!(DeepLinkImportGuard::acquire(&active).is_none());
+        assert!(DeepLinkImportGuard::acquire(&active).is_none());
+        drop(guard);
+        assert!(DeepLinkImportGuard::acquire(&active).is_some());
+    }
+
+    #[test]
+    fn failed_deep_link_opt_out_preserves_confirmation() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut store = Store::open(directory.path()).unwrap();
+        store.save().unwrap();
+        std::fs::create_dir(directory.path().join("store.json.tmp")).unwrap();
+        assert!(persist_deep_link_import_confirm(&mut store, false).is_err());
+        assert!(store.data().ui.deep_link_import_confirm);
+        assert!(
+            Store::open(directory.path())
+                .unwrap()
+                .data()
+                .ui
+                .deep_link_import_confirm
+        );
+    }
 
     #[test]
     fn stale_proxy_clear_truth_table() {
