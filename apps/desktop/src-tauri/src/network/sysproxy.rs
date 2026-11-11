@@ -748,9 +748,9 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             enabled_port: None,
         };
         if previous_tun_journal.is_none() {
-            std::fs::write(
+            crate::platform::fs_perms::write_private(
                 &tun_journal,
-                serde_json::to_vec(&suspended).map_err(|error| error.to_string())?,
+                &serde_json::to_vec(&suspended).map_err(|error| error.to_string())?,
             )
             .map_err(|error| format!("保存 TUN 代理恢复日志失败：{error}"))?;
         }
@@ -905,7 +905,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         };
         let journal = serde_json::to_vec(&suspended)
             .map_err(|error| format!("serialize TUN proxy journal: {error}"))?;
-        std::fs::write(&tun_journal, journal)
+        crate::platform::fs_perms::write_private(&tun_journal, &journal)
             .map_err(|error| format!("save TUN proxy journal: {error}"))?;
         if let Err(error) = self.backend.disable_services(&services) {
             let rollback = self.backend.restore_services(&suspended.snapshot);
@@ -938,7 +938,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
     fn restore_after_failed_tun_locked(&self, suspended: SuspendedSysProxy) -> Result<(), String> {
         self.backend.restore_services(&suspended.snapshot)?;
         match suspended.journal {
-            Some(journal) => std::fs::write(&self.journal_path, journal)
+            Some(journal) => crate::platform::fs_perms::write_private(&self.journal_path, &journal)
                 .map_err(|error| format!("restore system proxy journal: {error}"))?,
             None => {
                 let _ = std::fs::remove_file(&self.journal_path);
@@ -1092,9 +1092,9 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         if let Some(parent) = self.journal_path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| format!("创建代理恢复目录失败: {e}"))?;
         }
-        std::fs::write(
+        crate::platform::fs_perms::write_private(
             &self.journal_path,
-            serde_json::to_vec(&j).map_err(|e| format!("序列化代理恢复日志失败: {e}"))?,
+            &serde_json::to_vec(&j).map_err(|e| format!("序列化代理恢复日志失败: {e}"))?,
         )
         .map_err(|e| format!("写入代理恢复日志失败: {e}"))
     }

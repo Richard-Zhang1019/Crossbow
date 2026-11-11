@@ -607,10 +607,7 @@ pub(crate) fn install_panic_hook() {
         let dir: Option<std::path::PathBuf> = None;
         if let Some(dir) = dir {
             let _ = std::fs::create_dir_all(&dir);
-            let _ = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(dir.join("panic.log"))
+            let _ = crate::platform::fs_perms::open_private_append(&dir.join("panic.log"))
                 .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
         }
         default_hook(info);
@@ -623,6 +620,46 @@ pub(crate) fn install_panic_hook() {
 /// → 还原系统代理（按快照）。在 Builder 之前执行，任何后续 panic 都不再
 /// 影响网络可用性。端口有监听（内核被收养/别的客户端占用同端口）则不动。
 #[cfg(any(target_os = "macos", windows))]
+
+/// 启动期数据目录卫生（在 Builder 之前、独占锁之后调用）：
+/// - #421：存量文件权限收敛到 0o600（unix）
+/// - #434：超大运行日志启动截断（保留尾部 256KB）——core-stdio.log 由
+///   内核持有 fd，运行期轮转不感知，故只在启动期（接管 stdout 前）截断；
+///   webview.log 同口径
+pub(crate) fn tidy_runtime_files(dir: &std::path::Path) {
+    use crate::platform::fs_perms::ensure_private;
+    for name in [
+        "sysproxy-journal.json",
+        "app.pid",
+        "webview.log",
+        "panic.log",
+        "runtime/core-stdio.log",
+    ] {
+        ensure_private(&dir.join(name));
+    }
+    const MAX_RUNTIME_LOG: u64 = 256 * 1024;
+    for name in ["runtime/core-stdio.log", "webview.log"] {
+        let path = dir.join(name);
+        let Ok(meta) = path.metadata() else { continue };
+        if meta.len() <= MAX_RUNTIME_LOG {
+            continue;
+        }
+        // 保留尾部 256KB：崩溃诊断价值在最后一段
+        if let Ok(all) = std::fs::read(&path) {
+            let tail_start = all.len().saturating_sub(MAX_RUNTIME_LOG as usize);
+            let tail = &all[tail_start..];
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&path)
+            {
+                let _ = std::io::Write::write_all(&mut f, tail);
+            }
+        }
+    }
+}
+
 pub(crate) fn clear_stale_system_proxy_early() {
     let dir = data_dir_for_early_hooks();
     let journal = dir.join("sysproxy-journal.json");
@@ -690,5 +727,60 @@ pub(crate) fn data_dir_for_early_hooks() -> std::path::PathBuf {
             .map(std::path::PathBuf::from)
             .map(|h| h.join("com.richard.crossbow"))
             .expect("APPDATA unset; cannot locate data dir")
+    }
+}
+
+#[cfg(test)]
+mod tidy_tests {
+    use super::*;
+    use std::io::Write;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
+    /// #434：超大运行日志启动截断——保留尾部 256KB；小文件不动。
+    #[test]
+    fn tidy_runtime_files_truncates_oversized_log() {
+        let dir = std::env::temp_dir().join(format!("cb-tidy-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("runtime")).unwrap();
+
+        // 超标：512KB → 截为 256KB（尾部）
+        let big = dir.join("runtime/core-stdio.log");
+        let payload = vec![b'x'; 512 * 1024];
+        std::fs::write(&big, &payload).unwrap();
+        // 小文件：不动
+        let small = dir.join("webview.log");
+        std::fs::write(&small, b"hello").unwrap();
+
+        tidy_runtime_files(&dir);
+
+        let truncated = std::fs::read(&big).unwrap();
+        assert_eq!(truncated.len(), 256 * 1024);
+        assert_eq!(&truncated[..8], b"xxxxxxxx");
+        assert_eq!(std::fs::read(&small).unwrap(), b"hello");
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// #421：tidy 把 644 的存量 journal 收敛到 600（unix）。
+    #[test]
+    #[cfg(unix)]
+    fn tidy_runtime_files_converges_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("cb-tidy-perm-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let journal = dir.join("sysproxy-journal.json");
+        std::fs::write(&journal, b"{}").unwrap();
+        let mut perms = journal.metadata().unwrap().permissions();
+        perms.set_mode(0o644);
+        std::fs::set_permissions(&journal, perms).unwrap();
+
+        tidy_runtime_files(&dir);
+
+        assert_eq!(
+            journal.metadata().unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        std::fs::remove_file(&journal).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
