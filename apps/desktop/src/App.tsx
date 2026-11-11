@@ -1,3 +1,4 @@
+import "@/styles/stacking.css";
 import ProfileSwitcher from "@/components/ProfileSwitcher";
 import { UpdateEntry } from "@/components/UpdateEntry";
 import { parseNavigation, type NavigationTarget } from "@/lib/workflow";

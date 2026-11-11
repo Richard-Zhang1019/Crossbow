@@ -1,4 +1,4 @@
-import { useTimeout } from "../../hooks/useTimers";
+import { useClipboardFeedback } from "@/hooks/useClipboardFeedback";
 import {Icon} from "@/components/Icon";
 import Select from "@/components/Select";
 import {SearchField} from "@/components/Controls";
@@ -168,7 +168,7 @@ export default function LogsPage() {
   const [following,setFollowing]=useState(true);
   const [exporting,setExporting]=useState(false);
   const exportFlight=useRef(false);
-  const [copiedLine,setCopiedLine]=useState<LogEntry|null>(null);
+  const { copied: copiedLine, copy } = useClipboardFeedback<LogEntry>("logs-copy");
   // Keep the reading target still while new logs continue to arrive in the buffer.
   const [readingLines, setReadingLines] = useState<LogEntry[] | null>(null);
   const reading = useRef(new LogReadingWindow<LogEntry>());
@@ -389,8 +389,8 @@ export default function LogsPage() {
       })),
     [filtered],
   );
-  const scheduleCopiedReset = useTimeout();
-  const copyLine=async(line:LogEntry)=>{try {const clean=await ipc.redactLogLines([`[${line.type}] ${line.payload}`]);await navigator.clipboard.writeText(clean);setCopiedLine(line);scheduleCopiedReset(()=>setCopiedLine(null),1500);}catch(e){notify.error(e,"logs-copy");}};
+  const copyLine = (line: LogEntry) =>
+    copy(line, () => ipc.redactLogLines([`[${line.type}] ${line.payload}`]));
   const exportLogs=async()=>{if(exportFlight.current)return;exportFlight.current=true;setExporting(true);try{const saved=await ipc.exportLogLines(filtered.map(l=>`[${l.type}] ${l.payload}`));if(saved)notify.success(t("logs.exported"),"logs-export");}catch(e){notify.error(e,"logs-export");}finally{exportFlight.current=false;setExporting(false);}};
   const resume=()=>{pinned.current=true;setFollowing(true);if(boxRef.current)boxRef.current.scrollTop=boxRef.current.scrollHeight;};
   const copyButton=(line:LogEntry)=><ButtonBase className="cb-log-copy" onClick={()=>void copyLine(line)} aria-label={t("logs.copyLine")} title={t("logs.copyLine")}>{copiedLine===line?"✓":t("workflow.copy")}</ButtonBase>;
