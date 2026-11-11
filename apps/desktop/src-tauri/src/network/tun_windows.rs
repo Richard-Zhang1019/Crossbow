@@ -131,7 +131,7 @@ fn toggle_tun_locked(state: &AppState, enable: bool) -> Result<(), String> {
 /// 就绪判定：控制器报告 tun 已启用且适配器在位（wintun 建立通常 <1s，
 /// 服务拉起内核 + 探测窗口兜底 15s）。
 fn wait_tun_active(state: &AppState) -> Result<(), String> {
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + crate::engine::timing::WINDOWS_TUN_READY_DEADLINE;
     loop {
         if let Some((port, secret)) = state.core().controller() {
             let client = crate::engine::api::Controller { port, secret };

@@ -26,6 +26,10 @@ const LEVEL_COLOR: Record<string, string> = {
 };
 
 const MAX_PENDING = 400;
+/** sing-box 行中间态强制成行窗口：seen 超过该毫秒数的 pending 视为已结束（#57）。 */
+const SINGBOX_LINE_TIMEOUT_MS = 3000;
+/** 读窗跟随判定：距底不足该像素视为在底部（#291 系列）。 */
+const AT_BOTTOM_THRESHOLD_PX = 40;
 
 /** sing-box（clash_api）同连接多行的中间态（以行首连接 id 关联）。 */
 interface SbPending {
@@ -226,7 +230,7 @@ export default function LogsPage() {
     // （孤立 router 行等）不含连接信息，直接丢弃
     const now = Date.now();
     for (const [id, e] of [...pendingRef.current]) {
-      if (now - e.seen <= 3000) continue;
+      if (now - e.seen <= SINGBOX_LINE_TIMEOUT_MS) continue;
       pendingRef.current.delete(id);
       if (!e.target && !e.outbound) continue;
       const left = e.source ? `${e.source}(${e.process})` : `(${e.process})`;
@@ -429,7 +433,7 @@ export default function LogsPage() {
         onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) holdReading("focus", false); }}
         onScroll={(e) => {
           const el = e.currentTarget;
-          const atBottom=el.scrollHeight-el.scrollTop-el.clientHeight<40;
+          const atBottom=el.scrollHeight-el.scrollTop-el.clientHeight<AT_BOTTOM_THRESHOLD_PX;
           if(!atBottom){pinned.current=false;setFollowing(false);}
         }}
         className="cb-card cb-log-scroll cb-selectable cb-mono text-[13px] leading-5"
