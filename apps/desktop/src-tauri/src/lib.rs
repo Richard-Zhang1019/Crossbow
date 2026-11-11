@@ -2170,6 +2170,14 @@ fn set_lightweight_close(state: State<AppState>, enabled: bool) -> Result<(), St
 }
 
 #[tauri::command]
+fn set_deep_link_import_confirm(state: State<AppState>, enabled: bool) -> Result<(), String> {
+    let mut store = state.store.lock().unwrap();
+    store.data_mut().ui.deep_link_import_confirm = enabled;
+    store.save().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 fn set_lang(app: AppHandle, state: State<AppState>, lang: String) -> Result<(), String> {
     if !["zh", "en"].contains(&lang.as_str()) {
         return Err(format!("invalid lang: {lang}"));
@@ -2253,6 +2261,43 @@ fn core_version(state: State<AppState>) -> Result<String, String> {
 // ---------- 深链接 ----------
 
 /// `crossbow://import?url=<订阅地址>`：后台导入并通知前端。
+/// #420：深链导入确认。设置里的 deep_link_import_confirm 默认开启；
+/// YesNo 原生对话框展示脱敏 URL 与说明。关闭确认（设置开关）时直接放行。
+/// 文案按界面语言（store ui.lang）选择；rfd 无复选框能力，「不再询问」
+/// 由设置页开关承担，对话框内提示该路径。
+fn confirm_deep_link_import(app: &AppHandle, target: &str) -> bool {
+    let (confirm_enabled, lang) = app
+        .try_state::<AppState>()
+        .map(|state| {
+            let guard = state.store.lock().unwrap();
+            let ui = guard.data().ui.clone();
+            (ui.deep_link_import_confirm, ui.lang)
+        })
+        .unwrap_or((true, String::new()));
+    if !confirm_enabled {
+        return true;
+    }
+    let zh = lang == "zh";
+    let (title, hint) = if zh {
+        (
+            "Crossbow 导入确认",
+            "将从上方地址导入订阅并可能改变流量走向，继续吗？\n（可在 设置 → 应用 中关闭此确认）",
+        )
+    } else {
+        (
+            "Crossbow import confirmation",
+            "A subscription will be imported from the address above, which may change where your traffic goes. Continue?\n(You can disable this confirmation in Settings → App.)",
+        )
+    };
+    let redacted = notifications::redact(target);
+    let answer = rfd::MessageDialog::new()
+        .set_title(title)
+        .set_description(&format!("{redacted}\n\n{hint}"))
+        .set_buttons(rfd::MessageButtons::YesNo)
+        .show();
+    answer == rfd::MessageDialogResult::Yes
+}
+
 fn handle_crossbow_url(app: &AppHandle, raw: &str) {
     let Ok(u) = url::Url::parse(raw) else { return };
     if u.host_str() != Some("import") {
@@ -2267,6 +2312,12 @@ fn handle_crossbow_url(app: &AppHandle, raw: &str) {
     };
     let app = app.clone();
     std::thread::spawn(move || {
+        // #420：crossbow:// 可被任意程序触发（浏览器/IM/邮件里的链接），
+        // 导入订阅即改变路由决策链——必须先过用户确认；拒绝则完全不碰
+        // 状态（窗口都不弹，订阅列表零变化）。
+        if !confirm_deep_link_import(&app, &target) {
+            return;
+        }
         show_main_window(&app);
         let state = app.state::<AppState>();
         match import_url_blocking(&state, &target, None) {
@@ -4591,6 +4642,7 @@ pub fn run() {
             set_update_auto_download,
             set_lang,
             set_lightweight_close,
+            set_deep_link_import_confirm,
             get_activity_reporting,
             set_activity_reporting,
             set_mixed_port,

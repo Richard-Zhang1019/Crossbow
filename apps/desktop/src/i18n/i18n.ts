@@ -445,6 +445,9 @@ const dict: Record<Lang, Record<string, string>> = {
     "settings.upToDate": "已是最新版本",
     "settings.newVersion": "发现新版本 v{v}",
     "settings.updateFailed": "检查更新失败",
+    "settings.deepLinkConfirm": "深链导入确认",
+    "settings.deepLinkConfirmHint":
+      "通过 crossbow:// 链接导入订阅前先确认（防止网页诱导导入）；关闭后深链将直接导入",
     "settings.lightweight": "轻量模式",
     "settings.lightweightHint":
       "关闭窗口时保留内核与系统代理，退出 GUI 进程（点托盘图标重新打开）",
@@ -924,6 +927,9 @@ const dict: Record<Lang, Record<string, string>> = {
     "settings.upToDate": "Up to date",
     "settings.newVersion": "New version v{v} available",
     "settings.updateFailed": "Update check failed",
+    "settings.deepLinkConfirm": "Deep-link import confirmation",
+    "settings.deepLinkConfirmHint":
+      "Ask before importing a subscription from a crossbow:// link (guards against web-page trickery); disabling imports directly",
     "settings.lightweight": "Lightweight mode",
     "settings.lightweightHint":
       "Closing the window keeps the core & proxy running and exits the GUI",
