@@ -163,6 +163,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: python scripts/ci/release_checks.py source
+      - run: python scripts/ci/check_unwraps.py
       - run: python -m unittest discover -s scripts/ci/tests -v
       - run: python -m unittest discover -s scripts/tests -v
       - uses: actions/setup-go@v7

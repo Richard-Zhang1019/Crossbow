@@ -3,5 +3,6 @@ pub mod api;
 pub mod bridge;
 pub mod config_transition;
 pub mod download;
+pub(crate) mod flow;
 pub mod manager;
 pub mod restart;
