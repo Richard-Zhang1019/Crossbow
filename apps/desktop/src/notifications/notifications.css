@@ -1,6 +1,6 @@
 .cb-notification-viewport {
   position: fixed;
-  z-index: 100;
+  z-index: var(--z-notification);
   top: 100px;
   left: 50%;
   transform: translateX(-50%);
@@ -185,7 +185,7 @@
 }
 .cb-notification-history-panel {
   position: fixed;
-  z-index: 110;
+  z-index: var(--z-popover);
   width: min(408px, calc(100vw - 32px));
   display: flex;
   flex-direction: column;

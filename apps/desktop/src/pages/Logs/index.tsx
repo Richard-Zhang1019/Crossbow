@@ -1,3 +1,4 @@
+import { useClipboardFeedback } from "@/hooks/useClipboardFeedback";
 import {Icon} from "@/components/Icon";
 import Select from "@/components/Select";
 import {SearchField} from "@/components/Controls";
@@ -167,7 +168,7 @@ export default function LogsPage() {
   const [following,setFollowing]=useState(true);
   const [exporting,setExporting]=useState(false);
   const exportFlight=useRef(false);
-  const [copiedLine,setCopiedLine]=useState<LogEntry|null>(null);
+  const { copied: copiedLine, copy } = useClipboardFeedback<LogEntry>("logs-copy");
   // Keep the reading target still while new logs continue to arrive in the buffer.
   const [readingLines, setReadingLines] = useState<LogEntry[] | null>(null);
   const reading = useRef(new LogReadingWindow<LogEntry>());
@@ -379,8 +380,17 @@ export default function LogsPage() {
       .filter((l) => !kw || l.payload.toLowerCase().includes(kw));
   }, [lines, readingLines, enabled, keyword]);
 
-  const shown=filtered.slice(-RENDER_TAIL);
-  const copyLine=async(line:LogEntry)=>{try {const clean=await ipc.redactLogLines([`[${line.type}] ${line.payload}`]);await navigator.clipboard.writeText(clean);setCopiedLine(line);window.setTimeout(()=>setCopiedLine(null),1500);}catch(e){notify.error(e,"logs-copy");}};
+  // #431：解析随 filtered 记忆化——hover/复制态等无关重渲染不再逐行重跑正则
+  const shown = useMemo(
+    () =>
+      filtered.slice(-RENDER_TAIL).map((entry) => ({
+        entry,
+        parsed: parseLog(entry.payload),
+      })),
+    [filtered],
+  );
+  const copyLine = (line: LogEntry) =>
+    copy(line, () => ipc.redactLogLines([`[${line.type}] ${line.payload}`]));
   const exportLogs=async()=>{if(exportFlight.current)return;exportFlight.current=true;setExporting(true);try{const saved=await ipc.exportLogLines(filtered.map(l=>`[${l.type}] ${l.payload}`));if(saved)notify.success(t("logs.exported"),"logs-export");}catch(e){notify.error(e,"logs-export");}finally{exportFlight.current=false;setExporting(false);}};
   const resume=()=>{pinned.current=true;setFollowing(true);if(boxRef.current)boxRef.current.scrollTop=boxRef.current.scrollHeight;};
   const copyButton=(line:LogEntry)=><ButtonBase className="cb-log-copy" onClick={()=>void copyLine(line)} aria-label={t("logs.copyLine")} title={t("logs.copyLine")}>{copiedLine===line?"✓":t("workflow.copy")}</ButtonBase>;
@@ -461,8 +471,7 @@ export default function LogsPage() {
               <span>{t("logs.col.rule")}</span>
               <span>{t("logs.col.outbound")}</span>
             </div>
-            {shown.map((l) => {
-              const parsed = parseLog(l.payload);
+            {shown.map(({ entry: l, parsed }) => {
               if (!parsed) {
                 return (
                   <div
