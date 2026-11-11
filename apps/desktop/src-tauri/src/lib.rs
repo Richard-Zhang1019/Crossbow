@@ -449,6 +449,8 @@ pub fn run() {
     }
     install_panic_hook();
     clear_stale_system_proxy_early();
+    // #421/#434：存量权限收敛 + 超大运行日志启动截断（独占锁之后、Builder 之前）
+    crate::lifecycle::exit_flow::tidy_runtime_files(&data_dir_for_early_hooks());
     #[cfg(target_os = "windows")]
     deelevate_if_needed();
     tauri::Builder::default()
