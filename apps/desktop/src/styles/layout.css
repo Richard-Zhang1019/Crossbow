@@ -2242,4 +2242,3 @@ textarea:focus-visible,
 .cb-diag-results > .cb-diagnostic-step.has-issue { padding-left:12px; box-shadow:inset 2px 0 var(--cb-warn); background:var(--cb-surface); }
 @media(prefers-reduced-motion:reduce) { .cb-connection-row,.cb-log-copy { transition:none; } }
 .cb-log-copy:focus-visible { transition:none; }
-

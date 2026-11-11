@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import check_unwraps
 import smoke_macos
 
 NOTARY_SCRIPT = Path(__file__).resolve().parents[1] / 'notarize_macos.sh'
@@ -116,6 +117,45 @@ class StartupFailures(unittest.TestCase):
 
     def test_surviving_process_is_stopped(self):
         self.run_smoke(None)
+
+
+class UnwrapGuardTest(unittest.TestCase):
+    def test_guard_passes_on_current_tree(self):
+        result = subprocess.run(
+            [sys.executable, check_unwraps.__file__],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+
+    def test_multiline_poisoned_lock_is_rejected_below_budget(self):
+        source = """fn start() {
+            state
+                .lock() // shared state
+                .unwrap ();
+        }"""
+        self.assertEqual(len(check_unwraps.violations(source, 4)), 1)
+
+    def test_production_code_after_tests_is_still_checked(self):
+        source = """
+            #[cfg(test)]
+            mod tests { fn test() { result.unwrap(); } }
+            fn startup() { result.unwrap(); }
+        """
+        self.assertEqual(len(check_unwraps.violations(source, 0)), 1)
+
+    def test_ignores_test_code_and_literals(self):
+        source = """
+            /* outer /* .unwrap() */ comment */
+            const EXAMPLE: &str = r#".lock().unwrap()"#;
+            #[cfg(test)]
+            mod tests {
+                fn test() {
+                    let closing = '}';
+                    result.unwrap();
+                }
+            }
+        """
+        self.assertEqual(check_unwraps.violations(source, 0), [])
 
 
 if __name__ == '__main__':

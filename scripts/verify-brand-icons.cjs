@@ -23,10 +23,11 @@ const root=path.resolve(__dirname,'..'),file=p=>path.join(root,p),read=p=>fs.rea
   assert.equal(normalizeColor(read('design/logo/current/mark-dark.svg')),normalizeColor(approved),'Dark mark must retain approved geometry');
   assert(read('design/logo/current/mark-dark.svg').toString().includes(darkBrandColor),'Dark SVG must use inverse primary ink');
   assert.equal(read('apps/site/public/favicon.svg').toString(),read('design/logo/current/app-icon.svg').toString(),'SVG favicon must retain the fixed light tile');
-  const css=read('apps/desktop/src/index.css').toString();
-  assert(css.includes('--cb-brand: '+brandColor),'Desktop brand token must match master');
-  assert(/:root\.dark\s*\{[^}]*--cb-brand: #e7eaf2;/s.test(css),'Dark desktop brand token must use inverse primary ink');
-  assert(/\.cb-logo-glyph\s*\{[^}]*background:\s*var\(--cb-brand\)/s.test(css),'Desktop logo must not inherit the theme accent');
+  const tokens=read('apps/desktop/src/styles/tokens.css').toString();
+  const layout=read('apps/desktop/src/styles/layout.css').toString();
+  assert(tokens.includes('--cb-brand: '+brandColor),'Desktop brand token must match master');
+  assert(/:root\.dark\s*\{[^}]*--cb-brand: #e7eaf2;/s.test(tokens),'Dark desktop brand token must use inverse primary ink');
+  assert(/\.cb-logo-glyph\s*\{[^}]*background:\s*var\(--cb-brand\)/s.test(layout),'Desktop logo must not inherit the theme accent');
   const manifest=JSON.parse(read('design/logo/current/manifest.json'));
   assert.equal(manifest.colors.light,brandColor);assert.equal(manifest.colors.dark,darkBrandColor);
   assert.equal(manifest.colors.standalone,brandColor);

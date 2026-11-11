@@ -1,3 +1,4 @@
+import { useInterval } from "@/hooks/useTimers";
 import {ChoiceChip} from "@/components/ChoiceChip";
 import {SearchField} from "@/components/Controls";
 import PopoverPanel from "@/components/PopoverPanel";
@@ -132,11 +133,12 @@ export default function ProxiesPage() {
     // 自动组切换与托盘操作发生在页面外，展示状态以最新内核快照为准。
     const switched = () => void load();
     window.addEventListener("cb:profile-switched", switched);
-    const timer = window.setInterval(() => {
-      if (!document.hidden && !selectionInFlight.current) void load(true);
-    }, 5000);
-    return () => { window.removeEventListener("cb:profile-switched", switched); window.clearInterval(timer); ++snapshotRevision.current; void un.then((f) => f()); };
+    return () => { window.removeEventListener("cb:profile-switched", switched); ++snapshotRevision.current; void un.then((f) => f()); };
   }, [load]);
+
+  useInterval(() => {
+    if (!document.hidden && !selectionInFlight.current) void load(true);
+  }, 5000);
 
   const testGroup = async (name: string) => {
     if (batchInFlight.current || singleInFlight.current.size > 0) return;

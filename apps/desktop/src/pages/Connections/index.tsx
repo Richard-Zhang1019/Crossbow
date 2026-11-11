@@ -1,4 +1,4 @@
-import { useTimeout } from "../../hooks/useTimers";
+import { useClipboardFeedback } from "@/hooks/useClipboardFeedback";
 import SegmentedControl from "@/components/SegmentedControl";
 import {SearchField} from "@/components/Controls";
 import Dialog from "@/components/Dialog";
@@ -31,7 +31,7 @@ export default function ConnectionsPage() {
   });
   const [inspected, setInspected] = useState<ConnRow | null>(null);
   const [sort, setSort] = useState("default");
-  const [copied, setCopied] = useState(false);
+  const { copied, copy, clear: clearCopyFeedback } = useClipboardFeedback<boolean>("connection-copy");
   const [filter, setFilter] = useState("");
   const [paused, setPaused] = useState(false);
   const [view, setView] = useState<"list" | "apps">("list");
@@ -81,8 +81,7 @@ export default function ConnectionsPage() {
 
   const apps = useMemo(() => aggregateByProcess(rows), [rows]);
   const selected = snapshot.rows.find(r => r.id === inspected?.id) ?? inspected;
-  const scheduleCopiedReset = useTimeout();
-  const copyDetails = async (value:string) => {try {await navigator.clipboard.writeText(value); setCopied(true); scheduleCopiedReset(()=>setCopied(false),1500);}catch(e){notify.error(e,"connection-copy");}};
+  const copyDetails = (value: string) => copy(true, () => value);
 
   return (
     <div className="cb-connections-page">
@@ -135,7 +134,7 @@ export default function ConnectionsPage() {
               />
             }
             render={(row: ConnRow) => (
-              <Row key={row.id} row={row} onInspect={() => {setCopied(false); setInspected(row);}} onClose={() => closeOne(row.id)} />
+              <Row key={row.id} row={row} onInspect={() => {clearCopyFeedback(); setInspected(row);}} onClose={() => closeOne(row.id)} />
             )}
           />
         ) : (
@@ -177,7 +176,7 @@ export default function ConnectionsPage() {
           />
         )}
       </div>
-      {selected && <Dialog title={t("conn.details")} onClose={()=>setInspected(null)}>
+      {selected && <Dialog title={t("conn.details")} onClose={() => { clearCopyFeedback(); setInspected(null); }}>
         {!snapshot.rows.some(r=>r.id===selected.id) && <p className="cb-control-note">{t("conn.closedDetail")}</p>}
         <dl className="cb-connection-details">{Object.entries(connectionDetails(selected)).map(([key,value])=><div key={key}><dt>{t(({Target:"col.target",Network:"workflow.network",Type:"workflow.type",Rule:"col.rule",Chain:"col.chains",Process:"col.process",ID:"workflow.id"} as Record<string,string>)[key])}</dt><dd className="cb-selectable">{value||"—"}</dd><Button size="small" disabled={!value} onClick={()=>void copyDetails(value)} aria-label={`${t("workflow.copy")} ${t(({Target:"col.target",Network:"workflow.network",Type:"workflow.type",Rule:"col.rule",Chain:"col.chains",Process:"col.process",ID:"workflow.id"} as Record<string,string>)[key])}`}>{t("workflow.copy")}</Button></div>)}</dl>
         <div className="actions"><span role="status">{copied?t("workflow.copied"):""}</span><Button onClick={()=>void copyDetails(JSON.stringify({...connectionDetails(selected),upload:selected.up,download:selected.down,elapsed_ms:selected.elapsed_ms},null,2))}>{t("workflow.copyAll")}</Button></div>
