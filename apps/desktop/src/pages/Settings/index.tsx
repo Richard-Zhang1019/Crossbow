@@ -67,6 +67,7 @@ export default function SettingsPage({
   const [updateChecking, setUpdateChecking] = useState(false);
   const updateCheckInFlight = useRef(false);
   const [lightweight, setLightweight] = useState(false);
+  const [deeplinkConfirm, setDeeplinkConfirm] = useState(true);
   const [installing, setInstalling] = useState<"downloading" | "activating" | null>(null);
   const installInFlight = useRef(false);
   const installNotice = useOperationNotice("core-download");
@@ -124,7 +125,7 @@ export default function SettingsPage({
         if (!dirtyPort.current) setPortDraft(String(e.mixed_port));
         if (!engineTouched.current) { setSelectedEngine(e.engine); selectedEngineRef.current = e.engine; }
       }),
-      read("ui", ipc.getUiSettings, ui => { setLangState(ui.lang as "zh" | "en"); setLightweight(ui.lightweight_close); setTheme(ui.theme); }),
+      read("ui", ipc.getUiSettings, ui => { setLangState(ui.lang as "zh" | "en"); setLightweight(ui.lightweight_close); setDeeplinkConfirm(ui.deep_link_import_confirm ?? true); setTheme(ui.theme); }),
       read("activity", ipc.getActivityReporting, setActivityReporting),
       read("autostart", ipc.autostartStatus, setAutostart),
       read("tun", ipc.tunStatus, value => setTun({ ...value, enabled: latestTunEvent.current ?? value.enabled })),
@@ -633,6 +634,22 @@ export default function SettingsPage({
                   t("settings.lightweight"),
                   () => ipc.setLightweightClose(v),
                   () => setLightweight(v),
+                );
+              }}
+            />
+          </Row>
+          <Row
+            label={t("settings.deepLinkConfirm")}
+            hint={t("settings.deepLinkConfirmHint")}
+          >
+            <Switch
+              checked={deeplinkConfirm}
+              onChange={async (v) => {
+                await saveSetting(
+                  "deepLinkConfirm",
+                  t("settings.deepLinkConfirm"),
+                  () => ipc.setDeepLinkImportConfirm(v),
+                  () => setDeeplinkConfirm(v),
                 );
               }}
             />

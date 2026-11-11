@@ -37,6 +37,28 @@ pub(crate) fn set_lightweight_close(state: State<AppState>, enabled: bool) -> Re
     Ok(())
 }
 #[tauri::command]
+pub(crate) fn set_deep_link_import_confirm(
+    state: State<AppState>,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut store = state.store.lock().map_err(|e| e.to_string())?;
+    persist_deep_link_import_confirm(&mut store, enabled)
+}
+
+fn persist_deep_link_import_confirm(store: &mut Store, enabled: bool) -> Result<(), String> {
+    let previous = store.data().ui.deep_link_import_confirm;
+    if previous == enabled {
+        return Ok(());
+    }
+    store.data_mut().ui.deep_link_import_confirm = enabled;
+    if let Err(error) = store.save() {
+        store.data_mut().ui.deep_link_import_confirm = previous;
+        return Err(error.to_string());
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub(crate) fn set_theme(
     app: AppHandle,
     state: State<AppState>,
@@ -95,4 +117,26 @@ pub(crate) fn set_flag_emoji(state: State<AppState>, enabled: bool) -> Result<()
     store.data_mut().engine.flag_emoji = enabled;
     store.save().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failed_deep_link_opt_out_preserves_confirmation() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut store = Store::open(directory.path()).unwrap();
+        store.save().unwrap();
+        std::fs::create_dir(directory.path().join("store.json.tmp")).unwrap();
+        assert!(persist_deep_link_import_confirm(&mut store, false).is_err());
+        assert!(store.data().ui.deep_link_import_confirm);
+        assert!(
+            Store::open(directory.path())
+                .unwrap()
+                .data()
+                .ui
+                .deep_link_import_confirm
+        );
+    }
 }
