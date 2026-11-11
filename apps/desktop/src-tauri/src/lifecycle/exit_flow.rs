@@ -626,6 +626,14 @@ pub(crate) fn install_panic_hook() {
 pub(crate) fn clear_stale_system_proxy_early() {
     let dir = data_dir_for_early_hooks();
     let journal = dir.join("sysproxy-journal.json");
+    if !journal.is_file() {
+        return;
+    }
+    // Recovery also changes shared state. Skip it if another instance is
+    // already starting or owns the desktop session.
+    let Ok(_lock) = lock_app_instance(&dir) else {
+        return;
+    };
     let Ok(raw) = std::fs::read_to_string(&journal) else {
         return;
     };

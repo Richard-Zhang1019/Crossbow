@@ -4,6 +4,7 @@ use crate::*;
 use std::sync::Mutex;
 
 pub struct AppState {
+    pub(crate) instance_lock: Mutex<Option<std::fs::File>>,
     pub(crate) exit: crate::lifecycle::shutdown::ExitState,
     /// 轻量交接退出：RunEvent::Exit 时跳过清理（内核留给系统收养）。
     pub(crate) handoff: std::sync::atomic::AtomicBool,
@@ -42,9 +43,6 @@ pub struct AppState {
     pub(crate) traffic_history: Mutex<std::collections::VecDeque<TrafficSample>>,
 }
 
-/// macOS Tahoe 会按 NSWindow 外观绘制浅色外沿。同步窗口外观到应用主题，
-/// 避免深色界面的系统描边仍按 macOS 浅色外观渲染。
-#[cfg(target_os = "macos")]
 /// 单秒速率采样（字节/秒）。
 #[derive(serde::Serialize, Clone, Copy)]
 pub struct TrafficSample {

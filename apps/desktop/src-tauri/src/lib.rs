@@ -13,7 +13,7 @@ use crossbow_core::subscription::{fetch_subscription, now_secs, validate_profile
 use crossbow_core::{Profile, ProfileKind, RuntimeConfig, Store, UiSettings};
 #[cfg(not(target_os = "macos"))]
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt as _};
 use tauri_plugin_deep_link::DeepLinkExt as _;
 
@@ -57,6 +57,8 @@ pub(crate) mod scheduler;
 pub(crate) mod service_client;
 pub(crate) mod update_check;
 pub(crate) mod workflow;
+/// Match the AppKit window border to the application's theme.
+#[cfg(target_os = "macos")]
 fn apply_macos_window_appearance(win: &tauri::WebviewWindow, theme: &str) {
     let _ = win.set_background_color(Some(tauri::utils::config::Color(10, 12, 16, 255)));
 
@@ -146,48 +148,54 @@ fn profile_group_order(handle: &AppHandle) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Native liveness check also recognizes exited Windows processes with retained handles.
-fn pid_alive(pid: u32) -> bool {
-    crate::engine::manager::pid_is_alive(pid)
-}
+/// Keep the lock file in place. Unlinking it could allow another process to
+/// lock a new inode while the first process still holds the original lock.
+fn lock_app_instance(data_dir: &std::path::Path) -> std::io::Result<std::fs::File> {
+    use std::fs::{OpenOptions, TryLockError};
+    use std::io::{Error, ErrorKind};
 
-/// #425：原子获取 pidfile。旧实现「read 检查 → fs::write 覆盖」非原子，
-/// 并发冷启动可双双通过检查后互写 pidfile。create_new 保证恰好一个实例
-/// 拿到文件；已存在时按内容三态处理：
-/// - 活跃 pid → 报错退出（正常双开保护）
-/// - 死亡 pid → stale 收养：删除后重试原子创建
-/// - 空/损坏内容 → 视为「另一实例正在 create 与写 pid 的毫秒级窗口」，
-///   按活跃处理拒绝启动（绝不互删），崩溃恰落此窗口属极端罕见且可手动清理
-fn acquire_pidfile(path: &std::path::Path) -> Result<(), String> {
-    use std::io::Write;
-    let create = || -> std::io::Result<()> {
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(path)?;
-        writeln!(file, "{}", std::process::id())
-    };
-    match create() {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            let owner = std::fs::read_to_string(path)
+    let lock = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(data_dir.join("app.lock"))?;
+    match lock.try_lock() {
+        Ok(()) => {}
+        Err(TryLockError::WouldBlock) => {
+            return Err(Error::new(
+                ErrorKind::WouldBlock,
+                "另一个 Crossbow 实例正在运行或启动",
+            ));
+        }
+        Err(TryLockError::Error(error)) => return Err(error),
+    }
+
+    // Older versions do not take app.lock. Keep honoring their live PID.
+    match std::fs::read(data_dir.join("app.pid")) {
+        Ok(content) => {
+            let pid = std::str::from_utf8(&content)
                 .ok()
-                .and_then(|s| s.trim().parse::<u32>().ok());
-            match owner {
-                Some(pid) if pid_alive(pid) => Err(format!(
-                    "另一个 Crossbow 实例正在运行 (pid {pid})，退出它后再启动"
-                )),
-                Some(_) => {
-                    // stale 收养：删除死亡实例的残留后重试原子创建
-                    std::fs::remove_file(path).map_err(|e| e.to_string())?;
-                    create().map_err(|e| e.to_string())
-                }
-                // 空内容：创建方尚未写完 pid 的竞态窗口，按活跃实例拒绝
-                None => Err("另一个 Crossbow 实例正在启动".into()),
+                .and_then(|value| value.trim().parse::<u32>().ok())
+                .filter(|&pid| pid > 0 && (!cfg!(unix) || pid <= i32::MAX as u32))
+                .filter(|&pid| crate::engine::manager::pid_is_alive(pid));
+            if let Some(pid) = pid {
+                return Err(Error::new(
+                    ErrorKind::WouldBlock,
+                    format!("另一个 Crossbow 实例正在运行 (pid {pid})，退出它后再启动"),
+                ));
             }
         }
-        Err(e) => Err(e.to_string()),
+        Err(error) if error.kind() == ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
     }
+    Ok(lock)
+}
+
+fn acquire_app_instance(data_dir: &std::path::Path) -> std::io::Result<std::fs::File> {
+    let lock = lock_app_instance(data_dir)?;
+    std::fs::write(data_dir.join("app.pid"), std::process::id().to_string())?;
+    Ok(lock)
 }
 
 /// `crossbow://import?url=<订阅地址>`：后台导入并通知前端。
@@ -357,11 +365,8 @@ pub fn run() {
             // Store::open happens later and cannot prepare the pidfile parent.
             std::fs::create_dir_all(&data_dir)?;
 
-            // 双实例保险：single-instance 插件依赖对端实例的事件循环还活着
-            // （主线程卡死/退出被误拦的旧实例接不住通知）。pidfile 不依赖对方，
-            // 只要 pid 存活就拒绝第二个实例，避免两实例互杀内核。
-            let lock_path = data_dir.join("app.pid");
-            acquire_pidfile(&lock_path).map_err(|e| std::io::Error::other(e))?;
+            // Keep ownership until the exit event (or process termination).
+            let instance_lock = acquire_app_instance(&data_dir)?;
 
             let mut store = Store::open(&data_dir)
                 .map_err(|e| std::io::Error::other(format!("open store: {e}")))?;
@@ -455,6 +460,7 @@ pub fn run() {
             }
 
             app.manage(AppState {
+                instance_lock: Mutex::new(Some(instance_lock)),
                 exit: crate::lifecycle::shutdown::ExitState::default(),
                 handoff: std::sync::atomic::AtomicBool::new(false),
                 update_handoff: std::sync::atomic::AtomicBool::new(false),
@@ -747,6 +753,15 @@ pub fn run() {
                 tauri::RunEvent::Exit => {
                     #[cfg(target_os = "linux")]
                     notifications::shutdown(app);
+                    if let Some(state) = app.try_state::<AppState>() {
+                        // Tauri can launch the replacement process immediately
+                        // after this callback returns, before this process exits.
+                        state
+                            .instance_lock
+                            .lock()
+                            .unwrap_or_else(|error| error.into_inner())
+                            .take();
+                    }
                 }
                 _ => {}
             }
@@ -757,56 +772,75 @@ pub fn run() {
 mod tests {
     use super::*;
 
-    /// #425：pidfile 原子获取三态。「死 pid」用 spawn+wait 已收割的子进程
-    /// （确定性死亡；u32::MAX 是 kill(-1) 广播语义会误报存活）。
     #[test]
-    fn acquire_pidfile_create_adopt_and_race() {
-        let dir = std::env::temp_dir().join(format!("cb-pidfile-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("app.pid");
-        let _ = std::fs::remove_file(&path);
+    fn instance_lock_child() {
+        // The parent starts this test in a separate process to exercise
+        // operating system lock release without running any destructors.
+        if let Some(directory) = std::env::var_os("CROSSBOW_TEST_INSTANCE_DIR") {
+            let _lock = acquire_app_instance(std::path::Path::new(&directory)).unwrap();
+            std::process::exit(0);
+        }
+    }
 
-        // 1) 首次创建成功
-        acquire_pidfile(&path).unwrap();
+    #[test]
+    fn only_one_startup_recovers_a_crashed_instances_pidfile() {
+        let directory = tempfile::tempdir().unwrap();
+        let pidfile = directory.path().join("app.pid");
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "tests::instance_lock_child"])
+            .env("CROSSBOW_TEST_INSTANCE_DIR", directory.path())
+            .spawn()
+            .unwrap();
+        assert!(child.wait().unwrap().success());
         assert_eq!(
-            std::fs::read_to_string(&path).unwrap().trim(),
-            std::process::id().to_string()
+            std::fs::read_to_string(&pidfile).unwrap(),
+            child.id().to_string()
         );
-        // 2) 已存在且 pid 活跃（本进程）→ 拒绝且不改动文件
-        let err = acquire_pidfile(&path).unwrap_err();
-        assert!(err.contains("正在运行"), "实际: {err}");
-        assert_eq!(
-            std::fs::read_to_string(&path).unwrap().trim(),
-            std::process::id().to_string()
-        );
-        std::fs::remove_file(&path).unwrap();
 
-        // 3) stale 收养：死 pid 的残留 → 删除重试创建成功
-        #[cfg(unix)]
-        let dead_pid = {
-            let mut child = std::process::Command::new("/usr/bin/true")
-                .spawn()
-                .expect("spawn true");
-            child.wait().unwrap();
-            child.id()
-        };
-        #[cfg(not(unix))]
-        let dead_pid = 4_000_000u32;
-        std::fs::write(&path, format!("{dead_pid}")).unwrap();
-        acquire_pidfile(&path).unwrap();
-        assert_eq!(
-            std::fs::read_to_string(&path).unwrap().trim(),
-            std::process::id().to_string()
-        );
-        std::fs::remove_file(&path).unwrap();
+        let attempts = 8;
+        let barrier = std::sync::Barrier::new(attempts);
+        std::thread::scope(|scope| {
+            let workers: Vec<_> = (0..attempts)
+                .map(|_| {
+                    scope.spawn(|| {
+                        barrier.wait();
+                        acquire_app_instance(directory.path())
+                    })
+                })
+                .collect();
+            // Keep every successful handle alive until every attempt has returned.
+            let results: Vec<_> = workers
+                .into_iter()
+                .map(|worker| worker.join().unwrap())
+                .collect();
+            assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+            for error in results.iter().filter_map(|result| result.as_ref().err()) {
+                assert_eq!(error.kind(), std::io::ErrorKind::WouldBlock);
+            }
+            assert_eq!(
+                std::fs::read_to_string(&pidfile).unwrap(),
+                std::process::id().to_string()
+            );
+        });
+    }
 
-        // 4) 空内容竞态窗口 → 拒绝启动（防互删），且不删除对方文件
-        std::fs::write(&path, "").unwrap();
-        let err = acquire_pidfile(&path).unwrap_err();
-        assert!(err.contains("正在启动"), "实际: {err}");
-        assert!(path.exists(), "竞态窗口不得删除对方 pidfile");
-        std::fs::remove_file(&path).unwrap();
-        std::fs::remove_dir_all(&dir).unwrap();
+    #[test]
+    fn app_instance_lock_honors_legacy_pid_and_recovers_partial_writes() {
+        let directory = tempfile::tempdir().unwrap();
+        let pidfile = directory.path().join("app.pid");
+        std::fs::write(&pidfile, std::process::id().to_string()).unwrap();
+        assert_eq!(
+            acquire_app_instance(directory.path()).unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+        for content in [b"".as_slice(), b"not a pid", b"0", b"4294967296"] {
+            std::fs::write(&pidfile, content).unwrap();
+            let _lock = acquire_app_instance(directory.path()).unwrap();
+            assert_eq!(
+                std::fs::read_to_string(&pidfile).unwrap(),
+                std::process::id().to_string()
+            );
+        }
     }
 
     #[test]
