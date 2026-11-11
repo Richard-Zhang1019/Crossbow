@@ -176,6 +176,45 @@ fn pid_alive(pid: u32) -> bool {
     crate::engine::manager::pid_is_alive(pid)
 }
 
+/// #425：原子获取 pidfile。旧实现「read 检查 → fs::write 覆盖」非原子，
+/// 并发冷启动可双双通过检查后互写 pidfile。create_new 保证恰好一个实例
+/// 拿到文件；已存在时按内容三态处理：
+/// - 活跃 pid → 报错退出（正常双开保护）
+/// - 死亡 pid → stale 收养：删除后重试原子创建
+/// - 空/损坏内容 → 视为「另一实例正在 create 与写 pid 的毫秒级窗口」，
+///   按活跃处理拒绝启动（绝不互删），崩溃恰落此窗口属极端罕见且可手动清理
+fn acquire_pidfile(path: &std::path::Path) -> Result<(), String> {
+    use std::io::Write;
+    let create = || -> std::io::Result<()> {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)?;
+        writeln!(file, "{}", std::process::id())
+    };
+    match create() {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            let owner = std::fs::read_to_string(path)
+                .ok()
+                .and_then(|s| s.trim().parse::<u32>().ok());
+            match owner {
+                Some(pid) if pid_alive(pid) => Err(format!(
+                    "另一个 Crossbow 实例正在运行 (pid {pid})，退出它后再启动"
+                )),
+                Some(_) => {
+                    // stale 收养：删除死亡实例的残留后重试原子创建
+                    std::fs::remove_file(path).map_err(|e| e.to_string())?;
+                    create().map_err(|e| e.to_string())
+                }
+                // 空内容：创建方尚未写完 pid 的竞态窗口，按活跃实例拒绝
+                None => Err("另一个 Crossbow 实例正在启动".into()),
+            }
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 /// 单秒速率采样（字节/秒）。
 #[derive(serde::Serialize, Clone, Copy)]
 pub struct TrafficSample {
@@ -4283,17 +4322,7 @@ pub fn run() {
             // （主线程卡死/退出被误拦的旧实例接不住通知）。pidfile 不依赖对方，
             // 只要 pid 存活就拒绝第二个实例，避免两实例互杀内核。
             let lock_path = data_dir.join("app.pid");
-            if let Ok(old) = std::fs::read_to_string(&lock_path) {
-                if let Ok(pid) = old.trim().parse::<u32>() {
-                    if pid_alive(pid) {
-                        return Err(format!(
-                            "另一个 Crossbow 实例正在运行 (pid {pid})，退出它后再启动"
-                        )
-                        .into());
-                    }
-                }
-            }
-            std::fs::write(&lock_path, std::process::id().to_string())?;
+            acquire_pidfile(&lock_path).map_err(|e| std::io::Error::other(e))?;
 
             let mut store = Store::open(&data_dir)
                 .map_err(|e| std::io::Error::other(format!("open store: {e}")))?;
@@ -4681,6 +4710,58 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #425：pidfile 原子获取三态。「死 pid」用 spawn+wait 已收割的子进程
+    /// （确定性死亡；u32::MAX 是 kill(-1) 广播语义会误报存活）。
+    #[test]
+    fn acquire_pidfile_create_adopt_and_race() {
+        let dir = std::env::temp_dir().join(format!("cb-pidfile-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("app.pid");
+        let _ = std::fs::remove_file(&path);
+
+        // 1) 首次创建成功
+        acquire_pidfile(&path).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap().trim(),
+            std::process::id().to_string()
+        );
+        // 2) 已存在且 pid 活跃（本进程）→ 拒绝且不改动文件
+        let err = acquire_pidfile(&path).unwrap_err();
+        assert!(err.contains("正在运行"), "实际: {err}");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap().trim(),
+            std::process::id().to_string()
+        );
+        std::fs::remove_file(&path).unwrap();
+
+        // 3) stale 收养：死 pid 的残留 → 删除重试创建成功
+        #[cfg(unix)]
+        let dead_pid = {
+            let mut child = std::process::Command::new("/usr/bin/true")
+                .spawn()
+                .expect("spawn true");
+            child.wait().unwrap();
+            child.id()
+        };
+        #[cfg(not(unix))]
+        let dead_pid = 4_000_000u32;
+        std::fs::write(&path, format!("{dead_pid}")).unwrap();
+        acquire_pidfile(&path).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap().trim(),
+            std::process::id().to_string()
+        );
+        std::fs::remove_file(&path).unwrap();
+
+        // 4) 空内容竞态窗口 → 拒绝启动（防互删），且不删除对方文件
+        std::fs::write(&path, "").unwrap();
+        let err = acquire_pidfile(&path).unwrap_err();
+        assert!(err.contains("正在启动"), "实际: {err}");
+        assert!(path.exists(), "竞态窗口不得删除对方 pidfile");
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn stale_proxy_clear_truth_table() {
