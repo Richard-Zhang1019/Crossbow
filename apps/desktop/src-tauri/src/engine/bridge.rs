@@ -22,6 +22,9 @@ pub const EV_CONNECTIONS: &str = "connections://data";
 pub const EV_LOGS: &str = "logs://data";
 pub const EV_LOG_STATUS: &str = "logs://status";
 
+/// 每通道订阅态：活跃标志 + 最近活动时间（冻结判定用，#111）。
+type ChannelSubscriptions = HashMap<&'static str, (Arc<AtomicBool>, Arc<Mutex<Instant>>)>;
+
 /// connections 快照推送间隔下限（mihomo 原生 1Hz）。
 const CONN_MIN_INTERVAL: Duration = Duration::from_millis(1000);
 /// 单次快照推送的最大行数：系统代理全开时连接可达数千上万，
@@ -36,7 +39,7 @@ pub struct WsHub {
     /// channel 名 → (活跃标志, 最近一条消息时刻)。false = 已请求退订，读线程自行退出。
     /// 重订同Channel时旧标志被置 false（读线程最迟约 2 秒退出），新读线程顶替——
     /// 「订阅还在但已死/连着旧端口」的冻结形态由此自愈。
-    active: Mutex<HashMap<&'static str, (Arc<AtomicBool>, Arc<Mutex<Instant>>)>>,
+    active: Mutex<ChannelSubscriptions>,
     /// 页面订阅意图集：挂载即登记、卸载即移除，与订阅是否成功无关。
     /// 内核重启后据此重订——覆盖「页面在内核 Starting 期间挂载、订阅
     /// 命令失败」的窗口，保证 Running 后自动补上。

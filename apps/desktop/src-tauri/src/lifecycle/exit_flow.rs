@@ -597,7 +597,7 @@ pub(crate) fn install_panic_hook() {
         // Support；Windows %APPDATA%。写失败静默放弃（钩子内不能再 panic）。
         #[cfg(target_os = "macos")]
         let dir = std::env::var_os("HOME")
-            .map(|h| std::path::PathBuf::from(h))
+            .map(std::path::PathBuf::from)
             .map(|h| h.join("Library/Application Support/com.richard.crossbow"));
         #[cfg(target_os = "windows")]
         let dir = std::env::var_os("APPDATA")

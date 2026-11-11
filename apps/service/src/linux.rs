@@ -1569,7 +1569,10 @@ mod tests {
         link_cache(&base, &session).unwrap();
         assert!(!cache_ready(&session).unwrap());
         let core_lock = File::open(&target).unwrap();
-        assert_eq!(unsafe { libc::flock(core_lock.as_raw_fd(), libc::LOCK_EX) }, 0);
+        assert_eq!(
+            unsafe { libc::flock(core_lock.as_raw_fd(), libc::LOCK_EX) },
+            0
+        );
         assert!(cache_ready(&session).unwrap());
         drop(core_lock);
         assert!(!cache_ready(&session).unwrap());

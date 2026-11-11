@@ -860,19 +860,17 @@ fn navigation_target(page: &str, source: &str) -> String {
             target["settingSection"] = "network".into();
             target["control"] = "cb-core-download".into();
         } else {
-            target["settingSection"] = if source.contains("port")
-                || source.contains("tun")
-                || source.contains("engine")
-            {
-                "network"
-            } else if source.contains("theme") || source.contains("lang") {
-                "appearance"
-            } else if source.contains("logs") || source.contains("retention") {
-                "logs"
-            } else {
-                "app"
-            }
-            .into();
+            target["settingSection"] =
+                if source.contains("port") || source.contains("tun") || source.contains("engine") {
+                    "network"
+                } else if source.contains("theme") || source.contains("lang") {
+                    "appearance"
+                } else if source.contains("logs") || source.contains("retention") {
+                    "logs"
+                } else {
+                    "app"
+                }
+                .into();
             if source.contains("port") {
                 target["control"] = "mixed-port".into();
             } else if source.contains("tun") {

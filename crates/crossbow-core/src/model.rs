@@ -60,7 +60,11 @@ pub struct UpdateOutcome {
 
 /// Counts only: never persist server credentials in update summaries.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct NodeChanges { pub added: usize, pub removed: usize, pub changed: usize }
+pub struct NodeChanges {
+    pub added: usize,
+    pub removed: usize,
+    pub changed: usize,
+}
 
 /// 机场订阅的流量/到期信息。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

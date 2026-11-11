@@ -88,8 +88,14 @@ struct Shared {
     config_cache: Mutex<Option<String>>,
     /// 测试注入服务停止。生产构建不带这个钩子，避免测试替身进入发布二进制。
     #[cfg(test)]
-    service_stop_hook: Mutex<Option<Arc<dyn Fn() -> Result<(), String> + Send + Sync>>>,
+    service_stop_hook: Mutex<Option<ServiceStopHook>>,
 }
+
+/// 服务托管启动的进程拉起器（Windows/Linux TUN 路径注入）。
+pub(crate) type CoreSpawner = Box<dyn FnOnce(&Path, &Path) -> Result<u32, String> + Send>;
+/// 测试注入的服务停止钩子。
+#[cfg(test)]
+type ServiceStopHook = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
 
 impl Shared {
     fn external_start_is_current(&self, pid: u32, probe: &ControllerProbe) -> bool {
@@ -510,11 +516,13 @@ impl CoreManager {
 
     /// 服务托管变体（Windows/Linux TUN）：「拉起进程」外包给特权服务，
     /// 端口/密钥生成、配置注入、就绪探测与状态簿记与常规路径完全一致。
+    // macOS 非 test 构建不用服务托管路径；Windows/Linux 运行时与 mac 测试都要
+    #[cfg(any(windows, target_os = "linux", test))]
     pub fn start_with_spawner(
         &self,
         base_config: &str,
         engine_rt: &RuntimeConfig,
-        spawner: Box<dyn FnOnce(&Path, &Path) -> Result<u32, String> + Send>,
+        spawner: CoreSpawner,
     ) -> Result<(), String> {
         self.start_internal(base_config, engine_rt, Some(spawner))
     }
@@ -523,7 +531,7 @@ impl CoreManager {
         &self,
         base_config: &str,
         engine_rt: &RuntimeConfig,
-        spawner: Option<Box<dyn FnOnce(&Path, &Path) -> Result<u32, String> + Send>>,
+        spawner: Option<CoreSpawner>,
     ) -> Result<(), String> {
         let _lifecycle = self
             .shared
@@ -543,14 +551,12 @@ impl CoreManager {
         &self,
         base_config: &str,
         engine_rt: &RuntimeConfig,
-        spawner: Option<Box<dyn FnOnce(&Path, &Path) -> Result<u32, String> + Send>>,
+        spawner: Option<CoreSpawner>,
     ) -> Result<(), String> {
         // 上一次尝试还在探测中（Starting）：先收掉再启动，避免新配置写入后
         // 被旧探测超时路径误杀/误报。
-        if self.status() == CoreStatus::Starting {
-            if !self.stop_locked() {
-                return Err("无法确认上一次启动的内核已退出，已中止新启动".into());
-            }
+        if self.status() == CoreStatus::Starting && !self.stop_locked() {
+            return Err("无法确认上一次启动的内核已退出，已中止新启动".into());
         }
         if !matches!(self.status(), CoreStatus::Stopped | CoreStatus::Crashed(_)) {
             return Err(format!("core is {:?}, stop it first", self.status()));
@@ -1566,7 +1572,7 @@ fn find_leftover_core_pids(candidates: &[PathBuf]) -> Vec<(u32, PathBuf)> {
                 continue;
             };
             let path = PathBuf::from(path);
-            if candidates.iter().any(|c| *c == path) {
+            if candidates.contains(&path) {
                 out.push((*pid as u32, path));
             }
         }
@@ -2405,7 +2411,7 @@ fn logged_tun_interface(log: &str) -> Option<&str> {
 
 #[cfg(target_os = "macos")]
 fn tun_path_differs(mixed_port: u16, own_interface: &str) -> bool {
-    let Ok(proxy) = ureq::Proxy::new(&format!("http://127.0.0.1:{mixed_port}")) else {
+    let Ok(proxy) = ureq::Proxy::new(format!("http://127.0.0.1:{mixed_port}")) else {
         return false;
     };
     let builder = || {

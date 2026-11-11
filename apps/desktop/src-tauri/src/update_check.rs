@@ -95,7 +95,7 @@ fn updater_proxy(app: &AppHandle) -> Option<tauri::Url> {
         .store
         .lock()
         .ok()
-        .and_then(|s| Some(s.data().engine.mixed_port))?;
+        .map(|s| s.data().engine.mixed_port)?;
     format!("http://127.0.0.1:{port}").parse().ok()
 }
 

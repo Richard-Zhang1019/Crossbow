@@ -202,7 +202,10 @@ fn srs_def(tag: &str, detour: &str) -> Value {
     let rel = tag
         .strip_prefix("geoip-")
         .map(|c| format!("geo/geoip/{c}.srs"))
-        .or_else(|| tag.strip_prefix("geosite-").map(|n| format!("geo/geosite/{n}.srs")));
+        .or_else(|| {
+            tag.strip_prefix("geosite-")
+                .map(|n| format!("geo/geosite/{n}.srs"))
+        });
     let Some(rel) = rel else {
         return json!({"type": "local", "tag": tag, "format": "binary", "path": format!("{tag}.srs")});
     };
@@ -501,7 +504,11 @@ rules:
     fn no_deprecated_outbound_dns_rule() {
         let out = convert_to_singbox(SAMPLE, 7897, false).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(v["dns"]["rules"], Value::Null, "不应生成 outbound:any DNS 规则");
+        assert_eq!(
+            v["dns"]["rules"],
+            Value::Null,
+            "不应生成 outbound:any DNS 规则"
+        );
         assert_eq!(v["route"]["default_domain_resolver"], "local-dns");
     }
 
@@ -511,13 +518,21 @@ rules:
     fn rule_set_refs_get_remote_defs() {
         let out = convert_to_singbox(SAMPLE, 7897, false).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
-        let defs = v["route"]["rule_set"].as_array().expect("应有 rule_set 定义");
+        let defs = v["route"]["rule_set"]
+            .as_array()
+            .expect("应有 rule_set 定义");
         assert!(defs.iter().any(|d| d["tag"] == "geoip-cn"
             && d["type"] == "remote"
             && d["format"] == "binary"
-            && d["url"].as_str().map(|u| u.contains("gh-proxy.com") && u.ends_with("/geo/geoip/cn.srs")).unwrap_or(false)));
+            && d["url"]
+                .as_str()
+                .map(|u| u.contains("gh-proxy.com") && u.ends_with("/geo/geoip/cn.srs"))
+                .unwrap_or(false)));
         // SAMPLE 的 MATCH → 节点选择（非 DIRECT）→ download_detour 跟随
-        assert!(defs[0].get("download_detour").map(|d| d == "节点选择").unwrap_or(false));
+        assert!(defs[0]
+            .get("download_detour")
+            .map(|d| d == "节点选择")
+            .unwrap_or(false));
         assert_eq!(defs.len(), 1, "SAMPLE 只引用 geoip-cn");
     }
 
