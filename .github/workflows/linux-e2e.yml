@@ -37,8 +37,14 @@ jobs:
         run: cargo build --locked --release -p crossbow-service
       - name: Install polkit (pkexec is absent from the runner image)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y policykit-1
+          for attempt in 1 2 3; do
+            if sudo apt-get update && sudo apt-get install -y -o Acquire::Retries=5 policykit-1; then
+              exit 0
+            fi
+            echo "apt attempt $attempt failed (runner DNS flake); retrying"
+            sleep 10
+          done
+          exit 1
       - name: Run VM e2e
         run: |
           python3 scripts/linux/e2e_vm.py \
