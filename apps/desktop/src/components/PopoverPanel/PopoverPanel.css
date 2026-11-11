@@ -1,5 +1,5 @@
 .cb-popover-positioner {
-  z-index: 110;
+  z-index: var(--z-popover);
   outline: 0;
 }
 .cb-popover-panel {

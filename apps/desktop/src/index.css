@@ -341,7 +341,7 @@ button:not(:disabled):hover {
   position: absolute;
   bottom: calc(100% + 6px);
   left: 0;
-  z-index: 40;
+  z-index: var(--z-overlay);
   width: max-content;
   max-width: 460px;
   white-space: pre-wrap;
@@ -398,7 +398,7 @@ input[type="checkbox"] {
 .cb-log-head {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: var(--z-content);
   padding: 6px 12px;
   background: var(--cb-surface);
   border-bottom: 1px solid var(--cb-line-strong);
@@ -534,7 +534,7 @@ summary:focus-visible {
   position: fixed;
   inset: 0 0 auto;
   height: 28px;
-  z-index: 40;
+  z-index: var(--z-overlay);
   background: var(--cb-chrome);
 }
 .cb-global-nav {
@@ -1087,7 +1087,7 @@ summary:focus-visible {
   position: absolute;
   right: 0;
   top: 30px;
-  z-index: 10;
+  z-index: var(--z-raised);
   width: 250px;
   max-width: 75vw;
   padding: 12px;
@@ -1902,7 +1902,7 @@ summary:focus-visible {
 .cb-dialog-mask {
   position: fixed;
   inset: 0;
-  z-index: 90;
+  z-index: var(--z-modal);
   background: var(--cb-overlay);
   display: grid;
   place-items: center;
@@ -2231,7 +2231,7 @@ body,
 .cb-table-heading {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: var(--z-content);
   background: var(--cb-bg);
   border-bottom: 1px solid var(--cb-line);
 }
