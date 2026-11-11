@@ -64,6 +64,7 @@ export interface UiSettings {
   theme: "system" | "light" | "dark";
   lang: string;
   lightweight_close: boolean;
+  deep_link_import_confirm: boolean;
 }
 
 export interface EngineConfigView {
@@ -305,6 +306,8 @@ export const ipc = {
   getEngineConfig: () => invoke<EngineConfigView>("get_engine_config"),
   setTheme: (theme: UiSettings["theme"]) => invoke<void>("set_theme", { theme }),
   setLang: (lang: string) => invoke<void>("set_lang", { lang }),
+  setDeepLinkImportConfirm: (enabled: boolean) =>
+    invoke<void>("set_deep_link_import_confirm", { enabled }),
   setLightweightClose: (enabled: boolean) =>
     invoke<void>("set_lightweight_close", { enabled }),
   getActivityReporting: () => invoke<boolean>("get_activity_reporting"),

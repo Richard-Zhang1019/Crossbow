@@ -232,6 +232,10 @@ pub struct UiSettings {
     /// 轻量模式：关窗即交接退出（保留内核与系统代理）。
     #[serde(default)]
     pub lightweight_close: bool,
+    /// 深链导入订阅前弹原生确认框（#420）。安全默认开：crossbow:// 可被
+    /// 任意程序触发，无确认等于把路由决策链暴露给外部输入。
+    #[serde(default = "default_true")]
+    pub deep_link_import_confirm: bool,
 }
 
 fn default_theme() -> String {
@@ -249,6 +253,7 @@ impl Default for UiSettings {
             theme: default_theme(),
             lang: default_lang(),
             lightweight_close: false,
+            deep_link_import_confirm: true,
         }
     }
 }
