@@ -132,9 +132,14 @@ jobs:
           node-version: 22
           cache: pnpm
       - name: Install native dependencies
+        # apt 对镜像僵住无自愈（实测两次卡满 35 分钟 job 超时）——三轮重试
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf
+          for attempt in 1 2 3; do
+            sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf && break
+            echo "apt attempt $attempt failed; retrying in 20s"
+            sleep 20
+            [ "$attempt" = 3 ] && exit 1
+          done
       - run: python3 scripts/ci/download_sidecar.py x86_64-unknown-linux-gnu
         env:
           GITHUB_TOKEN: ${{ github.token }}
