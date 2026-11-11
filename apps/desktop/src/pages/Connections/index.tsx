@@ -38,7 +38,7 @@ export default function ConnectionsPage() {
 
   useEffect(() => {
     ipc
-      .subscribeConnections()
+      .subscribeConnections(true)
       .catch((error) => notify.error(error, "connections-stream"));
     const un = ipc.onConnections((s) => {
       latest.current = s;

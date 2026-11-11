@@ -340,7 +340,8 @@ export const ipc = {
   closeConnection: (id: string) => invoke<void>("close_connection", { id }),
   subscribeTraffic: () => invoke<void>("subscribe_traffic"),
   unsubscribeTraffic: () => invoke<void>("unsubscribe_traffic"),
-  subscribeConnections: () => invoke<void>("subscribe_connections"),
+  subscribeConnections: (includeProcesses = false) =>
+    invoke<void>("subscribe_connections", { includeProcesses }),
   unsubscribeConnections: () => invoke<void>("unsubscribe_connections"),
   subscribeLogs: (subscriber: string) => invoke<LogSnapshot>("subscribe_logs", { subscriber }),
   clearLogs: () => invoke<LogSnapshot>("clear_logs"),

@@ -5,11 +5,15 @@
 //! webview。读线程阻塞式 read（内核每秒必推数据），退订后最迟约 1 秒退出；
 //! 连接断开（内核重启中）自动重连。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::net::IpAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use crate::platform::process_resolve::{
+    socket_address, ConnectionSocket, ProcessLookup, SocketKey,
+};
 use serde::Serialize;
 use tungstenite::Message;
 
@@ -86,6 +90,16 @@ impl WsHub {
             .insert(name);
     }
 
+    pub fn want_connections(&self, include_processes: bool) {
+        let mut wanted = self.wanted.lock().unwrap_or_else(|e| e.into_inner());
+        wanted.insert("connections");
+        if include_processes {
+            wanted.insert("connection-processes");
+        } else {
+            wanted.remove("connection-processes");
+        }
+    }
+
     /// 是否还有页面通道需要数据（有则内核 Running 后应重订）。
     pub fn any_page_channel_wanted(&self) -> bool {
         !self
@@ -120,10 +134,13 @@ impl WsHub {
     }
 
     pub fn unsubscribe(&self, name: &str) {
-        self.wanted
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(name);
+        {
+            let mut wanted = self.wanted.lock().unwrap_or_else(|e| e.into_inner());
+            wanted.remove(name);
+            if name == "connections" {
+                wanted.remove("connection-processes");
+            }
+        }
         if let Some((flag, _)) = self
             .active
             .lock()
@@ -215,9 +232,15 @@ impl WsHub {
         emit: impl Fn(&'static str, serde_json::Value) + Send + 'static,
     ) -> Result<(), String> {
         let url = ws_url(port, secret, "/connections");
+        let include_processes = self
+            .wanted
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains("connection-processes");
         self.subscribe("connections", move |flag, last_seen| {
             std::thread::spawn(move || {
                 let mut last_emit = Instant::now() - CONN_MIN_INTERVAL;
+                let mut process_lookup = include_processes.then(ProcessLookup::default);
                 read_loop(
                     &url,
                     flag,
@@ -229,10 +252,9 @@ impl WsHub {
                             if last_emit.elapsed() < CONN_MIN_INTERVAL {
                                 return;
                             }
-                            if let Some(payload) = compact_connections(
-                                &txt,
-                                Some(&crate::platform::process_resolve::resolve_processes),
-                            ) {
+                            if let Some(payload) =
+                                compact_connections(&txt, process_lookup.as_mut())
+                            {
                                 last_emit = Instant::now();
                                 emit(EV_CONNECTIONS, payload);
                             }
@@ -488,41 +510,63 @@ struct ConnPayload {
     truncated: Option<usize>,
 }
 
-/// mihomo connections 快照 → 紧凑结构（字段裁剪让大快照的 IPC 载荷可控）。
-/// `process_fallback`：mihomo 进程识别缺失时按源端口批量补齐（#418，macOS
-/// 全失效 / Windows UDP 竞态）；传 None 跳过补齐（测试路径）。
+fn local_proxy_socket(id: &str, metadata: &serde_json::Value) -> Option<ConnectionSocket> {
+    if id.is_empty() {
+        return None;
+    }
+    let text = |key: &str| {
+        metadata
+            .get(key)
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+    };
+    // Limit OS lookups to a verified local proxy ingress. TUN and LAN client
+    // metadata may describe a flow that has no corresponding local socket.
+    let source = text("sourceIP").parse::<IpAddr>().ok()?.to_canonical();
+    let inbound = text("inboundIP").parse::<IpAddr>().ok()?.to_canonical();
+    if !source.is_loopback() || !inbound.is_loopback() {
+        return None;
+    }
+    let port = |key: &str| {
+        let value = metadata.get(key)?;
+        let number = value
+            .as_str()
+            .and_then(|s| s.parse::<u16>().ok())
+            .or_else(|| value.as_u64().and_then(|n| u16::try_from(n).ok()))?;
+        (number != 0).then_some(number)
+    };
+    let local = socket_address(source, port("sourcePort")?);
+    let peer = socket_address(inbound, port("inboundPort")?);
+    let socket = match (text("network"), text("type")) {
+        ("tcp", "HTTP" | "HTTPS" | "Socks4" | "Socks5")
+            if cfg!(any(target_os = "macos", windows)) =>
+        {
+            SocketKey::Tcp { local, peer }
+        }
+        ("udp", "Socks5") if cfg!(windows) => SocketKey::Udp(local),
+        _ => return None,
+    };
+    Some(ConnectionSocket {
+        id: id.to_owned(),
+        socket,
+    })
+}
+
+/// Compact the core snapshot before sending it to the webview.
 fn compact_connections(
     raw: &str,
-    process_fallback: Option<&dyn Fn(&[u16]) -> std::collections::HashMap<u16, String>>,
+    process_lookup: Option<&mut ProcessLookup>,
 ) -> Option<serde_json::Value> {
     let v: serde_json::Value = serde_json::from_str(raw).ok()?;
     let now_ms = now_unix_ms();
     let mut rows = Vec::new();
-    // 先收集需要补齐的源端口（进程为空且非内核自身出站），一次批量反查。
-    let mut missing_ports: Vec<u16> = Vec::new();
-    if process_fallback.is_some() {
-        if let Some(conns) = v.get("connections").and_then(|c| c.as_array()) {
-            for c in conns {
-                let md = c.get("metadata").cloned().unwrap_or_default();
-                let str_at = |k: &str| md.get(k).and_then(|x| x.as_str()).unwrap_or("");
-                if !str_at("processPath").is_empty() {
-                    continue;
-                }
-                // 源端口 0（TUN 场景无本机 socket）没有反查意义。
-                if let Ok(port) = str_at("sourcePort").parse::<u16>() {
-                    if port != 0 {
-                        missing_ports.push(port);
-                    }
-                }
-            }
-        }
-    }
-    let resolved = process_fallback
-        .map(|f| f(&missing_ports))
-        .unwrap_or_default();
-    if let Some(conns) = v.get("connections").and_then(|c| c.as_array()) {
-        for c in conns {
-            let md = c.get("metadata").cloned().unwrap_or_default();
+    let mut requests = HashSet::new();
+    let mut positions = Vec::new();
+    let conns = v.get("connections").and_then(|c| c.as_array());
+    let total_rows = conns.map_or(0, Vec::len);
+    if let Some(conns) = conns {
+        for c in conns.iter().take(CONN_MAX_ROWS) {
+            let md = &c["metadata"];
             let str_at = |k: &str| md.get(k).and_then(|x| x.as_str()).unwrap_or("");
             let host = {
                 let h = str_at("host");
@@ -533,23 +577,21 @@ fn compact_connections(
                     format!("{h}:{port}")
                 }
             };
-            // 进程补齐：内核没给时用反查表；反查命中的进程可能就是 mihomo
-            // 自身（内核自身出站连接），这正好如实呈现，无需排除。
-            let process_path = if str_at("processPath").is_empty() {
-                str_at("sourcePort")
-                    .parse::<u16>()
-                    .ok()
-                    .and_then(|p| resolved.get(&p).cloned())
-                    .unwrap_or_default()
+            let id = c["id"].as_str().unwrap_or("");
+            let process_path = str_at("processPath");
+            let process = if str_at("process").is_empty() {
+                process_path.rsplit(['/', '\\']).next().unwrap_or("")
             } else {
-                str_at("processPath").to_string()
+                str_at("process")
             };
+            if process_lookup.is_some() && process.is_empty() && process_path.is_empty() {
+                if let Some(request) = local_proxy_socket(id, md) {
+                    requests.insert(request);
+                    positions.push(rows.len());
+                }
+            }
             rows.push(ConnRow {
-                id: c
-                    .get("id")
-                    .and_then(|x| x.as_str())
-                    .unwrap_or("")
-                    .to_string(),
+                id: id.to_owned(),
                 host,
                 rule: format!(
                     "{}{}",
@@ -573,12 +615,8 @@ fn compact_connections(
                 down: c.get("download").and_then(|x| x.as_u64()).unwrap_or(0),
                 network: str_at("network").to_string(),
                 kind: str_at("type").to_string(),
-                process: process_path
-                    .rsplit(['/', '\\'])
-                    .next()
-                    .unwrap_or("")
-                    .to_string(),
-                process_path,
+                process: process.to_owned(),
+                process_path: process_path.to_owned(),
                 elapsed_ms: c
                     .get("start")
                     .and_then(|x| x.as_str())
@@ -587,8 +625,19 @@ fn compact_connections(
             });
         }
     }
-    let total_rows = rows.len();
-    rows.truncate(CONN_MAX_ROWS);
+    if let (Some(lookup), Some(conns)) = (process_lookup, conns) {
+        let resolved = lookup.update(requests);
+        for index in positions {
+            let row = &mut rows[index];
+            let Some(request) = local_proxy_socket(&row.id, &conns[index]["metadata"]) else {
+                continue;
+            };
+            if let Some(process) = resolved.get(&request) {
+                row.process.clone_from(&process.name);
+                row.process_path.clone_from(&process.path);
+            }
+        }
+    }
     let payload = ConnPayload {
         upload_total: v.get("uploadTotal").and_then(|x| x.as_u64()),
         download_total: v.get("downloadTotal").and_then(|x| x.as_u64()),
@@ -902,54 +951,38 @@ pub(crate) mod tests {
         assert_eq!(v["memory"], 2048);
     }
 
-    /// #418：内核进程元数据缺失时按源端口走 fallback 反查；命中与未命中
-    /// 各留原始形态（命中 → 进程名，未命中 → 空串）。
     #[test]
-    fn compact_connections_falls_back_to_port_resolver() {
-        let raw = r#"{
-          "connections": [{
-            "id": "c1", "metadata": { "network": "tcp", "type": "HTTPS",
-                          "host": "example.com", "destinationPort": "443",
-                          "sourcePort": "59478" }
-          },{
-            "id": "c2", "metadata": { "network": "tcp", "type": "HTTPS",
-                          "host": "unknown.test", "destinationPort": "443",
-                          "sourcePort": "1234" }
-          },{
-            "id": "c3", "metadata": { "network": "tcp", "type": "HTTPS",
-                          "host": "hasproc.test", "destinationPort": "443",
-                          "processPath": "/Applications/Safari.app/Safari" }
-          }]
-        }"#;
-        let resolved = |ports: &[u16]| {
-            assert_eq!(ports, &[59478, 1234], "应只批量反查缺失且端口非零的连接");
-            let mut m = std::collections::HashMap::new();
-            m.insert(59478u16, "Safari".to_string());
-            m
-        };
-        let v: serde_json::Value = compact_connections(raw, Some(&resolved)).unwrap();
-        let rows = v["rows"].as_array().unwrap();
-        assert_eq!(rows[0]["process"], "Safari");
-        assert_eq!(rows[1]["process"], "");
-        assert_eq!(rows[2]["process"], "Safari");
+    fn compact_connections_preserves_kernel_process_name_without_path() {
+        let raw = r#"{"connections":[{"id":"a","metadata":{"process":"Firefox"}}]}"#;
+        let v = compact_connections(raw, None).unwrap();
+        assert_eq!(v["rows"][0]["process"], "Firefox");
+        assert_eq!(v["rows"][0]["process_path"], "");
     }
 
-    /// TUN 场景 sourcePort=0 无本机 socket，不应进入反查列表。
     #[test]
-    fn compact_connections_skips_zero_source_port() {
-        let raw = r#"{
-          "connections": [{
-            "id": "tun", "metadata": { "network": "tcp", "type": "HTTPS",
-                          "host": "tun.test", "destinationPort": "443",
-                          "sourcePort": "0" }
-          }]
-        }"#;
-        let resolved = |ports: &[u16]| {
-            assert!(ports.is_empty(), "零端口不应参与反查");
-            std::collections::HashMap::new()
-        };
-        let v: serde_json::Value = compact_connections(raw, Some(&resolved)).unwrap();
-        assert_eq!(v["rows"][0]["process"], "");
+    #[cfg(any(target_os = "macos", windows))]
+    fn process_lookup_requires_a_local_proxy_socket() {
+        let mut metadata = serde_json::json!({
+            "network": "tcp", "type": "HTTPS",
+            "sourceIP": "::ffff:127.0.0.1", "sourcePort": "59478",
+            "inboundIP": "127.0.0.1", "inboundPort": "7898"
+        });
+        let socket = local_proxy_socket("connection", &metadata).unwrap();
+        assert_eq!(
+            socket.socket,
+            SocketKey::Tcp {
+                local: "127.0.0.1:59478".parse().unwrap(),
+                peer: "127.0.0.1:7898".parse().unwrap(),
+            }
+        );
+        metadata["sourceIP"] = "192.168.0.2".into();
+        assert!(local_proxy_socket("lan", &metadata).is_none());
+        metadata["sourceIP"] = "127.0.0.1".into();
+        metadata["type"] = "Tun".into();
+        assert!(local_proxy_socket("tun", &metadata).is_none());
+        metadata["type"] = "HTTPS".into();
+        metadata["sourcePort"] = "0".into();
+        assert!(local_proxy_socket("zero-port", &metadata).is_none());
     }
 
     #[test]

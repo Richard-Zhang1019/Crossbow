@@ -1,76 +1,389 @@
-//! 连接进程补齐：mihomo 的进程识别在新版 macOS 全失效、Windows UDP 场景
-//! 竞态失败（上游 mihomo#1800），connections 快照里大量 process 为空。
-//! 这里按「本地源端口 → PID → 进程名」批量反查补齐（#418）。
-//!
-//! macOS：一次 `lsof -Fpcn -nP -iTCP -sTCP:ESTABLISHED` 全表拉取后按端口
-//! 过滤（解析器为纯函数，可离线测试）；Windows：GetExtendedTcpTable/
-//! GetExtendedUdpTable 一次拉全表。查询失败静默返回空表——展示层保持
-//! 现状（未知徽标），绝不因此打断快照推送。
+//! Fill in process metadata for local proxy sockets when the core has no answer.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::net::SocketAddr;
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::time::{Duration, Instant};
 
-#[cfg(target_os = "macos")]
-use std::process::Command;
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum SocketKey {
+    Tcp { local: SocketAddr, peer: SocketAddr },
+    Udp(SocketAddr),
+}
 
-/// lsof `-Fpcn` 输出解析：记录块 p<PID> c<命令> n<本地>-><远端>，
-/// 返回「本地端口 → 进程名」。纯函数，测试直喂样例。
-fn parse_lsof_output(text: &str) -> HashMap<u16, String> {
-    let mut map: HashMap<u16, String> = HashMap::new();
-    let mut pid: Option<String> = None;
-    let mut cmd: Option<String> = None;
-    for line in text.lines() {
-        let mut chars = line.chars();
-        let Some(tag) = chars.next() else { continue };
-        let value: String = chars.collect();
-        match tag {
-            'p' => pid = Some(value),
-            'c' => cmd = Some(value),
-            'n' => {
-                // pid 只用于确认记录块完整（lsof 输出 p 行在 n 之前）；
-                // 端口→进程名映射本身只需要 c 行的命令名。
-                let (Some(_pid), Some(cmd)) = (pid.as_deref(), cmd.as_deref()) else {
+#[derive(Debug, Eq, Hash, PartialEq)]
+pub(crate) struct ConnectionSocket {
+    pub id: String,
+    pub socket: SocketKey,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct Process {
+    pub name: String,
+    pub path: String,
+}
+
+type Matches = HashMap<ConnectionSocket, Process>;
+const SCAN_INTERVAL: Duration = Duration::from_secs(3);
+
+#[derive(Default)]
+pub(crate) struct ProcessLookup {
+    matches: Matches,
+    pending: Option<Receiver<Matches>>,
+    last_scan: Option<Instant>,
+}
+
+impl ProcessLookup {
+    pub fn update(&mut self, mut requests: HashSet<ConnectionSocket>) -> &Matches {
+        if let Some(pending) = &self.pending {
+            match pending.try_recv() {
+                Ok(matches) => {
+                    self.matches.extend(matches);
+                    self.pending = None;
+                }
+                Err(TryRecvError::Disconnected) => self.pending = None,
+                Err(TryRecvError::Empty) => {}
+            }
+        }
+
+        // Bind results to a core connection ID and both endpoints. A new connection
+        // that reuses a socket address must wait for its own lookup.
+        self.matches.retain(|key, _| requests.contains(key));
+        requests.retain(|key| !self.matches.contains_key(key));
+        if requests.is_empty()
+            || self.pending.is_some()
+            || self
+                .last_scan
+                .is_some_and(|scan| scan.elapsed() < SCAN_INTERVAL)
+        {
+            return &self.matches;
+        }
+
+        self.last_scan = Some(Instant::now());
+        let (send, receive) = mpsc::sync_channel(1);
+        if std::thread::Builder::new()
+            .name("connection-process-lookup".into())
+            .spawn(move || {
+                let sockets = requests.iter().map(|r| r.socket).collect();
+                let owners = resolve_sockets(&sockets);
+                let matches = requests
+                    .into_iter()
+                    .filter_map(|r| owners.get(&r.socket).cloned().map(|owner| (r, owner)))
+                    .collect();
+                let _ = send.send(matches);
+            })
+            .is_ok()
+        {
+            self.pending = Some(receive);
+        }
+        &self.matches
+    }
+}
+
+/// Apply the same representation to kernel metadata and OS socket tables.
+pub(crate) fn socket_address(ip: std::net::IpAddr, port: u16) -> SocketAddr {
+    SocketAddr::new(ip.to_canonical(), port)
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn parse_lsof_output(output: &str, wanted: &HashSet<SocketKey>) -> HashMap<SocketKey, Process> {
+    let mut owners: HashMap<SocketKey, Option<(&str, &str)>> = HashMap::new();
+    let (mut pid, mut name) = ("", "");
+    // With -F0 lsof terminates fields with NUL and separates record sets by newlines.
+    for field in output
+        .split('\0')
+        .map(|field| field.trim_start_matches('\n'))
+    {
+        let Some(value) = field.get(1..) else {
+            continue;
+        };
+        match field.as_bytes()[0] {
+            b'p' => {
+                pid = value;
+                name = "";
+            }
+            b'c' => name = value,
+            b'n' if !pid.is_empty() && !name.is_empty() => {
+                let Some((local, peer)) = value.split_once("->") else {
                     continue;
                 };
-                // n 形如 [addr]:port->[addr]:port 或 addr:port（LISTEN 无箭头）
-                let local = value.split("->").next().unwrap_or("");
-                let Some(port) = local.rsplit(':').next().and_then(|p| p.parse().ok()) else {
+                let (Ok(local), Ok(peer)) =
+                    (local.parse::<SocketAddr>(), peer.parse::<SocketAddr>())
+                else {
                     continue;
                 };
-                map.entry(port).or_insert_with(|| cmd.to_string());
+                let key = SocketKey::Tcp {
+                    local: socket_address(local.ip(), local.port()),
+                    peer: socket_address(peer.ip(), peer.port()),
+                };
+                if wanted.contains(&key) {
+                    let owner = owners.entry(key).or_insert(Some((pid, name)));
+                    if owner.is_some_and(|(existing, _)| existing != pid) {
+                        *owner = None;
+                    }
+                }
             }
             _ => {}
         }
     }
-    map
-}
-
-#[cfg(target_os = "macos")]
-pub fn resolve_processes(ports: &[u16]) -> HashMap<u16, String> {
-    if ports.is_empty() {
-        return HashMap::new();
-    }
-    let Ok(output) = Command::new("/usr/sbin/lsof")
-        .args(["-Fpcn", "-nP", "-iTCP", "-sTCP:ESTABLISHED"])
-        .output()
-    else {
-        return HashMap::new();
-    };
-    let text = String::from_utf8_lossy(&output.stdout);
-    let full = parse_lsof_output(&text);
-    ports
-        .iter()
-        .filter_map(|p| full.get(p).map(|name| (*p, name.clone())))
+    owners
+        .into_iter()
+        .filter_map(|(key, owner)| {
+            owner.map(|(_, name)| {
+                (
+                    key,
+                    Process {
+                        name: name.to_owned(),
+                        path: String::new(),
+                    },
+                )
+            })
+        })
         .collect()
 }
 
-#[cfg(windows)]
-pub fn resolve_processes(ports: &[u16]) -> HashMap<u16, String> {
-    windows_resolve::resolve_processes(ports)
+#[cfg(target_os = "macos")]
+fn resolve_sockets(wanted: &HashSet<SocketKey>) -> HashMap<SocketKey, Process> {
+    read_lsof()
+        .map(|output| parse_lsof_output(&output, wanted))
+        .unwrap_or_default()
 }
 
+#[cfg(target_os = "macos")]
+fn read_lsof() -> Option<String> {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+
+    const MAX_OUTPUT: u64 = 8 * 1024 * 1024;
+    let deadline = Instant::now() + Duration::from_millis(500);
+    let mut child = Command::new("/usr/sbin/lsof")
+        .args(["-F0pcn", "-nP", "-iTCP", "-sTCP:ESTABLISHED"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let stdout = child.stdout.take().expect("piped lsof stdout");
+    let (send, receive) = mpsc::sync_channel(1);
+    // Drain stdout while the child runs, including when output exceeds pipe capacity.
+    let reader = std::thread::Builder::new().spawn(move || {
+        let mut bytes = Vec::new();
+        let result = stdout.take(MAX_OUTPUT + 1).read_to_end(&mut bytes);
+        let _ = send.send(
+            result
+                .ok()
+                .filter(|&n| n as u64 <= MAX_OUTPUT)
+                .map(|_| bytes),
+        );
+    });
+    if reader.is_ok() {
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) if status.success() => {
+                    let bytes = receive
+                        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                        .ok()??;
+                    return Some(String::from_utf8_lossy(&bytes).into_owned());
+                }
+                Ok(None) if Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(10))
+                }
+                _ => break,
+            }
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    None
+}
+
+#[cfg(windows)]
+use windows_resolve::resolve_sockets;
+
 #[cfg(not(any(target_os = "macos", windows)))]
-pub fn resolve_processes(_ports: &[u16]) -> HashMap<u16, String> {
+fn resolve_sockets(_wanted: &HashSet<SocketKey>) -> HashMap<SocketKey, Process> {
     HashMap::new()
+}
+
+#[cfg(windows)]
+mod windows_resolve {
+    use super::*;
+    use std::ffi::c_void;
+    use std::mem::size_of;
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+    use std::ptr;
+    use windows_sys::Win32::Foundation::{CloseHandle, ERROR_INSUFFICIENT_BUFFER};
+    use windows_sys::Win32::NetworkManagement::IpHelper::{
+        GetExtendedTcpTable, GetExtendedUdpTable, MIB_TCP6ROW_OWNER_PID, MIB_TCPROW_OWNER_PID,
+        MIB_TCP_STATE_ESTAB, MIB_UDP6ROW_OWNER_PID, MIB_UDPROW_OWNER_PID,
+        TCP_TABLE_OWNER_PID_CONNECTIONS, UDP_TABLE_OWNER_PID,
+    };
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    const AF_INET: u32 = 2;
+    const AF_INET6: u32 = 23;
+    type TableQuery = unsafe extern "system" fn(*mut c_void, *mut u32, i32, u32, i32, u32) -> u32;
+
+    fn process(pid: u32) -> Option<Process> {
+        if pid == 0 {
+            return None;
+        }
+        let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+        if handle.is_null() {
+            return None;
+        }
+
+        // QueryFullProcessImageNameW takes capacity on input and length on output.
+        let mut buffer = vec![0u16; 32768];
+        let mut length = buffer.len() as u32;
+        let ok = unsafe { QueryFullProcessImageNameW(handle, 0, buffer.as_mut_ptr(), &mut length) };
+        unsafe { CloseHandle(handle) };
+        if ok == 0 || length == 0 || length as usize > buffer.len() {
+            return None;
+        }
+        let path = String::from_utf16_lossy(&buffer[..length as usize]);
+        let name = path.rsplit(['\\', '/']).next()?.to_owned();
+        Some(Process { name, path })
+    }
+
+    // Each owner table is a DWORD count followed by an array of C rows aligned to DWORD.
+    // Callers use only the four plain-data MIB_*ROW_OWNER_PID layouts.
+    unsafe fn table_rows<T: Copy>(query: TableQuery, family: u32, class: i32) -> Vec<T> {
+        let mut size = 0u32;
+        if unsafe { query(ptr::null_mut(), &mut size, 0, family, class, 0) }
+            != ERROR_INSUFFICIENT_BUFFER
+        {
+            return Vec::new();
+        }
+        for _ in 0..2 {
+            if !(4..=16 * 1024 * 1024).contains(&size) {
+                break;
+            }
+            let capacity = size as usize;
+            let mut table = vec![0u32; capacity.div_ceil(size_of::<u32>())];
+            let ptr = table.as_mut_ptr();
+            match unsafe { query(ptr.cast(), &mut size, 0, family, class, 0) } {
+                0 => {
+                    let count = table[0] as usize;
+                    let len = (size as usize).min(capacity);
+                    if count > len.saturating_sub(4) / size_of::<T>() {
+                        return Vec::new();
+                    }
+                    let rows = unsafe { ptr.add(1).cast::<T>() };
+                    return (0..count)
+                        .map(|i| unsafe { rows.add(i).read_unaligned() })
+                        .collect();
+                }
+                ERROR_INSUFFICIENT_BUFFER => continue,
+                _ => break,
+            }
+        }
+        Vec::new()
+    }
+
+    fn address(ip: impl Into<IpAddr>, port: u32) -> SocketAddr {
+        socket_address(ip.into(), u16::from_be(port as u16))
+    }
+
+    pub(super) fn resolve_sockets(wanted: &HashSet<SocketKey>) -> HashMap<SocketKey, Process> {
+        let mut owners = HashMap::new();
+        let mut record = |key, pid| {
+            if wanted.contains(&key) {
+                let owner = owners.entry(key).or_insert(Some(pid));
+                if owner.is_some_and(|existing| existing != pid) {
+                    *owner = None;
+                }
+            }
+        };
+
+        if wanted
+            .iter()
+            .any(|key| matches!(key, SocketKey::Tcp { .. }))
+        {
+            for row in unsafe {
+                table_rows::<MIB_TCPROW_OWNER_PID>(
+                    GetExtendedTcpTable,
+                    AF_INET,
+                    TCP_TABLE_OWNER_PID_CONNECTIONS,
+                )
+            } {
+                if row.dwState == MIB_TCP_STATE_ESTAB as u32 {
+                    let local = address(
+                        Ipv4Addr::from(row.dwLocalAddr.to_ne_bytes()),
+                        row.dwLocalPort,
+                    );
+                    let peer = address(
+                        Ipv4Addr::from(row.dwRemoteAddr.to_ne_bytes()),
+                        row.dwRemotePort,
+                    );
+                    record(SocketKey::Tcp { local, peer }, row.dwOwningPid);
+                }
+            }
+            for row in unsafe {
+                table_rows::<MIB_TCP6ROW_OWNER_PID>(
+                    GetExtendedTcpTable,
+                    AF_INET6,
+                    TCP_TABLE_OWNER_PID_CONNECTIONS,
+                )
+            } {
+                if row.dwState == MIB_TCP_STATE_ESTAB as u32 {
+                    let local = address(Ipv6Addr::from(row.ucLocalAddr), row.dwLocalPort);
+                    let peer = address(Ipv6Addr::from(row.ucRemoteAddr), row.dwRemotePort);
+                    record(SocketKey::Tcp { local, peer }, row.dwOwningPid);
+                }
+            }
+        }
+
+        let mut wildcard_ports = HashSet::new();
+        if wanted.iter().any(|key| matches!(key, SocketKey::Udp(_))) {
+            for row in unsafe {
+                table_rows::<MIB_UDPROW_OWNER_PID>(
+                    GetExtendedUdpTable,
+                    AF_INET,
+                    UDP_TABLE_OWNER_PID,
+                )
+            } {
+                let local = address(
+                    Ipv4Addr::from(row.dwLocalAddr.to_ne_bytes()),
+                    row.dwLocalPort,
+                );
+                if local.ip().is_unspecified() {
+                    wildcard_ports.insert(local.port());
+                }
+                record(SocketKey::Udp(local), row.dwOwningPid);
+            }
+            for row in unsafe {
+                table_rows::<MIB_UDP6ROW_OWNER_PID>(
+                    GetExtendedUdpTable,
+                    AF_INET6,
+                    UDP_TABLE_OWNER_PID,
+                )
+            } {
+                let local = address(Ipv6Addr::from(row.ucLocalAddr), row.dwLocalPort);
+                if local.ip().is_unspecified() {
+                    wildcard_ports.insert(local.port());
+                }
+                record(SocketKey::Udp(local), row.dwOwningPid);
+            }
+        }
+
+        let mut processes = HashMap::new();
+        owners
+            .into_iter()
+            .filter_map(|(key, pid)| {
+                if matches!(key, SocketKey::Udp(local) if wildcard_ports.contains(&local.port())) {
+                    return None;
+                }
+                processes
+                    .entry(pid?)
+                    .or_insert_with_key(|pid| process(*pid))
+                    .clone()
+                    .map(|process| (key, process))
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -78,234 +391,57 @@ mod tests {
     use super::*;
 
     #[test]
-    fn lsof_parser_maps_local_ports_to_commands() {
-        let sample = "p667\ncidentityservicesd\nf37\nn[fe80::1]:1024->[fe80::2]:1024\n\
-                      p774\ncBrowser Helper (Aperitif)\nf14\nn127.0.0.1:59478->[20.42.65.92]:443\n\
-                      p50032\ncmihomo\nf20\nn127.0.0.1:7898->127.0.0.1:59478\n";
-        let map = parse_lsof_output(sample);
-        assert_eq!(
-            map.get(&1024).map(String::as_str),
-            Some("identityservicesd")
+    fn lsof_uses_both_addresses_and_refuses_ambiguous_owners() {
+        let v4 = SocketKey::Tcp {
+            local: "127.0.0.1:59478".parse().unwrap(),
+            peer: "127.0.0.1:7898".parse().unwrap(),
+        };
+        let v6 = SocketKey::Tcp {
+            local: "[::1]:59478".parse().unwrap(),
+            peer: "[::1]:7898".parse().unwrap(),
+        };
+        let output = concat!(
+            "p100\0cnc\0\nf1\0n127.0.0.1:59478->127.0.0.1:7898\0\n",
+            "p200\0cPython\0\nf2\0n[::1]:59478->[::1]:7898\0\n",
+            "p300\0cOther\0\nf3\0n127.0.0.1:59478->127.0.0.1:8000\0\n",
         );
-        assert_eq!(
-            map.get(&59478).map(String::as_str),
-            Some("Browser Helper (Aperitif)")
-        );
-        // mihomo 自身的出站端口也会入表；调用方负责按源端口挑选并排除自身
-        assert_eq!(map.get(&7898).map(String::as_str), Some("mihomo"));
-        assert!(!map.contains_key(&9999));
+        let wanted = HashSet::from([v4, v6]);
+        let resolved = parse_lsof_output(output, &wanted);
+        assert_eq!(resolved[&v4].name, "nc");
+        assert_eq!(resolved[&v6].name, "Python");
+        let ambiguous =
+            format!("{output}p400\0cShared\0\nf1\0n127.0.0.1:59478->127.0.0.1:7898\0\n");
+        assert!(!parse_lsof_output(&ambiguous, &wanted).contains_key(&v4));
     }
 
     #[test]
-    fn lsof_parser_tolerates_empty_and_malformed_lines() {
-        assert!(parse_lsof_output("").is_empty());
-        let sample = "pabc\nc\nn[::]:notaport\nn127.0.0.1:\np1\ncx\nn[fe80::1%en0]:55->[]:80\n";
-        let map = parse_lsof_output(sample);
-        assert_eq!(map.get(&55).map(String::as_str), Some("x"));
-    }
-
-    #[test]
-    fn resolve_processes_empty_input_is_noop() {
-        assert!(resolve_processes(&[]).is_empty());
-    }
-
-    // macOS 实机冒烟：本机必然有 ESTABLISHED 连接；不出现即视为环境受限跳过。
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn resolve_processes_smoke_on_live_table() {
-        let probe = Command::new("/usr/sbin/lsof")
-            .args(["-Fpcn", "-nP", "-iTCP", "-sTCP:ESTABLISHED"])
-            .output()
-            .expect("lsof exists on macOS");
-        let text = String::from_utf8_lossy(&probe.stdout);
-        let ports: Vec<u16> = parse_lsof_output(&text).keys().copied().take(5).collect();
-        if ports.is_empty() {
-            return; // CI 沙盒可能无外连
-        }
-        let resolved = resolve_processes(&ports);
-        assert!(!resolved.is_empty(), "已知活跃端口应能解析出进程名");
-    }
-
-    /// #418 端到端（环境门控）：本机 Crossbow 内核在跑时，从 controller
-    /// 拉真实 connections，对缺进程连接跑反查——命中率必须显著（mihomo
-    /// 失效场景下这些全是应用层连接）。内核没跑/无 descriptor 则跳过。
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn resolve_processes_against_live_core_snapshot() {
-        let Ok(home) = std::env::var("HOME") else {
-            return;
+    fn process_lookup_does_not_reuse_a_result_for_a_new_connection() {
+        let socket = SocketKey::Tcp {
+            local: "127.0.0.1:59478".parse().unwrap(),
+            peer: "127.0.0.1:7898".parse().unwrap(),
         };
-        let Ok(descriptor) = std::fs::read_to_string(format!(
-            "{home}/Library/Application Support/com.richard.crossbow/runtime/core-descriptor.json"
-        )) else {
-            return; // 无运行中内核
+        let old = ConnectionSocket {
+            id: "old".into(),
+            socket,
         };
-        let Ok(d) = serde_json::from_str::<serde_json::Value>(&descriptor) else {
-            return;
+        let new = ConnectionSocket {
+            id: "new".into(),
+            socket,
         };
-        let (Some(port), Some(secret)) = (
-            d["port"].as_u64().map(|p| p as u16),
-            d["secret"].as_str().map(String::from),
-        ) else {
-            return;
+        let (send, receive) = mpsc::sync_channel(1);
+        send.send(HashMap::from([(
+            old,
+            Process {
+                name: "old app".into(),
+                path: String::new(),
+            },
+        )]))
+        .unwrap();
+        let mut lookup = ProcessLookup {
+            pending: Some(receive),
+            last_scan: Some(Instant::now()),
+            ..ProcessLookup::default()
         };
-        // ureq 的 call 是 ureq::Error，into_string 是 io::Error——错误类型
-        // 不同不能 and_then 串，分两步 let-else。
-        let Ok(response) = ureq::get(&format!("http://127.0.0.1:{port}/connections"))
-            .set("Authorization", &format!("Bearer {secret}"))
-            .timeout(std::time::Duration::from_secs(5))
-            .call()
-        else {
-            return; // 内核不在跑
-        };
-        let Ok(body) = response.into_string() else {
-            return;
-        };
-        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
-        let Some(conns) = v["connections"].as_array() else {
-            return;
-        };
-        let missing: Vec<u16> = conns
-            .iter()
-            .filter(|c| {
-                c["metadata"]["processPath"]
-                    .as_str()
-                    .unwrap_or("")
-                    .is_empty()
-            })
-            .filter_map(|c| {
-                c["metadata"]["sourcePort"]
-                    .as_str()
-                    .and_then(|s| s.parse().ok())
-            })
-            .filter(|p| *p != 0)
-            .collect();
-        if missing.is_empty() {
-            return;
-        }
-        let resolved = resolve_processes(&missing);
-        let hit = missing.iter().filter(|p| resolved.contains_key(p)).count();
-        assert!(
-            hit * 4 >= missing.len(),
-            "实机反查命中率过低：{hit}/{}，样例 {:?}",
-            missing.len(),
-            &missing[..missing.len().min(5)]
-        );
-    }
-}
-
-// Windows 实现：一次拉全表后过滤（ IpHelper 的 TCP/UDP 表，windows-sys 直链）。
-#[cfg(windows)]
-mod windows_resolve {
-    use super::*;
-    use std::mem;
-
-    const UDP_PROC_NONE: &str = "";
-
-    unsafe fn pid_to_name(pid: u32) -> String {
-        if pid == 0 {
-            return UDP_PROC_NONE.to_string();
-        }
-        let handle = windows_sys::Win32::System::Threading::OpenProcess(
-            windows_sys::Win32::System::Threading::PROCESS_QUERY_LIMITED_INFORMATION,
-            0,
-            pid,
-        );
-        if handle == 0 {
-            return UDP_PROC_NONE.to_string();
-        }
-        let mut buf = [0u16; 1024];
-        let mut written = 0u32;
-        let ok = windows_sys::Win32::System::Threading::QueryFullProcessImageNameW(
-            handle,
-            0,
-            buf.as_mut_ptr(),
-            &mut written,
-        );
-        windows_sys::Win32::Foundation::CloseHandle(handle);
-        if ok == 0 || written == 0 {
-            return UDP_PROC_NONE.to_string();
-        }
-        let path = String::from_utf16_lossy(&buf[..written as usize]);
-        path.rsplit(['\\', '/']).next().unwrap_or("").to_string()
-    }
-
-    /// dwLocalPort 是网络字节序的 u32，端口在其低 16 位（ntohs 语义）。
-    #[inline]
-    fn local_port(raw: u32) -> u16 {
-        (raw as u16).swap_bytes()
-    }
-
-    pub fn resolve_processes(ports: &[u16]) -> HashMap<u16, String> {
-        let wanted: std::collections::HashSet<u16> = ports.iter().copied().collect();
-        let mut map: HashMap<u16, String> = HashMap::new();
-        unsafe {
-            // TCP：MIB_TCPTABLE_OWNER_PID，一次全表
-            let mut size = 0u32;
-            let class = windows_sys::Win32::NetworkManagement::IpHelper::TCP_TABLE_OWNER_PID_ALL;
-            let _ = windows_sys::Win32::NetworkManagement::IpHelper::GetExtendedTcpTable(
-                None, &mut size, 0, 2, class, 0,
-            );
-            if size > 0 {
-                let mut buf = vec![0u8; size as usize];
-                let ret = windows_sys::Win32::NetworkManagement::IpHelper::GetExtendedTcpTable(
-                    buf.as_mut_ptr() as *mut _,
-                    &mut size,
-                    0,
-                    2,
-                    class,
-                    0,
-                );
-                if ret == 0 {
-                    let table = &*(buf.as_ptr() as *const windows_sys::Win32::NetworkManagement::IpHelper::MIB_TCPTABLE_OWNER_PID);
-                    let entries = std::slice::from_raw_parts(
-                        &table.table[0] as *const _,
-                        table.dwNumEntries as usize,
-                    );
-                    for e in entries {
-                        let p = local_port(e.dwLocalPort);
-                        if wanted.contains(&p) && !map.contains_key(&p) {
-                            map.insert(p, pid_to_name(e.dwOwningPid));
-                        }
-                    }
-                }
-            }
-            // UDP：MIB_UDPTABLE_OWNER_PID 同型
-            let mut udp_size = 0u32;
-            let uclass = windows_sys::Win32::NetworkManagement::IpHelper::UDP_TABLE_OWNER_PID;
-            let _ = windows_sys::Win32::NetworkManagement::IpHelper::GetExtendedUdpTable(
-                None,
-                &mut udp_size,
-                0,
-                2,
-                uclass,
-                0,
-            );
-            if udp_size > 0 {
-                let mut buf = vec![0u8; udp_size as usize];
-                let ret = windows_sys::Win32::NetworkManagement::IpHelper::GetExtendedUdpTable(
-                    buf.as_mut_ptr() as *mut _,
-                    &mut udp_size,
-                    0,
-                    2,
-                    uclass,
-                    0,
-                );
-                if ret == 0 {
-                    let table = &*(buf.as_ptr() as *const windows_sys::Win32::NetworkManagement::IpHelper::MIB_UDPTABLE_OWNER_PID);
-                    let entries = std::slice::from_raw_parts(
-                        &table.table[0] as *const _,
-                        table.dwNumEntries as usize,
-                    );
-                    for e in entries {
-                        let p = local_port(e.dwLocalPort);
-                        if wanted.contains(&p) && !map.contains_key(&p) {
-                            map.insert(p, pid_to_name(e.dwOwningPid));
-                        }
-                    }
-                }
-            }
-        }
-        map
+        assert!(lookup.update(HashSet::from([new])).is_empty());
     }
 }
