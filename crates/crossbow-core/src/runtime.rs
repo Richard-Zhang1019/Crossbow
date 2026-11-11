@@ -308,6 +308,16 @@ mod tests {
         assert!(without_v6.contains("ipv6: false"));
     }
 
+    #[test]
+    fn preserves_explicit_process_lookup_mode() {
+        for mode in ["always", "off"] {
+            let base = format!("find-process-mode: {mode}\nproxies: []\n");
+            let rendered = apply_runtime(&base, &RuntimeConfig::default()).unwrap();
+            let config: Value = serde_yaml::from_str(&rendered).unwrap();
+            assert_eq!(config["find-process-mode"].as_str(), Some(mode));
+        }
+    }
+
     /// #145：私网豁免与 DIRECT 规则前置——tailnet/内网目的地不走代理
     #[test]
     fn private_network_exemptions() {

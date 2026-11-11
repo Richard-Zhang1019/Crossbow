@@ -5,11 +5,15 @@
 //! webview。读线程阻塞式 read（内核每秒必推数据），退订后最迟约 1 秒退出；
 //! 连接断开（内核重启中）自动重连。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::net::IpAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use crate::platform::process_resolve::{
+    socket_address, ConnectionSocket, ProcessLookup, SocketKey,
+};
 use serde::Serialize;
 use tungstenite::Message;
 
@@ -37,6 +41,8 @@ pub struct WsHub {
     /// 内核重启后据此重订——覆盖「页面在内核 Starting 期间挂载、订阅
     /// 命令失败」的窗口，保证 Running 后自动补上。
     wanted: Arc<Mutex<std::collections::HashSet<&'static str>>>,
+    /// Keep the lookup rate and in-flight scan across connection view subscriptions.
+    connection_process_lookup: Arc<Mutex<ProcessLookup>>,
     logs: Arc<Mutex<crate::diagnostics::log_cache::LogCache>>,
     log_source: Mutex<Option<(u16, String)>>,
     log_view: Mutex<Option<String>>,
@@ -86,6 +92,16 @@ impl WsHub {
             .insert(name);
     }
 
+    pub fn want_connections(&self, include_processes: bool) {
+        let mut wanted = self.wanted.lock().unwrap_or_else(|e| e.into_inner());
+        wanted.insert("connections");
+        if include_processes {
+            wanted.insert("connection-processes");
+        } else {
+            wanted.remove("connection-processes");
+        }
+    }
+
     /// 是否还有页面通道需要数据（有则内核 Running 后应重订）。
     pub fn any_page_channel_wanted(&self) -> bool {
         !self
@@ -120,10 +136,13 @@ impl WsHub {
     }
 
     pub fn unsubscribe(&self, name: &str) {
-        self.wanted
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(name);
+        {
+            let mut wanted = self.wanted.lock().unwrap_or_else(|e| e.into_inner());
+            wanted.remove(name);
+            if name == "connections" {
+                wanted.remove("connection-processes");
+            }
+        }
         if let Some((flag, _)) = self
             .active
             .lock()
@@ -215,12 +234,18 @@ impl WsHub {
         emit: impl Fn(&'static str, serde_json::Value) + Send + 'static,
     ) -> Result<(), String> {
         let url = ws_url(port, secret, "/connections");
+        let include_processes = self
+            .wanted
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains("connection-processes");
+        let process_lookup = include_processes.then(|| self.connection_process_lookup.clone());
         self.subscribe("connections", move |flag, last_seen| {
             std::thread::spawn(move || {
                 let mut last_emit = Instant::now() - CONN_MIN_INTERVAL;
                 read_loop(
                     &url,
-                    flag,
+                    flag.clone(),
                     Some(Duration::from_secs(5)),
                     Some(last_seen),
                     None,
@@ -229,7 +254,16 @@ impl WsHub {
                             if last_emit.elapsed() < CONN_MIN_INTERVAL {
                                 return;
                             }
-                            if let Some(payload) = compact_connections(&txt) {
+                            let payload = {
+                                let mut lookup = process_lookup.as_ref().map(|lookup| {
+                                    lookup.lock().unwrap_or_else(|error| error.into_inner())
+                                });
+                                if !flag.load(Ordering::SeqCst) {
+                                    return;
+                                }
+                                compact_connections(&txt, lookup.as_deref_mut())
+                            };
+                            if let Some(payload) = payload {
                                 last_emit = Instant::now();
                                 emit(EV_CONNECTIONS, payload);
                             }
@@ -485,14 +519,63 @@ struct ConnPayload {
     truncated: Option<usize>,
 }
 
-/// mihomo connections 快照 → 紧凑结构（字段裁剪让大快照的 IPC 载荷可控）。
-fn compact_connections(raw: &str) -> Option<serde_json::Value> {
+fn local_proxy_socket(id: &str, metadata: &serde_json::Value) -> Option<ConnectionSocket> {
+    if id.is_empty() {
+        return None;
+    }
+    let text = |key: &str| {
+        metadata
+            .get(key)
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+    };
+    // Limit OS lookups to a verified local proxy ingress. TUN and LAN client
+    // metadata may describe a flow that has no corresponding local socket.
+    let source = text("sourceIP").parse::<IpAddr>().ok()?.to_canonical();
+    let inbound = text("inboundIP").parse::<IpAddr>().ok()?.to_canonical();
+    if !source.is_loopback() || !inbound.is_loopback() {
+        return None;
+    }
+    let port = |key: &str| {
+        let value = metadata.get(key)?;
+        let number = value
+            .as_str()
+            .and_then(|s| s.parse::<u16>().ok())
+            .or_else(|| value.as_u64().and_then(|n| u16::try_from(n).ok()))?;
+        (number != 0).then_some(number)
+    };
+    let local = socket_address(source, port("sourcePort")?);
+    let peer = socket_address(inbound, port("inboundPort")?);
+    let socket = match (text("network"), text("type")) {
+        ("tcp", "HTTP" | "HTTPS" | "Socks4" | "Socks5")
+            if cfg!(any(target_os = "macos", windows)) =>
+        {
+            SocketKey::Tcp { local, peer }
+        }
+        ("udp", "Socks5") if cfg!(windows) => SocketKey::Udp(local),
+        _ => return None,
+    };
+    Some(ConnectionSocket {
+        id: id.to_owned(),
+        socket,
+    })
+}
+
+/// Compact the core snapshot before sending it to the webview.
+fn compact_connections(
+    raw: &str,
+    process_lookup: Option<&mut ProcessLookup>,
+) -> Option<serde_json::Value> {
     let v: serde_json::Value = serde_json::from_str(raw).ok()?;
     let now_ms = now_unix_ms();
     let mut rows = Vec::new();
-    if let Some(conns) = v.get("connections").and_then(|c| c.as_array()) {
-        for c in conns {
-            let md = c.get("metadata").cloned().unwrap_or_default();
+    let mut requests = HashSet::new();
+    let mut positions = Vec::new();
+    let conns = v.get("connections").and_then(|c| c.as_array());
+    let total_rows = conns.map_or(0, Vec::len);
+    if let Some(conns) = conns {
+        for c in conns.iter().take(CONN_MAX_ROWS) {
+            let md = &c["metadata"];
             let str_at = |k: &str| md.get(k).and_then(|x| x.as_str()).unwrap_or("");
             let host = {
                 let h = str_at("host");
@@ -503,12 +586,21 @@ fn compact_connections(raw: &str) -> Option<serde_json::Value> {
                     format!("{h}:{port}")
                 }
             };
+            let id = c["id"].as_str().unwrap_or("");
+            let process_path = str_at("processPath");
+            let process = if str_at("process").is_empty() {
+                process_path.rsplit(['/', '\\']).next().unwrap_or("")
+            } else {
+                str_at("process")
+            };
+            if process_lookup.is_some() && process.is_empty() && process_path.is_empty() {
+                if let Some(request) = local_proxy_socket(id, md) {
+                    requests.insert(request);
+                    positions.push(rows.len());
+                }
+            }
             rows.push(ConnRow {
-                id: c
-                    .get("id")
-                    .and_then(|x| x.as_str())
-                    .unwrap_or("")
-                    .to_string(),
+                id: id.to_owned(),
                 host,
                 rule: format!(
                     "{}{}",
@@ -532,12 +624,8 @@ fn compact_connections(raw: &str) -> Option<serde_json::Value> {
                 down: c.get("download").and_then(|x| x.as_u64()).unwrap_or(0),
                 network: str_at("network").to_string(),
                 kind: str_at("type").to_string(),
-                process_path: str_at("processPath").to_string(),
-                process: str_at("processPath")
-                    .rsplit(['/', '\\'])
-                    .next()
-                    .unwrap_or("")
-                    .to_string(),
+                process: process.to_owned(),
+                process_path: process_path.to_owned(),
                 elapsed_ms: c
                     .get("start")
                     .and_then(|x| x.as_str())
@@ -546,8 +634,19 @@ fn compact_connections(raw: &str) -> Option<serde_json::Value> {
             });
         }
     }
-    let total_rows = rows.len();
-    rows.truncate(CONN_MAX_ROWS);
+    if let (Some(lookup), Some(conns)) = (process_lookup, conns) {
+        let resolved = lookup.update(requests);
+        for index in positions {
+            let row = &mut rows[index];
+            let Some(request) = local_proxy_socket(&row.id, &conns[index]["metadata"]) else {
+                continue;
+            };
+            if let Some(process) = resolved.get(&request) {
+                row.process.clone_from(&process.name);
+                row.process_path.clone_from(&process.path);
+            }
+        }
+    }
     let payload = ConnPayload {
         upload_total: v.get("uploadTotal").and_then(|x| x.as_u64()),
         download_total: v.get("downloadTotal").and_then(|x| x.as_u64()),
@@ -685,12 +784,16 @@ pub(crate) mod tests {
 
     #[test]
     fn missing_connection_metrics_stay_null_and_zero_stays_zero() {
-        let data = compact_connections(r#"{"connections":[{"id":"missing"},{"id":"future","start":"9999-01-01T00:00:00Z"}],"memory":0}"#).unwrap();
+        let data = compact_connections(
+            r#"{"connections":[{"id":"missing"},{"id":"future","start":"9999-01-01T00:00:00Z"}],"memory":0}"#,
+            None,
+        )
+        .unwrap();
         assert_eq!(data["memory"], 0);
         assert!(data["upload_total"].is_null());
         assert!(data["rows"][0]["elapsed_ms"].is_null());
         assert!(data["rows"][1]["elapsed_ms"].is_null());
-        assert!(compact_connections(r#"{"connections":[]}"#).unwrap()["memory"].is_null());
+        assert!(compact_connections(r#"{"connections":[]}"#, None).unwrap()["memory"].is_null());
     }
 
     #[test]
@@ -846,7 +949,7 @@ pub(crate) mod tests {
                           "destinationPort": "443", "processPath": "/Applications/Curl.app/x/curl" }
           }]
         }"#;
-        let v: serde_json::Value = compact_connections(raw).unwrap();
+        let v: serde_json::Value = compact_connections(raw, None).unwrap();
         let row = &v["rows"][0];
         assert_eq!(row["host"], "example.com:443");
         assert_eq!(row["rule"], "DomainSuffix example.com");
@@ -858,10 +961,46 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn compact_connections_preserves_kernel_process_name_without_path() {
+        let raw = r#"{"connections":[{"id":"a","metadata":{"process":"Firefox"}}]}"#;
+        let v = compact_connections(raw, None).unwrap();
+        assert_eq!(v["rows"][0]["process"], "Firefox");
+        assert_eq!(v["rows"][0]["process_path"], "");
+    }
+
+    #[test]
+    #[cfg(any(target_os = "macos", windows))]
+    fn process_lookup_requires_a_local_proxy_socket() {
+        let mut metadata = serde_json::json!({
+            "network": "tcp", "type": "HTTPS",
+            "sourceIP": "::ffff:127.0.0.1", "sourcePort": "59478",
+            "inboundIP": "127.0.0.1", "inboundPort": "7898"
+        });
+        let socket = local_proxy_socket("connection", &metadata).unwrap();
+        assert_eq!(
+            socket.socket,
+            SocketKey::Tcp {
+                local: "127.0.0.1:59478".parse().unwrap(),
+                peer: "127.0.0.1:7898".parse().unwrap(),
+            }
+        );
+        metadata["sourceIP"] = "192.168.0.2".into();
+        assert!(local_proxy_socket("lan", &metadata).is_none());
+        metadata["sourceIP"] = "127.0.0.1".into();
+        metadata["type"] = "Tun".into();
+        assert!(local_proxy_socket("tun", &metadata).is_none());
+        metadata["type"] = "HTTPS".into();
+        metadata["sourcePort"] = "0".into();
+        assert!(local_proxy_socket("zero-port", &metadata).is_none());
+    }
+
+    #[test]
     fn compact_connections_handles_empty() {
-        let v: serde_json::Value =
-            compact_connections(r#"{"downloadTotal":0,"uploadTotal":0,"connections":null}"#)
-                .unwrap();
+        let v: serde_json::Value = compact_connections(
+            r#"{"downloadTotal":0,"uploadTotal":0,"connections":null}"#,
+            None,
+        )
+        .unwrap();
         assert_eq!(v["rows"].as_array().unwrap().len(), 0);
     }
 

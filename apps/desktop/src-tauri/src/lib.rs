@@ -1594,8 +1594,12 @@ fn unsubscribe_traffic(state: State<AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn subscribe_connections(app: AppHandle, state: State<AppState>) -> Result<(), String> {
-    state.ws.want_channel("connections");
+fn subscribe_connections(
+    app: AppHandle,
+    state: State<AppState>,
+    include_processes: Option<bool>,
+) -> Result<(), String> {
+    state.ws.want_connections(include_processes.unwrap_or(false));
     let (port, secret) = require_controller(&state)?;
     let h = app.clone();
     state
