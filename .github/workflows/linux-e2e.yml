@@ -35,6 +35,10 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
       - name: Build service
         run: cargo build --locked --release -p crossbow-service
+      - name: Install polkit (pkexec is absent from the runner image)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y policykit-1
       - name: Run VM e2e
         run: |
           python3 scripts/linux/e2e_vm.py \
