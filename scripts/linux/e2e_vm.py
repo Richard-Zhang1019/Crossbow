@@ -257,9 +257,9 @@ profile: {{store-selected: true}}
 geox-url:
   geosite: http://127.0.0.1:1/must-not-download
   geoip: http://127.0.0.1:1/must-not-download
-rules: [MATCH,DIRECT]
+rules: ["MATCH,DIRECT"]
 dns:
-  nameserver: [https://1.1.1.1/dns-query]
+  nameserver: ["https://1.1.1.1/dns-query"]
 ''')
     core_log = output / 'core.log'
 
