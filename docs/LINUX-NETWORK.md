@@ -72,6 +72,28 @@ mihomo v1.19.32 使用 sing-tun v0.4.27。该版本即使 `auto-route: false`，
 
 依据：[sing-tun IPv6 规则](https://github.com/MetaCubeX/sing-tun/blob/v0.4.27/tun_linux.go#L496)、[gVisor 双栈处理](https://github.com/MetaCubeX/sing-tun/blob/v0.4.27/stack_gvisor.go#L91)、[pkexec 调用用户与授权](https://www.freedesktop.org/software/polkit/docs/master/pkexec.1.html)。
 
+## CI 自动 VM 验收（#427）
+
+GitHub Actions 的 ubuntu-24.04 runner 是一次性真实 VM：完整 systemd、polkit、可用的 `/dev/net/tun` 与真实宿主路由。`.github/workflows/linux-e2e.yml`（`workflow_dispatch` 手动触发；改动 `scripts/linux/**`、`apps/service/**` 或该工作流的 PR 自动触发）运行 `scripts/linux/e2e_vm.py`，复用 [smoke 脚本](../scripts/linux/smoke_network.py)的协议客户端与资源断言，覆盖以下矩阵：
+
+| 验收项 | 方式 | 状态 |
+| --- | --- | --- |
+| 服务安装（root 保护路径 + polkit action） | `install-service.sh` + 属主/权限断言 | 已验（CI VM） |
+| pkexec 系统授权与临时单元身份 | 真 `pkexec --authorize` + `systemctl show` 属性比对（MainPID/User/Transient/ExecStart） | 已验（CI VM） |
+| TUN 资源注入（设备/表 20220/优先级 12020/protocol 242，双栈） | `ip -j` JSON 断言 | 已验（CI VM） |
+| 核心权限收敛（仅 CAP_NET_ADMIN） | `/proc/<pid>/status` CapEff | 已验（CI VM） |
+| 公网数据面 DIRECT 分流 | 真实 HTTP/HTTPS 请求 + 控制器 connections/字节计数确认经 TUN | 已验（CI VM） |
+| 私网保留原路由 | `ip route get` 对照 | 已验（CI VM） |
+| 日志落盘 | 用户文件 0600 且非空 | 已验（CI VM） |
+| 正常停止与配置重启复用 | socket 往返 + 资源恢复断言 | 已验（CI VM） |
+| 服务 SIGKILL 后 ExecStopPost 自动恢复 | systemd 真实恢复路径 + 资源断言 | 已验（CI VM） |
+| 卸载清理 | 移除二进制/策略后 pkexec 授权失败 | 已验（CI VM） |
+| 宿主路由/DNS 前后一致 | 快照对照 | 已验（CI VM） |
+| IPv6 公网数据面 | CI runner 无公网 IPv6 | 已知限制（双栈规则/路由已验，数据面由命名空间测试覆盖） |
+| Wayland/niri 图形授权 | 桌面环境差异 | 不适用（此前一次性 KVM 已覆盖 KDE/Xorg 图形授权） |
+
+CI 环境以预置 polkit 规则替代桌面密码对话框，并仅在 VM 的 `rp_filter` 为严格值时将其预置为 2。这两项都是测试环境条件：产品代码不改宿主 sysctl，与「开启前会发生什么」的声明一致。
+
 ## 验证与未完成的实机验收
 
 ```sh
@@ -87,4 +109,4 @@ python3 scripts/linux/smoke_network.py
 
 此外，一次性 KVM 虚拟机已补充真实 systemd/polkit、服务权限、自动 `ExecStopPost`、KDE 图形授权的取消与成功，以及外部代理连接验证。图形路径使用 Xorg，未借用宿主登录会话或网络。
 
-**第二阶段的宿主实网验收仍未完成。** 当前 niri/Wayland 桌面没有实际开启 TUN；不能把隔离系统和图形检查当作当前宿主的完整日用或公开发布验收。各轮的版本、范围和结果见 [Linux 测试记录](LINUX-TESTING.md)。
+**第二阶段的宿主实网验收仍未完成。** CI VM 验收（见上节）覆盖了服务链与 TUN 资源/数据面的自动化验收，但 niri/Wayland 日常桌面宿主仍没有实际开启 TUN；不能把隔离系统、图形检查或 CI VM 当作当前宿主的完整日用或公开发布验收。各轮的版本、范围和结果见 [Linux 测试记录](LINUX-TESTING.md)。

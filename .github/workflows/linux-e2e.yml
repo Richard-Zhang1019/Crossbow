@@ -1,0 +1,56 @@
+name: linux-e2e
+
+# #427：真实 VM 级 Linux TUN/服务验收。
+# 与 build.yml 的 linux-foundation（编译+单测）和 smoke_network.py（命名空间隔离）
+# 互补：这里在一次性真实 VM 上走完整生产授权链——install-service.sh、预置 polkit
+# 规则替代桌面密码对话框、真实 pkexec 授权、systemd 临时单元、ExecStopPost 恢复、
+# 卸载清理。workflow_dispatch 手动触发；触及 Linux 验收脚本或服务代码的 PR 自动触发。
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/linux/**'
+      - '.github/workflows/linux-e2e.yml'
+      - 'apps/service/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vm-e2e:
+    name: VM e2e (systemd TUN lifecycle)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+      - name: Download pinned core
+        run: python3 scripts/ci/download_sidecar.py x86_64-unknown-linux-gnu
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Build service
+        run: cargo build --locked --release -p crossbow-service
+      - name: Run VM e2e
+        run: |
+          python3 scripts/linux/e2e_vm.py \
+            --service target/release/crossbow-service \
+            --core apps/desktop/src-tauri/binaries/mihomo-x86_64-unknown-linux-gnu \
+            --output target/linux-vm-e2e
+      - name: Dump service journal
+        if: always()
+        run: |
+          mkdir -p target/linux-vm-e2e
+          sudo journalctl -u crossbow-tun.service --no-pager -o short-iso \
+            > target/linux-vm-e2e/service-journal.log || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: linux-vm-e2e
+          path: target/linux-vm-e2e/
+          if-no-files-found: warn
+          retention-days: 7
