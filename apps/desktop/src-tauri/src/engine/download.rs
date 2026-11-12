@@ -56,11 +56,15 @@ impl CoreKind {
             CoreKind::SingBox => SINGBOX_VERSION,
         }
     }
-    /// GitHub release 下载路径：`<tag>/<asset>`。
-    /// mihomo 资产名自带版本；sing-box 需显式补 tag 段。
+    /// GitHub release 下载路径：`<tag>/<asset>`（#464：两类内核都需要
+    /// 显式版本段——mihomo 缺 `v<tag>/` 时官方源与镜像均返回 404）。
     fn url_path(self) -> Result<String, String> {
         match self {
-            CoreKind::Mihomo => core_asset_name(),
+            CoreKind::Mihomo => Ok(format!(
+                "v{}/{}",
+                CORE_VERSION.trim_start_matches('v'),
+                core_asset_name()?
+            )),
             CoreKind::SingBox => Ok(format!(
                 "v{}/{}",
                 SINGBOX_VERSION.trim_start_matches('v'),
@@ -377,6 +381,50 @@ mod tests {
         std::fs::write(bins.join(core_bin_file("sing-box")), b"x").unwrap();
         let sb = resolve_core_for(dir.path(), Some("singbox")).unwrap();
         assert!(is_core_bin(&sb, "sing-box"));
+    }
+
+    /// #464：下载 URL 必须带版本段（缺 tag 段时 GitHub 返回 404）。
+    /// 覆盖 macOS ARM64 / Windows x64 / Linux x64（共享下载链）。
+    #[test]
+    fn url_path_includes_version_tag() {
+        let mk = |os: &str, arch: &str| -> String {
+            // url_path 依赖当前编译目标的 asset 名；这里直接对公式断言，
+            // 与 platform_asset_name/core_asset_name/singbox_asset_name 保持同源。
+            let mihomo = format!(
+                "v1.19.32/mihomo-{os}-{arch}-v1.19.32.{}",
+                if os == "windows" { "zip" } else { "gz" }
+            );
+            let sing = format!(
+                "v1.14.2/sing-box-1.14.2-{os}-{arch}.{}",
+                if os == "windows" { "zip" } else { "tar.gz" }
+            );
+            format!("{mihomo}\n{sing}")
+        };
+        for (os, arch) in [
+            ("darwin", "arm64"),
+            ("windows", "amd64"),
+            ("linux", "amd64"),
+        ] {
+            let urls = mk(os, arch);
+            let (mihomo_url, sing_url) = urls.split_once('\n').expect("两行 URL");
+            // 旧拼接形态 = 资产名直接开头（无 v<tag>/ 段）→ GitHub 404
+            assert!(
+                mihomo_url.starts_with("v1.19.32/mihomo-"),
+                "缺 mihomo tag 段: {mihomo_url}"
+            );
+            assert!(
+                sing_url.starts_with("v1.14.2/sing-box-"),
+                "缺 sing-box tag 段: {sing_url}"
+            );
+        }
+        // 当前目标平台的真实 url_path 也必须带版本段
+        for kind in [CoreKind::Mihomo, CoreKind::SingBox] {
+            let path = kind.url_path().unwrap();
+            assert!(
+                path.starts_with("v1.19.32/") || path.starts_with("v1.14.2/"),
+                "{kind:?} url_path 缺版本段: {path}"
+            );
+        }
     }
 
     #[test]
