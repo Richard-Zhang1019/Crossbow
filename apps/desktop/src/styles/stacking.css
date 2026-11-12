@@ -1,9 +1,0 @@
-/* Shared by both themes and by overlays portaled outside the app container. */
-:root {
-  --z-content: 1;
-  --z-raised: 10;
-  --z-overlay: 40;
-  --z-modal: 90;
-  --z-notification: 100;
-  --z-popover: 110;
-}
