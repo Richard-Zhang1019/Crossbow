@@ -7,15 +7,9 @@
     "build": "pnpm --filter @crossbow/desktop build",
     "tauri": "pnpm --filter @crossbow/desktop tauri"
   },
-  "devDependencies": {
-    "typescript": "^5.6.0"
-  },
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild"
     ]
-  },
-  "dependencies": {
-    "@tauri-apps/plugin-process": "^2.4.0"
   }
 }

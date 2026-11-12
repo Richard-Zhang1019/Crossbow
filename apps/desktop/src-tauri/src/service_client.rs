@@ -17,6 +17,8 @@ pub mod imp {
         CreateFileW, ReadFile, WriteFile, OPEN_EXISTING, SECURITY_IMPERSONATION,
         SECURITY_SQOS_PRESENT,
     };
+    /// 服务管道单次响应等待上限。
+    const RESPONSE_DEADLINE: Duration = Duration::from_secs(15);
     use windows_sys::Win32::System::Pipes::{
         GetNamedPipeServerProcessId, SetNamedPipeHandleState, WaitNamedPipeW, PIPE_NOWAIT,
         PIPE_READMODE_BYTE,
@@ -134,7 +136,7 @@ pub mod imp {
         {
             return Err("pipe write failed".into());
         }
-        let deadline = Instant::now() + Duration::from_secs(15);
+        let deadline = Instant::now() + RESPONSE_DEADLINE;
         let mut line = Vec::new();
         loop {
             if Instant::now() >= deadline {
@@ -181,19 +183,9 @@ pub mod imp {
         }
     }
 
-    /// 服务按设计只运行安装目录内的钉定 mihomo 副本（管理员保护）。引擎
-    /// 解析出的内核可能是数据目录下载副本或旧版残留（升级后常见），但同属
-    /// CI 钉版的 mihomo——TUN 会话统一改用钉定副本，不再要求路径逐字节相等
-    /// （v0.10.3 的逐字节门会误伤所有非安装目录内核，#149）。
-    pub fn make_core_spawner(
-        binary: &Path,
-    ) -> Result<impl FnOnce(&Path, &Path) -> Result<u32, String> + Send, String> {
-        let selected = binary.canonicalize().map_err(|e| e.to_string())?;
-        if !crate::core_download::is_core_bin(&selected, "mihomo") {
-            return Err(
-                "Windows TUN 仅支持 mihomo 内核；当前引擎是 sing-box，请先在设置中切换".into(),
-            );
-        }
+    /// 服务实际拉起的内核。描述文件和 external_binary 必须记这份路径，
+    /// 不能记界面选中的数据目录副本或带平台后缀的侧车。
+    pub fn pinned_core_path() -> Result<PathBuf, String> {
         let pinned = service_exe()?
             .parent()
             .ok_or("missing install dir")?
@@ -203,8 +195,24 @@ pub mod imp {
                 "Windows TUN 需要完整安装包中随附的 mihomo 内核；当前缺少该文件，请修复安装".into(),
             );
         }
+        pinned.canonicalize().map_err(|e| e.to_string())
+    }
+
+    /// 服务按设计只运行安装目录内的钉定 mihomo 副本（管理员保护）。引擎
+    /// 解析出的内核可能是数据目录下载副本或旧版残留（升级后常见），但同属
+    /// CI 钉版的 mihomo——TUN 会话统一改用钉定副本，不再要求路径逐字节相等
+    /// （v0.10.3 的逐字节门会误伤所有非安装目录内核，#149）。
+    pub fn make_core_spawner(
+        binary: &Path,
+    ) -> Result<impl FnOnce(&Path, &Path) -> Result<u32, String> + Send, String> {
+        let selected = binary.canonicalize().map_err(|e| e.to_string())?;
+        if !crate::engine::download::is_core_bin(&selected, "mihomo") {
+            return Err(
+                "Windows TUN 仅支持 mihomo 内核；当前引擎是 sing-box，请先在设置中切换".into(),
+            );
+        }
+        let pinned = pinned_core_path()?;
         running()?;
-        let pinned = pinned.canonicalize().map_err(|e| e.to_string())?;
         Ok(move |config: &Path, log: &Path| start_core(&pinned, config, log))
     }
 
@@ -240,7 +248,7 @@ pub mod imp {
     /// Elevated service installation belongs to the signed installer, never an
     /// arbitrary portable/user-writable executable path from the GUI.
     pub fn install_elevated() -> Result<(), String> {
-        Err("Windows TUN 需要完整安装：请重新运行 Crossbow 安装程序，以管理员权限安装到 Program Files".into())
+        Err("Windows TUN 需要完整安装：请以管理员权限重新运行 Crossbow 安装程序完成安装".into())
     }
 }
 

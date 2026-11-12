@@ -1,0 +1,8 @@
+.cb-fit-items.cb-fit-adaptive > .cb-fit-cells {
+  flex: none;
+}
+
+.cb-fit-items.cb-fit-adaptive > .cb-fit-pager {
+  min-height: 32px;
+  margin-top: 0;
+}

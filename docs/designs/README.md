@@ -15,6 +15,8 @@
 
 | 日期 | 主题 | 版本 | 状态 | 文件 | 关联 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-11-10 | 节点卡片随高度分页 | v01 | 已实现，待评审 | [说明与源稿](2026-11-10-adaptive-node-pagination/v01/SPEC.md) · [三行](2026-11-10-adaptive-node-pagination/v01/previews/three-rows-light.jpg) · [最小窗口两行](2026-11-10-adaptive-node-pagination/v01/previews/two-rows-dark.jpg) | #410 |
+| 2026-11-06 | 顶栏更新入口：概览不再占高 | v01 | 已实现，待评审 | [说明](2026-11-06-toolbar-update/v01/SPEC.md) · [交互矩阵](2026-11-06-toolbar-update/v01/matrix.html) · [浅色](2026-11-06-toolbar-update/v01/previews/ready-zh-light.jpg) · [窄窗深色](2026-11-06-toolbar-update/v01/previews/compact-en-dark.jpg) | #337 |
 | 2026-11-06 | 概览左侧图表与段间距同步伸缩 | v03 | 已实现，视觉验收待补 | [说明](2026-11-05-overview-height/v03/SPEC.md) · [尺寸矩阵](2026-11-05-overview-height/v03/matrix.html) · [源稿](2026-11-05-overview-height/v03/source.zip) | #318 |
 | 2026-11-05 | 概览左侧：最小间距、渐进留白与图表上限 | v02 | 由 v03 替代 | [说明/运行](2026-11-05-overview-height/v02/SPEC.md) · [生产组件矩阵](2026-11-05-overview-height/v02/matrix.html) · [源稿](2026-11-05-overview-height/v02/source.zip) · [检查](2026-11-05-overview-height/v02/checks.json) | #307 |
 | 2026-11-05 | B1 主按钮配色：明暗自适应与固定浅底图标 | v02 | 用户已确认，已实现待 PR 评审 | [说明](2026-11-05-button-logo/v02/SPEC.md) · [正式资源预览](2026-11-05-button-logo/v02/previews/production-assets.png) · [源稿](2026-11-05-button-logo/v02/source.zip) · [校验](2026-11-05-button-logo/v02/checks.json) | #301 / PR #302 |

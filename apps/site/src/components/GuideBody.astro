@@ -1,0 +1,223 @@
+---
+import { createI18n, t, type Lang } from "../i18n";
+import { REPO, LATEST } from "../site-meta";
+
+const { lang } = Astro.props;
+const i18n = createI18n(lang);
+
+const base = import.meta.env.BASE_URL.replace(/\/+$/, "");
+const route = (p: string) => `${base}${lang === "zh" ? "/zh" : ""}${p === "/" ? "/" : p}`;
+
+const CODE_FILTER = `function main(config) {
+  // 只保留名字含「香港」或「JP」的节点
+  config.proxies = config.proxies.filter(p =>
+    /香港|JP/.test(p.name)
+  );
+
+  // 规则：流媒体走「自动选择」，其余 MATCH 兜底
+  config.rules = [
+    "DOMAIN-SUFFIX,netflix.com,自动选择",
+    "GEOIP,CN,DIRECT",
+    "MATCH,自动选择",
+  ];
+  return config;
+}`;
+
+// Keep Chinese node/group names literal so the sample still matches the subscription.
+const CODE_FILTER_EN = `function main(config) {
+  // Keep nodes whose names include 香港 (Hong Kong) or JP.
+  config.proxies = config.proxies.filter(p =>
+    /香港|JP/.test(p.name)
+  );
+
+  // Route streaming through 自动选择 (Auto select), then use MATCH.
+  config.rules = [
+    "DOMAIN-SUFFIX,netflix.com,自动选择",
+    "GEOIP,CN,DIRECT",
+    "MATCH,自动选择",
+  ];
+  return config;
+}`;
+
+const CODE_DEEPLINK = `crossbow://import?url=https%3A%2F%2Fexample.com%2Fsub`;
+
+const TOC = [
+  {
+    group: i18n("guide.1"),
+    items: [
+      { id: "quick-start", label: i18n("guide.2") },
+      { id: "deeplink", label: i18n("guide.3") },
+      { id: "proxy-vs-tun", label: i18n("guide.4") },
+    ],
+  },
+  {
+    group: i18n("guide.5"),
+    items: [
+      { id: "engines", label: i18n("guide.6") },
+      { id: "override", label: i18n("guide.7") },
+      { id: "ports", label: i18n("guide.8") },
+      { id: "lightweight", label: i18n("guide.9") },
+      { id: "subscriptions", label: i18n("guide.10") },
+      { id: "recovery", label: i18n("guide.11") },
+      { id: "data-locations", label: i18n("guide.12") },
+    ],
+  },
+  {
+    group: i18n("guide.13"),
+    items: [
+      { id: "tray-speed", label: i18n("guide.14") },
+      { id: "notifications", label: i18n("guide.15") },
+      { id: "linux", label: i18n("guide.16") },
+      { id: "windows", label: i18n("guide.17") },
+      { id: "troubleshooting", label: i18n("guide.18") },
+      { id: "updates", label: i18n("guide.19") },
+    ],
+  },
+];
+---
+
+<div class="shell guide-page">
+  <header class="page-heading">
+    <h1>{i18n("guide.20")}</h1>
+    <p>{i18n("guide.21")}</p>
+  </header>
+
+  <nav class="guide-toc" aria-label={i18n("guide.22")}>
+    {TOC.map((group) => (
+      <div class="guide-toc-group">
+        <h2>{group.group}</h2>
+        {group.items.map((item) => <a href={route(`/guide#${item.id}`)}>{item.label}</a>)}
+      </div>
+    ))}
+  </nav>
+
+  <div class="guide-list">
+    <section class="guide-card" id="quick-start">
+      <h2>{i18n("guide.23")}<button class="anchor-button" data-copy={route("/guide#quick-start")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p class="guide-intro">{i18n("guide.25")}</p>
+      <div class="guide-step"><span>1</span><div><h3>{i18n("guide.26")}</h3><div>{i18n("guide.27")}{i18n("guide.28")}<a class="text-link" href={route("/features#support-matrix")}>{i18n("guide.29")}</a>{i18n("guide.30")}</div></div></div>
+      <div class="guide-step"><span>2</span><div><h3>{i18n("guide.31")}</h3><div>{i18n("guide.32")}</div></div></div>
+      <div class="guide-step"><span>3</span><div><h3>{i18n("guide.33")}</h3><div>{i18n("guide.34")}</div></div></div>
+      <div class="guide-step"><span>4</span><div><h3>{i18n("guide.35")}</h3><div>{i18n("guide.36")}</div></div></div>
+      <div class="guide-step"><span>5</span><div><h3>{i18n("guide.37")}</h3><div>{i18n("guide.38")}</div></div></div>
+    </section>
+
+    <section class="guide-card" id="engines">
+      <h2>{i18n("guide.39")}<button class="anchor-button" data-copy={route("/guide#engines")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p style="color: var(--dim); font-size: 15; line-height: 1.75; margin: 10px 0 4px">{i18n("guide.40")}</p>
+      <div class="guide-step"><span>01</span><div><h3>{i18n("guide.41")}</h3><div>{i18n("guide.42")}</div></div></div>
+      <div class="guide-step"><span>02</span><div><h3>{i18n("guide.43")}</h3><div>{i18n("guide.44")}</div></div></div>
+      <div class="guide-step"><span>03</span><div><h3>{i18n("guide.45")}</h3><div>{i18n("guide.46")}</div></div></div>
+    </section>
+
+    <section class="guide-card" id="override">
+      <h2>{i18n("guide.47")}<button class="anchor-button" data-copy={route("/guide#override")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p style="color: var(--dim); font-size: 15; line-height: 1.75; margin: 10px 0 4px">{i18n("guide.48")} <code style="font: 12px var(--mono)">function main(config)</code>{i18n("guide.49")}</p>
+      <ul class="guide-intro code-preconditions">
+        <li>{i18n("guide.50")}</li>
+        <li>{i18n("guide.51")}</li>
+      </ul>
+      <div class="code-wrap">
+        <pre class="code-block"><code>{lang === "en" ? CODE_FILTER_EN : CODE_FILTER}</code></pre>
+        <button class="code-copy" data-copy-code title={i18n("guide.52")} aria-label={i18n("guide.52")}>{i18n("guide.53")}</button>
+      </div>
+      <div class="guide-step"><span>01</span><div><h3>{i18n("guide.54")}</h3><div>{i18n("guide.55")}</div></div></div>
+      <div class="guide-step"><span>02</span><div><h3>{i18n("guide.56")}</h3><div>{i18n("guide.57")}</div></div></div>
+      <div class="guide-step"><span>03</span><div><h3>{i18n("guide.58")}</h3><div>{i18n("guide.59")}</div></div></div>
+    </section>
+
+    <section class="guide-card" id="deeplink">
+      <h2>{i18n("guide.60")}<button class="anchor-button" data-copy={route("/guide#deeplink")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p style="color: var(--dim); font-size: 15; line-height: 1.75; margin: 10px 0 4px">{i18n("guide.61")}</p>
+      <pre class="code-block"><code>{CODE_DEEPLINK}</code></pre>
+      <p style="color: var(--dim); font-size: 13; line-height: 1.7">{i18n("guide.62")}</p>
+    </section>
+
+    <section class="guide-card" id="tray-speed">
+      <h2>{i18n("guide.14")}<button class="anchor-button" data-copy={route("/guide#tray-speed")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p style="color: var(--dim); font-size: 15; line-height: 1.75; margin: 10px 0 4px">{i18n("guide.63")}</p>
+    </section>
+
+    <section class="guide-card" id="ports">
+      <h2>{i18n("guide.8")}<button class="anchor-button" data-copy={route("/guide#ports")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p style="color: var(--dim); font-size: 15; line-height: 1.75; margin: 10px 0 4px">{i18n("guide.64")}</p>
+      <p style="color: var(--dim); font-size: 13; line-height: 1.7">{i18n("guide.65")}</p>
+      <p class="guide-intro">{i18n("guide.66")}</p>
+    </section>
+
+    <section class="guide-card" id="linux">
+      <h2>{i18n("guide.67")}<button class="anchor-button" data-copy={route("/guide#linux")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p class="guide-intro">{i18n("guide.68")} <a href="https://github.com/YangYuS8" target="_blank" rel="noopener noreferrer">YangYuS8</a>{i18n("guide.69")}</p>
+      <div class="guide-step"><span>01</span><div><h3>{i18n("guide.70")}</h3><div>{i18n("guide.71")}<a class="text-link" href={route("/download")}>{i18n("guide.72")}</a>{i18n("guide.73")} <code>./run.sh</code>{i18n("guide.74")}</div></div></div>
+      <div class="guide-step"><span>02</span><div><h3>{i18n("guide.75")}</h3><div>{i18n("guide.76")}</div></div></div>
+      <div class="guide-step"><span>03</span><div><h3>{i18n("guide.77")}</h3><div>{i18n("guide.78")} <a href={`${REPO}/blob/main/docs/LINUX-NETWORK.md`} target="_blank" rel="noopener noreferrer">{i18n("guide.79")}</a>{i18n("guide.80")}</div></div></div>
+      <p class="release-scope">{i18n("guide.81")} <a href={LATEST} target="_blank" rel="noopener noreferrer">{i18n("guide.82")}</a>{i18n("guide.83")} <a href={`${REPO}/blob/main/docs/LINUX-TESTING.md`} target="_blank" rel="noopener noreferrer">{i18n("guide.84")}</a>{i18n("guide.30")}</p>
+    </section>
+
+    <section class="guide-card" id="proxy-vs-tun">
+      <h2>{i18n("guide.4")}<button class="anchor-button" data-copy={route("/guide#proxy-vs-tun")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p style="color: var(--dim); font-size: 15; line-height: 1.75; margin: 10px 0 4px">{i18n("guide.85")}</p>
+      <div class="guide-step"><span>01</span><div><h3>{i18n("guide.86")}</h3><div>{i18n("guide.87")}</div></div></div>
+      <div class="guide-step"><span>02</span><div><h3>{i18n("guide.88")}</h3><div>{i18n("guide.89")}</div></div></div>
+      <div class="guide-step"><span>03</span><div><h3>{i18n("guide.90")}</h3><div>{i18n("guide.91")} <a href={`${REPO}/blob/main/docs/TUN-RECOVERY.md`} target="_blank" rel="noopener">{i18n("guide.92")}</a>{i18n("guide.93")}</div></div></div>
+    </section>
+
+    <section class="guide-card" id="lightweight">
+      <h2>{i18n("guide.9")}<button class="anchor-button" data-copy={route("/guide#lightweight")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p style="color: var(--dim); font-size: 15; line-height: 1.75; margin: 10px 0 4px">{i18n("guide.94")}</p>
+    </section>
+
+    <section class="guide-card" id="notifications">
+      <h2>{i18n("guide.95")}<button class="anchor-button" data-copy={route("/guide#notifications")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p class="guide-intro">{i18n("guide.96")}</p>
+      <p class="guide-intro">{i18n("guide.97")}</p>
+    </section>
+
+    <section class="guide-card" id="subscriptions">
+      <h2>{i18n("guide.10")}<button class="anchor-button" data-copy={route("/guide#subscriptions")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p class="guide-intro">{i18n("guide.98")}</p>
+      <div class="guide-step"><span>01</span><div><h3>{i18n("guide.99")}</h3><div>{i18n("guide.100")}</div></div></div>
+      <div class="guide-step"><span>02</span><div><h3>{i18n("guide.101")}</h3><div>{i18n("guide.102")}</div></div></div>
+    </section>
+
+    <section class="guide-card" id="recovery">
+      <h2>{i18n("guide.11")}<button class="anchor-button" data-copy={route("/guide#recovery")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p class="guide-intro">{i18n("guide.103")}</p>
+      <div class="guide-step"><span>01</span><div><h3>{i18n("guide.104")}</h3><div>{i18n("guide.105")}</div></div></div>
+      <div class="guide-step"><span>02</span><div><h3>{i18n("guide.106")}</h3><div>{i18n("guide.107")}</div></div></div>
+    </section>
+
+    <section class="guide-card" id="troubleshooting">
+      <h2>{i18n("guide.18")}<button class="anchor-button" data-copy={route("/guide#troubleshooting")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p class="guide-intro">{i18n("guide.108")}</p>
+      <div class="guide-step"><span>01</span><div><h3>{i18n("guide.109")}</h3><div>{i18n("guide.110")}</div></div></div>
+      <div class="guide-step"><span>02</span><div><h3>{i18n("guide.111")}</h3><div>{i18n("guide.112")}</div></div></div>
+      <div class="guide-step"><span>03</span><div><h3>{i18n("guide.113")}</h3><div>{i18n("guide.114")}</div></div></div>
+    </section>
+
+    <section class="guide-card" id="updates">
+      <h2>{i18n("guide.19")}<button class="anchor-button" data-copy={route("/guide#updates")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p class="guide-intro">{i18n("guide.115")}</p>
+      <div class="guide-step"><span>01</span><div><h3>{i18n("guide.116")}</h3><div>{i18n("guide.117")}</div></div></div>
+      <div class="guide-step"><span>02</span><div><h3>{i18n("guide.118")}</h3><div>{i18n("guide.119")}</div></div></div>
+    </section>
+
+    <section class="guide-card" id="windows">
+      <h2>{i18n("guide.17")}<button class="anchor-button" data-copy={route("/guide#windows")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p class="guide-intro">{i18n("guide.120")}</p>
+      <p class="guide-intro"><a href={`${REPO}/blob/main/docs/WINDOWS-INSTALL.md`} target="_blank" rel="noopener noreferrer">{i18n("guide.121")}</a></p>
+    </section>
+
+    <section class="guide-card" id="data-locations">
+      <h2>{i18n("guide.12")}<button class="anchor-button" data-copy={route("/guide#data-locations")} title={i18n("guide.24")} aria-label={i18n("guide.24")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button></h2>
+      <p style="color: var(--dim); font-size: 15; line-height: 1.75; margin: 10px 0 4px">{i18n("guide.122")} <code style="font: 12px var(--mono)">~/Library/Application Support/com.richard.crossbow/</code>{i18n("guide.123")} <code style="font: 12px var(--mono)">com.crossbow.app</code>{i18n("guide.124")}</p>
+    </section>
+  </div>
+
+  <div style="margin-top: 48; text-align: center; padding: 32px 24px; background: var(--surface); border: 1px solid var(--line); border-radius: 16">
+    <h3 style="font-size: 18; font-weight: 700">{i18n("guide.125")}</h3>
+    <p style="color: var(--dim); font-size: 15; margin: 8px auto 20px">{i18n("guide.126")}</p>
+    <a href={LATEST} target="_blank" rel="noopener" class="btn-primary" style="display: inline-flex; align-items: center; gap: 8; border-radius: 10; padding: 11px 22px; font-size: 14; font-weight: 600; color: var(--on-button); background: var(--button)">{i18n("guide.127")}</a>
+    <a href={`${REPO}/tree/main/docs`} target="_blank" rel="noopener" style="margin-left: 10; color: var(--dim); font-size: 15">{i18n("guide.128")}</a>
+  </div>
+</div>

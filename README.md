@@ -1,48 +1,71 @@
 # Crossbow
 
-Crossbow 是面向 macOS 和 Windows 的开源代理客户端，使用 Tauri 2、React 和 Rust 构建，支持
-mihomo 与 sing-box 双内核。它把订阅、节点选择、系统代理、TUN、连接与日志放在同一个界面，
-并在托盘 / 菜单栏显示实时速率。
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-<img width="1029" height="719" alt="image" src="https://github.com/user-attachments/assets/88879463-6eb9-47a6-90e2-81ea7cea58b8" />
+Crossbow is an open-source proxy client for macOS and Windows, built with Tauri 2, React and
+Rust, supporting the mihomo and sing-box dual cores. It puts subscriptions, node selection,
+system proxy, TUN, connections and logs in a single interface, with live up/down speeds in the
+tray / menu bar.
 
-**当前版本：** [v0.13.5](https://github.com/Richard-Zhang1019/Crossbow/releases/tag/v0.13.5)。
-提供 macOS Apple Silicon DMG、Windows x64 安装包和 Linux x86_64 实验性压缩包。
-Windows 版持续完善中，TUN 使用安装包附带的受控服务；实机兼容性问题请附版本、通知详情与诊断结果提交 Issue。
+<img width="1120" height="720" alt="image" src="https://github.com/user-attachments/assets/29a26e8a-b8ce-425b-9f17-9a228d83d211" />
 
-Linux 正在面向 **CachyOS x86_64 + niri/Wayland** 分阶段适配。显式 HTTP/SOCKS 代理可独立使用；
-第二阶段增加了需单独安装和授权的 mihomo TUN 服务，遇到其他代理、VPN 或策略路由会拒绝接管。
-Linux 发布包附带桌面程序、mihomo 和可选 TUN 服务安装脚本；系统代理、AppImage/DEB 和自动更新仍未开放。构建及实机记录见 [Linux 测试说明](docs/LINUX-TESTING.md)，
-服务安装、权限和恢复边界见 [Linux 网络接管](docs/LINUX-NETWORK.md)。
+**Current version:** [v0.14.3](https://github.com/Richard-Zhang1019/Crossbow/releases/tag/v0.14.3).
+Available as a macOS Apple Silicon DMG, a Windows x64 installer, and an experimental Linux
+x86_64 archive. Windows is under active development; TUN uses the controlled system service
+bundled with the installer. For compatibility issues, please open an issue with the app
+version, notification details and diagnostics.
 
-## 安装与使用
+Linux is being adapted in stages for **CachyOS x86_64 + niri/Wayland**. Plain HTTP/SOCKS proxy
+works independently; stage two adds an optional mihomo TUN service that requires separate
+installation and authorization, and refuses takeover when other proxies, VPNs or policy routing
+are present. Linux packages ship the desktop app, mihomo and an optional TUN service install
+script; system proxy, AppImage/DEB and auto-update are not available yet. Build notes and
+field records: [Linux testing](docs/LINUX-TESTING.md); service installation, permissions and
+recovery boundaries: [Linux network takeover](docs/LINUX-NETWORK.md).
 
-| 平台 | 安装包 | 说明 |
+## Install & use
+
+| Platform | Package | Notes |
 |---|---|---|
-| macOS Apple Silicon | [下载 DMG](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.13.5/Crossbow_0.13.5_aarch64.dmg) | 拖入「应用程序」后启动；Developer ID 签名与公证 |
-| Windows x64 | [下载安装程序](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.13.5/Crossbow_0.13.5_x64-setup.exe) | 安装后启动；尚无 Windows 代码签名，请核对官方来源及校验文件 |
-| Linux x86_64（实验性） | [下载 tar.gz](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.13.5/Crossbow_0.13.5_linux_x86_64.tar.gz) | 解压后以普通用户运行 `run.sh`；依赖及 TUN 安装见包内 `README.txt` |
+| macOS Apple Silicon | [Download DMG](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.14.3/Crossbow_0.13.9_aarch64.dmg) | Drag into Applications; Developer ID signed and notarized |
+| Windows x64 | [Download installer](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.14.3/Crossbow_0.13.9_x64-setup.exe) | No Windows code signing yet — verify the official source and checksums |
+| Linux x86_64 (experimental) | [Download tar.gz](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.14.3/Crossbow_0.13.9_linux_x86_64.tar.gz) | Extract and run `run.sh` as a regular user; dependencies and TUN setup in the bundled `README.txt` |
 
-下载与更新内容以 [GitHub Releases](https://github.com/Richard-Zhang1019/Crossbow/releases/latest) 为准；
-应用内可在「设置 → 软件更新」检查更新，下载后请按界面提示完成安装。
-发布文件附有 `SHA256SUMS`；`main` 可能包含尚未发布的改动。
+Downloads and release notes live on [GitHub Releases](https://github.com/Richard-Zhang1019/Crossbow/releases/latest);
+third-party components and licenses are listed in [THIRD-PARTY-NOTICES](docs/THIRD-PARTY-NOTICES.md).
+Check for updates in-app under "Settings → Software update" and follow the in-app prompts.
+Release files ship with `SHA256SUMS`; `main` may contain unreleased changes.
 
-1. 导入订阅链接或配置文件，在「代理」页选择节点；也可在托盘菜单切换节点并查看延迟。
-2. 日常使用可在首页开启系统代理。需要接管不读取系统代理的应用时，macOS 可在「设置」中开启 TUN。
-3. 本应用的 TUN 与系统代理可同时开启、独立控制；TUN 首次开启需要管理员授权。
-   请先关闭其他代理或 VPN 的 TUN，避免路由冲突。
+1. Import a subscription link or config file and pick a node on the "Proxies" page; you can
+   also switch nodes and check latency from the tray menu.
+2. For daily use, enable the system proxy on the home page. To capture apps that ignore the
+   system proxy, enable TUN in "Settings" on macOS.
+3. TUN and the system proxy can be enabled together and controlled independently. First-time
+   TUN enablement needs admin authorization. Turn off other proxies' or VPNs' TUN first to
+   avoid routing conflicts.
 
-v0.13.5 手动检查更新不再自动下载、等你确认后才下载；并修复 Windows 更新器的文件占用与退出清理。
-Windows GUI 与真实网络仍需实机验收，步骤见
-[Windows 测试说明](docs/WINDOWS-TESTING.md)。显式代理能访问而浏览器不能访问时，请检查浏览器是否使用系统代理。
+v0.14.3 adds the MIT LICENSE; Windows silent installs no longer abort when service
+registration is restricted by the environment (a prerequisite fix for the winget listing).
+Windows GUI and real-network behavior still need field verification — see
+[Windows testing](docs/WINDOWS-TESTING.md). If the explicit proxy works but your browser
+doesn't, check whether the browser uses the system proxy.
 
-macOS 测试网络配置时可先阅读 [TUN 离线恢复说明](docs/TUN-RECOVERY.md)；恢复命令需要仍在运行的备用代理。
-macOS 配置和日志位于 `~/Library/Application Support/com.richard.crossbow/`。旧版
-`com.crossbow.app` 数据会自动迁移，升级前仍建议备份数据目录。
+When testing network configs on macOS, read [TUN offline recovery](docs/TUN-RECOVERY.md)
+first; recovery commands need a still-running backup proxy. macOS configs and logs live in
+`~/Library/Application Support/com.richard.crossbow/`. Data from the legacy
+`com.crossbow.app` directory migrates automatically; backing up the data directory before
+upgrading is still recommended.
 
-## 开发
+## Anonymous usage statistics
 
-依赖 Node.js 20+、pnpm 和 Rust stable；macOS 本地构建还需 Xcode Command Line Tools。
+On desktop versions that support usage statistics, the setting is on by default. Crossbow sends only the date, platform, app version, and a random ID that changes daily. The ID prevents double counting and cannot track an installation across days.
+
+Reports contain no subscription URLs, proxy nodes, browsing history, account details, or hardware identifiers. The metrics database does not store IP addresses. You can turn reporting off at any time in **Settings → Application & updates → Anonymous usage statistics**.
+
+## Development
+
+Requires Node.js 20+, pnpm and Rust stable; local macOS builds also need Xcode Command Line
+Tools.
 
 ```bash
 pnpm install
@@ -50,28 +73,29 @@ pnpm tauri dev
 pnpm --filter @crossbow/site build
 ```
 
-本地打包桌面应用（不生成需要发版签名的更新器产物）：
+To package the desktop app locally (without updater artifacts that require release signing):
 
 ```bash
 cd apps/desktop
 npm run tauri build -- --config '{"bundle":{"createUpdaterArtifacts":false}}'
 ```
 
-仓库结构：
+Repository layout:
 
 ```text
-crates/crossbow-core  共享的配置、覆写与存储逻辑
-apps/desktop          macOS / Windows 桌面应用
-apps/site             官网（Netlify）
-apps/ios              iOS 工程骨架
-docs                  设计、路线图与恢复说明
+crates/crossbow-core  shared config, override and storage logic
+apps/desktop          macOS / Windows desktop app
+apps/site             website (Netlify)
+apps/ios              iOS project skeleton
+docs                  design docs, roadmap and recovery guides
 ```
 
-桌面开发时可用 `CROSSBOW_MIHOMO_BIN=/path/to/mihomo pnpm tauri dev` 指定本地内核。
-详细设计、范围与计划见 [设计文档](docs/DESIGN.md)、[MVP](docs/MVP.md) 和
-[路线图](docs/ROADMAP.md)；macOS 正式发版步骤见 [发版文档](docs/RELEASE.md)。
+During desktop development, point at a local core with
+`CROSSBOW_MIHOMO_BIN=/path/to/mihomo pnpm tauri dev`. Design docs, scope and plans:
+[DESIGN](docs/DESIGN.md), [MVP](docs/MVP.md) and [ROADMAP](docs/ROADMAP.md); macOS release
+steps: [RELEASE](docs/RELEASE.md).
 
-## 许可
+## License
 
-项目声明采用 [GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.html)。mihomo 与 sing-box
-作为独立内核进程运行，分别遵循其自身许可。
+MIT — see [LICENSE](LICENSE). mihomo and sing-box run as separate sidecar processes (not
+linked) and remain under their own licenses.

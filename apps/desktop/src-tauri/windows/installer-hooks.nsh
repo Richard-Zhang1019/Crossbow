@@ -1,11 +1,23 @@
 !include "LogicLib.nsh"
+!include "FileFunc.nsh"
 !define CROSSBOW_UPGRADE_HELPER "${__FILEDIR__}\prepare-upgrade.ps1"
 !macro NSIS_HOOK_PREINSTALL
-  ; A LocalSystem service must never execute out of a user-writable installation.
-  StrLen $0 "$PROGRAMFILES64\"
-  StrCpy $1 "$INSTDIR\" $0
-  ${If} $1 != "$PROGRAMFILES64\"
-    MessageBox MB_ICONSTOP "Crossbow TUN service requires installation under Program Files." /SD IDOK
+  ; A LocalSystem service must never execute out of a user-writable directory.
+  ; Instead of restricting the install to Program Files, harden ACLs on the
+  ; chosen path: strip inherited ACEs and grant SYSTEM/Administrators full
+  ; control, Users read-execute only. Files installed afterwards inherit
+  ; these ACEs, so the service binaries stay tamper-proof on any NTFS path.
+  ; Well-known SIDs keep this locale-independent.
+  CreateDirectory "$INSTDIR"
+  nsExec::ExecToStack 'icacls.exe "$INSTDIR" /reset /T /Q /C'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack 'icacls.exe "$INSTDIR" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F *S-1-5-32-545:(OI)(CI)RX'
+  Pop $0
+  Pop $1
+  ${If} $0 != 0
+    ; icacls fails on volumes without ACL support (exFAT/FAT32).
+    MessageBox MB_ICONSTOP "The installation path must be on an NTFS volume so the CrossbowService binaries cannot be modified by unprivileged users. Please choose a different path." /SD IDOK
     SetErrorLevel 101
     Abort
   ${EndIf}
@@ -43,25 +55,39 @@
   Pop $1
   ${If} $0 != 0
   ${AndIf} $0 != 1073
-    MessageBox MB_ICONSTOP "Cannot register Crossbow service ($0). Please rerun the installer as administrator." /SD IDOK
-    SetErrorLevel 103
-    Abort
+    ; 静默安装（/S，winget/CI 沙盒）里服务注册可能被环境策略拒绝——中止会让
+    ; 整个安装失败（winget 动态校验连续三次 shellExecute 失败）。应用本体照常
+    ; 安装，服务由应用在首次开启 TUN 时自愈（install_elevated）。交互安装
+    ; 保留弹窗中止，让用户当场知道。用 GetOptions
+    ; 从 $CMDLINE 检测 /S（NSIS 无内置静默检测命令）。
+    ${GetOptions} $CMDLINE "/S" $R0
+    ${If} ${Errors}
+      MessageBox MB_ICONSTOP "Cannot register Crossbow service ($0). Please rerun the installer as administrator." /SD IDOK
+      SetErrorLevel 103
+      Abort
+    ${EndIf}
   ${EndIf}
   nsExec::ExecToStack '"$SYSDIR\sc.exe" config CrossbowService binPath= "\"$INSTDIR\crossbow-service.exe\"" start= auto obj= LocalSystem'
   Pop $0
   Pop $1
   ${If} $0 != 0
-    MessageBox MB_ICONSTOP "Cannot configure Crossbow service ($0)." /SD IDOK
-    SetErrorLevel 104
-    Abort
+    ${GetOptions} $CMDLINE "/S" $R0
+    ${If} ${Errors}
+      MessageBox MB_ICONSTOP "Cannot configure Crossbow service ($0)." /SD IDOK
+      SetErrorLevel 104
+      Abort
+    ${EndIf}
   ${EndIf}
   nsExec::ExecToStack '"$SYSDIR\sc.exe" start CrossbowService'
   Pop $0
   Pop $1
   ${If} $0 != 0
-    MessageBox MB_ICONSTOP "Cannot start Crossbow service ($0). Please repair the installation." /SD IDOK
-    SetErrorLevel 105
-    Abort
+    ${GetOptions} $CMDLINE "/S" $R0
+    ${If} ${Errors}
+      MessageBox MB_ICONSTOP "Cannot start Crossbow service ($0). Please repair the installation." /SD IDOK
+      SetErrorLevel 105
+      Abort
+    ${EndIf}
   ${EndIf}
 !macroend
 

@@ -2,8 +2,8 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
-import "./Layout.css";
-import { isNotificationWindow, NotificationProvider, NotificationWindow } from "./notifications/NotificationProvider";
+import "@/layouts/Layout.css";
+import { isNotificationWindow, NotificationProvider, NotificationWindow } from "@/notifications/NotificationProvider";
 if (isNotificationWindow) document.documentElement.classList.add("notification-window");
 
 // ---------- 黑匣子：白屏类问题定位 ----------

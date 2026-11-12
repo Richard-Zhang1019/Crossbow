@@ -1,0 +1,9 @@
+---
+// ?url 拿到纯字符串资源地址（直接 import 的 ImageMetadata 在模板字符串化
+// 时会变成 [object Object]）；display 交给 CSS 按主题切换，不能写内联。
+import logoLight from "../assets/logo-glyph.png?url";
+import logoDark from "../assets/logo-glyph-dark.png?url";
+const { size = 24 } = Astro.props;
+---
+<img class="logo-light" src={logoLight} alt="" width={size} height={size} style="flex:none" />
+<img class="logo-dark" src={logoDark} alt="" width={size} height={size} style="flex:none" />

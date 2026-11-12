@@ -140,7 +140,7 @@ Linux 复用 Tauri 壳和 Rust 配置逻辑；第一阶段仅承诺 CachyOS x86_
 | iOS | libbox（唯一） | 平台限制 |
 
 - `CoreAdapter` 抽象：启动参数、配置转换、API 探测、日志归一化，GUI 不与内核强耦合。
-- mihomo 为 GPL-3.0：项目整体以 GPL-3.0 分发，sidecar 外部进程调用（不链接），严格遵守上游名称要求。sing-box（libbox）许可条款在 iOS 分发前需复核最新版附加条款。
+- mihomo 为 GPL-3.0：项目整体以 MIT 分发（mihomo 为 GPL-3.0，经 sidecar 外部进程调用、不链接，GPL 传染不适用于本项目代码），严格遵守上游名称要求。sing-box（libbox）许可条款在 iOS 分发前需复核最新版附加条款。
 
 ### 3.4 各平台系统能力
 
@@ -294,7 +294,7 @@ crossbow/
 | Windows SmartScreen / 无签名分发劝退 | 中 | 尽早购买代码签名证书；发布页提供 SHA256 校验 |
 | WebView2 运行时缺失（LTSC/精简系统） | 中 | 安装器内嵌 WebView2 bootstrapper |
 | libbox 与 mihomo 配置语义差异 | 中 | 渲染层双 target（YAML/JSON）+ 差异测试集 |
-| mihomo GPL 与名称要求 | 中 | GPL-3.0 分发、sidecar 不链接、遵守改名要求 |
+| mihomo GPL 与名称要求 | 中 | 本项目 MIT 分发、sidecar 不链接、遵守改名要求 |
 | App Store 审核（VPN 类） | 中 | 参照 Shadowrocket/Stash 先例；备选 TestFlight/Developer ID 分发 |
 | UniFFI 边界性能/类型摩擦 | 低 | 核心接口保持粗粒度 |
 | 上游内核再删库 | 低 | 双内核抽象；内核镜像缓存到发布渠道 |

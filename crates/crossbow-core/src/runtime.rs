@@ -127,10 +127,7 @@ fn apply_runtime_mihomo(base_yaml: &str, rt: &RuntimeConfig) -> Result<String, S
         tun.insert(Value::from("dns-mode"), Value::from("native"));
         tun.insert(
             Value::from("dns-hijack"),
-            Value::Sequence(vec![
-                Value::from("any:53"),
-                Value::from("tcp://any:53"),
-            ]),
+            Value::Sequence(vec![Value::from("any:53"), Value::from("tcp://any:53")]),
         );
         let mut dns = Mapping::new();
         dns.insert(Value::from("enable"), Value::from(true));
@@ -142,6 +139,31 @@ fn apply_runtime_mihomo(base_yaml: &str, rt: &RuntimeConfig) -> Result<String, S
         dns.insert(Value::from("ipv6"), Value::from(rt.native_ipv6));
         patch.insert(Value::from("tun"), Value::Mapping(tun));
         patch.insert(Value::from("dns"), Value::Mapping(dns));
+        // 域名嗅探（#331 后续）：客户端可能拿到被污染的真实解析（内核 DNS
+        // 卡死期间 fallback、或应用自带解析），连接会按污染 IP 直连——证书
+        // 不匹配/超时。SNI/Host 嗅探 + override-destination 让 mihomo 从
+        // 握手恢复真实域名，按域名走规则并在节点侧干净解析，污染 IP 无害化。
+        let mut sniff = Mapping::new();
+        sniff.insert(Value::from("enable"), Value::from(true));
+        sniff.insert(Value::from("override-destination"), Value::from(true));
+        sniff.insert(Value::from("force-dns-mapping"), Value::from(true));
+        sniff.insert(Value::from("parse-pure-ip"), Value::from(true));
+        let mut sniff_tls = Mapping::new();
+        sniff_tls.insert(
+            Value::from("ports"),
+            Value::Sequence(vec![Value::from(443), Value::from(8443)]),
+        );
+        let mut sniff_http = Mapping::new();
+        sniff_http.insert(
+            Value::from("ports"),
+            Value::Sequence(vec![Value::from(80), Value::from("8080-8880")]),
+        );
+        sniff_http.insert(Value::from("override-destination"), Value::from(true));
+        let mut sniff_protocols = Mapping::new();
+        sniff_protocols.insert(Value::from("TLS"), Value::Mapping(sniff_tls));
+        sniff_protocols.insert(Value::from("HTTP"), Value::Mapping(sniff_http));
+        sniff.insert(Value::from("sniff"), Value::Mapping(sniff_protocols));
+        patch.insert(Value::from("sniffer"), Value::Mapping(sniff));
     }
     // 节点选择持久化：内核侧记住手工选择（等价「固定节点」），重启不丢。
     let mut profile = Mapping::new();
@@ -157,8 +179,7 @@ fn apply_runtime_mihomo(base_yaml: &str, rt: &RuntimeConfig) -> Result<String, S
             Value::from(rt.controller_secret.as_str()),
         );
     }
-    let patch_yaml =
-        serde_yaml::to_string(&Value::Mapping(patch)).map_err(|e| e.to_string())?;
+    let patch_yaml = serde_yaml::to_string(&Value::Mapping(patch)).map_err(|e| e.to_string())?;
     let merged = apply_merge(base_yaml, &patch_yaml).map_err(|e| e.to_string())?;
     inject_private_direct_rules(merged)
 }
@@ -193,7 +214,10 @@ fn apply_runtime_singbox(base_json: &str, rt: &RuntimeConfig) -> Result<String, 
         serde_json::from_str(base_json).map_err(|e| format!("sing-box 配置非法 JSON: {e}"))?;
 
     let bind = if rt.allow_lan { "::" } else { "127.0.0.1" };
-    if let Some(inbounds) = v.get_mut("inbounds").and_then(serde_json::Value::as_array_mut) {
+    if let Some(inbounds) = v
+        .get_mut("inbounds")
+        .and_then(serde_json::Value::as_array_mut)
+    {
         for inb in inbounds.iter_mut() {
             if inb.get("type").and_then(serde_json::Value::as_str) == Some("mixed") {
                 inb["listen"] = json!(bind);
@@ -205,7 +229,11 @@ fn apply_runtime_singbox(base_json: &str, rt: &RuntimeConfig) -> Result<String, 
         log["level"] = json!(sb_log_level(&rt.log_level));
     }
     if rt.controller_port != 0 {
-        if !v.get("experimental").map(serde_json::Value::is_object).unwrap_or(false) {
+        if !v
+            .get("experimental")
+            .map(serde_json::Value::is_object)
+            .unwrap_or(false)
+        {
             v["experimental"] = json!({});
         }
         v["experimental"]["clash_api"] = json!({
@@ -229,6 +257,22 @@ fn apply_runtime_singbox(base_json: &str, rt: &RuntimeConfig) -> Result<String, 
                     "192.168.0.0/16", "100.64.0.0/10", "10.0.0.0/8", "172.16.0.0/12",
                 ],
             }));
+        }
+        // 域名嗅探（同 mihomo sniffer，#331 后续）：污染解析无害化——
+        // sniff action 放规则最前，恢复域名后后续规则按域名匹配。
+        // route/rules 缺失时自动创建，保证任何配置都注入。
+        if v.get_mut("route")
+            .map(serde_json::Value::take)
+            .map(|r| r.is_object())
+            .unwrap_or(true)
+        {
+            v["route"] = json!({"rules": []});
+        }
+        if !v["route"]["rules"].is_array() {
+            v["route"]["rules"] = json!([]);
+        }
+        if let Some(rules) = v["route"]["rules"].as_array_mut() {
+            rules.insert(0, json!({"action": "sniff"}));
         }
     }
     serde_json::to_string_pretty(&v).map_err(|e| e.to_string())
@@ -271,6 +315,16 @@ mod tests {
         assert!(without_v6.contains("ipv6: false"));
     }
 
+    #[test]
+    fn preserves_explicit_process_lookup_mode() {
+        for mode in ["always", "off"] {
+            let base = format!("find-process-mode: {mode}\nproxies: []\n");
+            let rendered = apply_runtime(&base, &RuntimeConfig::default()).unwrap();
+            let config: Value = serde_yaml::from_str(&rendered).unwrap();
+            assert_eq!(config["find-process-mode"].as_str(), Some(mode));
+        }
+    }
+
     /// #145：私网豁免与 DIRECT 规则前置——tailnet/内网目的地不走代理
     #[test]
     fn private_network_exemptions() {
@@ -292,7 +346,10 @@ mod tests {
         let rules_start = out.find("rules:").unwrap();
         let head = &out[rules_start..];
         let first = head.lines().nth(1).unwrap();
-        assert!(first.contains("100.64.0.0/10"), "首条应为 tailnet DIRECT: {first}");
+        assert!(
+            first.contains("100.64.0.0/10"),
+            "首条应为 tailnet DIRECT: {first}"
+        );
         assert!(first.ends_with("DIRECT,no-resolve"));
         assert!(head.contains("MATCH,DIRECT"), "订阅规则必须保留");
     }
@@ -379,7 +436,10 @@ mod tests {
         assert_eq!(inb["listen_port"], 7899);
         assert_eq!(inb["listen"], "::");
         assert_eq!(v["log"]["level"], "warn");
-        assert_eq!(v["experimental"]["clash_api"]["external_controller"], "127.0.0.1:19090");
+        assert_eq!(
+            v["experimental"]["clash_api"]["external_controller"],
+            "127.0.0.1:19090"
+        );
         assert_eq!(v["experimental"]["clash_api"]["secret"], "sb-secret");
         // 已有 experimental 键不被覆盖
         assert_eq!(v["experimental"]["cache_file"]["enabled"], true);
@@ -438,6 +498,10 @@ mod tun_tests {
         assert!(out.contains("dns-hijack:"));
         assert!(out.contains("tcp://any:53"));
         assert!(out.contains("enhanced-mode: fake-ip"), "TUN 需 DNS 劫持");
+        // 域名嗅探（#331 后续）：污染解析无害化
+        assert!(out.contains("sniffer:"), "TUN 需注入 sniffer 段");
+        assert!(out.contains("parse-pure-ip: true"));
+        assert!(out.contains("override-destination: true"));
         // 双栈（#59）：inet6 地址 + v6 分流路由 + DNS 放行 AAAA
         assert!(out.contains("fdfe:dcba:9876::1/126"));
         assert!(out.contains("inet6-route-address:"));
@@ -472,8 +536,12 @@ mod tun_tests {
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         let inb = v["inbounds"].as_array().unwrap();
         assert!(
-            inb.iter().any(|i| i["type"] == "tun" && i["auto_route"] == true),
+            inb.iter()
+                .any(|i| i["type"] == "tun" && i["auto_route"] == true),
             "应追加 tun inbound"
         );
+        // 域名嗅探（#331 后续）：sniff action 在规则最前
+        let rules = v["route"]["rules"].as_array().unwrap();
+        assert_eq!(rules[0], serde_json::json!({"action": "sniff"}));
     }
 }

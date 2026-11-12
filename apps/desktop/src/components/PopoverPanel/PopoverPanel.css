@@ -1,0 +1,54 @@
+.cb-popover-positioner {
+  z-index: var(--z-popover);
+  outline: 0;
+}
+.cb-popover-panel {
+  width: 320px;
+  max-width: calc(100vw - 24px);
+  max-height: min(460px, calc(100dvh - 100px));
+  overflow: auto;
+  border: 1px solid var(--cb-line-strong);
+  border-radius: 10px;
+  background: var(--cb-floating);
+  color: var(--cb-text);
+  box-shadow: 0 8px 28px #0002;
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity 160ms ease,
+    transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.cb-popover-panel[data-starting-style],
+.cb-popover-panel[data-ending-style] {
+  opacity: 0;
+  transform: translateY(-3px) scale(0.98);
+}
+.cb-popover-panel[data-instant] {
+  transition: none;
+}
+.cb-help-button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--cb-line-strong);
+  border-radius: 50%;
+  color: var(--cb-text-dim);
+  font-size: 12px;
+}
+.cb-help-button:hover {
+  background: var(--cb-surface-2);
+  color: var(--cb-text);
+}
+.cb-help-copy {
+  padding: 14px 16px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.cb-help-copy p + p {
+  margin-top: 8px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cb-popover-panel {
+    transition: none;
+  }
+}

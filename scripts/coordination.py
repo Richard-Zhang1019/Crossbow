@@ -144,8 +144,8 @@ def run(args):
                 if args.session is None or row["session"] == args.session:
                     print(json.dumps(row, ensure_ascii=False))
             return
-        if branch in ("HEAD", "main", "master"):
-            raise CoordinationError("请先进入自己的工作分支；不能在 main/master 或游离 HEAD 上认领/完成。")
+        if branch in ("HEAD", "main"):
+            raise CoordinationError("请先进入自己的工作分支；不能在 main 或游离 HEAD 上认领/完成。")
         if not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", args.session):
             raise CoordinationError("会话名只能使用小写字母、数字、连字符和下划线，且以字母开头。")
         if args.command == "claim":

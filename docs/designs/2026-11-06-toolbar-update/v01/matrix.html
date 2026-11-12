@@ -1,0 +1,19 @@
+<!doctype html><meta charset="utf-8"><title>Crossbow · 顶栏更新状态</title>
+<style>body{margin:24px;background:#eef0f5;color:#242b37;font:14px system-ui}h1{font-size:22px}main{display:flex;flex-wrap:wrap;align-items:flex-start;gap:24px}.case{margin:0}figcaption{margin-bottom:8px}.viewport{position:relative;overflow:hidden;border:1px solid #cdd2df;border-radius:8px;background:white}iframe{border:0;transform:scale(.5);transform-origin:top left;position:absolute;inset:0}</style>
+<h1>顶栏更新入口 · 生产组件矩阵</h1><p>每个 iframe 使用标注的真实 CSS 视口。可单独打开原尺寸；模拟数据不连接真实代理。</p><main id="cases"></main>
+<script>
+const cases = [
+  ['小窗 · 无更新', 880, 560, ''],
+  ['小窗 · 更新已就绪', 880, 560, '?update=ready'],
+  ['截图参考宽度 · 更新已就绪', 835, 658, '?update=ready'],
+  ['小窗 · 深色英文', 880, 560, '?update=available&dark=1&en=1'],
+  ['紧凑版本临界宽度 · 英文', 1001, 658, '?update=ready&en=1'],
+  ['默认窗口 · 正在下载', 1120, 720, '?update=progress'],
+  ['完整标签临界宽度 · 英文', 1261, 720, '?update=unknown&en=1'],
+  ['大窗 · 发现新版本', 1280, 800, '?update=available'],
+  ['大窗 · 更新已就绪', 1280, 800, '?update=ready'],
+  ['大窗 · 深色英文 · 下载大小未知', 1280, 800, '?update=unknown&dark=1&en=1'],
+  ['平台不支持应用内更新', 1120, 720, '?update=unsupported'],
+];
+for(const [name,w,h,query] of cases){const figure=document.createElement('figure');figure.className='case';const caption=document.createElement('figcaption');const link=document.createElement('a');link.href='./index.html'+query;link.target='_blank';link.textContent=`${name} · ${w}×${h}`;caption.append(link);const viewport=document.createElement('div');viewport.className='viewport';viewport.style.width=w*.5+'px';viewport.style.height=h*.5+'px';const frame=document.createElement('iframe');frame.title=link.textContent;frame.src='./index.html'+query;frame.style.width=w+'px';frame.style.height=h+'px';viewport.append(frame);figure.append(caption,viewport);document.getElementById('cases').append(figure)}
+</script>

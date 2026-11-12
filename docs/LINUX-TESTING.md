@@ -63,7 +63,7 @@ GDK_BACKEND=wayland python3 scripts/linux/smoke_desktop.py \
 ```sh
 cargo test --locked -p crossbow-core
 cargo test --locked --lib --manifest-path apps/desktop/src-tauri/Cargo.toml
-node --experimental-strip-types --test apps/desktop/src/components/nodeFlags.test.mjs apps/desktop/src/components/fitGrid.test.mjs
+node --experimental-strip-types --test apps/desktop/src/components/NodeName/nodeFlags.test.mjs apps/desktop/src/components/FitItems/fitGrid.test.mjs
 python3 -m unittest discover -s scripts/ci/tests -v
 ```
 
@@ -218,3 +218,16 @@ GDK_BACKEND=wayland python3 scripts/linux/smoke_daily.py \
 当前 `smoke_daily.py` 还需要 `dbus-monitor`，只观察 `app_name=Crossbow` 的 Notify，避免收集其他应用的通知；焦点观察期间不调用 WebDriver。协议/动作测试只在私有总线运行，没有替换宿主通知服务。系统提醒过期后，原卡片等待前台展示；用户关闭提醒只收起对应批次，不标记已读或恢复。服务不可用时保留队列并退避重试，不回退到普通窗口。
 
 最终原生构建 SHA-256：`4f1dd8a6875802992c4a38d593892236c9e52706adcb302ff5e88a304a8f3028`。本工作树证据在 `target/linux-focus/evidence/`：`native-daily-final/`、`native-action/`、`protocol.json`、`activation.json` 及宿主前后摘要、汇总 `report.json`。临时协议夹具与构建产物不提交。以上是本地修复构建的结果，官方 v0.12.2 包仍保留上一节的失败记录；宿主 TUN、休眠唤醒、真实登录自启动及其他桌面仍未验收。
+
+## 2026-11-09 WireGuard 分流共存（#379）
+
+基于 `f58d55a` 的 Linux 开发构建。测试使用临时生成的 WireGuard 对端、脱敏配置和钉定的 mihomo。服务 SHA-256 为 `3b6480df7502c9eeb1f518f5fcd4b02cda35f1df92a8ac154c026833f44efbb0`。
+
+| 验证范围 | 结果 |
+| --- | --- |
+| 本地构建与单测 | 前端与原生桌面构建、23 项服务单测、147 项桌面后端单测和 52 项共享核心测试通过。隔离浏览器验证了共存设置保存、失败回读和 TUN 运行时禁用设置。 |
+| 命名空间真实内核 | `smoke_network.py` 共 23 项通过。默认模式拒绝现有 WireGuard，显式模式拒绝 WireGuard 默认路由。真实双栈公网 TCP 走 mihomo，内网 TCP 和 DNS 走 WireGuard。原路由撤销和跨表注入触发退场。暂停服务监控时删除 WireGuard 接口，受保护的双栈目标立即不可达。退出清理后保留外部资源，宿主路由和 DNS 摘要一致。 |
+| 独立 QEMU/KVM | 同一服务构建通过 10 项。隔离 guest 中完成真实 systemd/polkit 文本授权取消与成功、所属 UID 和能力限制、双栈公网与内网流量、系统分流 DNS、断线保护、正常退出和服务 SIGKILL 后的自动恢复。guest 无宿主网卡并已关闭，宿主路由、规则和 DNS 摘要一致。 |
+| 宿主 CachyOS + niri/Wayland | **实网待验**。本轮宿主 TUN、原有 VPN 与实际桌面授权流程未纳入测试。 |
+
+本地证据位于本工作树 `target/wireguard-379/namespace/report.json` 和 `target/wireguard-379/kvm/report.json`。KVM 文本授权和系统恢复证据适用于该 guest。

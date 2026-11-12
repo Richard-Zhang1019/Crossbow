@@ -43,7 +43,11 @@ fn real_store_singbox_e2e() {
 
     let bin = dir.join("binaries").join("sing-box");
     let mut child = std::process::Command::new(&bin)
-        .arg("run").arg("-D").arg(work).arg("-c").arg(work.join("config.yaml"))
+        .arg("run")
+        .arg("-D")
+        .arg(work)
+        .arg("-c")
+        .arg(work.join("config.yaml"))
         .stdout(std::fs::File::create("/tmp/cb-smoke-out.log").unwrap())
         .stderr(std::fs::File::create("/tmp/cb-smoke-err.log").unwrap())
         .spawn()
@@ -52,12 +56,22 @@ fn real_store_singbox_e2e() {
     let mut ok = false;
     for _ in 0..300 {
         if let Ok(out) = std::process::Command::new("curl")
-            .args(["-s", "-m", "1", "-H", &format!("Authorization: Bearer {secret}"),
-                   &format!("http://127.0.0.1:{ctrl}/version")])
+            .args([
+                "-s",
+                "-m",
+                "1",
+                "-H",
+                &format!("Authorization: Bearer {secret}"),
+                &format!("http://127.0.0.1:{ctrl}/version"),
+            ])
             .output()
         {
             let body = String::from_utf8_lossy(&out.stdout).to_string();
-            if body.contains("version") { eprintln!("clash api: {body}"); ok = true; break; }
+            if body.contains("version") {
+                eprintln!("clash api: {body}");
+                ok = true;
+                break;
+            }
         }
         std::thread::sleep(std::time::Duration::from_millis(200));
     }

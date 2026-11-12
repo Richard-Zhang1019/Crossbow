@@ -1,6 +1,6 @@
-import { notificationDestination } from "../workflow";
+import { notificationDestination } from "@/lib/workflow";
 import { invoke } from "@tauri-apps/api/core";
-import { currentLang } from "../i18n";
+import { currentLang } from "@/i18n/i18n";
 
 export type NotificationKind =
   | "success"
@@ -13,6 +13,7 @@ export type NotificationAction =
   | "diagnostics"
   | "logs"
   | "profiles"
+  | "nodes"
   | "retryDownload";
 export interface Notification {
   id: string;
@@ -78,6 +79,7 @@ const copy = {
   close: ["关闭通知", "Dismiss notification"],
   history: ["最近通知", "Recent notifications"],
   profiles: ["打开配置", "Open profiles"],
+  nodes: ["选择节点", "Pick a node"],
   retryDownload: ["重新下载", "Retry download"],
   empty: ["本次会话暂无通知", "No notifications in this session"],
   settings: ["前往设置", "Open settings"],
@@ -89,16 +91,26 @@ const copy = {
   ],
   "tray.proxy": ["系统代理切换", "Switch system proxy"],
   "tray.tun": ["TUN 模式切换", "Switch TUN mode"],
+  "linux.wireguardCoexist": [
+    "WireGuard 分流设置失败",
+    "Could not change WireGuard split-tunnel setting",
+  ],
   "tray.profile": ["切换配置", "Switch profile"],
   "tray.node": ["节点切换", "Select node"],
   "tray.action": ["托盘操作", "Tray action"],
   "tray.latency": ["延迟测试", "Latency test"],
   "tray.latencyTimeout": ["延迟测试超时", "Latency test timed out"],
   "core.mode": ["切换代理模式", "Switch proxy mode"],
+  "core.missing": ["需要下载内核才能开启系统代理", "Download the core to enable the system proxy"],
+  "core.restarting": ["正在重启内核…", "Restarting core…"],
+  "core.restarted": ["内核已重启", "Core restarted"],
+  "core.restartFailed": ["内核重启失败", "Could not restart core"],
+  "stage.preparing": ["正在准备下载内核…", "Preparing core download…"],
   "stage.downloading": ["正在下载内核…", "Downloading core…"],
   "stage.verifying": ["正在校验内核…", "Verifying core…"],
-  "stage.done": ["下载完成", "Download complete"],
+  "stage.done": ["正在载入已下载的内核…", "Loading the downloaded core…"],
   "core.installReady": ["内核已下载", "Core downloaded"],
+  "core.installFailed": ["内核下载或安装失败", "Could not download or install the core"],
   "core.install": ["下载安装内核", "Install core"],
   "coexist.resolved": ["代理冲突提示已解除", "Proxy conflict cleared"],
   "profile.updateFailed": [
@@ -109,6 +121,31 @@ const copy = {
   "core.recovered": ["内核已恢复运行", "Core is running again"],
   "core.safeMode": ["已进入安全模式", "Safe mode enabled"],
   "tun.disabled": ["TUN 已自动关闭", "TUN turned off automatically"],
+  "app.exitBlocked": [
+    "退出未完成，应用继续运行",
+    "Exit canceled; the app is still running",
+  ],
+  "tun.externalProxy": [
+    "检测到外部系统代理，请手动关闭",
+    "External system proxy detected; turn it off manually",
+  ],
+  "tun.manualRecovery": ["TUN 需要手动恢复", "TUN needs manual recovery"],
+  "tun.manualRecovery.hint": [
+    "请在设置中手动关闭或重新开启 TUN，并完成系统要求的授权。",
+    "Turn TUN off or back on in settings and complete any authorization requested by the system.",
+  ],
+  "tun.externalProxy.hint": [
+    "请在其他代理客户端或系统网络设置中关闭系统代理。处理后提示会自动解除。",
+    "Turn off the system proxy in the other proxy app or system network settings. This notice clears when the conflict is resolved.",
+  ],
+  "tun.wedgeRestart": [
+    "TUN 通道无响应，正在重启内核恢复",
+    "TUN unresponsive; restarting core to recover",
+  ],
+  "sysproxy.coreDead": [
+    "内核未运行，已关闭系统代理",
+    "Core is down; system proxy turned off",
+  ],
   "tun.takeoverGiveUp": [
     "TUN 接管异常，已停止自动恢复",
     "TUN takeover abnormal; auto-recovery paused",
@@ -192,6 +229,8 @@ function publish(input: NotificationInput): Promise<unknown> {
 export interface TaskFeedback {
   feedback?: "task" | "error-only";
   titleKey?: string;
+  /** 成功通知附带的跳转动作（条 7：导入成功 → 选节点） */
+  nextActions?: NotificationAction[];
 }
 let attempt = 0;
 export const notify = {
@@ -271,6 +310,7 @@ export const notify = {
           kind: "success",
           title: "",
           description: success ?? title,
+          actions: options.nextActions ?? [],
         });
       return { ok: true, value };
     } catch (error) {

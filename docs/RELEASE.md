@@ -4,8 +4,12 @@
 
 正式产物统一由 `.github/workflows/release.yml` 生成，继续使用 Tauri 的 Developer ID 签名、公证与更新器。`scripts/release-macos.sh` 仅校验或调用此流程，不再本地重新签名后上传旧的更新归档。
 
-1. 更新并提交四处应用版本：`Cargo.toml` 的 workspace version、`Cargo.lock` 中所有 Crossbow workspace package（包括服务包）、`apps/desktop/package.json`、`apps/desktop/src-tauri/tauri.conf.json`。
-2. 离线校验（Python 3.11+）：
+1. 在仓库根目录运行交互式版本更新脚本：
+   ```bash
+   python3 scripts/ci/set_release_version.py
+   ```
+   脚本会显示当前应用版本，接收新稳定版本号（`X.Y.Z`，可带 `v` 前缀），预览并确认后更新 `Cargo.toml`、`Cargo.lock` 中所有 Crossbow workspace package（包括服务包）、`apps/desktop/package.json`、`apps/desktop/src-tauri/tauri.conf.json`，以及中英文 README 的当前版本和下载链接。它保留历史发布说明、依赖版本和 root `package.json`（该文件是私有工作区工具包元数据）。添加 `--dry-run` 可只预览文件范围，不写入。
+2. 确认并提交版本变更后，离线校验（Python 3.11+）：
    ```bash
    VERSION=vX.Y.Z bash scripts/release-macos.sh --check
    ```
@@ -50,7 +54,7 @@
 
 - DMG 公证失败时保存提交结果，并按 submission id 获取 Apple 的详细日志；应用公证失败见 Tauri 构建步骤输出。
 - `release-diagnostics-*` / `startup-diagnostics` artifact 保留 7 天；验证后的发布产物保留 30 天。
-- 更新 sidecar 版本时，必须同步更新 `scripts/ci/download_sidecar.py` 的目标文件名、SHA-256 和 `core_download.rs` 的版本。摘要来自上游对应 Release 的资产 digest；镜像也必须通过同一摘要校验。
+- 更新 sidecar 版本时，必须同步更新 `scripts/ci/download_sidecar.py` 的目标文件名、SHA-256 和 `src-tauri/src/engine/download.rs` 的版本。摘要来自上游对应 Release 的资产 digest；镜像也必须通过同一摘要校验。
 - CI macOS `.app` 使用 tar 上传，以保留执行权限与符号链接；它是未正式签名的测试产物。
 - 下载全部发布文件后可执行：`shasum -a 256 -c SHA256SUMS`。SHA-256 便于检测文件损坏，不替代 Developer ID 和更新器签名。
 

@@ -30,3 +30,22 @@ Verge 使用其他混合端口时，可在终端先设置 `CROSSBOW_FALLBACK_POR
 ```bash
 CROSSBOW_FALLBACK_PORT=7891 ./scripts/recover-tun-network.command --check
 ```
+
+## 为排查保留断网现场
+
+如果操作条件允许，先记下发生时间，再退出应用、切换代理或重启。下面几条命令只读，
+可以帮助区分系统代理仍指向旧端口、TUN 捕获路由残留和物理网络没有默认出口：
+
+```bash
+date
+/sbin/route -n get default
+/sbin/route -n get 1.1.1.1
+/usr/sbin/scutil --proxy
+/usr/sbin/scutil --dns
+```
+
+分享结果前，隐去内部域名、PAC 地址等私人信息；不要上传订阅或内核配置。
+Crossbow 的 `runtime/core-decision.log` 中，`core stop:` 和 `tun cleanup:`
+可用于核对停止结果与代理恢复，`tun health:` 可用于核对是否发起自动恢复。
+健康自检只在 macOS 本地 mihomo 的 gVisor TUN 会话运行。只有连续检测到同一目标
+经混合端口可达、经 TUN 不可达时才请求正常重启；两条路径一起超时不会触发重启。

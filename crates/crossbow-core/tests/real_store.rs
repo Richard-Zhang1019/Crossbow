@@ -16,7 +16,14 @@ fn real_store_singbox_render() {
         Ok(r) => r,
         Err(e) => panic!("render failed: {e}"),
     };
-    eprintln!("config bytes: {}, head: {}", rendered.config.len(), &rendered.config[..rendered.config.len().min(300)]);
-    assert!(rendered.config.trim_start().starts_with('{'), "should be JSON");
+    eprintln!(
+        "config bytes: {}, head: {}",
+        rendered.config.len(),
+        &rendered.config[..rendered.config.len().min(300)]
+    );
+    assert!(
+        rendered.config.trim_start().starts_with('{'),
+        "should be JSON"
+    );
     std::fs::write("/tmp/crossbow-singbox-check.json", &rendered.config).unwrap();
 }

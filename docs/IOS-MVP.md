@@ -147,7 +147,7 @@ flowchart TB
 - App Store Connect App 记录、测试说明、反馈邮箱、隐私政策 URL、隐私声明与出口合规问卷。
 - 内部测试与外部测试分开；外部 TestFlight 需要按 Apple 的 Beta App Review 流程提交，不能当作免审核的公开分发渠道。
 - Apple 当前 5.4 条对提供 VPN 服务的 App 有组织账号要求；Crossbow 的自带配置客户端如何适用，需在分发前向 Apple 确认。个人开发签名可测试不代表 TestFlight 外测或 App Store 已获准；届时根据答复决定账号与区域方案。
-- 当前上游 sing-box 与 Apple 客户端的 LICENSE 是 GPL-3.0-or-later，sing-box 另有名称/关联说明限制；Crossbow 声明 GPL-3.0。固定版本后记录许可证、源码/构建信息与第三方声明，并核对预定商店分发条件，不能只凭同为 GPL 就宣称已解决分发许可。
+- 当前上游 sing-box 与 Apple 客户端的 LICENSE 是 GPL-3.0-or-later，sing-box 另有名称/关联说明限制；Crossbow 声明 MIT。固定版本后记录许可证、源码/构建信息与第三方声明，并核对预定商店分发条件，不能只凭同为 GPL 就宣称已解决分发许可。
 
 ## 7. 验收清单
 

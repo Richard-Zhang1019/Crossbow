@@ -3,9 +3,8 @@
 # 这样以 main 为 base 的官网 PR 才会得到 deploy-preview-<PR>--crossbow-client.netlify.app。
 [build]
   base = "apps/site"
-  command = "pnpm install --no-frozen-lockfile && pnpm build"
+  command = "npm install --no-frozen-lockfile && npm run build"
   publish = "dist"
 
 [build.environment]
   NODE_VERSION = "22"
-  VITE_BASE = "/"

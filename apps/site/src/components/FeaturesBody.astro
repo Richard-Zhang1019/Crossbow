@@ -1,0 +1,241 @@
+---
+import { createI18n, t, type Lang } from "../i18n";
+import { REPO, LATEST } from "../site-meta";
+
+const { lang } = Astro.props;
+const i18n = createI18n(lang);
+
+
+const FEATURES = [
+  {
+    id: "support-matrix", tag: i18n("features.1"), title: i18n("features.2"), matrix: true,
+    summary: i18n("features.3"),
+    detail: [i18n("features.4")],
+  },
+  {
+    id: "nodes", tag: i18n("features.5"), title: i18n("features.6"),
+    summary: i18n("features.7"),
+    detail: [
+      i18n("features.8"),
+      i18n("features.9"),
+      i18n("features.10"),
+      i18n("features.11"),
+    ],
+  },
+  {
+    id: "subscription", tag: i18n("features.12"), title: i18n("features.13"),
+    summary: i18n("features.14"),
+    detail: [
+      i18n("features.15"),
+      i18n("features.16"),
+      i18n("features.17"),
+      i18n("features.18"),
+      i18n("features.19"),
+      i18n("features.20"),
+    ],
+  },
+  {
+    id: "sysproxy-guard", tag: i18n("features.21"), title: i18n("features.22"),
+    summary: i18n("features.23"),
+    detail: [
+      i18n("features.24"),
+      i18n("features.25"),
+      i18n("features.26"),
+      i18n("features.27"),
+    ],
+  },
+  {
+    id: "tun", tag: i18n("features.28"), title: i18n("features.29"),
+    summary: i18n("features.30"),
+    detail: [
+      i18n("features.31"),
+      i18n("features.32"),
+      i18n("features.33"),
+      i18n("features.34"),
+    ],
+  },
+  {
+    id: "diagnostics", tag: i18n("features.35"), title: i18n("features.36"),
+    summary: i18n("features.37"),
+    detail: [
+      i18n("features.38"),
+      i18n("features.39"),
+      i18n("features.40"),
+    ],
+  },
+  {
+    id: "js-override", tag: i18n("features.41"), title: i18n("features.42"),
+    summary: i18n("features.43"),
+    detail: [
+      i18n("features.44"),
+      i18n("features.45"),
+      i18n("features.46"),
+      i18n("features.47"),
+    ],
+  },
+  {
+    id: "lightweight", tag: i18n("features.48"), title: i18n("features.49"),
+    summary: i18n("features.50"),
+    detail: [
+      i18n("features.51"),
+      i18n("features.52"),
+      i18n("features.53"),
+    ],
+  },
+  {
+    id: "observability", tag: i18n("features.54"), title: i18n("features.55"),
+    summary: i18n("features.56"),
+    detail: [
+      i18n("features.57"),
+      i18n("features.58"),
+      i18n("features.59"),
+      i18n("features.60"),
+      i18n("features.61"),
+      i18n("features.62"),
+    ],
+  },
+  {
+    id: "engines", tag: i18n("features.63"), title: i18n("features.64"),
+    summary: i18n("features.65"),
+    detail: [
+      i18n("features.66"),
+      i18n("features.67"),
+      i18n("features.68"),
+      i18n("features.69"),
+    ],
+  },
+  {
+    id: "notifications", tag: i18n("features.70"), title: i18n("features.71"),
+    summary: i18n("features.72"),
+    detail: [
+      i18n("features.73"),
+      i18n("features.74"),
+      i18n("features.75"),
+      i18n("features.76"),
+    ],
+  },
+  {
+    id: "snapshots", tag: i18n("features.77"), title: i18n("features.78"),
+    summary: i18n("features.79"),
+    detail: [
+      i18n("features.80"),
+      i18n("features.81"),
+      i18n("features.82"),
+    ],
+  },
+  {
+    id: "updates", tag: i18n("features.83"), title: i18n("features.84"),
+    summary: i18n("features.85"),
+    detail: [
+      i18n("features.86"),
+      i18n("features.87"),
+      i18n("features.88"),
+    ],
+  },
+  {
+    id: "preferences", tag: i18n("features.89"), title: i18n("features.90"),
+    summary: i18n("features.91"),
+    detail: [
+      i18n("features.92"),
+      i18n("features.93"),
+      i18n("features.94"),
+    ],
+  },
+  {
+    id: "linux", tag: "Linux", title: i18n("features.95"),
+    summary: i18n("features.96"),
+    detail: [
+      i18n("features.97"),
+      i18n("features.98"),
+      i18n("features.99"),
+    ],
+  },
+];
+
+// 四组归类（#365）：锚点 id 保持稳定，外链不漂移
+const GROUPS: { label: string; ids: string[] }[] = [
+  { label: i18n("features.100"), ids: ["nodes", "subscription", "preferences"] },
+  { label: i18n("features.101"), ids: ["sysproxy-guard", "tun", "engines", "js-override"] },
+  { label: i18n("features.102"), ids: ["diagnostics", "observability", "notifications"] },
+  { label: i18n("features.103"), ids: ["lightweight", "snapshots", "updates", "linux"] },
+];
+const byId = Object.fromEntries(FEATURES.map((f) => [f.id, f]));
+const groupLabel = (id: string) => GROUPS.find((g) => g.ids.includes(id))?.label ?? "";
+
+const path = (id: string) => `${import.meta.env.BASE_URL.replace(/\/+$/, "")}${lang === "zh" ? "/zh" : ""}/features#${id}`;
+---
+
+<div class="shell detail-page">
+  <header class="page-heading"><h1>{i18n("features.104")}</h1><p>{i18n("features.105")}</p></header>
+  <nav class="section-nav" aria-label={i18n("features.106")}>
+    <a href={path("support-matrix")} class="section-link" data-section="support-matrix">{i18n("features.1")}</a>
+    {GROUPS.map((g) => (
+      <div class="nav-group">
+        <span class="nav-group-label">{g.label}</span>
+        {g.ids.map((id) => <a href={path(id)} class="section-link" data-section={id}>{byId[id].tag}</a>)}
+      </div>
+    ))}
+  </nav>
+  <div class="detail-list">
+    {FEATURES.map((f, i) => (
+      <>
+        {i > 0 && groupLabel(f.id) !== groupLabel(FEATURES[i - 1].id) && (
+          <div class="detail-group" aria-hidden="true">{groupLabel(f.id)}</div>
+        )}
+
+      <section class={"detail-section" + (f.matrix ? " wide support-matrix" : "")} id={f.id}>
+        <div>
+          <h2>{f.title}<button class="anchor-button" data-copy={path(f.id)} title={i18n("features.107")} aria-label={i18n("features.107")}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
+          </button></h2>
+          <p>{f.summary}</p>
+        </div>
+        {f.matrix ? (
+          <div class="matrix-scroll">
+            <table>
+              <thead><tr>
+                <th scope="col">{i18n("features.108")}</th>
+                <th scope="col">macOS<span class="th-sub">Apple Silicon</span></th>
+                <th scope="col">Windows<span class="th-sub">x64</span></th>
+                <th scope="col">Linux<span class="th-sub">x86_64（{i18n("features.109")}）</span></th>
+                <th scope="col">iOS<span class="th-sub">{i18n("features.110")}</span></th>
+              </tr></thead>
+              <tbody>
+                <tr><th scope="row">{i18n("features.111")}</th><td>DMG（{i18n("features.112")}）</td><td>EXE（{i18n("features.113")}）</td><td>TAR.GZ（{i18n("features.114")}）</td><td>{i18n("features.115")}</td></tr>
+                <tr><th scope="row">{i18n("features.116")}</th><td><span class="cell-yes">✓ {i18n("features.117")}</span></td><td><span class="cell-yes">✓ {i18n("features.117")}</span></td><td><span class="cell-no">✗ {i18n("features.118")}</span></td><td><span class="cell-na">—</span></td></tr>
+                <tr><th scope="row">{i18n("features.29")}</th><td><span class="cell-yes">✓ {i18n("features.119")}</span></td><td><span class="cell-yes">✓ {i18n("features.120")}</span></td><td>{i18n("features.121")}</td><td><span class="cell-na">—</span></td></tr>
+                <tr><th scope="row">{i18n("features.122")}</th><td><span class="cell-yes">✓</span></td><td><span class="cell-yes">✓</span></td><td><span class="cell-yes">✓</span></td><td><span class="cell-na">—</span></td></tr>
+                <tr><th scope="row">{i18n("features.123")}</th><td><span class="cell-yes">✓</span></td><td><span class="cell-yes">✓</span></td><td><span class="cell-no">✗ {i18n("features.124")}</span></td><td><span class="cell-na">—</span></td></tr>
+                <tr><th scope="row">{i18n("features.125")}</th><td>{i18n("features.126")}</td><td>{i18n("features.126")}</td><td>{i18n("features.109")}</td><td>{i18n("features.110")}</td></tr>
+              </tbody>
+            </table>
+            <p class="matrix-note">{i18n("features.127")}<a class="text-link" href={`${import.meta.env.BASE_URL.replace(/\/+$/, "")}${lang === "zh" ? "/zh" : ""}/guide#linux`}>{i18n("features.128")}</a>{i18n("features.129")}</p>
+          </div>
+        ) : (
+          <ul>{f.detail.map((d) => <li>{d}</li>)}</ul>
+        )}
+      </section>
+      </>
+    ))}
+  </div>
+  <div class="page-next">
+    <div><h2>{i18n("features.130")}</h2><p>{i18n("features.131")}</p></div>
+    <a class="text-link" href={`${import.meta.env.BASE_URL.replace(/\/+$/, "")}${lang === "zh" ? "/zh" : ""}/guide`}>{i18n("features.132")}</a>
+  </div>
+  <div class="page-meta">
+    <a href={`${REPO}/issues`} target="_blank" rel="noopener noreferrer">{i18n("features.133")}</a>
+    <a href={LATEST} target="_blank" rel="noopener noreferrer">{i18n("features.134")}</a>
+  </div>
+</div>
+
+<script>
+  // 当前章节高亮（#349 功能页目录）
+  const links = document.querySelectorAll<HTMLAnchorElement>(".section-nav a[data-section]");
+  const sections = [...links].map((a) => document.getElementById(a.dataset.section ?? "")).filter((el): el is HTMLElement => Boolean(el));
+  const observer = new IntersectionObserver((entries) => {
+    const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+    if (!visible) return;
+    links.forEach((a) => a.classList.toggle("active", a.dataset.section === visible.target.id));
+  }, { rootMargin: "-104px 0px -55% 0px" });
+  sections.forEach((s) => observer.observe(s));
+</script>

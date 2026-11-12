@@ -877,7 +877,7 @@ checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
 
 [[package]]
 name = "crossbow-core"
-version = "0.13.5"
+version = "0.14.3"
 dependencies = [
  "boa_engine",
  "serde",
@@ -890,11 +890,12 @@ dependencies = [
 
 [[package]]
 name = "crossbow-desktop"
-version = "0.13.5"
+version = "0.14.3"
 dependencies = [
  "crossbow-core",
  "crossbow-service",
  "dbus",
+ "dispatch2",
  "flate2",
  "libc",
  "objc2",
@@ -926,7 +927,7 @@ dependencies = [
 
 [[package]]
 name = "crossbow-service"
-version = "0.13.5"
+version = "0.14.3"
 dependencies = [
  "libc",
  "serde_json",

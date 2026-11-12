@@ -1,0 +1,23 @@
+{
+  "date": "2026-11-06",
+  "version": "v01",
+  "status": "implemented",
+  "issue": 337,
+  "baseline": "135ec3818779157cdc14c3bfb8a225d378cc6a36",
+  "reference": "用户提供的概览截图：更新横条占用内容区高度，需迁至顶部配置选择器左侧",
+  "source": ["index.html", "matrix.html", "preview.tsx", "mock-tauri.ts", "vite.config.mts"],
+  "spec": "SPEC.md",
+  "renders": [
+    "previews/ready-zh-light.jpg",
+    "previews/compact-en-dark.jpg",
+    "previews/progress-zh-light.jpg",
+    "previews/settings-zh-light.jpg"
+  ],
+  "production": [
+    "apps/desktop/src/App.tsx",
+    "apps/desktop/src/components/UpdateEntry.tsx",
+    "apps/desktop/src/index.css",
+    "apps/desktop/src/pages/Home.tsx",
+    "apps/desktop/src/pages/Settings.tsx"
+  ]
+}

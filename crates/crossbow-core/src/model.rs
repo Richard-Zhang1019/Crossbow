@@ -60,7 +60,11 @@ pub struct UpdateOutcome {
 
 /// Counts only: never persist server credentials in update summaries.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct NodeChanges { pub added: usize, pub removed: usize, pub changed: usize }
+pub struct NodeChanges {
+    pub added: usize,
+    pub removed: usize,
+    pub changed: usize,
+}
 
 /// 机场订阅的流量/到期信息。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -121,6 +125,9 @@ pub struct EngineConfig {
     /// TUN 模式：内核创建 utun 虚拟网卡接管全局流量（macOS 需特权服务）。
     #[serde(default)]
     pub tun_enable: bool,
+    /// Linux only: preserve a verified WireGuard split tunnel when starting TUN.
+    #[serde(default)]
+    pub linux_wireguard_coexist: bool,
 }
 
 fn default_engine() -> Engine {
@@ -140,6 +147,7 @@ impl Default for EngineConfig {
             allow_lan: false,
             flag_emoji: default_flag_emoji(),
             tun_enable: false,
+            linux_wireguard_coexist: false,
         }
     }
 }
@@ -228,6 +236,10 @@ pub struct UiSettings {
     /// 轻量模式：关窗即交接退出（保留内核与系统代理）。
     #[serde(default)]
     pub lightweight_close: bool,
+    /// 深链导入订阅前弹原生确认框（#420）。安全默认开：crossbow:// 可被
+    /// 任意程序触发，无确认等于把路由决策链暴露给外部输入。
+    #[serde(default = "default_true")]
+    pub deep_link_import_confirm: bool,
 }
 
 fn default_theme() -> String {
@@ -235,7 +247,8 @@ fn default_theme() -> String {
 }
 
 fn default_lang() -> String {
-    "zh".into()
+    // 英文优先（#353/#355）：新安装默认英文；已持久化过语言设置的旧用户保持原值
+    "en".into()
 }
 
 impl Default for UiSettings {
@@ -244,6 +257,7 @@ impl Default for UiSettings {
             theme: default_theme(),
             lang: default_lang(),
             lightweight_close: false,
+            deep_link_import_confirm: true,
         }
     }
 }
@@ -408,6 +422,7 @@ mod tests {
         data.migrate();
         assert_eq!(data.schema_version, 2);
         assert_eq!(data.ui, UiSettings::default());
+        assert!(!data.engine.linux_wireguard_coexist);
     }
 
     #[test]

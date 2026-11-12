@@ -83,8 +83,13 @@ impl Store {
     }
 
     pub fn snapshot_data(&self, id: &str) -> Result<StoreSchema> {
-        let path = self.snapshots()?.into_iter().find(|p| p.file_name().and_then(|n| n.to_str()) == Some(id))
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Snapshot not found"))?;
+        let path = self
+            .snapshots()?
+            .into_iter()
+            .find(|p| p.file_name().and_then(|n| n.to_str()) == Some(id))
+            .ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::NotFound, "Snapshot not found")
+            })?;
         Self::load_str(&fs::read_to_string(path)?)
     }
 

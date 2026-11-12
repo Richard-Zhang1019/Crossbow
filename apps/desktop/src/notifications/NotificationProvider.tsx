@@ -1,4 +1,4 @@
-import { ButtonBase, Button } from "../components/Button";
+import { ButtonBase, Button } from "@/components/Button";
 import {
   createContext,
   useContext,
@@ -10,10 +10,10 @@ import {
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { currentLang, initLang, useT } from "../i18n";
-import { ProgressRing } from "../components/ProgressRing";
-import { Icon } from "../components/Icon";
-import { ipc } from "../ipc";
+import { currentLang, initLang, useT } from "@/i18n/i18n";
+import { ProgressRing } from "@/components/ProgressRing";
+import { Icon } from "@/components/Icon";
+import { ipc } from "@/services/ipc";
 import {
   notificationText as text,
   type Notification,
@@ -230,9 +230,11 @@ function NotificationCard({
       ? text("failedHint")
       : notice.code === "core.safeMode"
         ? text("safeMode.hint")
-        : notice.code === "tun.disabled"
-          ? text("tun.disabled.hint")
-          : "";
+        : (notice.code === "tun.externalProxy" || notice.code === "tun.manualRecovery")
+          ? text(`${notice.code}.hint`)
+          : notice.code === "tun.disabled"
+            ? text("tun.disabled.hint")
+            : "";
   const detailsId = `notice-details-${notice.id}`;
   const progressing = notice.kind === "progress";
   const percent =
@@ -410,11 +412,13 @@ function HistoryRow({
         : notice.description
       : notice.code === "core.safeMode"
         ? text("safeMode.hint")
-        : notice.code === "tun.disabled"
-          ? text("tun.disabled.hint")
-          : kind === "error"
-            ? text("failedHint")
-            : "";
+        : (notice.code === "tun.externalProxy" || notice.code === "tun.manualRecovery")
+          ? text(`${notice.code}.hint`)
+          : notice.code === "tun.disabled"
+            ? text("tun.disabled.hint")
+            : kind === "error"
+              ? text("failedHint")
+              : "";
   const read = () =>
     void invoke("notification_mark_read", { id: notice.id }).catch(
       console.error,
@@ -761,4 +765,9 @@ export function useNotificationNavigation(navigate: (page: string) => void) {
     navigate(navigateTo);
     void invoke("notification_ack_navigation").catch(console.error);
   }, [navigateTo]);
+}
+
+// History includes running tasks whose cards are queued or dismissed.
+export function useOperationNotice(operationId: string) {
+  return useContext(Context).history.find(notice => notice.operationId === operationId);
 }

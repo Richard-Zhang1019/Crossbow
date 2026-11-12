@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Exercise the real Linux broker/core inside private user, PID, mount and network namespaces.
-No sudo, service installation, host routes, DNS or firewall writes. Requires bubblewrap/iproute2.
+No sudo, service installation, host routes, DNS or firewall writes. Requires bubblewrap, iproute2, util-linux and wireguard-tools.
 """
 import argparse
+import errno
 import hashlib
 import http.client
 import json
@@ -20,6 +21,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVICE = '/usr/lib/crossbow/crossbow-service'
+CORE = '/usr/lib/crossbow/mihomo'
 SOCKET = '/run/crossbow-tun/control.sock'
 
 
@@ -30,11 +32,18 @@ def run(*args):
     return result.stdout
 
 
+def network_state():
+    result = []
+    for family in ('-4', '-6'):
+        routes = json.loads(run('ip', '-j', family, 'route', 'show', 'table', 'all'))
+        rules = json.loads(run('ip', '-j', family, 'rule', 'show'))
+        result.extend([sorted(routes, key=lambda row: json.dumps(row, sort_keys=True)), rules])
+    result.append(Path('/etc/resolv.conf').read_text())
+    return result
+
+
 def snapshot():
-    values = [run('ip', '-j', family, kind, 'show', *(['table', 'all'] if kind == 'route' else []))
-              for family in ['-4', '-6'] for kind in ['route', 'rule']]
-    values.append(Path('/etc/resolv.conf').read_text())
-    return hashlib.sha256('\n'.join(values).encode()).hexdigest()
+    return hashlib.sha256(json.dumps(network_state(), sort_keys=True).encode()).hexdigest()
 
 
 def wait(check, timeout=12):
@@ -49,6 +58,10 @@ def wait(check, timeout=12):
 
 def request(stream, value):
     stream.sendall(json.dumps(value).encode() + b'\n')
+    return read_response(stream)
+
+
+def read_response(stream):
     data = bytearray()
     while not data.endswith(b'\n'):
         part = stream.recv(1)
@@ -72,6 +85,99 @@ def free_port():
         return listener.getsockname()[1]
 
 
+WG_DESTINATIONS = ('198.51.100.12', '2001:db8:4::12')
+WG_SOURCES = ('10.67.0.2/32', 'fd24::2/128')
+
+
+def wireguard_peer(output):
+    listeners = []
+    for address in WG_DESTINATIONS:
+        family = socket.AF_INET6 if ':' in address else socket.AF_INET
+        tcp = socket.socket(family, socket.SOCK_STREAM)
+        tcp.bind((address, 18080))
+        tcp.listen()
+        udp = socket.socket(family, socket.SOCK_DGRAM)
+        udp.bind((address, 53))
+        listeners.extend([tcp, udp])
+
+    def handle(listener):
+        while True:
+            if listener.type == socket.SOCK_STREAM:
+                with listener.accept()[0] as stream:
+                    stream.settimeout(3)
+                    assert stream.recv(1024) == b'wireguard-fixture'
+                    stream.sendall(b'wireguard-peer')
+            else:
+                query, sender = listener.recvfrom(4096)
+                header = query[:2] + struct.pack('!5H', 0x8180, 1, 1, 0, 0)
+                answer = b'\xc0\x0c' + struct.pack('!2HIH4B', 1, 1, 60, 4, 10, 67, 0, 5)
+                listener.sendto(header + query[12:] + answer, sender)
+
+    for listener in listeners:
+        threading.Thread(target=handle, args=(listener,), daemon=True).start()
+    (output / 'wireguard-peer-ready').touch()
+    threading.Event().wait()
+
+
+def wireguard_fixture(output, processes):
+    namespace = subprocess.Popen(['unshare', '--net', '--', 'sleep', '180'])
+    processes.append(namespace)
+    wait(lambda: namespace.poll() is None
+         and os.readlink(f'/proc/{namespace.pid}/ns/net') != os.readlink('/proc/self/ns/net'))
+    peer = ['nsenter', '--target', str(namespace.pid), '--net', '--']
+    run('ip', 'link', 'add', 'wg-underlay', 'type', 'veth', 'peer', 'name', 'wg-remote')
+    run('ip', 'link', 'set', 'wg-remote', 'netns', str(namespace.pid))
+    run('ip', 'link', 'set', 'dev', 'wg-underlay', 'addrgenmode', 'none')
+    run('ip', 'addr', 'add', '203.0.113.129/30', 'dev', 'wg-underlay')
+    run('ip', 'link', 'set', 'wg-underlay', 'up')
+    run(*peer, 'ip', 'addr', 'add', '203.0.113.130/30', 'dev', 'wg-remote')
+    run(*peer, 'ip', 'link', 'set', 'wg-remote', 'up')
+    run('ip', 'link', 'add', 'wg-test', 'type', 'wireguard')
+    for device in ('wg-underlay', 'wg-test'):
+        Path(f'/proc/sys/net/ipv4/conf/{device}/rp_filter').write_text('2')
+    run(*peer, 'ip', 'link', 'add', 'wg-peer', 'type', 'wireguard')
+    keys = [run('wg', 'genkey') for _ in range(2)]
+    public = [subprocess.run(['wg', 'pubkey'], input=key, text=True,
+                             check=True, capture_output=True).stdout.strip() for key in keys]
+    destinations = [f'{ip}/{128 if ":" in ip else 32}' for ip in WG_DESTINATIONS]
+    subprocess.run(['wg', 'set', 'wg-test', 'private-key', '/dev/stdin',
+                    'peer', public[1], 'allowed-ips', ','.join(destinations),
+                    'endpoint', '203.0.113.130:51822'], input=keys[0], text=True, check=True)
+    subprocess.run([*peer, 'wg', 'set', 'wg-peer', 'listen-port', '51822',
+                    'private-key', '/dev/stdin', 'peer', public[0],
+                    'allowed-ips', ','.join(WG_SOURCES)], input=keys[1], text=True, check=True)
+    run('ip', 'link', 'set', 'wg-test', 'up')
+    run(*peer, 'ip', 'link', 'set', 'wg-peer', 'up')
+    for family, src, dest in zip(['-4', '-6'], WG_SOURCES, destinations):
+        dad = ['nodad'] if family == '-6' else []
+        run('ip', family, 'addr', 'add', src, 'dev', 'wg-test', *dad)
+        run(*peer, 'ip', family, 'addr', 'add', dest, 'dev', 'wg-peer', *dad)
+        run('ip', family, 'route', 'add', dest, 'dev', 'wg-test')
+        run(*peer, 'ip', family, 'route', 'add', src, 'dev', 'wg-peer')
+    ready = output / 'wireguard-peer-ready'
+    ready.unlink(missing_ok=True)
+    process = subprocess.Popen([*peer, '/usr/bin/python3', str(Path(__file__).resolve()),
+                                '--wireguard-peer', '--output', str(output)])
+    processes.append(process)
+    wait(lambda: process.poll() is None and ready.exists())
+
+
+def check_wireguard_data():
+    query = struct.pack('!6H', 207, 0x100, 1, 0, 0, 0) + b'\x0cwireguard-wg\x04test\0' + struct.pack('!2H', 1, 1)
+    for address in WG_DESTINATIONS:
+        family = socket.AF_INET6 if ':' in address else socket.AF_INET
+        with socket.socket(family, socket.SOCK_STREAM) as tcp:
+            tcp.settimeout(5)
+            tcp.connect((address, 18080))
+            tcp.sendall(b'wireguard-fixture')
+            assert tcp.recv(1024) == b'wireguard-peer'
+        with socket.socket(family, socket.SOCK_DGRAM) as dns:
+            dns.settimeout(5)
+            dns.sendto(query, (address, 53))
+            answer, sender = dns.recvfrom(4096)
+            assert sender[0] == address and answer[:2] == query[:2] and answer.endswith(b'\x0a\x43\x00\x05')
+
+
 def inside(output):
     # This is a test runner guard, not a production mode of the broker.
     assert os.environ.get('CROSSBOW_TEST_NETNS') == os.readlink('/proc/self/ns/net')
@@ -89,7 +195,7 @@ def inside(output):
     Path('/proc/sys/net/ipv4/conf/all/rp_filter').write_text('0')
     rp_filter = Path('/proc/sys/net/ipv4/conf/uplink/rp_filter')
     rp_filter.write_text('1')
-    baseline = snapshot()
+    baseline = network_state()
     checks = []
     proxies = []
 
@@ -173,7 +279,7 @@ dns:
 
     def ordinary():
         log = (output / 'ordinary.log').open('wb')
-        process = subprocess.Popen(['/usr/lib/crossbow/mihomo', '-d', str(output), '-f', str(config)],
+        process = subprocess.Popen([CORE, '-d', str(output), '-f', str(config)],
                                    stdout=log, stderr=log)
         log.close()
         processes.append(process)
@@ -189,23 +295,49 @@ dns:
         # Match the production service capability bound; no root filesystem powers.
         command = ['setpriv', '--bounding-set=-all,+net_admin', '--inh-caps=-all,+net_admin',
                    '--ambient-caps=-all,+net_admin', '--no-new-privs', SERVICE, '--serve']
+        socket_path = Path(SOCKET)
+        previous = socket_path.stat().st_ino if socket_path.exists() else None
         process = subprocess.Popen(command, stdout=log, stderr=log)
         log.close()
         processes.append(process)
-        wait(lambda: Path(SOCKET).exists() or process.poll() is not None)
+
+        def socket_ready():
+            try:
+                return socket_path.stat().st_ino != previous
+            except FileNotFoundError:
+                return False
+
+        wait(lambda: socket_ready() or process.poll() is not None)
         assert process.poll() is None, f'service failed: {list(output.glob("service-*.log"))[-1].read_text()}'
         return process
 
-    def start():
+    def start(wireguard=False):
         stream = connect()
-        result = request(stream, {'cmd': 'start', 'config': str(config), 'log': str(core_log)})
+        result = request(stream, {'cmd': 'start', 'config': str(config), 'log': str(core_log),
+                                  **({'wireguard_coexist': True} if wireguard else {})})
         assert result.get('ok') and result.get('active'), (result, core_log.read_text()[-5000:] if core_log.exists() else 'no core log')
         return stream, result
 
     def clean():
         assert not any(link['ifname'] == 'Crossbow' for link in json.loads(run('ip', '-j', 'link')))
-        assert snapshot() == baseline, 'namespace routes/rules/DNS were not restored'
+        current = network_state()
+        if current != baseline:
+            (output / 'namespace-network-diff.json').write_text(
+                json.dumps({'before': baseline[:-1], 'after': current[:-1]}, indent=2))
+            raise AssertionError('namespace routes/rules/DNS were not restored')
         assert not Path('/run/crossbow-tun/network.json').exists()
+
+    def check_public_data():
+        for address in ['203.0.113.77', '2001:db8:2::77']:
+            family = socket.AF_INET6 if ':' in address else socket.AF_INET
+            with socket.socket(family) as connection:
+                connection.settimeout(8)
+                connection.connect((address, 80))
+                connection.sendall(b'GET / HTTP/1.1\r\nHost: fixture.invalid\r\nConnection: close\r\n\r\n')
+                response = bytearray()
+                while part := connection.recv(4096):
+                    response.extend(part)
+                assert response.endswith(b'crossbow-isolated-tun-ok'), response
 
     try:
         process = launch()
@@ -231,16 +363,7 @@ dns:
         cap = next(line.split()[1] for line in status_text.splitlines() if line.startswith('CapEff:'))
         assert int(cap, 16) == 1 << 12, cap
         checks.append('real core runs with CAP_NET_ADMIN only')
-        for address in ['203.0.113.77', '2001:db8:2::77']:
-            family = socket.AF_INET6 if ':' in address else socket.AF_INET
-            with socket.socket(family) as connection:
-                connection.settimeout(8)
-                connection.connect((address, 80))
-                connection.sendall(b'GET / HTTP/1.1\r\nHost: fixture.invalid\r\nConnection: close\r\n\r\n')
-                response = bytearray()
-                while part := connection.recv(4096):
-                    response.extend(part)
-                assert response.endswith(b'crossbow-isolated-tun-ok'), response
+        check_public_data()
         assert len(proxies) == 2
         checks.append('unproxied IPv4 and IPv6 TCP requests traverse TUN and real mihomo')
         query = struct.pack('!6H', 99, 0x100, 1, 0, 0, 0) + b'\x0dlinux-fixture\x04test\0' + struct.pack('!2H', 1, 1)
@@ -312,6 +435,168 @@ dns:
         run(SERVICE, '--cleanup')
         clean()
         checks.append('standalone ExecStopPost cleanup recovers a killed service/core pair')
+        wireguard_fixture(output, processes)
+        baseline = network_state()
+
+        def refused(wireguard, message):
+            with connect() as client:
+                result = request(client, {'cmd': 'start', 'config': str(config), 'log': str(core_log),
+                                          'wireguard_coexist': wireguard})
+                assert not result['ok'] and result['stopped'] and message in result['error'], result
+
+        process = launch()
+        refused(False, 'wg-test')
+        clean()
+        checks.append('WireGuard continues to block TUN unless coexistence is explicitly enabled')
+        run('ip', '-4', 'route', 'add', 'default', 'dev', 'wg-test', 'metric', '700')
+        refused(True, 'WireGuard')
+        run('ip', '-4', 'route', 'del', 'default', 'dev', 'wg-test', 'metric', '700')
+        clean()
+        checks.append('coexistence rejects a WireGuard default route')
+        stream, state = start(wireguard=True)
+        assert api('GET', '/proxies/selection')['now'] == 'fixture'
+        assert 'dns-hijack: []' in Path('/run/crossbow-tun/session/runtime.yaml').read_text()
+        check_public_data()
+        check_wireguard_data()
+        checks.append('real dual-stack WireGuard TCP and private DNS coexist with dual-stack mihomo TUN')
+
+        # A full stdout pipe keeps the real version command visible to the
+        # watchdog without racing its normally short lifetime.
+        read_fd, write_fd = os.pipe()
+        with os.fdopen(read_fd, 'rb') as version_output, os.fdopen(write_fd, 'wb') as blocked:
+            os.set_blocking(write_fd, False)
+            padding_size = 0
+            while True:
+                try:
+                    padding_size += os.write(write_fd, b'\0' * 4096)
+                except BlockingIOError:
+                    break
+            os.set_blocking(write_fd, True)
+            version = subprocess.Popen(['setpriv', '--bounding-set=-all', '--inh-caps=-all',
+                                        '--ambient-caps=-all', '--no-new-privs', CORE, '-v'],
+                                       stdout=blocked, stderr=subprocess.STDOUT)
+            processes.append(version)
+            blocked.close()
+            cmdline = Path(f'/proc/{version.pid}/cmdline')
+            wait(lambda: cmdline.read_bytes() == os.fsencode(CORE) + b'\0-v\0')
+            # The watchdog runs between these two status requests.
+            for _ in range(2):
+                active = request(stream, {'cmd': 'status'})
+                assert active['ok'] and active['active'], active
+                assert (active['pid'], active['ifindex']) == (state['pid'], state['ifindex']), active
+            check_public_data()
+            check_wireguard_data()
+            assert version.poll() is None
+            assert version_output.read(padding_size) == b'\0' * padding_size
+            assert version.wait(timeout=5) == 0
+            assert version_output.read().startswith(b'Mihomo Meta ')
+        checks.append('real mihomo -v stays visible to the watchdog while the same TUN core and WireGuard remain online')
+
+        stopped = request(stream, {'cmd': 'stop'})
+        assert stopped['ok'] and stopped['stopped'], stopped
+        stream.close()
+        clean()
+        check_wireguard_data()
+        checks.append('normal coexistence stop restores the original WireGuard network exactly')
+
+        stream, _ = start(wireguard=True)
+        foreign_dir = output / 'foreign'
+        foreign_dir.mkdir(exist_ok=True)
+        foreign_port = free_port()
+        foreign_config = foreign_dir / 'config.yaml'
+        foreign_config.write_text(f'''mixed-port: {foreign_port}
+allow-lan: false
+tun: {{enable: false}}
+proxies:
+  - name: fixture
+    type: http
+    server: 127.0.0.1
+    port: {server.server_address[1]}
+rules: ["MATCH,fixture"]
+''')
+        foreign_log = foreign_dir / 'core.log'
+        with stream, foreign_log.open('wb') as log:
+            foreign = subprocess.Popen([CORE, '-d', str(foreign_dir), '-f', str(foreign_config)],
+                                       stdout=log, stderr=subprocess.STDOUT)
+            processes.append(foreign)
+            stream.settimeout(12)
+            ended = read_response(stream)
+            assert not ended['ok'] and ended['stopped'], ended
+            assert f'已有代理进程 mihomo（pid {foreign.pid}）' in ended['error'], ended
+            assert process.wait(timeout=12) == 0
+
+        def foreign_ready():
+            assert foreign.poll() is None, foreign_log.read_text()
+            try:
+                with socket.create_connection(('127.0.0.1', foreign_port), timeout=1):
+                    return True
+            except OSError:
+                return False
+
+        wait(foreign_ready)
+        explicit = http.client.HTTPConnection('127.0.0.1', foreign_port, timeout=5)
+        try:
+            explicit.set_tunnel('203.0.113.77', 80)
+            explicit.request('GET', '/')
+            response = explicit.getresponse()
+            assert response.status == 200 and response.read() == b'crossbow-isolated-tun-ok'
+        finally:
+            explicit.close()
+        clean()
+        check_wireguard_data()
+        foreign.terminate()
+        foreign.wait(timeout=5)
+        checks.append('independent live mihomo triggers safe TUN cleanup while its own proxy and WireGuard keep working')
+
+        process = launch()
+        stream, state = start(wireguard=True)
+        run('ip', '-4', 'route', 'del', f'{WG_DESTINATIONS[0]}/32', 'dev', 'wg-test')
+        process.wait(timeout=12)
+        stream.close()
+        run('ip', '-4', 'route', 'add', f'{WG_DESTINATIONS[0]}/32', 'dev', 'wg-test')
+        clean()
+        checks.append('withdrawal of an original WireGuard route stops the coexistence session')
+
+        process = launch()
+        stream, state = start(wireguard=True)
+        # The shape is identical to an existing Crossbow route except for its table.
+        route = ['throw', '192.168.0.0/16', 'table', '20221', 'proto', '242']
+        run('ip', '-4', 'route', 'add', *route)
+        process.wait(timeout=12)
+        stream.close()
+        assert any(row['dst'] == '192.168.0.0/16'
+                   for row in json.loads(run('ip', '-j', '-4', 'route', 'show', 'table', '20221')))
+        run('ip', '-4', 'route', 'del', *route)
+        clean()
+        checks.append('a foreign route copying Crossbow attributes in the wrong table forces cleanup and is preserved')
+
+        process = launch()
+        stream, state = start(wireguard=True)
+        os.kill(process.pid, signal.SIGSTOP)
+        try:
+            run('ip', 'link', 'del', 'wg-test')
+            for address in WG_DESTINATIONS:
+                family = socket.AF_INET6 if ':' in address else socket.AF_INET
+                with socket.socket(family, socket.SOCK_STREAM) as probe:
+                    probe.settimeout(3)
+                    try:
+                        probe.connect((address, 18080))
+                    except OSError as error:
+                        assert error.errno in [errno.EHOSTUNREACH, errno.ENETUNREACH], error
+                    else:
+                        raise AssertionError('a protected destination reached another route')
+        finally:
+            os.kill(process.pid, signal.SIGCONT)
+        process.wait(timeout=12)
+        stream.close()
+        assert not Path('/run/crossbow-tun/network.json').exists()
+        for family in ['-4', '-6']:
+            assert not any(str(row.get('table')) in ['20220', '20221']
+                           for row in json.loads(run('ip', '-j', family, 'route', 'show', 'table', 'all')))
+            assert not any(row.get('priority') in [12019, 12020]
+                           for row in json.loads(run('ip', '-j', family, 'rule', 'show')))
+        checks.append('protected IPv4 and IPv6 fail before the service can observe link loss; cleanup then releases owned rules')
+
     finally:
         for process in processes:
             if process.poll() is None:
@@ -329,8 +614,12 @@ def main():
     parser.add_argument('--core', type=Path, default=ROOT / 'apps/desktop/src-tauri/binaries/mihomo-x86_64-unknown-linux-gnu')
     parser.add_argument('--output', type=Path, default=ROOT / 'target/linux-validation/network')
     parser.add_argument('--inside', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--wireguard-peer', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args()
     output = args.output.resolve(); output.mkdir(parents=True, exist_ok=True)
+    if args.wireguard_peer:
+        wireguard_peer(output)
+        return
     if args.inside:
         result = inside(output)
     else:

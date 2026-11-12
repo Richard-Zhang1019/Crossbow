@@ -1,0 +1,223 @@
+---
+import "../site.css";
+import Logo from "../components/Logo.astro";
+import { createI18n, other, pathFor, t, type Lang } from "../i18n";
+import { BOOTSTRAP } from "../lib/bootstrap.js";
+import { REPO, RELEASES } from "../site-meta";
+
+export interface Props {
+  lang: Lang;
+  /** 语言无关路径，如 /features */
+  path: string;
+  title: string;
+  description: string;
+  /** 404 等不应被索引的页面 */
+  noindex?: boolean;
+}
+
+const { lang, path, title, description, noindex } = Astro.props;
+const i18n = createI18n(lang);
+const locale = lang === "en" ? "en" : "zh-CN";
+const base = import.meta.env.BASE_URL.replace(/\/+$/, "");
+const withBase = (p: string) => `${base}${p === "/" ? "/" : p}`;
+const canonical = new URL(`${withBase(pathFor(lang, path))}`, Astro.site);
+const altLang = other(lang);
+const altPath = new URL(`${withBase(pathFor(altLang, path))}`, Astro.site);
+const nav = [
+  { to: "/", label: i18n("nav.home") },
+  { to: "/features", label: i18n("nav.features") },
+  { to: "/guide", label: i18n("nav.guide") },
+];
+---
+
+<!doctype html>
+<html lang={locale}>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="color-scheme" content="light dark" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex" />}
+    <link rel="canonical" href={canonical.href} />
+    <link rel="alternate" hreflang={locale} href={canonical.href} />
+    <link rel="alternate" hreflang={lang === "en" ? "zh-CN" : "en"} href={altPath.href} />
+    <link rel="alternate" hreflang="x-default" href={new URL(`${withBase(path)}`, Astro.site).href} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Crossbow" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical.href} />
+    <meta property="og:locale" content={locale} />
+    <meta property="og:locale:alternate" content={lang === "en" ? "zh-CN" : "en"} />
+    <meta name="twitter:card" content="summary" />
+    <link rel="icon" href={`${import.meta.env.BASE_URL}favicon.svg`} type="image/svg+xml" />
+    <link rel="icon" href={`${import.meta.env.BASE_URL}favicon-32.png`} sizes="32x32" />
+    <link rel="apple-touch-icon" href={`${import.meta.env.BASE_URL}apple-touch-icon.png`} />
+    <script is:inline set:html={BOOTSTRAP} />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">{i18n("layout.1")}</a>
+    <header class="site-header">
+      <div class="shell nav-shell">
+        <a href={withBase(pathFor(lang, "/"))} class="brand" aria-label={i18n("layout.2")}><Logo size={32} /><span>Crossbow</span></a>
+        <nav id="site-nav" aria-label={i18n("layout.3")}>
+          {nav.map((n) => (
+            <a
+              href={withBase(pathFor(lang, n.to))}
+              aria-current={path === n.to ? "page" : undefined}
+            >{t(lang, n.label)}</a>
+          ))}
+          <a class="mobile-github" href={REPO} target="_blank" rel="noopener noreferrer">GitHub<span aria-hidden="true">↗</span></a>
+        </nav>
+        <div class="nav-actions">
+          <a class="nav-tool nav-github" href={REPO} target="_blank" rel="noopener noreferrer" aria-label={i18n("layout.4")} title={i18n("layout.5")}>
+            <svg viewBox="0 0 16 16" width="19" height="19" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" /></svg>
+          </a>
+          <div class="preference-anchor" data-pref>
+            <button class="nav-tool language-tool" data-pref-button aria-expanded="false" aria-haspopup="true" title={i18n("layout.6")}>
+              <span class="theme-toggle-icon" data-theme-icon aria-hidden="true"></span>
+            </button>
+            <form class="preference-popover" data-theme-pop hidden>
+              <fieldset>
+                <legend>{i18n("layout.6")}</legend>
+                <label class="preference-option"><input type="radio" name="theme" value="system" checked /><span>{i18n("layout.7")}</span></label>
+                <label class="preference-option"><input type="radio" name="theme" value="light" /><span>{i18n("layout.8")}</span></label>
+                <label class="preference-option"><input type="radio" name="theme" value="dark" /><span>{i18n("layout.9")}</span></label>
+              </fieldset>
+            </form>
+          </div>
+          <div class="preference-anchor" data-pref>
+            <button class="nav-tool language-tool" data-pref-button aria-expanded="false" aria-haspopup="true" title={i18n("layout.10")}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 5h9M8.5 3v2M11.5 5c-.7 3.9-3 7-6.5 9M6 9.5c1.6 2.6 4 4.6 7 5.5" /><path d="m13.5 21 4-9 4 9M14.8 18h5.4" /></svg>
+            </button>
+            <form class="preference-popover" data-lang-pop hidden>
+              <fieldset>
+                <legend>{i18n("layout.10")}</legend>
+                <label class="preference-option"><input type="radio" name="lang" value="zh" checked={lang === "zh"} /><span>{i18n("layout.11")}</span></label>
+                <label class="preference-option"><input type="radio" name="lang" value="en" checked={lang === "en"} /><span>English</span></label>
+              </fieldset>
+            </form>
+          </div>
+          <a class="nav-download" href={withBase(pathFor(lang, "/download"))} aria-current={path === "/download" ? "page" : undefined}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 3v12M6 9l6 6 6-6M4 21h16" /></svg>
+            <span>{i18n("layout.12")}</span>
+          </a>
+          <button class="menu-button nav-tool" aria-label={i18n("layout.13")} aria-expanded="false" aria-controls="site-nav">
+            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 8h16M4 16h16" /></svg>
+          </button>
+        </div>
+      </div>
+    </header>
+    <main id="main" tabindex="-1">
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <div class="shell footer-main">
+        <a href={withBase(pathFor(lang, "/"))} class="brand"><Logo size={28} />Crossbow</a>
+        <div class="footer-links">
+          <a href={withBase(pathFor(lang, "/features"))}>{i18n("layout.14")}</a>
+          <a href={withBase(pathFor(lang, "/guide"))}>{i18n("layout.15")}</a>
+          <a href={RELEASES} target="_blank" rel="noopener noreferrer">{i18n("layout.16")}</a>
+          <a href={`${REPO}/issues`} target="_blank" rel="noopener noreferrer">{i18n("layout.17")}</a>
+        </div>
+      </div>
+      <div class="shell footer-bottom">
+        <span>© 2026 Crossbow Contributors</span>
+        <span><a href={`${REPO}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer">{i18n("layout.18")}</a>{i18n("layout.19")}</span>
+      </div>
+    </footer>
+    <script>
+      // 外观循环切换 + 移动菜单 + 复制章节链接（原 React 偏好组件的 vanilla 版）
+      const root = document.documentElement;
+      const THEME_KEY = "crossbow.site.theme";
+      const LANGUAGE_KEY = "crossbow.site.language";
+      const read = () => { try { return localStorage.getItem(THEME_KEY) || "system"; } catch { return "system"; } };
+      const SUN_ICON = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2" /><path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5 5l1.9 1.9M17.1 17.1 19 19M19 5l-1.9 1.9M6.9 17.1 5 19" /></svg>';
+      const MOON_ICON = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>';
+      const paint = () => {
+        const stored = read();
+        const dark = stored === "dark" || (stored !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+        root.dataset.theme = dark ? "dark" : "light";
+        document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? "#1a1c21" : "#ffffff");
+        const icon = document.querySelector("[data-theme-icon]");
+        // 图标反映当前主题：深色 = 月亮，浅色 = 太阳
+        if (icon) icon.innerHTML = dark ? MOON_ICON : SUN_ICON;
+        const radio = document.querySelector(`[data-theme-pop] input[value="${stored}"]`);
+        if (radio) radio.checked = true;
+      };
+      paint();
+
+      // 下拉开合：点击按钮切换、点击外部与 Escape 关闭
+      document.querySelectorAll<HTMLElement>("[data-pref]").forEach((anchor) => {
+        const button = anchor.querySelector<HTMLButtonElement>("[data-pref-button]");
+        const pop = anchor.querySelector<HTMLElement>(".preference-popover");
+        if (!button || !pop) return;
+        const setOpen = (open: boolean) => {
+          pop.hidden = !open;
+          button.setAttribute("aria-expanded", String(open));
+        };
+        button.addEventListener("click", () => setOpen(pop.hidden));
+        document.addEventListener("click", (e) => {
+          if (!anchor.contains(e.target as Node)) setOpen(false);
+        });
+        window.addEventListener("keydown", (e) => { if (e.key === "Escape") setOpen(false); });
+      });
+
+      document.querySelector("[data-theme-pop]")?.addEventListener("change", (e) => {
+        const value = (e.target as HTMLInputElement).value;
+        try { localStorage.setItem(THEME_KEY, value); } catch {}
+        paint();
+      });
+      document.querySelector("[data-lang-pop]")?.addEventListener("change", (e) => {
+        const value = (e.target as HTMLInputElement).value;
+        try { localStorage.setItem(LANGUAGE_KEY, value === "en" ? "en" : "zh-CN"); } catch {}
+        // trailingSlash: never —— /zh 不带尾斜杠；根路径两种语言都是 "/"
+        const rest = location.pathname.replace(/^\/zh/, "").replace(/\/+$/, "");
+        const target = value === "zh" ? "/zh" + rest : rest || "/";
+        location.href = new URL(target, location.origin).href;
+      });
+
+      const menuButton = document.querySelector(".menu-button");
+      const siteNav = document.getElementById("site-nav");
+      const main = document.getElementById("main");
+      const footer = document.querySelector(".site-footer");
+      const setMenu = (open: boolean) => {
+        if (!siteNav || !menuButton) return;
+        siteNav.classList.toggle("nav-open", open);
+        menuButton.setAttribute("aria-expanded", String(open));
+        if (main) (main as HTMLElement).inert = open;
+        if (footer) (footer as HTMLElement).inert = open;
+        document.body.style.overflow = open ? "hidden" : "";
+      };
+      menuButton?.addEventListener("click", () => setMenu(siteNav?.classList.contains("nav-open") === false));
+      siteNav?.querySelectorAll("a").forEach((a) => a.addEventListener("click", () => setMenu(false)));
+      window.addEventListener("keydown", (e) => { if (e.key === "Escape") setMenu(false); });
+      const wide = matchMedia("(min-width: 1001px)");
+      wide.addEventListener("change", (e) => { if (e.matches) setMenu(false); });
+
+      document.querySelectorAll<HTMLElement>("[data-copy]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const share = new URL(button.dataset.copy ?? "", location.origin).href;
+          navigator.clipboard?.writeText(share).then(() => {
+            const previous = button.textContent;
+            button.textContent = "✓";
+            window.setTimeout(() => { button.textContent = previous; }, 1500);
+          }, () => {});
+        });
+      });
+      document.querySelectorAll<HTMLButtonElement>("[data-copy-code]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const pre = button.closest(".code-wrap")?.querySelector("pre");
+          if (!pre) return;
+          navigator.clipboard?.writeText(pre.textContent ?? "").then(() => {
+            const previous = button.textContent;
+            button.textContent = "✓";
+            window.setTimeout(() => { button.textContent = previous; }, 1500);
+          }, () => {});
+        });
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "name": "crossbow-metrics",
+  "main": "src/worker.mjs",
+  "compatibility_date": "2026-11-10",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": { "enabled": false },
+  "triggers": {
+    // 16:05 UTC is 00:05 the next day in Asia/Shanghai.
+    "crons": ["5 16 * * *"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "crossbow-stats",
+      "database_id": "29f19207-0a07-4b69-8221-91c1a8ea7dca"
+    }
+  ]
+}
