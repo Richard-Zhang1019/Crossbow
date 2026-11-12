@@ -30,9 +30,9 @@ Linux 发布包附带桌面程序、mihomo 和可选 TUN 服务安装脚本；�
 
 | 平台 | 安装包 | 说明 |
 |---|---|---|
-| macOS Apple Silicon | [下载 DMG](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.14.3/Crossbow_0.13.9_aarch64.dmg) | 拖入「应用程序」后启动；Developer ID 签名与公证 |
-| Windows x64 | [下载安装程序](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.14.3/Crossbow_0.13.9_x64-setup.exe) | 安装后启动；尚无 Windows 代码签名，请核对官方来源及校验文件 |
-| Linux x86_64（实验性） | [下载 tar.gz](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.14.3/Crossbow_0.13.9_linux_x86_64.tar.gz) | 解压后以普通用户运行 `run.sh`；依赖及 TUN 安装见包内 `README.txt` |
+| macOS Apple Silicon | [下载 DMG](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.14.3/Crossbow_0.14.3_aarch64.dmg) | 拖入「应用程序」后启动；Developer ID 签名与公证 |
+| Windows x64 | [下载安装程序](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.14.3/Crossbow_0.14.3_x64-setup.exe) | 安装后启动；尚无 Windows 代码签名，请核对官方来源及校验文件 |
+| Linux x86_64（实验性） | [下载 tar.gz](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.14.3/Crossbow_0.14.3_linux_x86_64.tar.gz) | 解压后以普通用户运行 `run.sh`；依赖及 TUN 安装见包内 `README.txt` |
 
 下载与更新内容以 [GitHub Releases](https://github.com/Richard-Zhang1019/Crossbow/releases/latest) 为准；
 第三方组件与许可声明见 [THIRD-PARTY-NOTICES](docs/THIRD-PARTY-NOTICES.md)；
