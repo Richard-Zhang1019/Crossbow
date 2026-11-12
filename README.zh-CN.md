@@ -1,6 +1,15 @@
 # Crossbow
 
-[English](README.md) | 简体中文
+<p align="center">
+  <a href="https://crossbow-client.netlify.app">
+    <img width="80" src="./design/logo/current/app-icon.svg" />
+  </a>
+</p>
+<p align="center">
+  <a href="/README.md">
+    English
+  </a> | 简体中文
+</p>
 
 Crossbow 是面向 macOS 和 Windows 的开源代理客户端，使用 Tauri 2、React 和 Rust 构建，支持
 mihomo 与 sing-box 双内核。它把订阅、节点选择、系统代理、TUN、连接与日志放在同一个界面，
@@ -43,12 +52,6 @@ macOS 测试网络配置时可先阅读 [TUN 离线恢复说明](docs/TUN-RECOVE
 macOS 配置和日志位于 `~/Library/Application Support/com.richard.crossbow/`。旧版
 `com.crossbow.app` 数据会自动迁移，升级前仍建议备份数据目录。
 
-## 匿名使用统计
-
-支持使用统计的桌面版本默认开启此功能。Crossbow 仅上报日期、系统平台、应用版本和每天更换的随机标识。随机标识只用于当天去重，无法用于跨天追踪同一安装。
-
-上报不包含订阅链接、代理节点、访问记录、账号信息或硬件标识。统计数据库不保存 IP 地址。你可以随时在「设置 → 应用与更新 → 匿名使用统计」关闭。
-
 ## 开发
 
 依赖 Node.js 20+、pnpm 和 Rust stable；macOS 本地构建还需 Xcode Command Line Tools。
@@ -79,6 +82,18 @@ docs                  设计、路线图与恢复说明
 桌面开发时可用 `CROSSBOW_MIHOMO_BIN=/path/to/mihomo pnpm tauri dev` 指定本地内核。
 详细设计、范围与计划见 [设计文档](docs/DESIGN.md)、[MVP](docs/MVP.md) 和
 [路线图](docs/ROADMAP.md)；macOS 正式发版步骤见 [发版文档](docs/RELEASE.md)。
+
+## 匿名使用统计
+
+支持使用统计的桌面版本默认开启此功能。Crossbow 仅上报日期、系统平台、应用版本和每天更换的随机标识。随机标识只用于当天去重，无法用于跨天追踪同一安装。
+
+上报不包含订阅链接、代理节点、访问记录、账号信息或硬件标识。统计数据库不保存 IP 地址。你可以随时在「设置 → 应用与更新 → 匿名使用统计」关闭。
+
+## 感谢所有贡献者
+
+<a href="https://github.com/Richard-Zhang1019/Crossbow/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Richard-Zhang1019/Crossbow" />
+</a>
 
 ## 许可
 
