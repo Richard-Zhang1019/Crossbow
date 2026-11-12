@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="https://crossbow-client.netlify.app">
-    <img width="80" src="./design/logo/current/app-icon.svg" />
+    <img width="60" src="./design/logo/current/app-icon.svg" />
   </a>
 </p>
 <p align="center">
