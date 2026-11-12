@@ -6,9 +6,7 @@
   </a>
 </p>
 <p align="center">
-  <a href="/README.md">
-    English
-  </a> | <a href="/README.zh-CN.md">简体中文</a>
+    English | <a href="/README.zh-CN.md">简体中文</a>
 </p>
 
 Crossbow is an open-source proxy client for macOS and Windows, built with Tauri 2, React and
