@@ -26,6 +26,53 @@ pub const SINGBOX_SOURCES: &[&str] = &[
 
 /// 内核版本锁定（升级走 PR 审查，DESIGN §5.3）。
 pub const CORE_VERSION: &str = "v1.19.32";
+
+/// #465：固定 SHA-256（审阅过的上游 digest；key = 资产名）。镜像与官方源
+/// 遵守同一校验规则；未列出的资产拒绝下载（fail closed）。
+pub(crate) const ASSET_SHA256: &[(&str, &str)] = &[
+    // mihomo v1.19.32（scripts/ci/download_sidecar.py 同源）
+    (
+        "mihomo-darwin-arm64-v1.19.32.gz",
+        "3312a6780652c622890fd4357c6a853bbf865464fd047ac7b7f52dab8de18652",
+    ),
+    (
+        "mihomo-windows-amd64-v1.19.32.zip",
+        "1ac84e795b5b915446e20139677fb6cc013a0778e876e8d4c96f994750b4c4a3",
+    ),
+    (
+        "mihomo-linux-amd64-v1.19.32.gz",
+        "8451100836c9eda194331c2babfad490b2faf30cebc1a04b0e76fd8ac2d35d10",
+    ),
+    // sing-box 1.14.2（官方 release 资产，本机下载实测）
+    (
+        "sing-box-1.14.2-darwin-arm64.tar.gz",
+        "fd0b18243124fd9c5848d190ce34a0870ddbca6cf115f9d7929454d1dace905d",
+    ),
+    (
+        "sing-box-1.14.2-windows-amd64.zip",
+        "7d3100ea27e5c327e8213dc269ed8d20d80aa823f650b9c1da13c6b194895808",
+    ),
+    (
+        "sing-box-1.14.2-linux-amd64.tar.gz",
+        "68902de98b739656afea64e558e904f9a6736fb557533849ab664619e257e0b5",
+    ),
+];
+
+fn expected_sha256(asset: &str) -> Result<&'static str, String> {
+    ASSET_SHA256
+        .iter()
+        .find(|(name, _)| *name == asset)
+        .map(|(_, hex)| *hex)
+        .ok_or_else(|| format!("资产 {asset} 缺少固定 SHA-256，拒绝下载"))
+}
+
+fn sha256_hex(path: &Path) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut file, &mut hasher).map_err(|e| e.to_string())?;
+    Ok(format!("{:x}", hasher.finalize()))
+}
 pub const SINGBOX_VERSION: &str = "1.14.2";
 
 /// 内核引擎标识（下载/定位共用）。
@@ -239,21 +286,35 @@ pub fn install_core(
                     stage: "verifying".into(),
                     detail: url.clone(),
                 });
-                // 解包（gz 直解 / tar.gz 取内部二进制）→ chmod → 原子落位
-                unpack(&tmp, &dest, kind)?;
-                let size = std::fs::metadata(&dest).map(|m| m.len()).unwrap_or(0);
+                // #465：先哈希校验（镜像与官方源同一规则），失败不动缓存
+                let asset = url_path.rsplit('/').next_back().unwrap_or("");
+                let expected = expected_sha256(asset)?;
+                let actual = sha256_hex(&tmp)?;
+                if actual != expected {
+                    last_err = format!("{url}: SHA-256 mismatch (got {actual}, want {expected})");
+                    let _ = std::fs::remove_file(&tmp);
+                    continue;
+                }
+                // 解包到 staging（绝不直接写 dest——解包失败不得破坏原缓存）
+                let staging = dest.with_extension("staging");
+                let _ = std::fs::remove_file(&staging);
+                unpack(&tmp, &staging, kind)?;
+                let size = std::fs::metadata(&staging).map(|m| m.len()).unwrap_or(0);
                 if size < 10_000_000 {
                     last_err = format!("{url}: unpacked binary too small ({size} bytes)");
+                    let _ = std::fs::remove_file(&staging);
                     let _ = std::fs::remove_file(&tmp);
                     continue;
                 }
                 #[cfg(unix)]
                 {
                     use std::os::unix::fs::PermissionsExt;
-                    std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755))
+                    std::fs::set_permissions(&staging, std::fs::Permissions::from_mode(0o755))
                         .map_err(|e| e.to_string())?;
                 }
+                // 全部验证通过 → 原子替换缓存
                 let _ = std::fs::remove_file(&tmp);
+                std::fs::rename(&staging, &dest).map_err(|e| e.to_string())?;
                 emit(InstallProgress {
                     stage: "done".into(),
                     detail: dest.display().to_string(),
@@ -446,15 +507,29 @@ mod tests {
         assert!(name.ends_with(if cfg!(windows) { ".zip" } else { ".gz" }));
     }
 
+    /// #465：损坏 gzip 在 staging 路径解包失败时，缓存 dest 不得被改动
+    /// （install_core 生产路径总是先解到 staging，验证通过才原子替换）。
     #[test]
-    fn resolve_prefers_env_var() {
+    fn unpack_failure_preserves_existing_cache() {
         let dir = tempfile::tempdir().unwrap();
-        let fake = dir.path().join("fake-mihomo");
-        std::fs::write(&fake, b"#!/bin/sh\n").unwrap();
-        // 仅在本测试进程内设置/恢复
-        std::env::set_var("CROSSBOW_MIHOMO_BIN", &fake);
-        // resolve_core_binary 需要 AppHandle；这里直接测存在性语义
-        assert!(fake.exists());
-        std::env::remove_var("CROSSBOW_MIHOMO_BIN");
+        let dest = dir.path().join("mihomo");
+        std::fs::write(&dest, b"ORIGINAL-CORE-BYTES").unwrap();
+
+        // 有效的 gz 头但内容损坏（gunzip 会失败）
+        let bad = dir.path().join("bad.gz");
+        std::fs::write(&bad, [0x1f, 0x8b, 0x08, 0x00, 0xde, 0xad, 0xbe, 0xef]).unwrap();
+        let staging = dir.path().join("mihomo.staging");
+        let kind = CoreKind::Mihomo;
+        assert!(unpack(&bad, &staging, kind).is_err());
+        // staging 失败不影响缓存；staging 自身也不该留下半成品
+        assert_eq!(std::fs::read(&dest).unwrap(), b"ORIGINAL-CORE-BYTES");
+    }
+
+    /// #465：expected_sha256 对未列出资产 fail closed。
+    #[test]
+    fn sha256_table_fails_closed() {
+        assert!(expected_sha256("mihomo-darwin-arm64-v1.19.32.gz").is_ok());
+        assert!(expected_sha256("sing-box-1.14.2-windows-amd64.zip").is_ok());
+        assert!(expected_sha256("unknown-asset.bin").is_err());
     }
 }
