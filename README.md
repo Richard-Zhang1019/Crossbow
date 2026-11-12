@@ -1,6 +1,15 @@
 # Crossbow
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+<p align="center">
+  <a href="https://crossbow-client.netlify.app">
+    <img width="80" src="./design/logo/current/app-icon.svg" />
+  </a>
+</p>
+<p align="center">
+  <a href="/README.md">
+    English
+  </a> | <a href="/README.zh-CN.md">简体中文</a>
+</p>
 
 Crossbow is an open-source proxy client for macOS and Windows, built with Tauri 2, React and
 Rust, supporting the mihomo and sing-box dual cores. It puts subscriptions, node selection,
@@ -27,9 +36,9 @@ recovery boundaries: [Linux network takeover](docs/LINUX-NETWORK.md).
 
 | Platform | Package | Notes |
 |---|---|---|
-| macOS Apple Silicon | [Download DMG](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.14.3/Crossbow_0.13.9_aarch64.dmg) | Drag into Applications; Developer ID signed and notarized |
-| Windows x64 | [Download installer](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.14.3/Crossbow_0.13.9_x64-setup.exe) | No Windows code signing yet — verify the official source and checksums |
-| Linux x86_64 (experimental) | [Download tar.gz](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.14.3/Crossbow_0.13.9_linux_x86_64.tar.gz) | Extract and run `run.sh` as a regular user; dependencies and TUN setup in the bundled `README.txt` |
+| macOS Apple Silicon | [Download DMG](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.14.3/Crossbow_0.14.3_aarch64.dmg) | Drag into Applications; Developer ID signed and notarized |
+| Windows x64 | [Download installer](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.14.3/Crossbow_0.14.3_x64-setup.exe) | No Windows code signing yet — verify the official source and checksums |
+| Linux x86_64 (experimental) | [Download tar.gz](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.14.3/Crossbow_0.14.3_linux_x86_64.tar.gz) | Extract and run `run.sh` as a regular user; dependencies and TUN setup in the bundled `README.txt` |
 
 Downloads and release notes live on [GitHub Releases](https://github.com/Richard-Zhang1019/Crossbow/releases/latest);
 third-party components and licenses are listed in [THIRD-PARTY-NOTICES](docs/THIRD-PARTY-NOTICES.md).
@@ -55,12 +64,6 @@ first; recovery commands need a still-running backup proxy. macOS configs and lo
 `~/Library/Application Support/com.richard.crossbow/`. Data from the legacy
 `com.crossbow.app` directory migrates automatically; backing up the data directory before
 upgrading is still recommended.
-
-## Anonymous usage statistics
-
-On desktop versions that support usage statistics, the setting is on by default. Crossbow sends only the date, platform, app version, and a random ID that changes daily. The ID prevents double counting and cannot track an installation across days.
-
-Reports contain no subscription URLs, proxy nodes, browsing history, account details, or hardware identifiers. The metrics database does not store IP addresses. You can turn reporting off at any time in **Settings → Application & updates → Anonymous usage statistics**.
 
 ## Development
 
@@ -95,6 +98,18 @@ During desktop development, point at a local core with
 [DESIGN](docs/DESIGN.md), [MVP](docs/MVP.md) and [ROADMAP](docs/ROADMAP.md); macOS release
 steps: [RELEASE](docs/RELEASE.md).
 Desktop core integration: [mihomo control protocol](docs/MIHOMO-CONTROL.md).
+
+## Anonymous usage statistics
+
+On desktop versions that support usage statistics, this feature is enabled by default. Crossbow sends only the date, platform, app version, and a random identifier that changes daily. The identifier is used only to deduplicate daily reports and cannot track an installation across days.
+
+Reports do not include subscription URLs, proxy nodes, browsing history, account details, or hardware identifiers. The metrics database does not store IP addresses. You can turn reporting off at any time in **Settings → Application & updates → Anonymous usage statistics**.
+
+## Thanks to all contributors
+
+<a href="https://github.com/Richard-Zhang1019/Crossbow/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Richard-Zhang1019/Crossbow" />
+</a>
 
 ## License
 
