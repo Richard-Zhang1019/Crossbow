@@ -15,6 +15,7 @@ use tauri_plugin_updater::Update;
 use tauri_plugin_updater::UpdaterExt;
 
 use crate::notifications::{self, Action, Kind, Notice};
+#[cfg_attr(target_os = "linux", allow(unused_imports))]
 use crate::tr;
 use std::sync::atomic::{AtomicBool, Ordering};
 static DOWNLOADING: AtomicBool = AtomicBool::new(false);

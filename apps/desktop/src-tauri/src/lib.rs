@@ -121,6 +121,7 @@ fn apply_window_appearance(win: &tauri::WebviewWindow, theme: &str) {
 }
 
 /// 活动订阅里 proxy-groups 的声明顺序（代理页排序与托盘主组探测共用）。
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 fn profile_group_order(handle: &AppHandle) -> Vec<String> {
     let Some(state) = handle.try_state::<AppState>() else {
         return Vec::new();

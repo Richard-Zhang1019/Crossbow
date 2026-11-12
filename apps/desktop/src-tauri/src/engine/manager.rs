@@ -971,6 +971,7 @@ impl CoreManager {
     /// （TUN 路由由 mihomo 退出钩子恢复）。复用 tun_health_restart
     /// 15 分钟节流，与 60s 自检共享，避免双重重启竞速。
     #[cfg(unix)]
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
     pub fn signal_graceful_restart(&self) -> bool {
         let outcome = {
             let mut inner = self.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
