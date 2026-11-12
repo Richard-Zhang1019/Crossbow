@@ -128,12 +128,11 @@ pub fn sweep(dir: &Path, retention_days: u32) -> usize {
         let Some((y, m, dd)) = parse_ymd(stem) else {
             continue;
         };
-        if ymd_to_epoch_days(y, m, dd) + retention_days as i64 <= today {
-            if std::fs::remove_file(entry.path()).is_ok() {
-                removed += 1;
-            }
-        } else {
-            fs_perms::ensure_private(&entry.path());
+        let path = entry.path();
+        if ymd_to_epoch_days(y, m, dd) + retention_days as i64 > today {
+            fs_perms::ensure_private(&path);
+        } else if std::fs::remove_file(&path).is_ok() {
+            removed += 1;
         }
     }
     removed

@@ -821,6 +821,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
     /// `disable` restores the pre-Crossbow snapshot, which may point to an old
     /// local proxy with no listener and keep browsers offline even while TUN
     /// itself is healthy.
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
     pub fn suspend_for_tun(&self) -> Result<SuspendedSysProxy, String> {
         let _operation = self
             .operation
@@ -879,6 +880,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
     }
 
     /// 已持有代理操作锁的内部实现。
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
     fn suspend_for_tun_locked(&self) -> Result<SuspendedSysProxy, String> {
         let tun_journal = self.tun_journal_path();
         if let Ok(saved) = std::fs::read(&tun_journal) {
@@ -1101,6 +1103,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
 }
 
 /// 解析 `-listallnetworkservices` 输出：跳过说明行，跳过禁用（`*`）服务。
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 fn parse_services(output: &str) -> Vec<String> {
     output
         .lines()
@@ -1130,6 +1133,7 @@ fn parse_bypass_domains(output: &str) -> Vec<String> {
 }
 
 /// 解析 `-getwebproxy` 类输出为槽位设置；未启用返回 None。
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 fn parse_endpoint(output: &str) -> Option<ProxyEndpoint> {
     let mut enabled = false;
     let mut host = String::new();

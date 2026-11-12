@@ -6,15 +6,7 @@ settings:
 
 importers:
 
-  .:
-    dependencies:
-      '@tauri-apps/plugin-process':
-        specifier: ^2.4.0
-        version: 2.4.0
-    devDependencies:
-      typescript:
-        specifier: ^5.6.0
-        version: 5.9.3
+  .: {}
 
   apps/desktop:
     dependencies:
@@ -24,6 +16,9 @@ importers:
       '@tauri-apps/api':
         specifier: ^2.0.0
         version: 2.12.1
+      '@tauri-apps/plugin-process':
+        specifier: ^2.4.0
+        version: 2.4.0
       '@tauri-apps/plugin-updater':
         specifier: ^2.13.1
         version: 2.13.1

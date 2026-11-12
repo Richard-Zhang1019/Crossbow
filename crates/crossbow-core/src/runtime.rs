@@ -127,10 +127,7 @@ fn apply_runtime_mihomo(base_yaml: &str, rt: &RuntimeConfig) -> Result<String, S
         tun.insert(Value::from("dns-mode"), Value::from("native"));
         tun.insert(
             Value::from("dns-hijack"),
-            Value::Sequence(vec![
-                Value::from("any:53"),
-                Value::from("tcp://any:53"),
-            ]),
+            Value::Sequence(vec![Value::from("any:53"), Value::from("tcp://any:53")]),
         );
         let mut dns = Mapping::new();
         dns.insert(Value::from("enable"), Value::from(true));
@@ -182,8 +179,7 @@ fn apply_runtime_mihomo(base_yaml: &str, rt: &RuntimeConfig) -> Result<String, S
             Value::from(rt.controller_secret.as_str()),
         );
     }
-    let patch_yaml =
-        serde_yaml::to_string(&Value::Mapping(patch)).map_err(|e| e.to_string())?;
+    let patch_yaml = serde_yaml::to_string(&Value::Mapping(patch)).map_err(|e| e.to_string())?;
     let merged = apply_merge(base_yaml, &patch_yaml).map_err(|e| e.to_string())?;
     inject_private_direct_rules(merged)
 }
@@ -218,7 +214,10 @@ fn apply_runtime_singbox(base_json: &str, rt: &RuntimeConfig) -> Result<String, 
         serde_json::from_str(base_json).map_err(|e| format!("sing-box 配置非法 JSON: {e}"))?;
 
     let bind = if rt.allow_lan { "::" } else { "127.0.0.1" };
-    if let Some(inbounds) = v.get_mut("inbounds").and_then(serde_json::Value::as_array_mut) {
+    if let Some(inbounds) = v
+        .get_mut("inbounds")
+        .and_then(serde_json::Value::as_array_mut)
+    {
         for inb in inbounds.iter_mut() {
             if inb.get("type").and_then(serde_json::Value::as_str) == Some("mixed") {
                 inb["listen"] = json!(bind);
@@ -230,7 +229,11 @@ fn apply_runtime_singbox(base_json: &str, rt: &RuntimeConfig) -> Result<String, 
         log["level"] = json!(sb_log_level(&rt.log_level));
     }
     if rt.controller_port != 0 {
-        if !v.get("experimental").map(serde_json::Value::is_object).unwrap_or(false) {
+        if !v
+            .get("experimental")
+            .map(serde_json::Value::is_object)
+            .unwrap_or(false)
+        {
             v["experimental"] = json!({});
         }
         v["experimental"]["clash_api"] = json!({
@@ -258,7 +261,11 @@ fn apply_runtime_singbox(base_json: &str, rt: &RuntimeConfig) -> Result<String, 
         // 域名嗅探（同 mihomo sniffer，#331 后续）：污染解析无害化——
         // sniff action 放规则最前，恢复域名后后续规则按域名匹配。
         // route/rules 缺失时自动创建，保证任何配置都注入。
-        if v.get_mut("route").map(serde_json::Value::take).map(|r| r.is_object()).unwrap_or(true) {
+        if v.get_mut("route")
+            .map(serde_json::Value::take)
+            .map(|r| r.is_object())
+            .unwrap_or(true)
+        {
             v["route"] = json!({"rules": []});
         }
         if !v["route"]["rules"].is_array() {
@@ -339,7 +346,10 @@ mod tests {
         let rules_start = out.find("rules:").unwrap();
         let head = &out[rules_start..];
         let first = head.lines().nth(1).unwrap();
-        assert!(first.contains("100.64.0.0/10"), "首条应为 tailnet DIRECT: {first}");
+        assert!(
+            first.contains("100.64.0.0/10"),
+            "首条应为 tailnet DIRECT: {first}"
+        );
         assert!(first.ends_with("DIRECT,no-resolve"));
         assert!(head.contains("MATCH,DIRECT"), "订阅规则必须保留");
     }
@@ -426,7 +436,10 @@ mod tests {
         assert_eq!(inb["listen_port"], 7899);
         assert_eq!(inb["listen"], "::");
         assert_eq!(v["log"]["level"], "warn");
-        assert_eq!(v["experimental"]["clash_api"]["external_controller"], "127.0.0.1:19090");
+        assert_eq!(
+            v["experimental"]["clash_api"]["external_controller"],
+            "127.0.0.1:19090"
+        );
         assert_eq!(v["experimental"]["clash_api"]["secret"], "sb-secret");
         // 已有 experimental 键不被覆盖
         assert_eq!(v["experimental"]["cache_file"]["enabled"], true);
@@ -523,7 +536,8 @@ mod tun_tests {
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         let inb = v["inbounds"].as_array().unwrap();
         assert!(
-            inb.iter().any(|i| i["type"] == "tun" && i["auto_route"] == true),
+            inb.iter()
+                .any(|i| i["type"] == "tun" && i["auto_route"] == true),
             "应追加 tun inbound"
         );
         // 域名嗅探（#331 后续）：sniff action 在规则最前

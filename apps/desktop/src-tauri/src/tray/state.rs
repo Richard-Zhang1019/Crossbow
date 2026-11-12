@@ -11,6 +11,9 @@
 //! - 测速生命周期：`begin_test`（单飞）→ 逐节点 `apply_single_result` → `end_test`
 //!   或看门狗 `expire_test`；结束时递增 generation，让迟到的旧结果失效
 
+/// 托盘节点行：（名称, 延迟 ms | None）。
+type TrayNodeRows = Vec<(String, Option<u64>)>;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
@@ -115,7 +118,7 @@ impl TrayState {
         &mut self,
         now: Option<String>,
         members: Vec<(String, Option<u64>)>,
-        automatic: Option<(String, Option<String>, Vec<(String, Option<u64>)>)>,
+        automatic: Option<(String, Option<String>, TrayNodeRows)>,
     ) {
         let known: BTreeSet<&String> = members.iter().map(|(n, _)| n).collect();
         self.delays.retain(|n, _| known.contains(n));
@@ -375,8 +378,7 @@ fn location_group_key(name: &str) -> Option<String> {
 }
 
 fn strip_recycle_icon(name: &str) -> String {
-    name.trim_start_matches(|character| matches!(character, '♻' | '\u{FE0F}' | ' '))
-        .to_string()
+    name.trim_start_matches(['♻', '\u{FE0F}', ' ']).to_string()
 }
 
 #[cfg(test)]

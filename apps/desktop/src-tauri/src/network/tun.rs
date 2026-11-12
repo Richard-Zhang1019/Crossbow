@@ -267,87 +267,6 @@ fn ensure_route_available() -> Result<BTreeSet<(String, String)>, String> {
         .collect())
 }
 
-#[cfg(test)]
-mod route_tests {
-    /// #136：netstat -f inet6 解析——fe80/utun 噪音不算原生 v6；
-    /// 经物理口的 default（fe80 网关或全局网关）算；空表不算；
-    /// 残行（列数不足）不 panic 也不误判。
-    /// #154：接管漂移解析——分片/完整 default 经 utun 即捕获在位；
-    /// 只有 fe80/物理口路由 = 漂移；scutil 输出含 198.18.0.x = DNS 接管。
-    #[test]
-    fn capture_route_detection() {
-        let captured = concat!(
-            "Routing tables\n",
-            "default 192.168.31.1 UGScg en0\n",
-            "0/1 198.18.0.1 UGScg utun4\n",
-            "128.0/1 198.18.0.1 UGScg utun4\n",
-        );
-        let lost = "Routing tables\ndefault 192.168.31.1 UGScg en0\n";
-        let lines = |t: &str| {
-            t.lines().any(|line| {
-                let cols: Vec<&str> = line.split_whitespace().collect();
-                match cols.as_slice() {
-                    [dest, _gw, _flags, netif, ..] => {
-                        is_default_route(dest) && netif.starts_with("utun")
-                    }
-                    _ => false,
-                }
-            })
-        };
-        assert!(lines(captured));
-        assert!(!lines(lost));
-    }
-
-    #[test]
-    fn native_v6_default_needs_physical_default_route() {
-        let noise = concat!(
-            "Internet6 Destination Gateway Flags Netif Expire\n",
-            "default fe80::%utun0 UGcIg utun0\n",
-            "default fe80::%utun1 UGcIg utun1\n",
-            "::/1 fdfe:dcba:9876::1 UGScg utun4\n",
-            "8000::/1 fdfe:dcba:9876::1 UGScg utun4\n",
-        );
-        assert!(!native_v6_default(noise));
-        assert!(native_v6_default(&format!(
-            "{noise}default fe80::1@en0 UGcI en0\n"
-        )));
-        assert!(native_v6_default(&format!(
-            "{noise}default 2408:80f1:21:c07f::1 UGSc en0\n"
-        )));
-        assert!(!native_v6_default(""));
-        assert!(!native_v6_default("default fe80::1@en0\n"));
-    }
-
-    use super::*;
-
-    #[test]
-    fn detects_mihomo_default_route_shards() {
-        for route in ["1", "2/7", "4/6", "8/5", "16/4", "32/3", "64/2", "128.0/1"] {
-            assert!(is_default_route(route), "missing {route}");
-        }
-    }
-
-    #[test]
-    fn ignores_private_lan_routes() {
-        assert!(!is_default_route("192.168.0/16"));
-        assert!(!is_default_route("192.168.31"));
-    }
-
-    /// 回归（实测踩坑）：en0 上的正常网关默认路由不是"其他隧道"，
-    /// 物理接口的默认路由不应触发冲突报错。
-    #[test]
-    fn physical_default_route_is_not_a_conflict() {
-        // 模拟 ensure_route_available 的判定逻辑
-        let conflict = |destination: &str, interface: &str| {
-            is_default_route(destination) && interface.starts_with("utun")
-        };
-        assert!(!conflict("default", "en0"));
-        assert!(!conflict("128.0/1", "en0"));
-        assert!(conflict("default", "utun7"));
-        assert!(conflict("128.0/1", "utun1024"));
-    }
-}
-
 /// Controller readiness alone does not prove that the TUN listener started.
 /// Mihomo logs route and interface failures after the controller comes up.
 fn wait_tun_listener(
@@ -603,4 +522,85 @@ fn toggle_tun_locked(state: &AppState, enable: bool) -> Result<(), String> {
         state.sysproxy.restore_after_tun()?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod route_tests {
+    /// #136：netstat -f inet6 解析——fe80/utun 噪音不算原生 v6；
+    /// 经物理口的 default（fe80 网关或全局网关）算；空表不算；
+    /// 残行（列数不足）不 panic 也不误判。
+    /// #154：接管漂移解析——分片/完整 default 经 utun 即捕获在位；
+    /// 只有 fe80/物理口路由 = 漂移；scutil 输出含 198.18.0.x = DNS 接管。
+    #[test]
+    fn capture_route_detection() {
+        let captured = concat!(
+            "Routing tables\n",
+            "default 192.168.31.1 UGScg en0\n",
+            "0/1 198.18.0.1 UGScg utun4\n",
+            "128.0/1 198.18.0.1 UGScg utun4\n",
+        );
+        let lost = "Routing tables\ndefault 192.168.31.1 UGScg en0\n";
+        let lines = |t: &str| {
+            t.lines().any(|line| {
+                let cols: Vec<&str> = line.split_whitespace().collect();
+                match cols.as_slice() {
+                    [dest, _gw, _flags, netif, ..] => {
+                        is_default_route(dest) && netif.starts_with("utun")
+                    }
+                    _ => false,
+                }
+            })
+        };
+        assert!(lines(captured));
+        assert!(!lines(lost));
+    }
+
+    #[test]
+    fn native_v6_default_needs_physical_default_route() {
+        let noise = concat!(
+            "Internet6 Destination Gateway Flags Netif Expire\n",
+            "default fe80::%utun0 UGcIg utun0\n",
+            "default fe80::%utun1 UGcIg utun1\n",
+            "::/1 fdfe:dcba:9876::1 UGScg utun4\n",
+            "8000::/1 fdfe:dcba:9876::1 UGScg utun4\n",
+        );
+        assert!(!native_v6_default(noise));
+        assert!(native_v6_default(&format!(
+            "{noise}default fe80::1@en0 UGcI en0\n"
+        )));
+        assert!(native_v6_default(&format!(
+            "{noise}default 2408:80f1:21:c07f::1 UGSc en0\n"
+        )));
+        assert!(!native_v6_default(""));
+        assert!(!native_v6_default("default fe80::1@en0\n"));
+    }
+
+    use super::*;
+
+    #[test]
+    fn detects_mihomo_default_route_shards() {
+        for route in ["1", "2/7", "4/6", "8/5", "16/4", "32/3", "64/2", "128.0/1"] {
+            assert!(is_default_route(route), "missing {route}");
+        }
+    }
+
+    #[test]
+    fn ignores_private_lan_routes() {
+        assert!(!is_default_route("192.168.0/16"));
+        assert!(!is_default_route("192.168.31"));
+    }
+
+    /// 回归（实测踩坑）：en0 上的正常网关默认路由不是"其他隧道"，
+    /// 物理接口的默认路由不应触发冲突报错。
+    #[test]
+    fn physical_default_route_is_not_a_conflict() {
+        // 模拟 ensure_route_available 的判定逻辑
+        let conflict = |destination: &str, interface: &str| {
+            is_default_route(destination) && interface.starts_with("utun")
+        };
+        assert!(!conflict("default", "en0"));
+        assert!(!conflict("128.0/1", "en0"));
+        assert!(conflict("default", "utun7"));
+        assert!(conflict("128.0/1", "utun1024"));
+    }
 }

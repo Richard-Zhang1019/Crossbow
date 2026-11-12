@@ -3,6 +3,8 @@ use serde_yaml::Value;
 
 pub const MAX_CONFIG: u64 = 8 * 1024 * 1024;
 pub const MAX_ASSET: u64 = 64 * 1024 * 1024;
+// 资产上限必须大于配置上限（编译期锁定的不变量，也防常量被独立改漂）。
+const _: () = assert!(MAX_ASSET > MAX_CONFIG);
 
 pub fn relative_path(path: &str) -> Result<String, String> {
     let path = path.replace('\\', "/");
@@ -130,6 +132,7 @@ mod tests {
             base()
         );
         assert!(config(ws.as_bytes()).is_ok());
-        assert!(MAX_ASSET > MAX_CONFIG);
+        // 资产上限(64MB) > 配置上限(8MB) 由常量定义字面保证，无需运行时断言
+        // （clippy constant_assert：编译期可折叠的比较不构成有效测试）。
     }
 }

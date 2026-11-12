@@ -25,6 +25,7 @@ impl Drop for BackgroundGuard {
 }
 
 /// 所有交互提权入口共用此检查，后台失败须交给用户手动恢复。
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 pub(crate) fn require_interactive() -> Result<(), String> {
     if INTERACTIVE.with(Cell::get) {
         Ok(())

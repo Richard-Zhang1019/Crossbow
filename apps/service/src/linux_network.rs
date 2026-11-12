@@ -544,7 +544,9 @@ fn proxy_exited(pid: u32, deadline: Instant) -> bool {
         events: libc::POLLIN,
         revents: 0,
     };
-    let timeout = deadline.saturating_duration_since(Instant::now()).as_millis() as i32;
+    let timeout = deadline
+        .saturating_duration_since(Instant::now())
+        .as_millis() as i32;
     let ready = unsafe { libc::poll(&mut pollfd, 1, timeout) };
     ready > 0 && pollfd.revents & (libc::POLLIN | libc::POLLHUP) != 0
 }
@@ -579,10 +581,11 @@ fn proxy_processes(own_pids: &[u32], wireguard: bool) -> Vec<String> {
             match std::fs::read(path.join("cmdline")) {
                 // Settings refreshes the version after toggling TUN. This
                 // exact command prints the version and never starts a proxy.
-                Ok(args) if mihomo_version_probe(&args)
-                    && std::fs::read_link(path.join("exe")).is_ok_and(|exe| {
-                        exe.file_name().is_some_and(|name| name == "mihomo")
-                    }) =>
+                Ok(args)
+                    if mihomo_version_probe(&args)
+                        && std::fs::read_link(path.join("exe")).is_ok_and(|exe| {
+                            exe.file_name().is_some_and(|name| name == "mihomo")
+                        }) =>
                 {
                     #[cfg(debug_assertions)]
                     eprintln!("Ignoring mihomo -v version probe (pid {pid})");

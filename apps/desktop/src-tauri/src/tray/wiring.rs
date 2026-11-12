@@ -268,11 +268,9 @@ pub(crate) fn migrate_legacy_data_dir(new_dir: &std::path::Path) {
     if !legacy.is_dir() || new_dir == legacy {
         return;
     }
-    if !new_dir.exists() {
-        if std::fs::rename(&legacy, new_dir).is_ok() {
-            eprintln!("migrated legacy data dir -> {}", new_dir.display());
-            return;
-        }
+    if !new_dir.exists() && std::fs::rename(&legacy, new_dir).is_ok() {
+        eprintln!("migrated legacy data dir -> {}", new_dir.display());
+        return;
     }
     let Ok(entries) = std::fs::read_dir(&legacy) else {
         return;
@@ -300,7 +298,6 @@ pub(crate) fn spawn_logs_sweeper(app: &AppHandle) {
             .logs
             .retention_days;
         let dir = crate::diagnostics::log_files::logs_dir(&state.data_dir);
-        drop(state);
         crate::diagnostics::log_files::sweep(&dir, days);
         std::thread::sleep(LOGS_SWEEP_INTERVAL);
     });
@@ -970,10 +967,7 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
                     Some(s) => controller_client(&s),
                     None => return,
                 };
-                loop {
-                    let Some(node) = queue.lock().ok().and_then(|mut q| q.pop_front()) else {
-                        break;
-                    };
+                while let Some(node) = queue.lock().ok().and_then(|mut q| q.pop_front()) {
                     let result = match &client {
                         Ok(c) => c.test_node_delay(&node).map_err(|e| {
                             let low = e.to_lowercase();

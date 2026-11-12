@@ -53,6 +53,8 @@ pub fn plan_identity(live: LiveCore) -> Plan {
 }
 
 /// 引擎、端口、局域网、TUN 任一变化都不是「只改订阅内容」。
+// before/after 平铺参数对天然对称，结构体化反而加一层包装——豁免。
+#[allow(clippy::too_many_arguments)]
 pub fn needs_new_process(
     before_engine: Engine,
     after_engine: Engine,

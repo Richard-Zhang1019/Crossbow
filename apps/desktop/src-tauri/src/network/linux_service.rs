@@ -270,7 +270,7 @@ impl Session {
             return Err("Linux 服务连接已断开，清理结果尚未确认".into());
         }
         let result = exchange(&mut self.stream, &payload, timeout);
-        if result.as_ref().map_or(true, |(_, disconnected)| *disconnected) {
+        if !matches!(result, Ok((_, false))) {
             self.broken = true;
             let _ = self.stream.shutdown(std::net::Shutdown::Both);
         }
@@ -357,7 +357,9 @@ fn terminal_failure_frame(response: &Value) -> bool {
     response["ok"] == false
         && response["stopped"].is_boolean()
         && matches!(response.get("active"), None | Some(Value::Bool(false)))
-        && response["error"].as_str().is_some_and(|error| !error.is_empty())
+        && response["error"]
+            .as_str()
+            .is_some_and(|error| !error.is_empty())
 }
 
 fn positive_u32(response: &Value, field: &str) -> Result<u32, String> {
@@ -575,8 +577,13 @@ impl ServiceClient {
             }
         }
         let result = self.status();
-        let failure = self.terminal_failure.take_if(|(core_pid, _)| *core_pid == pid);
-        (failure.map_or(result, |(_, error)| Err(error)), self.session.is_none())
+        let failure = self
+            .terminal_failure
+            .take_if(|(core_pid, _)| *core_pid == pid);
+        (
+            failure.map_or(result, |(_, error)| Err(error)),
+            self.session.is_none(),
+        )
     }
 }
 
@@ -766,14 +773,23 @@ mod tests {
             session: Some(Session {
                 stream,
                 service_pid: std::process::id(),
-                core: Some(ServiceStatus { pid, ifindex: 7, active: true }),
+                core: Some(ServiceStatus {
+                    pid,
+                    ifindex: 7,
+                    active: true,
+                }),
                 wireguard_coexist: true,
                 broken: false,
             }),
             terminal_failure: None,
         };
         let reason = "WireGuard route changed";
-        writeln!(broker, "{}", json!({"ok":false,"stopped":true,"error":reason})).unwrap();
+        writeln!(
+            broker,
+            "{}",
+            json!({"ok":false,"stopped":true,"error":reason})
+        )
+        .unwrap();
         drop(broker);
 
         // Simulate a settings or tray refresh reaching the closed socket first.
@@ -807,20 +823,32 @@ mod tests {
             session: Some(Session {
                 stream,
                 service_pid: std::process::id(),
-                core: Some(ServiceStatus { pid, ifindex: 7, active: true }),
+                core: Some(ServiceStatus {
+                    pid,
+                    ifindex: 7,
+                    active: true,
+                }),
                 wireguard_coexist: true,
                 broken: false,
             }),
             terminal_failure: None,
         };
         let reason = "TUN route cleanup failed";
-        writeln!(broker, "{}", json!({"ok":false,"stopped":false,"error":reason})).unwrap();
+        writeln!(
+            broker,
+            "{}",
+            json!({"ok":false,"stopped":false,"error":reason})
+        )
+        .unwrap();
         drop(broker);
 
         let (result, cleanup_confirmed) = client.watch_status(pid);
         assert_eq!(result.unwrap_err(), reason);
         assert!(!cleanup_confirmed);
-        assert!(client.session.as_ref().is_some_and(|session| session.broken));
+        assert!(client
+            .session
+            .as_ref()
+            .is_some_and(|session| session.broken));
     }
 
     #[test]
