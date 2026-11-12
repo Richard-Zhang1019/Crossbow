@@ -355,6 +355,14 @@ impl Controller {
     /// 全局模式取 GLOBAL.now。`final_fallback` 用于 /rules 里没有 MATCH
     /// 规则的内核（sing-box clash api 不合成 MATCH）：读配置的 route.final。
     pub fn current_outbound(&self, final_fallback: Option<&str>) -> Result<OutboundInfo, String> {
+        self.outbound_snapshot(final_fallback)
+            .map(|(outbound, _)| outbound)
+    }
+
+    fn outbound_snapshot(
+        &self,
+        final_fallback: Option<&str>,
+    ) -> Result<(OutboundInfo, Option<String>), String> {
         let configs = self.get_json("/configs")?;
         let mode = configs
             .get("mode")
@@ -420,12 +428,67 @@ impl Controller {
                 (n, d, vec![target])
             }
         };
-        Ok(OutboundInfo {
-            mode,
-            node,
-            delay_ms,
-            chain,
-        })
+        let kind = all.get(&node).and_then(|proxy| {
+            // A group with no resolved member does not identify a concrete exit.
+            if proxy["all"].is_array() {
+                return None;
+            }
+            proxy["type"].as_str().map(str::to_owned)
+        });
+        Ok((
+            OutboundInfo {
+                mode,
+                node,
+                delay_ms,
+                chain,
+            },
+            kind,
+        ))
+    }
+
+    /// `None` means the controller did not identify a testable proxy or could
+    /// not complete the test. Only two explicit outbound failures mean offline.
+    pub(crate) fn probe_config_outbound(&self, targets: [&str; 2]) -> Option<bool> {
+        let first = self.probe_config_outbound_once(targets[0]);
+        if first != Some(false) {
+            return first;
+        }
+        // Resolve again so an automatic group's new selection gets a chance.
+        self.probe_config_outbound_once(targets[1])
+    }
+
+    fn probe_config_outbound_once(&self, target: &str) -> Option<bool> {
+        let (outbound, kind) = self.outbound_snapshot(None).ok()?;
+        if !matches!(outbound.mode.as_str(), "rule" | "global")
+            || matches!(
+                kind.as_deref()?,
+                "Direct" | "Reject" | "RejectDrop" | "Compatible" | "Pass" | "Dns" | "DNS"
+            )
+        {
+            return None;
+        }
+        // A request to the mixed port can hit a DIRECT rule for the probe host.
+        // Ask mihomo to issue an HTTPS request through the selected node itself.
+        let query = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("url", target)
+            .append_pair("timeout", "3000")
+            .finish();
+        let path = format!(
+            "{}?{query}",
+            build_path(&["/proxies", &outbound.node, "delay"])
+        );
+        match self.req("GET", &path).call() {
+            Ok(response) => {
+                let body: serde_json::Value =
+                    serde_json::from_reader(response.into_reader()).ok()?;
+                body["delay"]
+                    .as_u64()
+                    .filter(|delay| *delay > 0)
+                    .map(|_| true)
+            }
+            Err(ureq::Error::Status(503 | 504, _)) => Some(false),
+            Err(_) => None,
+        }
     }
 
     /// 断开单条连接。
@@ -685,6 +748,173 @@ pub(crate) mod tests {
             .fixed
             .is_none());
         server.join().unwrap();
+    }
+
+    #[test]
+    fn config_outbound_requires_two_definite_failures_and_resolves_again() {
+        let targets = ["https://one.invalid/a", "https://two.invalid/b"];
+        for (second_status, expected) in [(200, Some(true)), (503, Some(false)), (404, None)] {
+            let mut requests = Vec::new();
+            for (node, target, status) in
+                [("JP", targets[0], 504), ("SG", targets[1], second_status)]
+            {
+                requests.extend([
+                    ("GET", "/configs".into(), 200, r#"{"mode":"rule"}"#.into()),
+                    ("GET", "/proxies".into(), 200, format!(r#"{{"proxies":{{"AUTO":{{"type":"URLTest","all":["JP","SG"],"now":"{node}"}},"{node}":{{"type":"Shadowsocks"}}}}}}"#)),
+                    ("GET", "/rules".into(), 200, r#"{"rules":[{"type":"Match","proxy":"AUTO"}]}"#.into()),
+                    ("GET", format!("/proxies/{node}/delay?url={}&timeout=3000", target.replace(':', "%3A").replace('/', "%2F")), status, r#"{"delay":37}"#.into()),
+                ]);
+            }
+            let (controller, server) = scripted_controller(requests);
+            assert_eq!(controller.probe_config_outbound(targets), expected);
+            server.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn real_core_rolls_back_successful_reload_when_selected_exit_is_unreachable() {
+        use crate::engine::config_transition::{execute, Transaction};
+        use crate::engine::manager::{tests::REAL_CORE_LOCK, CoreManager, CoreOptions, CoreStatus};
+        use std::io::{BufRead, BufReader, Write};
+        use std::net::TcpListener;
+        use std::time::Instant;
+
+        let Ok(bin) = std::env::var("CROSSBOW_CORE_BIN") else {
+            eprintln!("skip: CROSSBOW_CORE_BIN not set");
+            return;
+        };
+        let _serial = REAL_CORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        let manager = CoreManager::new(bin.into(), dir.path().to_path_buf());
+        manager.set_options(CoreOptions {
+            ensure_geo_files: false,
+            ..CoreOptions::default()
+        });
+        let upstream = TcpListener::bind("127.0.0.1:0").unwrap();
+        upstream.set_nonblocking(true).unwrap();
+        let upstream_port = upstream.local_addr().unwrap().port();
+        let unreachable = TcpListener::bind("127.0.0.1:0").unwrap();
+        let unreachable_port = unreachable.local_addr().unwrap().port();
+        let origin = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(20);
+            for _ in 0..2 {
+                let stream = loop {
+                    match upstream.accept() {
+                        Ok((stream, _)) => break stream,
+                        Err(error)
+                            if error.kind() == std::io::ErrorKind::WouldBlock
+                                && Instant::now() < deadline =>
+                        {
+                            std::thread::sleep(Duration::from_millis(10));
+                        }
+                        Err(error) => panic!("test upstream received no connection: {error}"),
+                    }
+                };
+                stream.set_nonblocking(false).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let mut stream = BufReader::new(stream);
+                for (method, response) in [
+                    (
+                        "CONNECT ",
+                        b"HTTP/1.1 200 Connection established\r\n\r\n".as_slice(),
+                    ),
+                    (
+                        "HEAD ",
+                        b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n".as_slice(),
+                    ),
+                ] {
+                    let mut line = String::new();
+                    stream.read_line(&mut line).unwrap();
+                    assert!(line.starts_with(method), "{line}");
+                    loop {
+                        line.clear();
+                        assert_ne!(stream.read_line(&mut line).unwrap(), 0);
+                        if line == "\r\n" {
+                            break;
+                        }
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                    stream.get_mut().write_all(response).unwrap();
+                }
+            }
+        });
+        let config = format!("proxies: [{{name: test, type: http, server: 127.0.0.1, port: {upstream_port}}}]\nproxy-groups: [{{name: OUT, type: select, proxies: [test]}}]\nrules: ['DOMAIN-SUFFIX,invalid,DIRECT', 'MATCH,OUT']\n");
+        manager
+            .start(
+                &config,
+                &crossbow_core::RuntimeConfig {
+                    mixed_port: crate::engine::manager::tests::tests_free_port(),
+                    ..crossbow_core::RuntimeConfig::default()
+                },
+            )
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while manager.status() != CoreStatus::Running {
+            assert!(Instant::now() < deadline, "{:?}", manager.status());
+            std::thread::sleep(Duration::from_millis(30));
+        }
+        struct Reload<'a> {
+            manager: &'a CoreManager,
+            controller: Controller,
+            previous: String,
+            candidate: String,
+            persisted: bool,
+        }
+        impl Reload<'_> {
+            fn reload(&self, config: &str) -> Result<(), String> {
+                self.manager.write_config_file(config)?;
+                self.controller.reload_config(&self.manager.config_path())?;
+                self.manager.replace_cached_config(config.to_owned());
+                Ok(())
+            }
+        }
+        impl Transaction for Reload<'_> {
+            fn probe_outbound(&mut self) -> Option<bool> {
+                self.controller
+                    .probe_config_outbound(["http://one.invalid/", "http://two.invalid/"])
+            }
+            fn apply(&mut self) -> Result<(), String> {
+                self.reload(&self.candidate)
+                    .expect("mihomo accepts the candidate");
+                assert!(self.controller.version().is_ok());
+                Ok(())
+            }
+            fn persist(&mut self) -> Result<(), String> {
+                self.persisted = true;
+                Ok(())
+            }
+            fn rollback(&mut self) -> Result<(), String> {
+                self.reload(&self.previous)
+            }
+        }
+
+        let previous = manager.current_config().unwrap();
+        let pid = manager.pid();
+        let candidate = previous.replace(
+            &format!("port: {upstream_port}"),
+            &format!("port: {unreachable_port}"),
+        );
+        assert_ne!(candidate, previous);
+        let (port, secret) = manager.controller().unwrap();
+        let mut transaction = Reload {
+            manager: &manager,
+            controller: Controller { port, secret },
+            previous,
+            candidate,
+            persisted: false,
+        };
+        let error = execute(&mut transaction).unwrap_err();
+        assert!(error.contains("已恢复之前的状态") && error.contains("默认代理出口连接失败"));
+        assert!(!transaction.persisted);
+        assert_eq!(
+            manager.current_config().as_ref(),
+            Some(&transaction.previous)
+        );
+        assert_eq!(manager.pid(), pid);
+        origin.join().unwrap();
+        assert!(manager.stop());
     }
 
     #[test]

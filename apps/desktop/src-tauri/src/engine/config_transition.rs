@@ -88,14 +88,28 @@ impl Drop for RecoveryOwner<'_> {
 
 /// 执行与持久化共用同一失败出口。恢复失败不能掩盖原始错误。
 pub trait Transaction {
+    /// `None` means this transition has no comparable outbound measurement.
+    fn probe_outbound(&mut self) -> Option<bool>;
     fn apply(&mut self) -> Result<(), String>;
     fn persist(&mut self) -> Result<(), String>;
     fn rollback(&mut self) -> Result<(), String>;
 }
 pub fn execute(transaction: &mut impl Transaction) -> Result<(), String> {
-    match transaction.apply().and_then(|()| transaction.persist()) {
+    let old_outbound_worked = transaction.probe_outbound() == Some(true);
+    let mut lost_outbound = false;
+    let result = transaction.apply().and_then(|()| {
+        lost_outbound = old_outbound_worked && transaction.probe_outbound() == Some(false);
+        if lost_outbound {
+            return Err("新配置的默认代理出口连接失败".into());
+        }
+        transaction.persist()
+    });
+    match result {
         Ok(()) => Ok(()),
         Err(error) => match transaction.rollback() {
+            Ok(()) if lost_outbound && transaction.probe_outbound() != Some(true) => Err(format!(
+                "切换失败：{error}；旧配置已恢复，但未能确认原代理出口连通性"
+            )),
             Ok(()) => Err(format!("切换失败，已恢复之前的状态：{error}")),
             Err(recovery) => Err(format!("切换失败：{error}；恢复未完成：{recovery}")),
         },
@@ -134,8 +148,12 @@ mod tests {
         runtime: u16,
         proxy: Option<u16>,
         old_proxy: Option<u16>,
+        outbound: std::collections::VecDeque<Option<bool>>,
     }
     impl Transaction for Faults {
+        fn probe_outbound(&mut self) -> Option<bool> {
+            self.outbound.pop_front().flatten()
+        }
         fn apply(&mut self) -> Result<(), String> {
             self.events.push("apply");
             self.memory = 7898;
@@ -189,6 +207,40 @@ mod tests {
             assert_eq!(tx.events, ["apply", "rollback"]);
             assert_eq!((tx.memory, tx.disk, tx.runtime), (7897, 7897, 7897));
             assert_eq!(tx.proxy, old_proxy);
+        }
+    }
+
+    #[test]
+    fn rejects_a_new_outbound_that_loses_verified_connectivity() {
+        for recovered in [Some(true), Some(false), None] {
+            let mut tx = Faults {
+                old_proxy: Some(7897),
+                outbound: [Some(true), Some(false), recovered].into(),
+                ..Faults::default()
+            };
+            let error = execute(&mut tx).unwrap_err();
+            assert!(error.contains("新配置的默认代理出口连接失败"));
+            assert_eq!(error.contains("未能确认"), recovered != Some(true));
+            assert_eq!(tx.events, ["apply", "rollback"]);
+            assert_eq!((tx.memory, tx.disk, tx.runtime), (7897, 7897, 7897));
+            assert_eq!(tx.proxy, Some(7897));
+            assert!(tx.outbound.is_empty());
+        }
+    }
+
+    #[test]
+    fn offline_or_inconclusive_measurements_do_not_block_a_switch() {
+        for outcomes in [
+            [Some(false), Some(false)],
+            [None, Some(false)],
+            [Some(true), None],
+        ] {
+            let mut tx = Faults {
+                outbound: outcomes.into(),
+                ..Faults::default()
+            };
+            execute(&mut tx).unwrap();
+            assert_eq!(tx.events, ["apply", "persist"]);
         }
     }
 

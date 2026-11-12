@@ -1,5 +1,10 @@
 // 内核启动/渲染/提交管线 helper（#423 Stage B 从 lib.rs 提取）。
 use crate::*;
+
+const CONFIG_OUTBOUND_PROBE_TARGETS: [&str; 2] = [
+    "https://www.gstatic.com/generate_204",
+    "https://cp.cloudflare.com/generate_204",
+];
 /// 渲染当前配置（记录覆写错误到 store，供 UI 展示）。
 pub(crate) fn render_current(
     state: &AppState,
@@ -228,7 +233,7 @@ pub(crate) fn ensure_unprivileged_core_binary(
 ///
 /// 先记住改之前的存储和运行配置，再在内存里改。渲染失败、热重载失败、
 /// 重启失败，都把内存和磁盘退回改之前，并尽量把旧内核拉回来。新状态只有
-/// 在内核确认就绪，或内核本来没在跑时，才落盘。
+/// 在内核确认就绪且配置切换未破坏已验证的出口，或内核本来没在跑时，才落盘。
 ///
 /// TUN 开关不走这里。它要换特权进程，仍由各平台 `toggle_tun` 处理。
 pub(crate) fn commit_config_change(
@@ -305,6 +310,18 @@ pub(crate) fn commit_config_change_inner(
     state
         .core()
         .log_decision(&format!("config change: {plan:?}"));
+    let old_content = before
+        .active_profile
+        .as_deref()
+        .and_then(|id| before.profile(id));
+    let new_content = after
+        .active_profile
+        .as_deref()
+        .and_then(|id| after.profile(id));
+    let verify_outbound = live.mihomo
+        && after.engine.engine == crossbow_core::Engine::Mihomo
+        && (before.active_profile != after.active_profile
+            || old_content.map(|p| &p.content) != new_content.map(|p| &p.content));
     let mut transaction = ConfigChange {
         state,
         before,
@@ -312,11 +329,17 @@ pub(crate) fn commit_config_change_inner(
         proxy,
         old_config,
         plan,
+        verify_outbound,
         touched_core: false,
         restarted: false,
         stopped: false,
     };
-    let result = crate::engine::config_transition::execute(&mut transaction);
+    let result = {
+        // Serialize manual node selections with the pre/post measurements.
+        let _selection =
+            verify_outbound.then(|| state.proxy_op.lock().unwrap_or_else(|e| e.into_inner()));
+        crate::engine::config_transition::execute(&mut transaction)
+    };
     // Rollback may have changed the actual proxy state, even when it failed.
     let _ = state.app.emit("sysproxy://status", state.sysproxy.status());
     if result.is_ok() && running {
@@ -344,6 +367,7 @@ pub(crate) struct ConfigChange<'a> {
     proxy: SysProxyStatus,
     old_config: Option<String>,
     plan: crate::engine::config_transition::Plan,
+    verify_outbound: bool,
     touched_core: bool,
     restarted: bool,
     stopped: bool,
@@ -385,6 +409,15 @@ impl ConfigChange<'_> {
 }
 
 impl crate::engine::config_transition::Transaction for ConfigChange<'_> {
+    fn probe_outbound(&mut self) -> Option<bool> {
+        if !self.verify_outbound {
+            return None;
+        }
+        controller_client(self.state)
+            .ok()?
+            .probe_config_outbound(CONFIG_OUTBOUND_PROBE_TARGETS)
+    }
+
     fn apply(&mut self) -> Result<(), String> {
         if self.plan == crate::engine::config_transition::Plan::PersistOnly {
             return Ok(());
