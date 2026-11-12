@@ -91,27 +91,42 @@
   ${EndIf}
 !macroend
 
+; #457：仅终止可执行路径归属 Crossbow 的残留内核（安装目录或数据目录）。
+; 其他代理客户端的同名 mihomo/sing-box 进程不受影响。应用在运行时直接跳过
+; ——受控内核由应用退出路径（恢复系统代理后）自行停止。归属前缀经环境
+; 变量传入，避免 NSIS/PowerShell 双层引号拼接。
+!macro CrossbowKillOwnedCores
+  System::Call 'kernel32::SetEnvironmentVariable(t "CB_OWN_PREFIX_1", t "$INSTDIR")'
+  System::Call 'kernel32::SetEnvironmentVariable(t "CB_OWN_PREFIX_2", t "$APPDATA\com.richard.crossbow")'
+  nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -Command "Get-Process -Name mihomo,sing-box -ErrorAction SilentlyContinue | Where-Object { $$_.Path -and ($$_.Path.StartsWith($$env:CB_OWN_PREFIX_1) -or $$_.Path.StartsWith($$env:CB_OWN_PREFIX_2)) } | ForEach-Object { Stop-Process -Id $$_.Id -Force }"'
+  Pop $0
+!macroend
+
 !macro NSIS_HOOK_PREUNINSTALL
-  nsExec::ExecToStack 'powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -Command "try { $$s=Get-Service CrossbowService -ErrorAction SilentlyContinue; if ($$s) { Stop-Service CrossbowService -ErrorAction Stop; $$s.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Stopped,[TimeSpan]::FromSeconds(30)) }; exit 0 } catch { Write-Error $$_.Exception.Message; exit 1 }"'
+  ; #457：此钩子先于 Tauri 模板的 CheckIfAppIsRunning（该提示允许取消）。
+  ; 取消路径上不得产生副作用——服务与受控内核一律不动，由应用自身的退出
+  ; 流程（恢复系统代理 → 停内核）或 POSTUNINSTALL 兜底处理。仅清理无主
+  ; 残留：应用未运行时，安装目录/数据目录下的同名内核即 #233 所述残留；
+  ; 其他客户端的同名进程因路径不匹配而保留。
+  nsExec::ExecToStack 'tasklist /FI "IMAGENAME eq crossbow-desktop.exe" /NH'
   Pop $0
   Pop $1
-  ${If} $0 != 0
-    MessageBox MB_ICONSTOP "Cannot stop Crossbow service. Please restart Windows before uninstalling." /SD IDOK
-    SetErrorLevel 106
-    Abort
+  ${If} $1 contains "crossbow-desktop.exe"
+    DetailPrint "Crossbow is running; its managed processes are left to the app exit flow."
+  ${Else}
+    !insertmacro CrossbowKillOwnedCores
   ${EndIf}
-  nsExec::Exec '"$SYSDIR\sc.exe" delete CrossbowService'
-  ; 卸载器只处理主程序：内核子进程必须在此先杀，否则残留内核占着
-  ; 混合端口，重装后首次启动报 os error 10048（#233）。按镜像名清理，
-  ; 覆盖 sidecar 三元组命名与 data 目录下载命名。
-  nsExec::ExecToLog 'taskkill /F /IM "mihomo.exe" /T'
-  Pop $0
-  nsExec::ExecToLog 'taskkill /F /IM "mihomo-x86_64-pc-windows-msvc.exe" /T'
-  Pop $0
-  nsExec::ExecToLog 'taskkill /F /IM "sing-box.exe" /T'
-  Pop $0
-  nsExec::ExecToLog 'taskkill /F /IM "sing-box-x86_64-pc-windows-msvc.exe" /T'
-  Pop $0
-  ; Service-owned config/cache must not survive an uninstall with user secrets.
   RMDir /r "$INSTDIR\service-runtime"
+!macroend
+
+!macro NSIS_HOOK_POSTUNINSTALL
+  ; #457：服务停止/删除与残留清理移到文件删除之后——PREUNINSTALL 不再
+  ; 提前拆除服务，取消卸载时服务、内核、代理设置保持原状态。
+  nsExec::ExecToStack 'powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -Command "try { $$s=Get-Service CrossbowService -ErrorAction SilentlyContinue; if ($$s) { Stop-Service CrossbowService -ErrorAction Stop; $$s.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Stopped,[TimeSpan]::FromSeconds(30)) } ; exit 0 } catch { Write-Error $$_.Exception.Message; exit 1 }"'
+  Pop $0
+  Pop $1
+  nsExec::Exec '"$SYSDIR\sc.exe" delete CrossbowService'
+  !insertmacro CrossbowKillOwnedCores
+  ; %APPDATA% 下 journal（sysproxy-journal.json / tun-proxy-journal.json）
+  ; 有意保留：代理恢复未完成时，重装后的 recover_stale 会在归属核对下重试。
 !macroend
