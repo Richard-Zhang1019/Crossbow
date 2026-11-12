@@ -17,6 +17,9 @@ use crossbow_core::{apply_runtime, RuntimeConfig};
 use serde::Serialize;
 use uuid::Uuid;
 
+/// 内核退出后到自动重启前的等待时间（#331）。
+const CORE_CRASH_RESTART_DELAY: Duration = Duration::from_millis(800);
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(tag = "state", content = "message")]
 pub enum CoreStatus {
@@ -2075,7 +2078,7 @@ fn watch(shared: Arc<Shared>, pid: u32, port: u16, secret: String) {
 
         // 崩溃或自检触发的正常退出都使用既有重启预算。
         if restart {
-            std::thread::sleep(Duration::from_millis(800));
+            std::thread::sleep(CORE_CRASH_RESTART_DELAY);
             spawn_and_watch(shared, Some(pid));
         }
         return;
@@ -2350,6 +2353,16 @@ fn tun_health_port(cfg: &str) -> Option<u16> {
         .filter(|&port| port != 0)
 }
 
+/// macOS 内核路径自检周期（#331）。
+#[cfg(target_os = "macos")]
+const TUN_PATH_CHECK_INTERVAL: Duration = Duration::from_secs(60);
+/// 连续多次仅 TUN 路径失败时，才请求重启内核（#331）。
+#[cfg(target_os = "macos")]
+const TUN_PATH_FAILURE_BUDGET: u8 = 3;
+/// 路径自检发起两次内核重启之间的冷却期（#331）。
+#[cfg(target_os = "macos")]
+const TUN_PATH_RESTART_COOLDOWN: Duration = Duration::from_secs(900);
+
 #[cfg(target_os = "macos")]
 const TUN_PROBE_HOSTS: [&str; 2] = ["1.1.1.1", "8.8.8.8"];
 
@@ -2442,7 +2455,7 @@ fn tun_health_monitor(weak: std::sync::Weak<Shared>, pid: u32, mixed_port: u16) 
     use std::io::Read;
     let mut failures = 0;
     loop {
-        std::thread::sleep(Duration::from_secs(60));
+        std::thread::sleep(TUN_PATH_CHECK_INTERVAL);
         let Some(shared) = weak.upgrade() else {
             return;
         };
@@ -2460,7 +2473,7 @@ fn tun_health_monitor(weak: std::sync::Weak<Shared>, pid: u32, mixed_port: u16) 
             && logged_tun_interface(&String::from_utf8_lossy(&startup_log))
                 .is_some_and(|interface| tun_path_differs(mixed_port, interface));
         failures = if differs { failures + 1 } else { 0 };
-        if failures < 3 {
+        if failures < TUN_PATH_FAILURE_BUDGET {
             continue;
         }
         failures = 0;
@@ -2472,7 +2485,7 @@ fn tun_health_monitor(weak: std::sync::Weak<Shared>, pid: u32, mixed_port: u16) 
             }
             if inner
                 .tun_health_restart
-                .is_some_and(|(_, when)| when.elapsed() < Duration::from_secs(900))
+                .is_some_and(|(_, when)| when.elapsed() < TUN_PATH_RESTART_COOLDOWN)
             {
                 continue;
             }

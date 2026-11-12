@@ -10,11 +10,18 @@ const LOGS_SWEEP_IDLE_WAIT: std::time::Duration = std::time::Duration::from_secs
 /// 日志清扫器：常规清扫周期。
 const LOGS_SWEEP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(6 * 3600);
 /// TUN 真实连通性探测超时（gstatic/github 204 探测）。
+#[cfg(any(target_os = "macos", windows))]
 const TUN_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
-/// 托盘批量测速看门狗基础秒数：预期总时长 = 基础 + 每 10 节点追加 + 余量。
-const SPEED_TEST_WATCHDOG_BASE_SECS: u64 = 20;
-/// 托盘批量测速看门狗每 10 节点追加秒数。
-const SPEED_TEST_WATCHDOG_PER_TEN_NODES_SECS: u64 = 6;
+/// 托盘批量测速并发上限，也是看门狗计算每批节点数的依据。
+#[cfg(target_os = "macos")]
+const SPEED_TEST_CONCURRENCY: usize = 10;
+/// 托盘批量测速看门狗基础余量。
+#[cfg(target_os = "macos")]
+const SPEED_TEST_WATCHDOG_BASE: Duration = Duration::from_secs(20);
+/// 每批测速的请求预算。
+#[cfg(target_os = "macos")]
+const SPEED_TEST_WATCHDOG_PER_BATCH_SECS: u64 = 6;
+
 pub(crate) fn core_status_callback(handle: AppHandle) -> crate::engine::manager::Callback {
     std::sync::Arc::new(move |status| {
         // The configuration transaction owns rollback while core_op is held.
@@ -926,12 +933,13 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
             }
         }
 
-        // 看门狗：预期总时长 = ceil(n/10) * 6s + 余量；超时强制恢复可点态
+        // 看门狗按并发批次估算等待上限，超时恢复可点态。
         let watchdog_handle = h.clone();
-        let watchdog_secs = SPEED_TEST_WATCHDOG_BASE_SECS
-            + (total as u64).div_ceil(10) * SPEED_TEST_WATCHDOG_PER_TEN_NODES_SECS;
+        let batches = total.div_ceil(SPEED_TEST_CONCURRENCY) as u64;
+        let watchdog_timeout = SPEED_TEST_WATCHDOG_BASE
+            + Duration::from_secs(batches * SPEED_TEST_WATCHDOG_PER_BATCH_SECS);
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(watchdog_secs));
+            std::thread::sleep(watchdog_timeout);
             let Some(state) = watchdog_handle.try_state::<AppState>() else {
                 return;
             };
@@ -953,7 +961,7 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
             targets,
         )));
         let (tx, rx) = std::sync::mpsc::channel::<(String, Result<u64, String>)>();
-        for _ in 0..total.min(10) {
+        for _ in 0..total.min(SPEED_TEST_CONCURRENCY) {
             let queue = queue.clone();
             let tx = tx.clone();
             let h_worker = h.clone();
