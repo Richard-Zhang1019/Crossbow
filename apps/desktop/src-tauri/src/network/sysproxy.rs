@@ -821,7 +821,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
     /// `disable` restores the pre-Crossbow snapshot, which may point to an old
     /// local proxy with no listener and keep browsers offline even while TUN
     /// itself is healthy.
-#[cfg_attr(target_os = "linux", allow(dead_code))]
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
     pub fn suspend_for_tun(&self) -> Result<SuspendedSysProxy, String> {
         let _operation = self
             .operation
@@ -880,7 +880,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
     }
 
     /// 已持有代理操作锁的内部实现。
-#[cfg_attr(target_os = "linux", allow(dead_code))]
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
     fn suspend_for_tun_locked(&self) -> Result<SuspendedSysProxy, String> {
         let tun_journal = self.tun_journal_path();
         if let Ok(saved) = std::fs::read(&tun_journal) {
