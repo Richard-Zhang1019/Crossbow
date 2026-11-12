@@ -667,17 +667,11 @@ pub(crate) fn core_install_inner(
             notifications::publish(&h, notice);
             let _ = h.emit("core://install-progress", p);
         })?;
-    // 安装后重新装载 CoreManager 的二进制路径：直接替换状态里的管理器。
-    let state = app.state::<AppState>();
-    // 与启动链互斥：换核期间不允许并发的 start_core 拿到半新半旧的槽位
-    let _op = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
-    state.exit.ensure_open()?;
-    let new_core = CoreManager::new(info.clone(), data_dir.join("runtime"));
-    new_core.set_callback(core_status_callback(app.clone()));
-    if !state.core().stop() {
-        return Err("旧内核未退出，无法载入已下载的内核".into());
-    }
-    *state.core_slot.lock().unwrap_or_else(|e| e.into_inner()) = new_core;
+    // #466：下载只暂存二进制，不停当前内核、不替换管理器——启用动作
+    // 交给 set_engine 的可回滚切换事务（needs_new_process + 运行时就绪
+    // 检查）。旧实现在此提前停核并替换管理器，前端随后 setEngine 时
+    // 事务看到内核已停止会选 PersistOnly，混合端口无内核监听。
+    // 新二进制由切换事务的 ensure_engine_binary 从数据目录解析。
     Ok(CoreBinaryInfo {
         path: info.display().to_string(),
         source: "data".into(),
