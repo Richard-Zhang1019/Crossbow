@@ -607,14 +607,28 @@ pub(crate) fn install_panic_hook() {
         let dir: Option<std::path::PathBuf> = None;
         if let Some(dir) = dir {
             let _ = std::fs::create_dir_all(&dir);
-            let _ = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(dir.join("panic.log"))
+            let _ = crate::platform::fs_perms::open_private_append(&dir.join("panic.log"))
                 .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
         }
         default_hook(info);
     }));
+}
+
+/// Run once after taking the desktop instance lock and before starting log writers.
+pub(crate) fn tidy_runtime_files(dir: &std::path::Path) {
+    use crate::platform::fs_perms::{ensure_private, trim_private_log};
+    for name in [
+        "sysproxy-journal.json",
+        "tun-proxy-journal.json",
+        "panic.log",
+        "runtime/config.yaml",
+        "runtime/core-descriptor.json",
+        "runtime/core-decision.log",
+        "runtime/core-stdio.log",
+    ] {
+        ensure_private(&dir.join(name));
+    }
+    let _ = trim_private_log(&dir.join("webview.log"));
 }
 
 /// 启动最前部的残留系统代理自愈：上一实例崩溃（如 did_finish_launching
@@ -690,5 +704,51 @@ pub(crate) fn data_dir_for_early_hooks() -> std::path::PathBuf {
             .map(std::path::PathBuf::from)
             .map(|h| h.join("com.richard.crossbow"))
             .expect("APPDATA unset; cannot locate data dir")
+    }
+}
+
+#[cfg(test)]
+mod tidy_tests {
+    use super::*;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn tidy_runtime_files_keeps_log_tail_on_a_utf8_boundary() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("webview.log");
+        let small = dir.path().join("panic.log");
+        let mut bytes = vec![b'x'; 512 * 1024];
+        bytes.extend_from_slice("连".as_bytes());
+        let tail = vec![b'y'; 256 * 1024 - 2];
+        bytes.extend_from_slice(&tail);
+        std::fs::write(&log, bytes).unwrap();
+        std::fs::write(&small, b"hello").unwrap();
+
+        tidy_runtime_files(dir.path());
+
+        assert_eq!(std::fs::read(&log).unwrap(), tail);
+        assert_eq!(std::fs::read(&small).unwrap(), b"hello");
+        std::fs::write(&log, b"short log").unwrap();
+        tidy_runtime_files(dir.path());
+        assert_eq!(std::fs::read(&log).unwrap(), b"short log");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn tidy_runtime_files_tightens_both_proxy_journals() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["sysproxy-journal.json", "tun-proxy-journal.json"] {
+            let journal = dir.path().join(name);
+            std::fs::write(&journal, b"{}").unwrap();
+            std::fs::set_permissions(&journal, std::fs::Permissions::from_mode(0o644)).unwrap();
+        }
+
+        tidy_runtime_files(dir.path());
+
+        for name in ["sysproxy-journal.json", "tun-proxy-journal.json"] {
+            let meta = dir.path().join(name).metadata().unwrap();
+            assert_eq!(meta.permissions().mode() & 0o777, 0o600);
+        }
     }
 }

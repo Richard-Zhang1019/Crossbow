@@ -5,9 +5,11 @@
 //! 清理 `sweep` 按文件名日期计算“距今天数”，超期即删。全部 std::fs，
 //! 无平台 API——Windows/iOS 复用。
 
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
+
+use crate::platform::fs_perms;
 
 pub fn logs_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("logs")
@@ -96,10 +98,7 @@ impl DailyWriter {
                 return;
             }
             let path = self.dir.join(format!("{day}.log"));
-            self.file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&path)
+            self.file = fs_perms::open_private_append(&path)
                 .ok()
                 .map(BufWriter::new);
             self.day = day;
@@ -133,6 +132,8 @@ pub fn sweep(dir: &Path, retention_days: u32) -> usize {
             if std::fs::remove_file(entry.path()).is_ok() {
                 removed += 1;
             }
+        } else {
+            fs_perms::ensure_private(&entry.path());
         }
     }
     removed

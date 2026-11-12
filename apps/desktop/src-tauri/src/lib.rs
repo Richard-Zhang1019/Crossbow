@@ -196,7 +196,10 @@ fn lock_app_instance(data_dir: &std::path::Path) -> std::io::Result<std::fs::Fil
 
 fn acquire_app_instance(data_dir: &std::path::Path) -> std::io::Result<std::fs::File> {
     let lock = lock_app_instance(data_dir)?;
-    std::fs::write(data_dir.join("app.pid"), std::process::id().to_string())?;
+    crate::platform::fs_perms::write_private(
+        &data_dir.join("app.pid"),
+        std::process::id().to_string().as_bytes(),
+    )?;
     Ok(lock)
 }
 
@@ -482,6 +485,7 @@ pub fn run() {
 
             // Keep ownership until the exit event (or process termination).
             let instance_lock = acquire_app_instance(&data_dir)?;
+            tidy_runtime_files(&data_dir);
 
             let mut store = Store::open(&data_dir)
                 .map_err(|e| std::io::Error::other(format!("open store: {e}")))?;
@@ -533,6 +537,9 @@ pub fn run() {
             let backend = crate::network::sysproxy::UnsupportedBackend;
             let sysproxy = SysProxyManager::new(backend, data_dir.join("sysproxy-journal.json"));
             let adopted = core.adopt_external();
+            if !adopted {
+                core.trim_startup_log();
+            }
             if adopted {
                 eprintln!("adopted detached core from previous lightweight session");
                 if let Some(port) = sysproxy.adopt_from_journal() {
