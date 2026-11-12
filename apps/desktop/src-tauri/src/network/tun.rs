@@ -10,7 +10,7 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::AppState;
 
@@ -273,7 +273,7 @@ fn wait_tun_listener(
     state: &AppState,
     previous_routes: &BTreeSet<(String, String)>,
 ) -> Result<(), String> {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + crate::engine::timing::TUN_LISTENER_DEADLINE;
     let log_path = state.data_dir.join("runtime/core-stdio.log");
     loop {
         if let Ok(log) = std::fs::read_to_string(&log_path) {
@@ -298,7 +298,7 @@ fn wait_tun_listener(
         if Instant::now() >= deadline {
             return Err("TUN 内核已启动，但未检测到新的 utun 路由；请检查内核日志".into());
         }
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(crate::engine::timing::TUN_LISTENER_POLL);
     }
 }
 

@@ -4,7 +4,6 @@
 //! 平台注意：Windows 下 spawn 需带 CREATE_NO_WINDOW，避免 GUI 进程闪控制台。
 
 use std::collections::VecDeque;
-use std::io::Write;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Child;
@@ -16,6 +15,11 @@ use std::time::{Duration, Instant};
 use crossbow_core::{apply_runtime, RuntimeConfig};
 use serde::Serialize;
 use uuid::Uuid;
+
+use crate::platform::fs_perms;
+
+/// 内核退出后到自动重启前的等待时间（#331）。
+const CORE_CRASH_RESTART_DELAY: Duration = Duration::from_millis(800);
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(tag = "state", content = "message")]
@@ -197,29 +201,9 @@ impl Shared {
             "config": self.config_cache.lock().unwrap().clone(),
         });
         // A restart must not see a truncated descriptor. Keep credentials private.
-        let temporary = self
-            .work_dir
-            .join(format!(".core-descriptor-{}.tmp", Uuid::new_v4()));
-        let result = (|| {
-            let mut options = std::fs::OpenOptions::new();
-            options.write(true).create_new(true);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::OpenOptionsExt;
-                options.mode(0o600);
-            }
-            let mut file = options.open(&temporary).map_err(|e| e.to_string())?;
-            file.write_all(&serde_json::to_vec(&record).map_err(|e| e.to_string())?)
-                .and_then(|()| file.sync_all())
-                .map_err(|e| e.to_string())?;
-            drop(file);
-            std::fs::rename(&temporary, Self::descriptor_path(&self.work_dir))
-                .map_err(|e| e.to_string())
-        })();
-        if result.is_err() {
-            let _ = std::fs::remove_file(temporary);
-        }
-        result
+        let contents = serde_json::to_vec(&record).map_err(|e| e.to_string())?;
+        fs_perms::write_private(&Self::descriptor_path(&self.work_dir), &contents)
+            .map_err(|e| e.to_string())
     }
 
     fn notify(&self, status: CoreStatus) {
@@ -245,8 +229,7 @@ impl Shared {
             let Some(content) = cached.as_ref() else {
                 return Err("no config cached for this start chain".into());
             };
-            std::fs::File::create(&config_path)
-                .and_then(|mut f| f.write_all(content.as_bytes()))
+            fs_perms::write_private(&config_path, content.as_bytes())
                 .map_err(|e| format!("write config: {e}"))?;
         }
         let mut cmd = crate::process::command(&self.binary_path);
@@ -264,11 +247,7 @@ impl Shared {
                 .arg(&config_path);
         }
         // 内核输出落到文件：崩溃诊断（yaml 错误等）靠它，不再丢弃。
-        let log_file = std::fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(self.work_dir.join("core-stdio.log"))
+        let log_file = fs_perms::open_private_truncate(&self.work_dir.join("core-stdio.log"))
             .map_err(|e| format!("open core log: {e}"))?;
         let log_err = log_file
             .try_clone()
@@ -469,7 +448,8 @@ impl CoreManager {
     /// 覆盖配置文件，不更新崩溃重启用的缓存。
     /// 热重载成功后才调用 `replace_cached_config`，失败时缓存仍是旧内容。
     pub fn write_config_file(&self, content: &str) -> Result<(), String> {
-        std::fs::write(self.config_path(), content).map_err(|e| format!("write config: {e}"))
+        fs_perms::write_private(&self.config_path(), content.as_bytes())
+            .map_err(|e| format!("write config: {e}"))
     }
 
     pub fn replace_cached_config(&self, content: String) {
@@ -769,8 +749,7 @@ impl CoreManager {
             Some(spawner) => {
                 // 与 spawn_child 相同约定：配置写盘 + 日志路径，交给服务拉起
                 let config_path = self.shared.work_dir.join("config.yaml");
-                std::fs::File::create(&config_path)
-                    .and_then(|mut f| f.write_all(final_config.as_bytes()))
+                fs_perms::write_private(&config_path, final_config.as_bytes())
                     .map_err(|e| format!("write config: {e}"))?;
                 let log_path = self.shared.work_dir.join("core-stdio.log");
                 self.shared.notify(CoreStatus::Starting);
@@ -874,6 +853,18 @@ impl CoreManager {
             watch_external(self.shared.clone(), d.pid, path);
         }
         true
+    }
+
+    /// Run under the desktop instance lock, after attempting adoption and before
+    /// starting a new core. A remaining descriptor can still point to a writer.
+    pub(crate) fn trim_startup_log(&self) {
+        let work_dir = &self.shared.work_dir;
+        if Shared::descriptor_path(work_dir)
+            .symlink_metadata()
+            .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+        {
+            let _ = fs_perms::trim_private_log(&work_dir.join("core-stdio.log"));
+        }
     }
 
     /// Persist a complete handoff before detaching. Failure leaves ownership
@@ -2082,7 +2073,7 @@ fn watch(shared: Arc<Shared>, pid: u32, port: u16, secret: String) {
 
         // 崩溃或自检触发的正常退出都使用既有重启预算。
         if restart {
-            std::thread::sleep(Duration::from_millis(800));
+            std::thread::sleep(CORE_CRASH_RESTART_DELAY);
             spawn_and_watch(shared, Some(pid));
         }
         return;
@@ -2320,22 +2311,14 @@ pub fn append_decision(work_dir: &std::path::Path, line: &str) {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(work_dir.join("core-decision.log"))
-    {
+    if let Ok(mut f) = fs_perms::open_private_append(&work_dir.join("core-decision.log")) {
         let _ = writeln!(f, "{ms} {line}");
     }
 }
 
 fn append_core_log(work_dir: &std::path::Path, line: &str) {
     use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(work_dir.join("core-stdio.log"))
-    {
+    if let Ok(mut f) = fs_perms::open_private_append(&work_dir.join("core-stdio.log")) {
         let _ = writeln!(f, "[crossbow] {line}");
     }
 }
@@ -2356,6 +2339,16 @@ fn tun_health_port(cfg: &str) -> Option<u16> {
         .ok()
         .filter(|&port| port != 0)
 }
+
+/// macOS 内核路径自检周期（#331）。
+#[cfg(target_os = "macos")]
+const TUN_PATH_CHECK_INTERVAL: Duration = Duration::from_secs(60);
+/// 连续多次仅 TUN 路径失败时，才请求重启内核（#331）。
+#[cfg(target_os = "macos")]
+const TUN_PATH_FAILURE_BUDGET: u8 = 3;
+/// 路径自检发起两次内核重启之间的冷却期（#331）。
+#[cfg(target_os = "macos")]
+const TUN_PATH_RESTART_COOLDOWN: Duration = Duration::from_secs(900);
 
 #[cfg(target_os = "macos")]
 const TUN_PROBE_HOSTS: [&str; 2] = ["1.1.1.1", "8.8.8.8"];
@@ -2449,7 +2442,7 @@ fn tun_health_monitor(weak: std::sync::Weak<Shared>, pid: u32, mixed_port: u16) 
     use std::io::Read;
     let mut failures = 0;
     loop {
-        std::thread::sleep(Duration::from_secs(60));
+        std::thread::sleep(TUN_PATH_CHECK_INTERVAL);
         let Some(shared) = weak.upgrade() else {
             return;
         };
@@ -2467,7 +2460,7 @@ fn tun_health_monitor(weak: std::sync::Weak<Shared>, pid: u32, mixed_port: u16) 
             && logged_tun_interface(&String::from_utf8_lossy(&startup_log))
                 .is_some_and(|interface| tun_path_differs(mixed_port, interface));
         failures = if differs { failures + 1 } else { 0 };
-        if failures < 3 {
+        if failures < TUN_PATH_FAILURE_BUDGET {
             continue;
         }
         failures = 0;
@@ -2479,7 +2472,7 @@ fn tun_health_monitor(weak: std::sync::Weak<Shared>, pid: u32, mixed_port: u16) 
             }
             if inner
                 .tun_health_restart
-                .is_some_and(|(_, when)| when.elapsed() < Duration::from_secs(900))
+                .is_some_and(|(_, when)| when.elapsed() < TUN_PATH_RESTART_COOLDOWN)
             {
                 continue;
             }
@@ -2589,6 +2582,32 @@ pub fn free_port() -> Option<u16> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn startup_log_trim_skips_a_possible_writer() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = CoreManager::new(PathBuf::new(), dir.path().to_path_buf());
+        let log = dir.path().join("core-stdio.log");
+        let descriptor = Shared::descriptor_path(dir.path());
+        let limit = 256 * 1024;
+        let mut bytes = vec![b'x'; limit];
+        bytes.resize(limit * 2, b'y');
+        std::fs::write(&log, &bytes).unwrap();
+        std::fs::write(&descriptor, b"unresolved descriptor").unwrap();
+
+        let mut writer = fs_perms::open_private_append(&log).unwrap();
+        manager.trim_startup_log();
+        writer.write_all(b"still writing").unwrap();
+        drop(writer);
+        bytes.extend_from_slice(b"still writing");
+        assert_eq!(std::fs::read(&log).unwrap(), bytes);
+
+        std::fs::remove_file(&descriptor).unwrap();
+        manager.trim_startup_log();
+        assert_eq!(std::fs::read(&log).unwrap(), bytes[bytes.len() - limit..]);
+    }
+
     /// 状态回调不可占着回调注册锁，退出和崩溃恢复可能同时通知。
     #[test]
     fn callback_runs_without_holding_registration_lock() {

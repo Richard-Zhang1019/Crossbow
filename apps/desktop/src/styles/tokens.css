@@ -1,0 +1,65 @@
+/* Frame Studio: approved B palette; color roles shared by every page and overlay. */
+:root {
+  color-scheme: light;
+  --cb-chrome: #eef0f5;
+  --cb-bg: #ffffff;
+  --cb-surface: #f7f8fb;
+  --cb-surface-2: #f0f2f7;
+  --cb-line: #e4e7ee;
+  --cb-line-strong: #cdd2df;
+  --cb-text: #242b37;
+  --cb-text-dim: #596777;
+  --cb-faint: #626e7d;
+  --cb-accent: #455ab5;
+  --cb-brand: #293345;
+  --cb-accent-soft: #eff2fc;
+  --cb-accent-line: #8592c9;
+  --cb-ok: #267659;
+  --cb-warn: #93651a;
+  --cb-bad: #a94850;
+  --cb-up: #8a939f;
+  --cb-down: #546abf;
+  --cb-primary: #293345;
+  --cb-on-primary: #fff;
+  --cb-floating: #fff;
+  --cb-overlay: rgba(30, 36, 48, 0.2);
+  --cb-mono: "SF Mono", ui-monospace, Menlo, monospace;
+  /* #429 z-index 刻度：值与历史层叠序一致（1<10<40<90<100<110），主题无关 */
+  --z-content: 1;
+  --z-raised: 10;
+  --z-overlay: 40;
+  --z-modal: 90;
+  --z-notification: 100;
+  --z-popover: 110;
+  /* #428 字号收敛：xs/sm/md/lg 四级 + 页标题级 */
+  --font-xs: 11px;
+  --font-sm: 12px;
+  --font-md: 13px;
+  --font-lg: 16px;
+  --font-title: 20px;
+}
+:root.dark {
+  color-scheme: dark;
+  --cb-chrome: #121317;
+  --cb-bg: #1a1c21;
+  --cb-surface: #23262d;
+  --cb-surface-2: #30343d;
+  --cb-line: #343840;
+  --cb-line-strong: #4b5260;
+  --cb-text: #e9ebf1;
+  --cb-text-dim: #adb2be;
+  --cb-faint: #989fac;
+  --cb-accent: #b7b4ed;
+  --cb-brand: #e7eaf2;
+  --cb-accent-soft: #2d2d40;
+  --cb-accent-line: #8e88bb;
+  --cb-ok: #8acdaf;
+  --cb-warn: #dfbe83;
+  --cb-bad: #f4a5ad;
+  --cb-up: #adb2be;
+  --cb-down: #b7b4ed;
+  --cb-primary: #e7eaf2;
+  --cb-on-primary: #20232b;
+  --cb-floating: #2a2e36;
+  --cb-overlay: rgba(8, 10, 15, 0.5);
+}

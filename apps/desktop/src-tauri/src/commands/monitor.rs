@@ -77,10 +77,8 @@ pub(crate) fn logs_settings(state: State<AppState>) -> crossbow_core::model::Log
 #[tauri::command]
 pub(crate) fn diag_log(state: State<AppState>, line: String) {
     use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(state.data_dir.join("webview.log"))
+    if let Ok(mut f) =
+        crate::platform::fs_perms::open_private_append(&state.data_dir.join("webview.log"))
     {
         let ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

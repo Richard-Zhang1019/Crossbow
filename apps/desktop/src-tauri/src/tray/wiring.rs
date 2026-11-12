@@ -1,6 +1,27 @@
 // 托盘接线与页面通道（#423 Stage B 从 lib.rs 提取）。
+use crate::engine::timing;
 use crate::*;
 use tauri::{AppHandle, Emitter, Manager};
+
+/// 系统代理端口恢复重试间隔（等待端口释放）。
+const SYS_PROXY_RETRY_WAIT: std::time::Duration = std::time::Duration::from_millis(200);
+/// 日志清扫器：尚无应用状态时的空转等待。
+const LOGS_SWEEP_IDLE_WAIT: std::time::Duration = std::time::Duration::from_secs(600);
+/// 日志清扫器：常规清扫周期。
+const LOGS_SWEEP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(6 * 3600);
+/// TUN 真实连通性探测超时（gstatic/github 204 探测）。
+#[cfg(any(target_os = "macos", windows))]
+const TUN_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+/// 托盘批量测速并发上限，也是看门狗计算每批节点数的依据。
+#[cfg(target_os = "macos")]
+const SPEED_TEST_CONCURRENCY: usize = 10;
+/// 托盘批量测速看门狗基础余量。
+#[cfg(target_os = "macos")]
+const SPEED_TEST_WATCHDOG_BASE: Duration = Duration::from_secs(20);
+/// 每批测速的请求预算。
+#[cfg(target_os = "macos")]
+const SPEED_TEST_WATCHDOG_PER_BATCH_SECS: u64 = 6;
+
 pub(crate) fn core_status_callback(handle: AppHandle) -> crate::engine::manager::Callback {
     std::sync::Arc::new(move |status| {
         // The configuration transaction owns rollback while core_op is held.
@@ -90,7 +111,7 @@ pub(crate) fn core_status_callback(handle: AppHandle) -> crate::engine::manager:
                             let _ = handle.emit("sysproxy://status", state.sysproxy.status());
                             break;
                         }
-                        std::thread::sleep(std::time::Duration::from_millis(200));
+                        std::thread::sleep(SYS_PROXY_RETRY_WAIT);
                     }
                 }
                 let mut notice = notifications::Notice::new(
@@ -177,21 +198,20 @@ pub(crate) fn ensure_page_channel_watchdog(handle: &AppHandle) {
     if SPAWNED.swap(true, Ordering::SeqCst) {
         return;
     }
-    const STALE_SECS: u64 = 15;
     let h = handle.clone();
     std::thread::spawn(move || loop {
-        std::thread::sleep(std::time::Duration::from_secs(5));
+        std::thread::sleep(timing::WATCHDOG_TICK);
         let Some(state) = h.try_state::<AppState>() else {
             continue;
         };
         if state.core().status() != CoreStatus::Running {
             continue;
         }
-        if state
-            .ws
-            .any_page_channel_stale(std::time::Duration::from_secs(STALE_SECS))
-        {
-            eprintln!("page watchdog: traffic/connections silent >={STALE_SECS}s, resubscribing");
+        if state.ws.any_page_channel_stale(timing::PAGE_CHANNEL_STALE) {
+            eprintln!(
+                "page watchdog: traffic/connections silent >={}s, resubscribing",
+                timing::PAGE_CHANNEL_STALE.as_secs()
+            );
             resubscribe_page_channels(&h);
         }
     });
@@ -267,7 +287,7 @@ pub(crate) fn spawn_logs_sweeper(app: &AppHandle) {
     let h = app.clone();
     std::thread::spawn(move || loop {
         let Some(state) = h.try_state::<AppState>() else {
-            std::thread::sleep(std::time::Duration::from_secs(600));
+            std::thread::sleep(LOGS_SWEEP_IDLE_WAIT);
             continue;
         };
         let days = state
@@ -279,7 +299,7 @@ pub(crate) fn spawn_logs_sweeper(app: &AppHandle) {
             .retention_days;
         let dir = crate::diagnostics::log_files::logs_dir(&state.data_dir);
         crate::diagnostics::log_files::sweep(&dir, days);
-        std::thread::sleep(std::time::Duration::from_secs(6 * 3600));
+        std::thread::sleep(LOGS_SWEEP_INTERVAL);
     });
 }
 
@@ -289,7 +309,7 @@ pub(crate) fn spawn_logs_sweeper(app: &AppHandle) {
 pub(crate) fn probe_tun_network() -> Result<(), String> {
     let agent = ureq::AgentBuilder::new()
         .try_proxy_from_env(false)
-        .timeout(std::time::Duration::from_secs(5))
+        .timeout(TUN_PROBE_TIMEOUT)
         .build();
     let mut last_error = String::new();
     for url in ["https://www.gstatic.com/generate_204", "https://github.com"] {
@@ -344,10 +364,6 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
         return;
     }
 
-    const INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
-    const MAX_CONSECUTIVE_FAILURES: u8 = 3;
-    const MAX_WEDGE_RESTARTS: u8 = 2;
-    const WEDGE_COOLDOWN_SECS: u64 = 90;
     let handle = app.clone();
     std::thread::spawn(move || {
         let _background = crate::lifecycle::authorization::BackgroundGuard::enter();
@@ -393,7 +409,7 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                         && matches!(core_status, CoreStatus::Crashed(_) | CoreStatus::Stopped);
                     if sysproxy_mode {
                         sysproxy_dead_ticks = sysproxy_dead_ticks.saturating_add(1);
-                        if sysproxy_dead_ticks >= MAX_CONSECUTIVE_FAILURES {
+                        if sysproxy_dead_ticks >= timing::FAILURE_BUDGET {
                             sysproxy_dead_ticks = 0;
                             let _operation =
                                 state.core_op.lock().unwrap_or_else(|e| e.into_inner());
@@ -483,7 +499,7 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                             drift_strikes = 0;
                             reestablish_count = reestablish_count.saturating_add(1);
                             reestablish_cooldown_until =
-                                std::time::Instant::now() + std::time::Duration::from_secs(120);
+                                std::time::Instant::now() + timing::REESTABLISH_COOLDOWN;
                             match reestablish_tun_if_enabled(&state) {
                                 Ok(()) => {
                                     let still_on = state
@@ -590,9 +606,10 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                         Err(error) => {
                             failures = failures.saturating_add(1);
                             eprintln!(
-                                "tun health check failed ({failures}/{MAX_CONSECUTIVE_FAILURES}): {error}"
+                                "tun health check failed ({failures}/{}): {error}",
+                                timing::FAILURE_BUDGET
                             );
-                            if failures >= MAX_CONSECUTIVE_FAILURES {
+                            if failures >= timing::FAILURE_BUDGET {
                                 let still_enabled = state
                                     .store
                                     .lock()
@@ -600,7 +617,7 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                                     .data()
                                     .engine
                                     .tun_enable;
-                                if still_enabled && wedge_restarts < MAX_WEDGE_RESTARTS {
+                                if still_enabled && wedge_restarts < timing::WEDGE_RESTART_BUDGET {
                                     // 重启内核优先（#350）：SIGTERM 让 mihomo 走退出钩子
                                     // 恢复路由，崩溃自动重启链路拉起新内核重建 TUN——
                                     // 这才真正修复 gvisor 栈僵死。直接关 TUN 会让国外
@@ -608,8 +625,8 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                                     wedge_restarts = wedge_restarts.saturating_add(1);
                                     failures = 0;
                                     reported_recovery_failure = false;
-                                    wedge_cooldown_until = std::time::Instant::now()
-                                        + std::time::Duration::from_secs(WEDGE_COOLDOWN_SECS);
+                                    wedge_cooldown_until =
+                                        std::time::Instant::now() + timing::WEDGE_COOLDOWN;
                                     let mut notice = notifications::Notice::new(
                                         notifications::Kind::Warning,
                                         "tun.wedgeRestart",
@@ -638,7 +655,8 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                                     #[cfg(not(unix))]
                                     let restarted = false;
                                     eprintln!(
-                                        "tun health: restarting core to recover wedged TUN (attempt {wedge_restarts}/{MAX_WEDGE_RESTARTS}, signaled={restarted})"
+                                        "tun health: restarting core to recover wedged TUN (attempt {wedge_restarts}/{}, signaled={restarted})",
+                                        timing::WEDGE_RESTART_BUDGET
                                     );
                                 } else if still_enabled {
                                     match disable_tun_if_enabled(&state) {
@@ -695,7 +713,7 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                     }
                 }
             }
-            std::thread::sleep(INTERVAL.saturating_sub(cycle_started.elapsed()));
+            std::thread::sleep(timing::WATCHDOG_TICK.saturating_sub(cycle_started.elapsed()));
         }
     });
 }
@@ -711,10 +729,9 @@ pub(crate) fn ensure_tray_speed_watchdog(handle: &AppHandle) {
     if SPAWNED.swap(true, Ordering::SeqCst) {
         return;
     }
-    const STALE_SECS: u64 = 12;
     let h = handle.clone();
     std::thread::spawn(move || loop {
-        std::thread::sleep(std::time::Duration::from_secs(5));
+        std::thread::sleep(timing::WATCHDOG_TICK);
         let Some(state) = h.try_state::<AppState>() else {
             continue;
         };
@@ -722,7 +739,7 @@ pub(crate) fn ensure_tray_speed_watchdog(handle: &AppHandle) {
             continue;
         }
         match state.ws.last_message_ago("traffic-tray") {
-            Some(silent) if silent.as_secs() >= STALE_SECS => {
+            Some(silent) if silent >= timing::TRAY_SPEED_CHANNEL_STALE => {
                 eprintln!(
                     "tray watchdog: traffic-tray silent {}s, resubscribing",
                     silent.as_secs()
@@ -913,11 +930,13 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
             }
         }
 
-        // 看门狗：预期总时长 = ceil(n/10) * 6s + 余量；超时强制恢复可点态
+        // 看门狗按并发批次估算等待上限，超时恢复可点态。
         let watchdog_handle = h.clone();
-        let watchdog_secs = 20 + (total as u64).div_ceil(10) * 6;
+        let batches = total.div_ceil(SPEED_TEST_CONCURRENCY) as u64;
+        let watchdog_timeout = SPEED_TEST_WATCHDOG_BASE
+            + Duration::from_secs(batches * SPEED_TEST_WATCHDOG_PER_BATCH_SECS);
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(watchdog_secs));
+            std::thread::sleep(watchdog_timeout);
             let Some(state) = watchdog_handle.try_state::<AppState>() else {
                 return;
             };
@@ -939,7 +958,7 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
             targets,
         )));
         let (tx, rx) = std::sync::mpsc::channel::<(String, Result<u64, String>)>();
-        for _ in 0..total.min(10) {
+        for _ in 0..total.min(SPEED_TEST_CONCURRENCY) {
             let queue = queue.clone();
             let tx = tx.clone();
             let h_worker = h.clone();

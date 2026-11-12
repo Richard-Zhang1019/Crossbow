@@ -1,0 +1,53 @@
+/* #428 基础层：排版/滚动条/焦点/容器（原序提取）。 */
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: var(--cb-bg);
+  color: var(--cb-text);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue",
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* Interactive affordances apply to bare buttons as well as styled controls. */
+button:not(:disabled):not([aria-disabled="true"]),
+a[href],
+select:not(:disabled),
+input[type="checkbox"]:not(:disabled),
+input[type="radio"]:not(:disabled),
+label:has(input[type="checkbox"]:not(:disabled)) {
+  cursor: pointer;
+}
+button:disabled,
+select:disabled,
+input:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+button:focus-visible,
+a[href]:focus-visible,
+select:focus-visible,
+input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--cb-accent);
+  outline-offset: 2px;
+}
+button:not(:disabled):hover {
+  filter: none;
+}
+.cb-toggle:not(:disabled):hover {
+  outline: 1px solid var(--cb-accent-line);
+  outline-offset: 2px;
+}
+.cb-input:hover:not(:disabled) {
+  border-color: var(--cb-line-strong);
+}
+
+/* 等宽区域（日志/连接/数据）恢复可选中 */
+.cb-selectable {
+  user-select: text;
+}
