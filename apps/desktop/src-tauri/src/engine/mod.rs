@@ -6,3 +6,4 @@ pub mod download;
 pub(crate) mod flow;
 pub mod manager;
 pub mod restart;
+pub mod timing;

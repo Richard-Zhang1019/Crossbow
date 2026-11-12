@@ -13,6 +13,11 @@ use uuid::Uuid;
 
 use crate::{AppState, CoreStatus};
 
+/// 匿名活动上报单次请求超时。
+const REPORT_SEND_TIMEOUT: Duration = Duration::from_secs(5);
+/// 上报循环空调节拍：尝试之间退避等待。
+const REPORT_LOOP_TICK: Duration = Duration::from_secs(10);
+
 const ENDPOINT: &str = "https://crossbow-metrics.aaaayu1019.workers.dev/api/v1/active";
 const RETRY_DELAYS: [u64; 5] = [60, 120, 300, 900, 1800];
 
@@ -177,7 +182,7 @@ fn mixed_port_when_proxy_ready(state: &AppState) -> Option<u16> {
 fn send(attempt: &Attempt, version: &str) -> bool {
     let mut builder = ureq::AgentBuilder::new()
         .try_proxy_from_env(false)
-        .timeout(Duration::from_secs(5))
+        .timeout(REPORT_SEND_TIMEOUT)
         .redirects(0);
     if let Route::Proxy(port) = attempt.route {
         let Ok(proxy) = ureq::Proxy::new(format!("http://127.0.0.1:{port}")) else {
@@ -215,7 +220,7 @@ pub(crate) fn spawn(app: &AppHandle) {
                     state.activity_reporting.record_success(&attempt);
                 }
             }
-            std::thread::sleep(Duration::from_secs(10));
+            std::thread::sleep(REPORT_LOOP_TICK);
         }
     });
 }
