@@ -74,7 +74,7 @@ mihomo v1.19.32 使用 sing-tun v0.4.27。该版本即使 `auto-route: false`，
 
 ## CI 自动 VM 验收（#427）
 
-GitHub Actions 的 ubuntu-24.04 runner 是一次性真实 VM：完整 systemd、polkit、可用的 `/dev/net/tun` 与真实宿主路由。`.github/workflows/linux-e2e.yml`（`workflow_dispatch` 手动触发；改动 `scripts/linux/**`、`apps/service/**` 或该工作流的 PR 自动触发）运行 `scripts/linux/e2e_vm.py`，复用 [smoke 脚本](../scripts/linux/smoke_network.py)的协议客户端与资源断言，覆盖以下矩阵：
+GitHub Actions 的 ubuntu-24.04 runner 是一次性真实 VM：完整 systemd、polkit、可用的 `/dev/net/tun` 与真实宿主路由。`.github/workflows/linux-e2e.yml`（`workflow_dispatch` 手动触发；改动 Linux 验收脚本、服务、构建依赖或该工作流的 PR 自动触发）运行 `scripts/linux/e2e_vm.py`，复用 [smoke 脚本](../scripts/linux/smoke_network.py)的协议客户端与资源断言，覆盖以下矩阵：
 
 | 验收项 | 方式 | 状态 |
 | --- | --- | --- |
@@ -82,7 +82,7 @@ GitHub Actions 的 ubuntu-24.04 runner 是一次性真实 VM：完整 systemd、
 | pkexec 系统授权与临时单元身份 | 真 `pkexec --authorize` + `systemctl show` 属性比对（MainPID/User/Transient/ExecStart） | 已验（CI VM） |
 | TUN 资源注入（设备/表 20220/优先级 12020/protocol 242，双栈） | `ip -j` JSON 断言 | 已验（CI VM） |
 | 核心权限收敛（仅 CAP_NET_ADMIN） | `/proc/<pid>/status` CapEff | 已验（CI VM） |
-| 公网数据面 DIRECT 分流 | 真实 HTTP/HTTPS 请求 + 控制器 connections/字节计数确认经 TUN | 已验（CI VM） |
+| 公网数据面 DIRECT 分流 | 真实 HTTP/HTTPS 请求 + 逐条匹配内核日志的连接地址、端口和 DIRECT 出口 | 已验（CI VM） |
 | 私网保留原路由 | `ip route get` 对照 | 已验（CI VM） |
 | 日志落盘 | 用户文件 0600 且非空 | 已验（CI VM） |
 | 正常停止与配置重启复用 | socket 往返 + 资源恢复断言 | 已验（CI VM） |
@@ -92,7 +92,7 @@ GitHub Actions 的 ubuntu-24.04 runner 是一次性真实 VM：完整 systemd、
 | IPv6 公网数据面 | CI runner 无公网 IPv6 | 已知限制（双栈规则/路由已验，数据面由命名空间测试覆盖） |
 | Wayland/niri 图形授权 | 桌面环境差异 | 不适用（此前一次性 KVM 已覆盖 KDE/Xorg 图形授权） |
 
-CI 环境以预置 polkit 规则替代桌面密码对话框，并仅在 VM 的 `rp_filter` 为严格值时将其预置为 2。这两项都是测试环境条件：产品代码不改宿主 sysctl，与「开启前会发生什么」的声明一致。
+脚本要求显式指定 `--disposable-vm`，并在检测到既有 Crossbow 服务、安装文件或 TUN 资源时停止。CI 通过预置 polkit 规则完成授权。在 `rp_filter` 为严格值时，脚本临时将其设为 2。退出时移除测试规则并恢复原值。
 
 ## 验证与未完成的实机验收
 

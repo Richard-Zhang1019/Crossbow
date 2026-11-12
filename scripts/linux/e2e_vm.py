@@ -12,15 +12,16 @@ the namespace test instead.
 
 Run unprivileged with passwordless sudo (as root nothing would receive
 PKEXEC_UID and the authorization under test would be skipped):
-    python3 scripts/linux/e2e_vm.py \
+    python3 scripts/linux/e2e_vm.py --disposable-vm \
         --service target/release/crossbow-service \
         --core apps/desktop/src-tauri/binaries/mihomo-x86_64-unknown-linux-gnu \
         --output target/linux-vm-e2e
 """
 import argparse
-import http.client
+from contextlib import ExitStack
 import json
 import os
+import re
 from pathlib import Path
 import signal
 import subprocess
@@ -34,6 +35,8 @@ from smoke_network import connect, free_port, network_state, request, run, wait 
 SERVICE = '/usr/lib/crossbow/crossbow-service'
 CORE = '/usr/lib/crossbow/mihomo'
 POLICY = '/usr/share/polkit-1/actions/org.crossbow.tun.policy'
+POLKIT_RULE = '/etc/polkit-1/rules.d/49-crossbow-vm-e2e.rules'
+INSTALL_DIR = Path(SERVICE).parent
 RUNTIME = Path('/run/crossbow-tun')
 JOURNAL = RUNTIME / 'network.json'
 SOCKET = RUNTIME / 'control.sock'
@@ -55,7 +58,7 @@ def check(message):
 
 
 def sudo(*args):
-    return run('sudo', *args)
+    return run('sudo', '-n', *args)
 
 
 def try_run(*args):
@@ -63,7 +66,7 @@ def try_run(*args):
 
 
 def sudo_tee(path, text):
-    subprocess.run(['sudo', 'tee', str(path)], input=text, text=True,
+    subprocess.run(['sudo', '-n', 'tee', str(path)], input=text, text=True,
                    check=True, capture_output=True)
 
 
@@ -100,33 +103,58 @@ def owned_resources_absent():
     return True
 
 
-def relax_rp_filter():
+def service_load_state():
+    # systemctl show can return nonzero for a missing unit but still prints its LoadState.
+    return try_run('systemctl', 'show', UNIT, '--property=LoadState', '--value').stdout.strip()
+
+
+def require_clean_host():
+    paths = (INSTALL_DIR, POLICY, POLKIT_RULE, RUNTIME)
+    existing = [str(path) for path in paths if os.path.lexists(path)]
+    if existing or service_load_state() != 'not-found' or not owned_resources_absent():
+        raise RuntimeError(f'Crossbow files, unit or network resources already present: {existing}')
+
+
+def relax_rp_filter(cleanup):
     interface = json.loads(run('ip', '-j', '-4', 'route', 'show', 'default'))[0]['dev']
-
-    def effective():
-        return max(int(Path(f'/proc/sys/net/ipv4/conf/{path}/rp_filter').read_text())
-                   for path in ('all', 'default', interface))
-
-    value = effective()
-    if value == 1:
-        for scope in ('all', 'default', interface):
-            sudo('sysctl', '-w', f'net.ipv4.conf.{scope}.rp_filter=2')
-        assert effective() == 2
-        check('strict rp_filter=1 relaxed to 2 as a documented disposable-VM precondition')
-    else:
-        check(f'rp_filter effective value {value} already permits takeover')
+    scopes = dict.fromkeys(('all', 'default', interface))
+    values = {scope: int(Path(f'/proc/sys/net/ipv4/conf/{scope}/rp_filter').read_text())
+              for scope in scopes}
+    if max(values.values()) != 1:
+        return
+    for scope, old in values.items():
+        key = f'net.ipv4.conf.{scope}.rp_filter'
+        cleanup.callback(sudo, 'sysctl', '-w', f'{key}={old}')
+        sudo('sysctl', '-w', f'{key}=2')
+    check('strict rp_filter=1 relaxed to 2 for this VM test')
 
 
 def seed_polkit_rule(user):
     # The disposable VM has no desktop password dialog; the rule stands in for it.
-    sudo_tee(Path('/etc/polkit-1/rules.d/49-crossbow-vm-e2e.rules'), f'''// #427 CI pre-seed: replaces the desktop password dialog on this VM.
+    sudo_tee(POLKIT_RULE, f'''// #427 CI pre-seed: replaces the desktop password dialog on this VM.
 polkit.addRule(function(action, subject) {{
-    if (action.id == 'org.crossbow.tun' && subject.user == '{user}') {{
+    if (action.id == 'org.crossbow.tun' && subject.user == {json.dumps(user)}) {{
         return polkit.Result.YES;
     }}
 }});
 ''')
     check('polkit rule pre-seeded for the CI user in place of the desktop password dialog')
+
+
+def uninstall():
+    if service_load_state() != 'not-found':
+        sudo('systemctl', 'stop', UNIT)
+    # Keep the binaries in place if the service still needs them for recovery.
+    wait(owned_resources_absent, timeout=15)
+    assert not JOURNAL.exists(), 'recovery journal still present'
+    sudo('rm', '-f', SERVICE, CORE, POLICY)
+    if INSTALL_DIR.is_dir():
+        sudo('rmdir', str(INSTALL_DIR))
+
+
+def save_journal(output):
+    journal = try_run('sudo', '-n', 'journalctl', '-u', UNIT, '--no-pager', '-o', 'short-iso')
+    (output / 'service-journal.log').write_text(journal.stdout or journal.stderr or '')
 
 
 def install(service, core):
@@ -156,30 +184,30 @@ def authorize_and_verify(uid):
     check('pkexec authorized and started the transient crossbow-tun unit as the calling user')
 
 
-def controller_api(controller, path):
-    connection = http.client.HTTPConnection('127.0.0.1', controller, timeout=5)
-    try:
-        connection.request('GET', path, None, {'Authorization': f'Bearer {SECRET}'})
-        response = connection.getresponse()
-        body = response.read()
-        assert response.status == 200, (response.status, body)
-        return json.loads(body) if body else None
-    finally:
-        connection.close()
-
-
 def fetch(url):
-    """Public fetch through the TUN; retry rides out first-use DoH setup."""
+    """Capture curl's actual socket endpoints so each probe can be verified in the core log."""
     failure = None
     for _ in range(3):
-        result = try_run('curl', '-sS', '--max-time', '25', '-o', '/dev/null',
-                         '-w', '%{http_code}', url)
-        code = result.stdout.strip()
-        if code and code != '000':
-            return code
+        result = try_run('curl', '--disable', '--noproxy', '*', '--ipv4', '-sS',
+                         '--max-time', '25', '-o', '/dev/null', '-w',
+                         '%{http_code} %{local_ip} %{local_port} %{remote_ip} %{remote_port}', url)
+        fields = result.stdout.split()
+        if result.returncode == 0 and len(fields) == 5 and fields[0] != '000':
+            code, source, source_port, destination, destination_port = fields
+            return int(code), f'{source}:{source_port}', destination, destination_port
         failure = result.stderr.strip()
         time.sleep(4)
     raise AssertionError(f'curl never reached {url}: {failure}')
+
+
+def saw_direct(log, source, destinations, port):
+    # Mihomo v1.19.32 may append a process name and UID to the source address.
+    target = '|'.join(map(re.escape, destinations))
+    return re.search(
+        rf'\[TCP\] {re.escape(source)}(?:\([^\n]*?\))? --> (?:{target}):{port} '
+        r'(?:match [^\n]+ )?using DIRECT(?=["\s]|$)',
+        log,
+    ) is not None
 
 
 def verify_session_resources(stream, result, uid):
@@ -209,27 +237,27 @@ def verify_session_resources(stream, result, uid):
           'and the core runs with CAP_NET_ADMIN only')
 
 
-def verify_data_plane(controller):
-    before = controller_api(controller, '/connections') or {}
-    assert fetch('http://1.1.1.1') != '000'
-    assert fetch('https://api.github.com/zen') == '200'
-    after = controller_api(controller, '/connections') or {}
-    connections = after.get('connections') or []
-    assert connections, 'mihomo saw no connections: traffic did not traverse TUN'
-    assert any('DIRECT' in chain for connection in connections
-               for chain in connection.get('chains', [])), json.dumps(connections)[:2000]
-    assert after.get('downloadTotal', 0) - before.get('downloadTotal', 0) > 1024, 'byte counters did not move'
-    check('public IPv4 HTTP and HTTPS traversed the real TUN device through mihomo DIRECT '
-          '(connections API and byte counters confirm)')
-    private = run('ip', 'route', 'get', '192.168.1.1')
-    assert DEVICE not in private and TABLE not in private, private
+def verify_data_plane(core_log, original_private_route):
+    for url, host in [('http://1.1.1.1', '1.1.1.1'), ('https://api.github.com/zen', 'api.github.com')]:
+        code, source, destination, port = fetch(url)
+        assert 200 <= code < 400, (url, code)
+        wait(lambda: saw_direct(core_log.read_text(), source, (host, destination), port), timeout=5)
+    check('public IPv4 HTTP and HTTPS probes each matched a DIRECT connection in the TUN core log')
+    assert private_route() == original_private_route, 'private destination route changed'
     public = run('ip', 'route', 'get', '8.8.8.8')
     assert DEVICE in public, public
     check('private destinations keep the original route while public defaults route into table 20220')
 
 
+def private_route():
+    route = json.loads(run('ip', '-j', 'route', 'get', '192.168.1.1'))[0]
+    return tuple(route.get(field) for field in ('dev', 'gateway', 'table', 'prefsrc'))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--disposable-vm', action='store_true', required=True,
+                        help='confirm this is a disposable VM without an existing Crossbow installation')
     parser.add_argument('--service', type=Path, required=True)
     parser.add_argument('--core', type=Path, required=True)
     parser.add_argument('--output', type=Path, default=Path('target/linux-vm-e2e'))
@@ -238,13 +266,16 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     (output / 'report.json').write_text(json.dumps({'passed': False, 'mode': 'vm e2e in progress'}) + '\n')
 
-    assert os.getuid() != 0, 'run unprivileged: pkexec must supply PKEXEC_UID'
+    if os.getuid() == 0:
+        parser.error('run unprivileged: pkexec must supply PKEXEC_UID')
     service, core = args.service.resolve(), args.core.resolve()
     assert service.is_file() and os.access(service, os.X_OK), service
     assert core.is_file() and os.access(core, os.X_OK), core
 
-    uid = int(run('id', '-u').strip())
+    require_clean_host()
+    uid = os.getuid()
     baseline = network_state()
+    original_private_route = private_route()
     config = output / 'config.yaml'
     mixed, controller = free_port(), free_port()
     while controller == mixed:
@@ -263,14 +294,15 @@ dns:
 ''')
     core_log = output / 'core.log'
 
-    def start_tun():
+    def start_tun(log=core_log):
         stream = connect()
-        result = request(stream, {'cmd': 'start', 'config': str(config), 'log': str(core_log)})
+        result = request(stream, {'cmd': 'start', 'config': str(config), 'log': str(log)})
         assert result.get('ok') and result.get('active'), (
-            result, core_log.read_text()[-4000:] if core_log.exists() else 'no core log')
+            result, log.read_text()[-4000:] if log.exists() else 'no core log')
         return stream, result
 
-    try:
+    with ExitStack() as cleanup:
+        cleanup.callback(save_journal, output)
         if not Path('/dev/net/tun').exists():
             sudo('modprobe', 'tun')
         assert Path('/dev/net/tun').exists(), 'kernel TUN support missing'
@@ -279,15 +311,17 @@ dns:
         if try_run('systemctl', 'is-active', '--quiet', 'polkit').returncode != 0:
             sudo('systemctl', 'start', 'polkit')
         check('VM preconditions: /dev/net/tun, systemd, pkexec and polkit are available')
-        relax_rp_filter()
+        relax_rp_filter(cleanup)
+        cleanup.callback(sudo, 'rm', '-f', POLKIT_RULE)
         seed_polkit_rule(run('id', '-un').strip())
+        cleanup.callback(uninstall)
         install(service, core)
         authorize_and_verify(uid)
 
         stream, started = start_tun()
         try:
             verify_session_resources(stream, started, uid)
-            verify_data_plane(controller)
+            verify_data_plane(core_log, original_private_route)
         finally:
             stopped = request(stream, {'cmd': 'stop'})
         assert stopped.get('ok') and stopped.get('stopped'), stopped
@@ -301,14 +335,16 @@ dns:
         check('stop restores all owned resources; the log persists as a 0600 user file '
               'and the authorized unit stays idle for reuse')
 
-        stream, _ = start_tun()
+        service_pid = int(unit['MainPID'])
+        stream, _ = start_tun(output / 'restart-core.log')
+        assert int(systemctl(['MainPID'])['MainPID']) == service_pid, 'service PID changed on restart'
         assert request(stream, {'cmd': 'stop'}).get('stopped')
         stream.close()
         wait(lambda: owned_resources_absent(), timeout=15)
         check('configuration restart reuses the already-authorized idle service unit')
 
-        stream, started = start_tun()
-        service_pid = int(systemctl(['MainPID'])['MainPID'])
+        stream, _ = start_tun(output / 'crash-core.log')
+        assert int(systemctl(['MainPID'])['MainPID']) == service_pid
         os.kill(service_pid, signal.SIGKILL)
         stream.close()
         def recovered():
@@ -318,19 +354,14 @@ dns:
         assert not JOURNAL.exists(), 'ExecStopPost did not consume the recovery journal'
         check('SIGKILLed service is recovered by the real systemd ExecStopPost cleanup on the host')
 
-        wait(lambda: try_run('systemctl', 'is-active', '--quiet', UNIT).returncode != 0, timeout=30)
-        for path in (SERVICE, CORE, POLICY):
-            sudo('rm', '-f', path)
-            assert not Path(path).exists(), path
-        assert try_run('pkexec', '--disable-internal-agent', SERVICE, '--authorize').returncode != 0, \
-            'pkexec authorization must fail without the installed service'
-        check('uninstall removes the binaries and policy; pkexec authorization no longer succeeds')
+    for path in (SERVICE, CORE, POLICY, POLKIT_RULE):
+        assert not os.path.lexists(path), path
+    assert try_run('pkexec', '--disable-internal-agent', SERVICE, '--authorize').returncode != 0, (
+        'pkexec authorization must fail without the installed service')
+    check('uninstall removes the test binaries and polkit files; pkexec no longer succeeds')
 
-        assert network_state() == baseline, 'host routes/rules/DNS changed by the e2e'
-        check('host routes/rules/DNS are identical before and after the run')
-    finally:
-        journal = try_run('sudo', 'journalctl', '-u', UNIT, '--no-pager', '-o', 'short-iso')
-        (output / 'service-journal.log').write_text(journal.stdout or journal.stderr or '')
+    assert network_state() == baseline, 'host routes/rules/DNS changed by the e2e'
+    check('host routes/rules/DNS are identical before and after the run')
 
     result = {'passed': True, 'checks': CHECKS, 'systemd_authorization_tested': True,
               'mode': 'real systemd + polkit + pkexec VM acceptance'}

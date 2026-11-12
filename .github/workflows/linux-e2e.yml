@@ -12,6 +12,9 @@ on:
       - 'scripts/linux/**'
       - '.github/workflows/linux-e2e.yml'
       - 'apps/service/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'scripts/ci/download_sidecar.py'
 
 permissions:
   contents: read
@@ -47,7 +50,7 @@ jobs:
           exit 1
       - name: Run VM e2e
         run: |
-          python3 scripts/linux/e2e_vm.py \
+          python3 scripts/linux/e2e_vm.py --disposable-vm \
             --service target/release/crossbow-service \
             --core apps/desktop/src-tauri/binaries/mihomo-x86_64-unknown-linux-gnu \
             --output target/linux-vm-e2e
