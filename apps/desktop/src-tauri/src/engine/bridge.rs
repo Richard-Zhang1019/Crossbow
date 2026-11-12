@@ -29,6 +29,8 @@ const CONN_MIN_INTERVAL: Duration = Duration::from_millis(1000);
 const CONN_MAX_ROWS: usize = 1000;
 /// 日志批量 flush：间隔或条数任一达到即发。
 const LOG_FLUSH_INTERVAL: Duration = Duration::from_millis(300);
+/// WS 半开重连阈值：读超时≠断线，静默超过该窗口才判定半开并重连。
+const WS_STALE_RECONNECT: Duration = Duration::from_secs(5);
 const LOG_FLUSH_COUNT: usize = 20;
 
 #[derive(Default)]
@@ -179,7 +181,7 @@ impl WsHub {
                 read_loop(
                     &url,
                     flag,
-                    Some(Duration::from_secs(5)),
+                    Some(WS_STALE_RECONNECT),
                     Some(last_seen),
                     None,
                     |msg| {
@@ -212,7 +214,7 @@ impl WsHub {
                 read_loop(
                     &url,
                     flag,
-                    Some(Duration::from_secs(5)),
+                    Some(WS_STALE_RECONNECT),
                     Some(last_seen),
                     None,
                     |msg| {
@@ -246,7 +248,7 @@ impl WsHub {
                 read_loop(
                     &url,
                     flag.clone(),
-                    Some(Duration::from_secs(5)),
+                    Some(WS_STALE_RECONNECT),
                     Some(last_seen),
                     None,
                     |msg| {

@@ -17,6 +17,8 @@ pub mod imp {
         CreateFileW, ReadFile, WriteFile, OPEN_EXISTING, SECURITY_IMPERSONATION,
         SECURITY_SQOS_PRESENT,
     };
+    /// 服务管道单次响应等待上限。
+    const RESPONSE_DEADLINE: Duration = Duration::from_secs(15);
     use windows_sys::Win32::System::Pipes::{
         GetNamedPipeServerProcessId, SetNamedPipeHandleState, WaitNamedPipeW, PIPE_NOWAIT,
         PIPE_READMODE_BYTE,
@@ -134,7 +136,7 @@ pub mod imp {
         {
             return Err("pipe write failed".into());
         }
-        let deadline = Instant::now() + Duration::from_secs(15);
+        let deadline = Instant::now() + RESPONSE_DEADLINE;
         let mut line = Vec::new();
         loop {
             if Instant::now() >= deadline {
