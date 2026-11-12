@@ -94,6 +94,7 @@ During desktop development, point at a local core with
 `CROSSBOW_MIHOMO_BIN=/path/to/mihomo pnpm tauri dev`. Design docs, scope and plans:
 [DESIGN](docs/DESIGN.md), [MVP](docs/MVP.md) and [ROADMAP](docs/ROADMAP.md); macOS release
 steps: [RELEASE](docs/RELEASE.md).
+Desktop core integration: [mihomo control protocol](docs/MIHOMO-CONTROL.md).
 
 ## License
 
