@@ -4,6 +4,11 @@ use std::mem::size_of;
 use std::ptr::{null, null_mut};
 use windows_sys::Win32::Foundation::GlobalFree;
 use windows_sys::Win32::Networking::WinInet::*;
+// #458：sysproxy.rs 的归属核对需要区分 PAC/WPAD 自动配置位；glob 导入
+// 不会向上层可见，显式再导出给父模块。
+pub(super) use windows_sys::Win32::Networking::WinInet::{
+    PROXY_TYPE_AUTO_DETECT, PROXY_TYPE_AUTO_PROXY_URL,
+};
 
 pub struct WinInet;
 

@@ -779,6 +779,68 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         Ok(())
     }
 
+    /// #458：单服务当前设置是否仍由 Crossbow 持有——三类端点都指向
+    /// 127.0.0.1:{port}，且 Windows 侧无 PAC/自动探测被第三方写入。
+    fn service_owned_by_crossbow(current: &ServiceSnapshot, port: u16) -> bool {
+        fn endpoint_owned(endpoint: &Option<ProxyEndpoint>, port: u16) -> bool {
+            endpoint
+                .as_ref()
+                .is_some_and(|ep| ep.host == "127.0.0.1" && ep.port == port)
+        }
+        if !endpoint_owned(&current.web, port)
+            || !endpoint_owned(&current.secure, port)
+            || !endpoint_owned(&current.socks, port)
+        {
+            return false;
+        }
+        #[cfg(windows)]
+        if let Some(config) = &current.windows {
+            if !config.pac_url.is_empty()
+                || config.flags & windows::PROXY_TYPE_AUTO_PROXY_URL != 0
+                || config.flags & windows::PROXY_TYPE_AUTO_DETECT != 0
+            {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// #458：TUN 挂起语义下的归属核对——suspend 时 Crossbow 把服务关到
+    /// 全空；当前仍有代理端点（或 Windows server/PAC 非空）= 其他客户端
+    /// 在 TUN 期间接管，跳过还原保留其配置。
+    fn service_untouched_since_suspend(current: &ServiceSnapshot) -> bool {
+        current.web.is_none()
+            && current.secure.is_none()
+            && current.socks.is_none()
+            && current
+                .windows
+                .as_ref()
+                .is_none_or(|config| config.server.is_empty() && config.pac_url.is_empty())
+    }
+
+    /// #458：恢复前按服务归属核对。仍归 Crossbow 的服务按快照还原；
+    /// 已被其他客户端接管的跳过（其当前配置即最新事实，旧快照已过期）。
+    /// 返回 (还原的服务数, 跳过的服务名)。restore 失败即传播错误，
+    /// 调用方保留 journal 供重试。
+    fn restore_owned_services(
+        &self,
+        snapshot: &BTreeMap<String, ServiceSnapshot>,
+        port: u16,
+    ) -> Result<(usize, Vec<String>), String> {
+        let mut restored = 0usize;
+        let mut skipped = Vec::new();
+        for (service, snapshot_before) in snapshot {
+            let current = self.backend.service_snapshot(service)?;
+            if !Self::service_owned_by_crossbow(&current, port) {
+                skipped.push(service.clone());
+                continue;
+            }
+            self.backend.restore_service(service, snapshot_before)?;
+            restored += 1;
+        }
+        Ok((restored, skipped))
+    }
+
     /// 还原代理设置：优先按 journal 里的原设置快照逐服务恢复；无快照（老格式
     /// 或快照失败）退回全量关闭。幂等，用于退出兜底。
     pub fn disable(&self) -> Result<(), String> {
@@ -800,11 +862,53 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             // while TUN is active must not clear another client's settings.
             return Ok(());
         }
-        let result = if let Some(snapshot) = journal.map(|j| j.snapshot).filter(|s| !s.is_empty()) {
-            self.backend.restore_services(&snapshot)
-        } else {
-            self.backend
-                .disable_services(&self.backend.list_services()?)
+        // #458：恢复前按服务归属核对——其他客户端接管的服务跳过还原，
+        // 其当前配置就是最新事实；快照在此之后已过期。无快照可还原时
+        // （v1 旧格式 / 快照缺失 / 无 journal）：能确定归属端口则只关闭
+        // 归属服务；无法确定时退回全量关闭（v1 既有兜底，避免残留代理
+        // 指向已退出的实例悬空）。
+        let result = match journal {
+            Some(journal) if !journal.snapshot.is_empty() => {
+                let owned_port = if journal.port != 0 {
+                    journal.port
+                } else {
+                    self.state.lock().unwrap().unwrap_or(0)
+                };
+                self.restore_owned_services(&journal.snapshot, owned_port)?;
+                Ok(())
+            }
+            other => {
+                let owned_port = other
+                    .and_then(|j| (j.port != 0).then_some(j.port))
+                    .or_else(|| *self.state.lock().unwrap());
+                let services = self.backend.list_services()?;
+                let mut errors = Vec::new();
+                match owned_port {
+                    Some(port) => {
+                        for service in &services {
+                            let Ok(current) = self.backend.service_snapshot(service) else {
+                                continue;
+                            };
+                            if !Self::service_owned_by_crossbow(&current, port) {
+                                continue;
+                            }
+                            if let Err(error) = self.backend.disable_service(service) {
+                                errors.push(format!("{service}: {error}"));
+                            }
+                        }
+                    }
+                    None => {
+                        if let Err(error) = self.backend.disable_services(&services) {
+                            errors.push(error);
+                        }
+                    }
+                }
+                if errors.is_empty() {
+                    Ok(())
+                } else {
+                    Err(errors.join("; "))
+                }
+            }
         };
         // 失败时保留恢复记录和内存状态，后续可重试。
         result.map_err(|error| format!("还原系统代理失败：{error}"))?;
@@ -938,7 +1042,32 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
 
     /// 已持有代理操作锁的内部实现。
     fn restore_after_failed_tun_locked(&self, suspended: SuspendedSysProxy) -> Result<(), String> {
-        self.backend.restore_services(&suspended.snapshot)?;
+        // #458：逐服务归属核对——被其他客户端接管的服务跳过还原（其当前
+        // 配置即最新事实，快照已过期）；挂起未清干净的 Crossbow 残留端点
+        // 仍按快照还原，避免退出后指向失效端口。读取当前设置失败视为整体
+        // 失败：保留双 journal 供重试，绝不静默丢弃用户原设置。
+        let mut errors = Vec::new();
+        for (service, snapshot_before) in &suspended.snapshot {
+            let current = match self.backend.service_snapshot(service) {
+                Ok(current) => current,
+                Err(error) => {
+                    errors.push(format!("{service}: {error}"));
+                    continue;
+                }
+            };
+            let crossbow_residue = suspended
+                .enabled_port
+                .is_some_and(|port| Self::service_owned_by_crossbow(&current, port));
+            if !Self::service_untouched_since_suspend(&current) && !crossbow_residue {
+                continue;
+            }
+            if let Err(error) = self.backend.restore_service(service, snapshot_before) {
+                errors.push(format!("{service}: {error}"));
+            }
+        }
+        if !errors.is_empty() {
+            return Err(errors.join("; "));
+        }
         match suspended.journal {
             Some(journal) => crate::platform::fs_perms::write_private(&self.journal_path, &journal)
                 .map_err(|error| format!("restore system proxy journal: {error}"))?,
@@ -1309,12 +1438,16 @@ mod tests {
         enabled: Mutex<HashSet<String>>,
         fail_on: Mutex<Vec<String>>,
         restore_fail_on: Mutex<Vec<String>>,
+        snapshot_fail_on: Mutex<Vec<String>>,
         restore_needs_auth: AtomicBool,
         before_enable: Mutex<Option<std::sync::Arc<dyn Fn() + Send + Sync>>>,
         /// 各服务 enable 前的原设置（模拟第三方客户端已配置的场景）。
         presets: Mutex<BTreeMap<String, ServiceSnapshot>>,
         /// restore_service 调用记录（断言还原内容用）。
         restored: Mutex<BTreeMap<String, ServiceSnapshot>>,
+        /// 各服务现行设置（enable 写入 / restore 写回 / disable 清空）——
+        /// #458 归属核对的读取源。
+        current: Mutex<BTreeMap<String, ServiceSnapshot>>,
     }
 
     impl FakeBackend {
@@ -1325,10 +1458,12 @@ mod tests {
                     enabled: Mutex::new(HashSet::new()),
                     fail_on: Mutex::new(vec![]),
                     restore_fail_on: Mutex::new(vec![]),
+                    snapshot_fail_on: Mutex::new(vec![]),
                     restore_needs_auth: AtomicBool::new(false),
                     before_enable: Mutex::new(None),
                     presets: Mutex::new(BTreeMap::new()),
                     restored: Mutex::new(BTreeMap::new()),
+                    current: Mutex::new(BTreeMap::new()),
                 }),
             }
         }
@@ -1353,7 +1488,21 @@ mod tests {
         fn list_services(&self) -> Result<Vec<String>, String> {
             Ok(self.inner.services.clone())
         }
-        fn enable_service(&self, service: &str, _port: u16) -> Result<(), String> {
+        fn enable_service(&self, service: &str, port: u16) -> Result<(), String> {
+            let endpoint = Some(ProxyEndpoint {
+                host: "127.0.0.1".into(),
+                port,
+            });
+            self.inner.current.lock().unwrap().insert(
+                service.to_string(),
+                ServiceSnapshot {
+                    web: endpoint.clone(),
+                    secure: endpoint.clone(),
+                    socks: endpoint,
+                    bypass: None,
+                    windows: None,
+                },
+            );
             let before_enable = self.inner.before_enable.lock().unwrap().clone();
             if let Some(before_enable) = before_enable {
                 before_enable();
@@ -1377,9 +1526,23 @@ mod tests {
         }
         fn disable_service(&self, service: &str) -> Result<(), String> {
             self.inner.enabled.lock().unwrap().remove(service);
+            self.inner.current.lock().unwrap().remove(service);
             Ok(())
         }
         fn service_snapshot(&self, service: &str) -> Result<ServiceSnapshot, String> {
+            if self
+                .inner
+                .snapshot_fail_on
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|name| name == service)
+            {
+                return Err(format!("snapshot failed on {service}"));
+            }
+            if let Some(current) = self.inner.current.lock().unwrap().get(service) {
+                return Ok(current.clone());
+            }
             Ok(self
                 .inner
                 .presets
@@ -1392,6 +1555,11 @@ mod tests {
         fn restore_service(&self, service: &str, snap: &ServiceSnapshot) -> Result<(), String> {
             self.inner
                 .restored
+                .lock()
+                .unwrap()
+                .insert(service.to_string(), snap.clone());
+            self.inner
+                .current
                 .lock()
                 .unwrap()
                 .insert(service.to_string(), snap.clone());
@@ -1871,6 +2039,267 @@ mod tests {
             mgr.disable().unwrap();
             let out = NetworkSetup::run(&["-getwebproxy", &services[0]]).unwrap();
             assert!(!parse_proxy_enabled(&out), "proxy should be restored");
+        }
+    }
+
+    /// ===== #458：恢复前归属核对 =====
+    mod ownership_tests {
+        use super::*;
+
+        fn owned_snapshot(port: u16) -> ServiceSnapshot {
+            let ep = Some(ProxyEndpoint {
+                host: "127.0.0.1".into(),
+                port,
+            });
+            ServiceSnapshot {
+                web: ep.clone(),
+                secure: ep.clone(),
+                socks: ep,
+                bypass: None,
+                windows: None,
+            }
+        }
+
+        fn external_snapshot(port: u16) -> ServiceSnapshot {
+            let ep = Some(ProxyEndpoint {
+                host: "127.0.0.1".into(),
+                port,
+            });
+            ServiceSnapshot {
+                web: ep.clone(),
+                secure: ep.clone(),
+                socks: ep,
+                bypass: None,
+                windows: None,
+            }
+        }
+
+        /// 正常退出：仍归 Crossbow → 按快照还原。
+        #[test]
+        fn exit_restores_owned_settings() {
+            let dir = tempfile::tempdir().unwrap();
+            let backend = FakeBackend::new(&["Wi-Fi"]).with_preset("Wi-Fi", owned_snapshot(7890));
+            let mgr = manager_with(backend.clone(), &dir);
+            mgr.enable(7898).unwrap();
+            assert!(dir.path().join("journal.json").exists());
+
+            mgr.prepare_exit(false).unwrap();
+
+            let restored = backend.inner.restored.lock().unwrap();
+            let snap = restored.get("Wi-Fi").unwrap();
+            assert_eq!(snap.web.as_ref().unwrap().port, 7890);
+            assert!(!dir.path().join("journal.json").exists());
+            assert!(!mgr.status().enabled);
+        }
+
+        /// 正常退出：其他客户端接管 → 不还原，保留其配置，journal 清理。
+        #[test]
+        fn exit_keeps_settings_taken_over_by_another_client() {
+            let dir = tempfile::tempdir().unwrap();
+            let backend = FakeBackend::new(&["Wi-Fi"]).with_preset("Wi-Fi", owned_snapshot(7890));
+            let mgr = manager_with(backend.clone(), &dir);
+            mgr.enable(7898).unwrap();
+
+            // 另一个客户端把 Wi-Fi 改写为自己的 7890
+            backend
+                .inner
+                .current
+                .lock()
+                .unwrap()
+                .insert("Wi-Fi".into(), external_snapshot(7890));
+
+            mgr.prepare_exit(false).unwrap();
+
+            // restore_service 未被调用——第三方配置保留
+            assert!(backend.inner.restored.lock().unwrap().is_empty());
+            assert_eq!(
+                backend
+                    .inner
+                    .current
+                    .lock()
+                    .unwrap()
+                    .get("Wi-Fi")
+                    .unwrap()
+                    .web
+                    .as_ref()
+                    .unwrap()
+                    .port,
+                7890
+            );
+            assert!(!dir.path().join("journal.json").exists());
+            assert!(!mgr.status().enabled);
+        }
+
+        /// 崩溃重启兜底（recover_stale）：同样按归属核对。
+        #[test]
+        fn recover_stale_respects_ownership() {
+            let dir = tempfile::tempdir().unwrap();
+            let backend = FakeBackend::new(&["Wi-Fi"]).with_preset("Wi-Fi", owned_snapshot(7890));
+            {
+                let mgr = manager_with(backend.clone(), &dir);
+                mgr.enable(7898).unwrap();
+                // 模拟崩溃：mgr 直接丢弃，journal 留在盘上
+            }
+
+            // 被接管场景
+            backend
+                .inner
+                .current
+                .lock()
+                .unwrap()
+                .insert("Wi-Fi".into(), external_snapshot(7890));
+            {
+                let mgr = manager_with(backend.clone(), &dir);
+                mgr.recover_stale();
+            }
+            assert!(backend.inner.restored.lock().unwrap().is_empty());
+            assert!(!dir.path().join("journal.json").exists());
+
+            // 归属未变场景：重建 journal 再 recover → 还原
+            backend.inner.current.lock().unwrap().remove("Wi-Fi");
+            {
+                let mgr = manager_with(backend.clone(), &dir);
+                mgr.enable(7898).unwrap();
+            }
+            {
+                let mgr = manager_with(backend.clone(), &dir);
+                mgr.recover_stale();
+            }
+            let restored = backend.inner.restored.lock().unwrap();
+            assert_eq!(
+                restored.get("Wi-Fi").unwrap().web.as_ref().unwrap().port,
+                7890
+            );
+        }
+
+        /// 部分接管：归属的还原、被接管的跳过。
+        #[test]
+        fn partial_takeover_restores_only_owned() {
+            let dir = tempfile::tempdir().unwrap();
+            let backend = FakeBackend::new(&["Wi-Fi", "Ethernet"])
+                .with_preset("Wi-Fi", owned_snapshot(7890))
+                .with_preset("Ethernet", owned_snapshot(7890));
+            let mgr = manager_with(backend.clone(), &dir);
+            mgr.enable(7898).unwrap();
+
+            // Ethernet 被其他客户端接管
+            backend
+                .inner
+                .current
+                .lock()
+                .unwrap()
+                .insert("Ethernet".into(), external_snapshot(7890));
+
+            mgr.prepare_exit(false).unwrap();
+
+            let restored = backend.inner.restored.lock().unwrap();
+            assert!(restored.contains_key("Wi-Fi"));
+            assert!(!restored.contains_key("Ethernet"));
+        }
+
+        /// TUN 挂起恢复：TUN 期间被其他客户端接管 → 不还原其配置。
+        #[test]
+        fn tun_restore_keeps_settings_taken_over_during_tun() {
+            let dir = tempfile::tempdir().unwrap();
+            let backend = FakeBackend::new(&["Wi-Fi"]).with_preset("Wi-Fi", owned_snapshot(7890));
+            let mgr = manager_with(backend.clone(), &dir);
+            mgr.enable(7898).unwrap();
+            let suspended = mgr.suspend_for_tun().unwrap();
+
+            // TUN 期间其他客户端开启自己的代理
+            backend
+                .inner
+                .current
+                .lock()
+                .unwrap()
+                .insert("Wi-Fi".into(), external_snapshot(7890));
+
+            mgr.restore_after_failed_tun(suspended).unwrap();
+
+            assert!(backend.inner.restored.lock().unwrap().is_empty());
+            assert_eq!(
+                backend
+                    .inner
+                    .current
+                    .lock()
+                    .unwrap()
+                    .get("Wi-Fi")
+                    .unwrap()
+                    .web
+                    .as_ref()
+                    .unwrap()
+                    .port,
+                7890
+            );
+        }
+
+        /// v1 旧格式 journal（enabled+port，无快照）：崩溃重启兜底退回
+        /// 全量关闭——不能让指向已退出实例的残留代理悬空（#33/#356 回归防护）。
+        #[test]
+        fn recover_stale_v1_journal_falls_back_to_full_disable() {
+            let dir = tempfile::tempdir().unwrap();
+            let backend = FakeBackend::new(&["Wi-Fi", "Ethernet"]);
+            {
+                let mgr = manager_with(backend.clone(), &dir);
+                mgr.enable(7898).unwrap();
+            }
+            std::fs::write(
+                dir.path().join("journal.json"),
+                r#"{"enabled":true,"port":7898}"#,
+            )
+            .unwrap();
+            let mgr = manager_with(backend.clone(), &dir);
+            assert!(mgr.recover_stale());
+            assert!(backend.inner.enabled.lock().unwrap().is_empty());
+            assert!(backend.inner.restored.lock().unwrap().is_empty());
+            assert!(!dir.path().join("journal.json").exists());
+        }
+
+        /// v2 journal 快照为空（快照捕获失败的残留）：按 journal 端口只关闭
+        /// 仍归属 Crossbow 的服务，被接管的保留。
+        #[test]
+        fn exit_with_empty_snapshot_disables_only_owned() {
+            let dir = tempfile::tempdir().unwrap();
+            let backend = FakeBackend::new(&["Wi-Fi", "Ethernet"]);
+            let mgr = manager_with(backend.clone(), &dir);
+            mgr.enable(7898).unwrap();
+            std::fs::write(
+                dir.path().join("journal.json"),
+                r#"{"port":7898,"snapshot":{}}"#,
+            )
+            .unwrap();
+            backend
+                .inner
+                .current
+                .lock()
+                .unwrap()
+                .insert("Ethernet".into(), external_snapshot(7890));
+
+            mgr.prepare_exit(false).unwrap();
+
+            let enabled = backend.inner.enabled.lock().unwrap();
+            assert!(!enabled.contains("Wi-Fi"));
+            assert!(enabled.contains("Ethernet"));
+        }
+
+        /// TUN 恢复：读取当前设置失败 → 整体失败并保留 TUN journal 供重试，
+        /// 不静默清掉双 journal 丢失用户原设置。
+        #[test]
+        fn tun_restore_keeps_journal_when_snapshot_read_fails() {
+            let dir = tempfile::tempdir().unwrap();
+            let backend = FakeBackend::new(&["Wi-Fi"]);
+            let mgr = manager_with(backend.clone(), &dir);
+            mgr.enable(7898).unwrap();
+            let suspended = mgr.suspend_for_tun().unwrap();
+            backend
+                .inner
+                .snapshot_fail_on
+                .lock()
+                .unwrap()
+                .push("Wi-Fi".into());
+
+            assert!(mgr.restore_after_failed_tun(suspended).is_err());
+            assert!(dir.path().join("tun-proxy-journal.json").exists());
         }
     }
 }
