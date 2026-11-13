@@ -104,7 +104,8 @@ jobs:
             apps/desktop/src/components/NodeName/nodeFlags.test.mjs \
             apps/desktop/src/components/FitItems/fitGrid.test.mjs \
             apps/desktop/src/pages/Logs/logHistory.test.mjs \
-            apps/desktop/src/pages/Logs/logReading.test.mjs
+            apps/desktop/src/pages/Logs/logReading.test.mjs \
+            apps/desktop/src/pages/Home/firstConnection.test.mjs
 
   linux-foundation:
     name: Linux foundation (build and tests)
