@@ -152,29 +152,29 @@ const copy = {
     "内核未运行，已关闭系统代理",
     "Core is down; system proxy turned off",
   ],
-  "tray.networkDown": [
-    "本机网络连接中断，测速失败由此导致（与代理无关）",
-    "Local network is down; that is why every node timed out",
+  "tray.baselineUnreachable": [
+    "节点测速全超时，两个网络探测目标均未响应",
+    "All node tests timed out and neither connectivity probe responded",
   ],
-  "tray.networkDown.hint": [
-    "请检查 Wi-Fi 或路由器。恢复联网后节点测速即可正常。",
-    "Check your Wi-Fi or router. Node speed tests will recover once you are back online.",
+  "tray.baselineUnreachable.hint": [
+    "请先检查本机网络、DNS 或路由器，再重试测速。",
+    "Check your network connection, DNS or router, then retry the node tests.",
   ],
-  "tray.nodesDown": [
-    "本机网络正常，全部节点不可达",
-    "Local network is fine; every node is unreachable",
+  "tray.baselineReachable": [
+    "节点测速全超时，至少一个网络探测目标可达",
+    "All node tests timed out, but a connectivity probe responded",
   ],
-  "tray.nodesDown.hint": [
-    "可能为机场或节点服务故障，稍后重试测速或更换订阅。",
-    "Your provider or nodes may be down; retry the test later or switch subscriptions.",
+  "tray.baselineReachable.hint": [
+    "可以重试测速，或打开诊断检查代理链路。",
+    "Retry the node tests or open Diagnostics to check the proxy connection.",
   ],
-  "tray.speedTestAnomaly": [
-    "本机直连正常，节点测速结果异常",
-    "Direct connectivity is fine; the speed test result looks abnormal",
+  "tray.baselineTunActive": [
+    "节点测速全超时，TUN 已开启",
+    "All node tests timed out with TUN enabled",
   ],
-  "tray.speedTestAnomaly.hint": [
-    "可重新发起节点测速确认。",
-    "Run the node speed test again to confirm.",
+  "tray.baselineTunActive.hint": [
+    "已跳过直连探测。打开诊断查看当前连接。",
+    "The direct connectivity check was skipped. Open Diagnostics to check the current connection.",
   ],
   "sysproxy.restoreFailed": [
     "系统代理恢复未完成",
@@ -222,6 +222,11 @@ export function notificationText(
   for (const [key, replacement] of Object.entries(params ?? {}))
     value = value.replace(`{${key}}`, String(replacement));
   return value;
+}
+
+export function notificationHint(code: string): string {
+  const key = `${code}.hint`;
+  return Object.hasOwn(copy, key) ? notificationText(key) : "";
 }
 
 // Serialize publication per operation, so a fast result cannot arrive before

@@ -340,72 +340,110 @@ pub(crate) fn probe_tun_network() -> Result<(), String> {
     Err(last_error)
 }
 
-/// #481 直连基准探测的国内外目标：国内 204 端点判定物理网络是否中断
-/// （国外直连被墙是常态，不能作为断网依据）；国外端点用于区分「机场故障」。
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-const BASELINE_PROBE_CN: &str = "http://connect.rom.miui.com/generate_204";
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-const BASELINE_PROBE_GLOBAL: &str = "http://www.gstatic.com/generate_204";
-/// 同一故障事件的提示频控窗口：期间反复测速不重复弹通知。
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+// The only caller is the macOS tray. Keep the TUN watchdog's probes separate:
+// they intentionally test the tunnel rather than the path without an HTTP proxy.
+#[cfg(target_os = "macos")]
+const BASELINE_TARGETS: [&str; 2] = [
+    "https://connect.rom.miui.com/generate_204",
+    "https://www.baidu.com/",
+];
+#[cfg(target_os = "macos")]
 const BASELINE_REPORT_INTERVAL: Duration = Duration::from_secs(10 * 60);
+#[cfg(target_os = "macos")]
+const BASELINE_NOTICE_SOURCE: &str = "tray-baseline";
 
-/// #481 判定矩阵（纯函数，便于单测）：返回 (通知 code, 严重度)。
-/// 国内直连失败是「本机断网」的充分信号——此时节点是否可达无从谈起；
-/// 国内可达而国外失败属常态（墙），配合测速全超时应提示机场/节点故障。
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-fn baseline_verdict(cn: bool, global: bool) -> (&'static str, notifications::Kind) {
-    match (cn, global) {
-        (false, _) => ("tray.networkDown", notifications::Kind::Warning),
-        (true, false) => ("tray.nodesDown", notifications::Kind::Warning),
-        (true, true) => ("tray.speedTestAnomaly", notifications::Kind::Info),
+#[cfg(target_os = "macos")]
+fn all_nodes_timed_out(total: usize, timeouts: usize) -> bool {
+    total != 0 && timeouts == total
+}
+
+#[cfg(target_os = "macos")]
+fn baseline_verdict(reachable: Option<bool>) -> (&'static str, notifications::Kind) {
+    match reachable {
+        Some(false) => ("tray.baselineUnreachable", notifications::Kind::Warning),
+        Some(true) => ("tray.baselineReachable", notifications::Kind::Info),
+        None => ("tray.baselineTunActive", notifications::Kind::Info),
     }
 }
 
-/// 单目标探测：任何 HTTP 响应（含 4xx/5xx）都证明 TCP 路径可达——判定
-/// 只关心链路通断，不关心服务状态码。
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 fn baseline_probe_one(agent: &ureq::Agent, url: &str) -> bool {
-    match agent.head(url).call() {
-        Ok(_) | Err(ureq::Error::Status(_, _)) => true,
-        Err(_) => false,
-    }
+    // Any authenticated HTTPS response establishes reachability of this
+    // endpoint. A redirect doesn't require probing an unrelated destination.
+    matches!(
+        agent.head(url).call(),
+        Ok(_) | Err(ureq::Error::Status(_, _))
+    )
 }
 
-/// 托盘测速全部失败后的直连基准探测：只在探测完成后按判定矩阵发一次
-/// 通知（10 分钟频控），不切节点、不改任何状态——纯甄别提示，避免把
-/// 本机断网误归因为代理故障（2026-11-13 事件复盘，#481）。
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-fn maybe_report_baseline(handle: &AppHandle) {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static LAST_REPORT_MS: AtomicU64 = AtomicU64::new(0);
+#[cfg(target_os = "macos")]
+fn report_speed_test_baseline(handle: &AppHandle, generation: u64, core_pid: u32) {
+    use std::sync::Mutex;
+    use std::time::Instant;
+    static LAST_REPORT: Mutex<Option<Instant>> = Mutex::new(None);
 
-    let h = handle.clone();
+    let app = handle.clone();
     std::thread::spawn(move || {
-        let agent = ureq::AgentBuilder::new()
-            .try_proxy_from_env(false)
-            .timeout(TUN_PROBE_TIMEOUT)
-            .build();
-        // 国内目标优先：断网时它先失败，国外探测不必再等一个完整超时。
-        let cn = baseline_probe_one(&agent, BASELINE_PROBE_CN);
-        let global = if cn {
-            baseline_probe_one(&agent, BASELINE_PROBE_GLOBAL)
-        } else {
-            false
+        // A concurrent run leaves the existing probe in charge. Check the
+        // cooldown before making requests and count only published results.
+        let Ok(mut last_report) = LAST_REPORT.try_lock() else {
+            return;
         };
-        let (code, kind) = baseline_verdict(cn, global);
-        let now_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
-        if now_ms.saturating_sub(LAST_REPORT_MS.load(Ordering::Relaxed))
-            < BASELINE_REPORT_INTERVAL.as_millis() as u64
-        {
+        if last_report.is_some_and(|last| last.elapsed() < BASELINE_REPORT_INTERVAL) {
             return;
         }
-        LAST_REPORT_MS.store(now_ms, Ordering::Relaxed);
-        let notice = notifications::Notice::new(kind, code, "tray-baseline");
-        notifications::publish(&h, notice);
+        let Some(state) = app.try_state::<AppState>() else {
+            return;
+        };
+        let current_tun = || {
+            if state
+                .config_transition
+                .load(std::sync::atomic::Ordering::Acquire)
+                || state.exit.ensure_open().is_err()
+            {
+                return None;
+            }
+            let core = state.core();
+            if core.status() != CoreStatus::Running || core.pid() != Some(core_pid) {
+                return None;
+            }
+            Some(state.store.lock().ok()?.data().engine.tun_enable)
+        };
+        let Some(tun_enabled) = current_tun() else {
+            return;
+        };
+        let reachable = if tun_enabled {
+            // Disabling HTTP proxy discovery does not bypass the OS tunnel.
+            None
+        } else {
+            let agent = ureq::AgentBuilder::new()
+                .try_proxy_from_env(false)
+                .timeout_connect(TUN_PROBE_TIMEOUT)
+                .timeout(TUN_PROBE_TIMEOUT)
+                .redirects(0)
+                .build();
+            Some(
+                BASELINE_TARGETS
+                    .iter()
+                    .any(|url| baseline_probe_one(&agent, url)),
+            )
+        };
+        // Do not publish through a concurrent takeover/core transaction.
+        let Ok(_core_operation) = state.core_op.try_lock() else {
+            return;
+        };
+        if current_tun() != Some(tun_enabled) {
+            return;
+        }
+        let tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
+        if tray.generation() != generation {
+            return;
+        }
+        let (code, kind) = baseline_verdict(reachable);
+        let mut notice = notifications::Notice::new(kind, code, BASELINE_NOTICE_SOURCE);
+        notice.actions = vec![notifications::Action::Diagnostics];
+        notifications::publish(&app, notice);
+        *last_report = Some(Instant::now());
     });
 }
 
@@ -973,6 +1011,7 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
         tray.generation()
     };
     update_tray_node_menu(handle, true);
+    let core_pid = state.core().pid();
 
     // 并发池测速：每个节点独立请求，完成一个就立即原地刷新菜单——
     // 不再等全组返回（组延迟接口是一次请求测全部，节点多时末尾节点
@@ -1070,17 +1109,9 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
                 };
                 while let Some(node) = queue.lock().ok().and_then(|mut q| q.pop_front()) {
                     let result = match &client {
-                        Ok(c) => c.test_node_delay(&node).map_err(|e| {
-                            let low = e.to_lowercase();
-                            if low.contains("timed out")
-                                || low.contains("timeout")
-                                || low.contains("deadline")
-                                || low.contains("504")
-                            {
-                                "timeout".to_string()
-                            } else {
-                                "failed".to_string()
-                            }
+                        Ok(c) => c.measure_node_delay(&node).map_err(|error| match error {
+                            crate::engine::api::NodeDelayError::Timeout(_) => "timeout".to_string(),
+                            crate::engine::api::NodeDelayError::Failed(_) => "failed".to_string(),
                         }),
                         Err(_) => Err("failed".to_string()),
                     };
@@ -1094,7 +1125,8 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
 
         // 收集器：每条结果立即落库 + 原地刷新（菜单开着时实时可见）
         let mut done = 0usize;
-        let mut failures = 0usize;
+        let mut timeouts = 0usize;
+        let mut successes = 0usize;
         for (node, result) in rx {
             let Some(state) = h.try_state::<AppState>() else {
                 return;
@@ -1104,8 +1136,15 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
                 if tray.generation() != generation {
                     return; // 新一轮测速已接管，放弃本轮剩余结果
                 }
-                if result.is_err() {
-                    failures += 1;
+                if result
+                    .as_ref()
+                    .err()
+                    .is_some_and(|reason| reason == "timeout")
+                {
+                    timeouts += 1;
+                }
+                if result.is_ok() {
+                    successes += 1;
                 }
                 tray.apply_single_result(&node, result);
             }
@@ -1120,19 +1159,23 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
         let Some(state) = h.try_state::<AppState>() else {
             return;
         };
-        // #481：全部节点失败 → 直连基准探测，甄别「本机断网」与「节点故障」。
-        // 探测在后台线程执行（最长约两个超时窗口），不阻塞托盘恢复可点态。
-        if failures >= total {
-            maybe_report_baseline(&h);
-        }
         let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
         if tray.generation() != generation {
             return;
         }
         tray.end_test();
+        let finished_generation = tray.generation();
+        if successes == total {
+            notifications::resolve(&h, BASELINE_NOTICE_SOURCE);
+        }
         drop(tray);
         let data = tray_menu_data(&state);
         crate::tray::speed::update_node_menu(&h, &data.title, &data.rows, data.testing);
+        if all_nodes_timed_out(total, timeouts) {
+            if let Some(pid) = core_pid {
+                report_speed_test_baseline(&h, finished_generation, pid);
+            }
+        }
         // URLTest may pick a different member during testing. Re-read the
         // controller selection instead of deriving it from measured delays.
         refresh_tray_nodes(&h, true);
@@ -1374,36 +1417,58 @@ mod tests {
             .iter()
             .any(|action| { matches!(action, notifications::Action::RetrySystemProxy) }));
     }
-}
 
-#[cfg(all(test, any(target_os = "macos", target_os = "windows")))]
-mod baseline_tests {
-    use super::*;
-
-    /// #481 判定矩阵：国内直连失败 = 本机断网（充分信号，国外结果无关）。
+    #[cfg(target_os = "macos")]
     #[test]
-    fn baseline_verdict_reports_outage_when_cn_direct_fails() {
-        let (code, kind) = baseline_verdict(false, false);
-        assert_eq!(code, "tray.networkDown");
-        assert!(matches!(kind, notifications::Kind::Warning));
-        let (code, kind) = baseline_verdict(false, true);
-        assert_eq!(code, "tray.networkDown");
-        assert!(matches!(kind, notifications::Kind::Warning));
+    fn only_a_complete_batch_of_timeouts_triggers_a_probe() {
+        assert!(all_nodes_timed_out(3, 3));
+        assert!(!all_nodes_timed_out(3, 2));
+        assert!(!all_nodes_timed_out(3, 0));
+        assert!(!all_nodes_timed_out(0, 0));
     }
 
-    /// 国内可达 + 国外失败：墙是常态，测速又全超时 → 节点/机场故障。
+    #[cfg(target_os = "macos")]
     #[test]
-    fn baseline_verdict_reports_node_outage_when_only_global_fails() {
-        let (code, kind) = baseline_verdict(true, false);
-        assert_eq!(code, "tray.nodesDown");
-        assert!(matches!(kind, notifications::Kind::Warning));
+    fn baseline_messages_describe_evidence_or_tun_skip() {
+        for (reachable, expected_code) in [
+            (Some(false), "tray.baselineUnreachable"),
+            (Some(true), "tray.baselineReachable"),
+            (None, "tray.baselineTunActive"),
+        ] {
+            let (code, kind) = baseline_verdict(reachable);
+            assert_eq!(code, expected_code);
+            assert_eq!(
+                matches!(kind, notifications::Kind::Warning),
+                reachable == Some(false)
+            );
+        }
     }
 
-    /// 国内外都可达但测速全超时：提示测速异常（Info，低优先不惊扰）。
+    #[cfg(target_os = "macos")]
     #[test]
-    fn baseline_verdict_reports_anomaly_when_both_probes_pass() {
-        let (code, kind) = baseline_verdict(true, true);
-        assert_eq!(code, "tray.speedTestAnomaly");
-        assert!(matches!(kind, notifications::Kind::Info));
+    fn baseline_accepts_a_response_without_following_redirects() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut request = [0; 1024];
+            assert!(stream.read(&mut request).unwrap() > 0);
+            stream
+                .write_all(b"HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                .unwrap();
+        });
+        let agent = ureq::builder()
+            .try_proxy_from_env(false)
+            .timeout_connect(Duration::from_secs(2))
+            .timeout(Duration::from_secs(2))
+            .redirects(0)
+            .build();
+        assert!(baseline_probe_one(&agent, &url));
+        server.join().unwrap();
+        assert!(!baseline_probe_one(&agent, &url));
     }
 }

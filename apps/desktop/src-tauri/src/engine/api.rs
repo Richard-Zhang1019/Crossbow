@@ -37,6 +37,31 @@ pub struct Controller {
     pub secret: String,
 }
 
+#[derive(Debug)]
+pub(crate) enum NodeDelayError {
+    Timeout(String),
+    Failed(String),
+}
+
+impl NodeDelayError {
+    fn from_request(node: &str, error: ureq::Error) -> Self {
+        let details = format!("node delay {node}: {error}");
+        if matches!(error, ureq::Error::Status(504, _)) {
+            Self::Timeout(details)
+        } else {
+            Self::Failed(details)
+        }
+    }
+}
+
+impl std::fmt::Display for NodeDelayError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Timeout(details) | Self::Failed(details) => f.write_str(details),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct OutboundInfo {
     pub mode: String,
@@ -506,6 +531,13 @@ impl Controller {
 
     /// 单节点测速。
     pub fn test_node_delay(&self, node: &str) -> Result<u64, String> {
+        self.measure_node_delay(node)
+            .map_err(|error| error.to_string())
+    }
+
+    /// A gateway timeout from the controller is a completed node test.
+    /// A transport failure talking to the controller is a different failure.
+    pub(crate) fn measure_node_delay(&self, node: &str) -> Result<u64, NodeDelayError> {
         let path = format!(
             "{}?url={}&timeout=5000",
             build_path(&["/proxies", node, "delay"]),
@@ -514,16 +546,22 @@ impl Controller {
         let agent = Self::slow_agent();
         let resp = Self::req_on(&agent, self.port, &self.secret, "GET", &path)
             .call()
-            .map_err(|e| format!("node delay {node}: {e}"))?;
+            .map_err(|error| NodeDelayError::from_request(node, error))?;
         if resp.status() >= 400 {
-            return Err(format!("node delay {node}: HTTP {}", resp.status()));
+            return Err(NodeDelayError::Failed(format!(
+                "node delay {node}: HTTP {}",
+                resp.status()
+            )));
         }
-        let text = resp.into_string().map_err(|e| e.to_string())?;
-        let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        let text = resp
+            .into_string()
+            .map_err(|error| NodeDelayError::Failed(error.to_string()))?;
+        let v: serde_json::Value = serde_json::from_str(&text)
+            .map_err(|error| NodeDelayError::Failed(error.to_string()))?;
         v.get("delay")
             .and_then(|d| d.as_u64())
             .filter(|delay| *delay > 0)
-            .ok_or_else(|| format!("node delay {node}: no delay field"))
+            .ok_or_else(|| NodeDelayError::Failed(format!("node delay {node}: no delay field")))
     }
 }
 
@@ -547,6 +585,34 @@ fn build_path(segments: &[&str]) -> String {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn node_delay_distinguishes_controller_timeout_from_other_failures() {
+        let node = "Node 504 timeout";
+        let path = format!(
+            "{}?url={BENCHMARK_URL}&timeout=5000",
+            build_path(&["/proxies", node, "delay"])
+        );
+        let (controller, server) = scripted_controller(vec![
+            ("GET", path.clone(), 504, "{}".into()),
+            ("GET", path.clone(), 503, "{}".into()),
+            ("GET", path, 200, "{\"delay\":42}".into()),
+        ]);
+        assert!(matches!(
+            controller.measure_node_delay(node),
+            Err(NodeDelayError::Timeout(_))
+        ));
+        assert!(matches!(
+            controller.measure_node_delay(node),
+            Err(NodeDelayError::Failed(_))
+        ));
+        assert_eq!(controller.test_node_delay(node).unwrap(), 42);
+        server.join().unwrap();
+        assert!(matches!(
+            controller.measure_node_delay(node),
+            Err(NodeDelayError::Failed(_))
+        ));
+    }
 
     /// A scripted controller checks the actual HTTP contract and request order.
     fn scripted_controller(
