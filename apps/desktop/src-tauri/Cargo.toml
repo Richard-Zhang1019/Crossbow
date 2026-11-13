@@ -18,6 +18,7 @@ tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
 serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.10"
+tempfile = "3"
 ureq = "2"
 regex = "1"
 socket2 = "0.6"
@@ -81,6 +82,3 @@ raw-window-handle = "0.6"
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Networking_WinInet", "Win32_Graphics_Dwm", "Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Pipes", "Win32_System_IO", "Win32_NetworkManagement_IpHelper"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
-
-[dev-dependencies]
-tempfile = "3"

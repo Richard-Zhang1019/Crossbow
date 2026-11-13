@@ -6,7 +6,7 @@
 //! 3. 数据目录缓存 `binaries/mihomo`（手动安装或下载所得）
 //!
 //! 都找不到时由 `install_core` 从发布源下载（镜像优先）到数据目录缓存，
-//! 下载过程做 sha256 校验 + chmod +x，健全性检查 `-v` 能输出版本。
+//! 下载过程校验归档 SHA-256，并在解包成功后原子替换缓存。
 
 use std::path::{Path, PathBuf};
 
@@ -26,11 +26,16 @@ pub const SINGBOX_SOURCES: &[&str] = &[
 
 /// 内核版本锁定（升级走 PR 审查，DESIGN §5.3）。
 pub const CORE_VERSION: &str = "v1.19.32";
+pub const SINGBOX_VERSION: &str = "1.14.2";
 
 /// #465：固定 SHA-256（审阅过的上游 digest；key = 资产名）。镜像与官方源
 /// 遵守同一校验规则；未列出的资产拒绝下载（fail closed）。
 pub(crate) const ASSET_SHA256: &[(&str, &str)] = &[
-    // mihomo v1.19.32（scripts/ci/download_sidecar.py 同源）
+    // https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.32
+    (
+        "mihomo-darwin-amd64-v1.19.32.gz",
+        "b7de9fc46af2ca985ecfb302a6362170e04ff2023dee1e82addc54133e669bc9",
+    ),
     (
         "mihomo-darwin-arm64-v1.19.32.gz",
         "3312a6780652c622890fd4357c6a853bbf865464fd047ac7b7f52dab8de18652",
@@ -40,21 +45,41 @@ pub(crate) const ASSET_SHA256: &[(&str, &str)] = &[
         "1ac84e795b5b915446e20139677fb6cc013a0778e876e8d4c96f994750b4c4a3",
     ),
     (
+        "mihomo-windows-arm64-v1.19.32.zip",
+        "7a4f6e58af9a120920935f2150cf642d945085fdb3e753314505b334234e1d1e",
+    ),
+    (
         "mihomo-linux-amd64-v1.19.32.gz",
         "8451100836c9eda194331c2babfad490b2faf30cebc1a04b0e76fd8ac2d35d10",
     ),
-    // sing-box 1.14.2（官方 release 资产，本机下载实测）
+    (
+        "mihomo-linux-arm64-v1.19.32.gz",
+        "9dd862e28b46ff7d775f169cceebc28deccaa0a9e804237d421cd2571e0caba0",
+    ),
+    // https://github.com/SagerNet/sing-box/releases/tag/v1.14.2
+    (
+        "sing-box-1.14.2-darwin-amd64.tar.gz",
+        "b0bfb0dc70a5fc708710b9f5ea98b9ee76d40fa4169928d25d73edc4331df2fe",
+    ),
     (
         "sing-box-1.14.2-darwin-arm64.tar.gz",
-        "fd0b18243124fd9c5848d190ce34a0870ddbca6cf115f9d7929454d1dace905d",
+        "925c5382eca8492b0150f868a6db20b18290a38700e621724b3703fd453e032d",
     ),
     (
         "sing-box-1.14.2-windows-amd64.zip",
-        "7d3100ea27e5c327e8213dc269ed8d20d80aa823f650b9c1da13c6b194895808",
+        "c2d8bfff918755808781dfdeeb8581b6c91eb3a243d9a7b55483cfc0c0684d32",
+    ),
+    (
+        "sing-box-1.14.2-windows-arm64.zip",
+        "2bb467039310452380958b821983d5bb4f78fb70a2583914e4bea8b011582b64",
     ),
     (
         "sing-box-1.14.2-linux-amd64.tar.gz",
-        "68902de98b739656afea64e558e904f9a6736fb557533849ab664619e257e0b5",
+        "a684484d7477d1437282ee411f4d131d0340aaad60a7868841ebd5d87dd8a0c6",
+    ),
+    (
+        "sing-box-1.14.2-linux-arm64.tar.gz",
+        "b43a1fb1bda131c6653576741ce527eb2bdeab7c9308ca90ee8b972abb7e4a7f",
     ),
 ];
 
@@ -73,7 +98,6 @@ fn sha256_hex(path: &Path) -> Result<String, String> {
     std::io::copy(&mut file, &mut hasher).map_err(|e| e.to_string())?;
     Ok(format!("{:x}", hasher.finalize()))
 }
-pub const SINGBOX_VERSION: &str = "1.14.2";
 
 /// 内核引擎标识（下载/定位共用）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -252,10 +276,14 @@ pub fn install_core(
     emit: &dyn Fn(InstallProgress),
 ) -> Result<PathBuf, String> {
     let url_path = kind.url_path()?;
+    let asset = url_path
+        .rsplit_once('/')
+        .map(|(_, asset)| asset)
+        .ok_or_else(|| format!("内核下载路径缺少资产名：{url_path}"))?;
+    let expected = expected_sha256(asset)?;
     let dest_dir = data_dir.join("binaries");
     std::fs::create_dir_all(&dest_dir).map_err(|e| e.to_string())?;
     let dest = dest_dir.join(kind.binary_name());
-    let tmp = dest.with_extension("download");
 
     let agent = ureq::AgentBuilder::new()
         .timeout(std::time::Duration::from_secs(180))
@@ -267,54 +295,20 @@ pub fn install_core(
             stage: "downloading".into(),
             detail: url.clone(),
         });
-        match agent.get(&url).call() {
-            Ok(resp) => {
-                if resp.status() >= 400 {
-                    last_err = format!("{url}: HTTP {}", resp.status());
-                    continue;
-                }
-                let mut reader = resp.into_reader();
-                let f = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
-                let mut w = std::io::BufWriter::new(f);
-                if let Err(e) = std::io::copy(&mut reader, &mut w) {
-                    last_err = format!("{url}: {e}");
-                    let _ = std::fs::remove_file(&tmp);
-                    continue;
-                }
-                drop(w);
-                emit(InstallProgress {
-                    stage: "verifying".into(),
-                    detail: url.clone(),
-                });
-                // #465：先哈希校验（镜像与官方源同一规则），失败不动缓存
-                let asset = url_path.rsplit('/').next_back().unwrap_or("");
-                let expected = expected_sha256(asset)?;
-                let actual = sha256_hex(&tmp)?;
-                if actual != expected {
-                    last_err = format!("{url}: SHA-256 mismatch (got {actual}, want {expected})");
-                    let _ = std::fs::remove_file(&tmp);
-                    continue;
-                }
-                // 解包到 staging（绝不直接写 dest——解包失败不得破坏原缓存）
-                let staging = dest.with_extension("staging");
-                let _ = std::fs::remove_file(&staging);
-                unpack(&tmp, &staging, kind)?;
-                let size = std::fs::metadata(&staging).map(|m| m.len()).unwrap_or(0);
-                if size < 10_000_000 {
-                    last_err = format!("{url}: unpacked binary too small ({size} bytes)");
-                    let _ = std::fs::remove_file(&staging);
-                    let _ = std::fs::remove_file(&tmp);
-                    continue;
-                }
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    std::fs::set_permissions(&staging, std::fs::Permissions::from_mode(0o755))
-                        .map_err(|e| e.to_string())?;
-                }
-                // 全部验证通过 → 原子替换缓存
-                let _ = std::fs::remove_file(&tmp);
-                std::fs::rename(&staging, &dest).map_err(|e| e.to_string())?;
+        let result = agent
+            .get(&url)
+            .call()
+            .map_err(|e| e.to_string())
+            .and_then(|resp| {
+                install_archive(&mut resp.into_reader(), &dest, kind, expected, || {
+                    emit(InstallProgress {
+                        stage: "verifying".into(),
+                        detail: url.clone(),
+                    });
+                })
+            });
+        match result {
+            Ok(()) => {
                 emit(InstallProgress {
                     stage: "done".into(),
                     detail: dest.display().to_string(),
@@ -327,6 +321,53 @@ pub fn install_core(
         }
     }
     Err(format!("所有源均失败：{last_err}"))
+}
+
+fn install_archive(
+    reader: &mut dyn std::io::Read,
+    dest: &Path,
+    kind: CoreKind,
+    expected: &str,
+    verifying: impl FnOnce(),
+) -> Result<(), String> {
+    let parent = dest.parent().ok_or("内核缓存路径缺少父目录")?;
+    // 每次尝试使用独立的临时目录，与最终缓存处于同一文件系统。
+    let mut temp = tempfile::Builder::new();
+    temp.prefix(".core-install-");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        temp.permissions(std::fs::Permissions::from_mode(0o700));
+    }
+    let attempt = temp
+        .tempdir_in(parent)
+        .map_err(|e| format!("创建下载临时目录：{e}"))?;
+    let archive = attempt.path().join("archive");
+    {
+        let mut file = std::fs::File::create(&archive).map_err(|e| format!("创建下载文件：{e}"))?;
+        std::io::copy(reader, &mut file).map_err(|e| format!("写入下载文件：{e}"))?;
+    }
+    verifying();
+    let actual = sha256_hex(&archive).map_err(|e| format!("读取下载文件以校验 SHA-256：{e}"))?;
+    if actual != expected {
+        return Err(format!("SHA-256 mismatch (got {actual}, want {expected})"));
+    }
+
+    let binary = attempt.path().join(kind.binary_name());
+    unpack(&archive, &binary, kind)?;
+    let size = std::fs::metadata(&binary)
+        .map_err(|e| format!("读取解包后的二进制：{e}"))?
+        .len();
+    if size < 10_000_000 {
+        return Err(format!("unpacked binary too small ({size} bytes)"));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755))
+            .map_err(|e| format!("设置内核执行权限：{e}"))?;
+    }
+    std::fs::rename(&binary, dest).map_err(|e| format!("替换内核缓存：{e}"))
 }
 
 /// 从下载包解出内核二进制到 dest。
@@ -507,22 +548,30 @@ mod tests {
         assert!(name.ends_with(if cfg!(windows) { ".zip" } else { ".gz" }));
     }
 
-    /// #465：损坏 gzip 在 staging 路径解包失败时，缓存 dest 不得被改动
-    /// （install_core 生产路径总是先解到 staging，验证通过才原子替换）。
     #[test]
-    fn unpack_failure_preserves_existing_cache() {
+    fn failed_install_preserves_existing_cache_and_removes_temporary_files() {
+        use sha2::{Digest, Sha256};
+
         let dir = tempfile::tempdir().unwrap();
-        let dest = dir.path().join("mihomo");
+        let kind = CoreKind::Mihomo;
+        let dest = dir.path().join(kind.binary_name());
         std::fs::write(&dest, b"ORIGINAL-CORE-BYTES").unwrap();
 
-        // 有效的 gz 头但内容损坏（gunzip 会失败）
-        let bad = dir.path().join("bad.gz");
-        std::fs::write(&bad, [0x1f, 0x8b, 0x08, 0x00, 0xde, 0xad, 0xbe, 0xef]).unwrap();
-        let staging = dir.path().join("mihomo.staging");
-        let kind = CoreKind::Mihomo;
-        assert!(unpack(&bad, &staging, kind).is_err());
-        // staging 失败不影响缓存；staging 自身也不该留下半成品
-        assert_eq!(std::fs::read(&dest).unwrap(), b"ORIGINAL-CORE-BYTES");
+        let truncated = [0x1f, 0x8b, 0x08, 0x00, 0xde, 0xad, 0xbe, 0xef];
+        let matching_digest = format!("{:x}", Sha256::digest(truncated));
+        for (expected, stage) in [
+            ("bad digest", "SHA-256 mismatch"),
+            (
+                &matching_digest,
+                if cfg!(windows) { "zip:" } else { "gunzip:" },
+            ),
+        ] {
+            let error = install_archive(&mut truncated.as_slice(), &dest, kind, expected, || {})
+                .unwrap_err();
+            assert!(error.contains(stage), "{error}");
+            assert_eq!(std::fs::read(&dest).unwrap(), b"ORIGINAL-CORE-BYTES");
+            assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        }
     }
 
     /// #465：expected_sha256 对未列出资产 fail closed。
