@@ -196,7 +196,11 @@ impl SysProxyBackend for WinInet {
 
     fn restore_service(&self, _: &str, snapshot: &ServiceSnapshot) -> Result<(), String> {
         if let Some(config) = &snapshot.windows {
-            return Self::apply(config);
+            Self::apply(config)?;
+            if Self::current()? != *config {
+                return Err("Windows 系统代理恢复结果与快照不一致".into());
+            }
+            return Ok(());
         }
         // Older journals did not contain PAC/WPAD fields. Preserve compatibility.
         let mut entries = Vec::new();

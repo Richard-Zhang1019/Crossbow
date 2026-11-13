@@ -144,6 +144,10 @@ const copy = {
     "TUN 通道无响应，正在重启内核恢复",
     "TUN unresponsive; restarting core to recover",
   ],
+  "tun.wedgeRecovered": [
+    "TUN 已恢复，连通性检查通过",
+    "TUN recovered; connectivity check passed",
+  ],
   "sysproxy.coreDead": [
     "内核未运行，已关闭系统代理",
     "Core is down; system proxy turned off",

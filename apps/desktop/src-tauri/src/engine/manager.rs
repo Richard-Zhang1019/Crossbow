@@ -998,11 +998,6 @@ impl CoreManager {
         }
     }
 
-    #[cfg(not(unix))]
-    pub fn signal_graceful_restart(&self) -> bool {
-        false // Windows TUN 内核由 SYSTEM 服务承载，停止走服务通道
-    }
-
     pub fn stop(&self) -> bool {
         let _lifecycle = self
             .shared

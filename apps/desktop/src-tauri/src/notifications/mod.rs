@@ -785,7 +785,11 @@ pub fn window_destroyed(app: &AppHandle, label: &str) {
     }
 }
 #[tauri::command]
-pub fn notification_publish(service: State<Notifications>, notice: Notice) -> String {
+pub fn notification_publish(service: State<Notifications>, mut notice: Notice) -> String {
+    // Only the backend may offer a retry that changes the system proxy.
+    notice
+        .actions
+        .retain(|action| !matches!(action, Action::RetrySystemProxy));
     service
         .queue
         .lock()
@@ -923,47 +927,69 @@ pub async fn notification_action(
     id: Option<String>,
 ) -> Result<(), String> {
     if matches!(&action, Action::RetrySystemProxy) {
-        let source = {
-            let queue = service.queue.lock().unwrap_or_else(|e| e.into_inner());
-            let notice = id
-                .as_ref()
-                .and_then(|id| queue.entries.iter().find(|notice| &notice.id == id))
-                .ok_or("系统代理恢复通知已失效")?;
-            if !notice
-                .actions
-                .iter()
-                .any(|candidate| matches!(candidate, Action::RetrySystemProxy))
-            {
-                return Err("该通知不支持重试系统代理恢复".into());
-            }
-            notice.source.clone()
-        };
-        let handle = app.clone();
-        let recovery_source = source.clone();
-        let result = tauri::async_runtime::spawn_blocking(move || {
-            let state = handle.state::<crate::AppState>();
+        return tauri::async_runtime::spawn_blocking(move || {
+            let state = app.state::<crate::AppState>();
             let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
-            let result = state.sysproxy.retry_restore();
-            let _ = handle.emit("sysproxy://status", state.sysproxy.status());
-            crate::refresh_tray(&handle);
+            state.exit.ensure_open()?;
+            let source = {
+                let service = app.state::<Notifications>();
+                let queue = service.queue.lock().unwrap_or_else(|e| e.into_inner());
+                let notice = id
+                    .as_ref()
+                    .and_then(|id| queue.entries.iter().find(|notice| &notice.id == id))
+                    .filter(|notice| notice.is_pending())
+                    .ok_or("系统代理恢复通知已失效")?;
+                if !notice
+                    .actions
+                    .iter()
+                    .any(|action| matches!(action, Action::RetrySystemProxy))
+                {
+                    return Err("该通知不支持重试系统代理恢复".into());
+                }
+                notice.source.clone()
+            };
+            let after_tun = match source.as_str() {
+                "tun-switch" | "tray-tun" | "tun-health" => true,
+                "sysproxy-core-recovery" => false,
+                _ => return Err("该通知不支持重试系统代理恢复".into()),
+            };
+            if state
+                .store
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .data()
+                .engine
+                .tun_enable
+            {
+                return Err("TUN 正在使用，请先关闭 TUN 再恢复系统代理".into());
+            }
+            let core_running = match state.core().status() {
+                crate::CoreStatus::Running => true,
+                crate::CoreStatus::Stopped | crate::CoreStatus::Crashed(_) => false,
+                crate::CoreStatus::Starting => return Err("内核正在启动，请稍后重试".into()),
+            };
+            if core_running && !after_tun {
+                // The old listener is no longer down. Retire the obsolete action quietly.
+                resolve(&app, &source);
+                return Ok(());
+            }
+            let result = state.sysproxy.retry_restore(core_running, after_tun);
+            let _ = app.emit("sysproxy://status", state.sysproxy.status());
+            crate::refresh_tray(&app);
+            match &result {
+                Ok(()) => resolve(&app, &source),
+                Err(error) => result_with_action(
+                    &app,
+                    &source,
+                    "sysproxy.restoreFailed",
+                    Err(error.clone()),
+                    Action::RetrySystemProxy,
+                ),
+            }
             result
         })
         .await
         .map_err(|error| error.to_string())?;
-        match result {
-            Ok(()) => resolve(&app, &recovery_source),
-            Err(error) => {
-                result_with_action(
-                    &app,
-                    &recovery_source,
-                    "sysproxy.restoreFailed",
-                    Err(error.clone()),
-                    Action::RetrySystemProxy,
-                );
-                return Err(error);
-            }
-        }
-        return Ok(());
     }
     if matches!(action, Action::RetryDownload) {
         std::thread::spawn(move || {
@@ -992,6 +1018,36 @@ pub async fn notification_action(
     }
     crate::show_main_window(&app);
     Ok(())
+}
+
+#[cfg(any(target_os = "macos", windows))]
+pub(crate) fn tun_result(
+    app: &AppHandle,
+    state: &crate::AppState,
+    source: &str,
+    code: &str,
+    outcome: Result<(), String>,
+) {
+    let tun_enabled = state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .engine
+        .tun_enable;
+    let core_down = matches!(
+        state.core().status(),
+        crate::CoreStatus::Stopped | crate::CoreStatus::Crashed(_)
+    );
+    if outcome.is_err()
+        && !tun_enabled
+        && (state.sysproxy.has_pending_tun_restore()
+            || (core_down && state.sysproxy.has_pending_proxy_restore()))
+    {
+        result_with_action(app, source, code, outcome, Action::RetrySystemProxy);
+    } else {
+        result(app, source, code, outcome);
+    }
 }
 #[tauri::command]
 pub fn notification_ack_navigation(window: WebviewWindow, service: State<Notifications>) {
