@@ -63,10 +63,14 @@ fn toggle_tun_locked(state: &AppState, enable: bool) -> Result<(), String> {
     // （v0.11.0 实测，#159 用户反馈）。服务托管的 SYSTEM 内核由 stop()
     // 内部路由给特权服务停止，用户态内核走常规路径。
     if was_running && !state.core().stop() {
-        if let Some(suspended) = suspended_proxy {
-            state.sysproxy.restore_after_failed_tun(suspended)?;
-        }
-        return Err("旧内核未退出，TUN 状态未改变；请重试切换".into());
+        let proxy_error = suspended_proxy
+            .and_then(|suspended| state.sysproxy.restore_after_failed_tun(suspended).err());
+        return Err(format!(
+            "旧内核未退出，TUN 状态未改变；请重试切换{}",
+            proxy_error
+                .map(|error| format!("；系统代理恢复失败：{error}"))
+                .unwrap_or_default()
+        ));
     }
 
     {
@@ -75,10 +79,29 @@ fn toggle_tun_locked(state: &AppState, enable: bool) -> Result<(), String> {
         if let Err(error) = store.save() {
             store.data_mut().engine.tun_enable = previous_tun;
             drop(store);
-            if let Some(suspended) = suspended_proxy {
-                state.sysproxy.restore_after_failed_tun(suspended)?;
+            let recovery_result =
+                restore_previous_core(state, was_running || previous_proxy.enabled, previous_tun);
+            let proxy_error = if previous_proxy.enabled && recovery_result.is_err() {
+                state.sysproxy.disable().err()
+            } else {
+                suspended_proxy
+                    .and_then(|suspended| state.sysproxy.restore_after_failed_tun(suspended).err())
+            };
+            let mut recovery_errors = Vec::new();
+            if let Err(error) = recovery_result {
+                recovery_errors.push(format!("旧内核恢复失败：{error}"));
             }
-            return Err(error.to_string());
+            if let Some(error) = proxy_error {
+                recovery_errors.push(format!("系统代理恢复失败：{error}"));
+            }
+            return if recovery_errors.is_empty() {
+                Err(format!("保存 TUN 设置失败：{error}；旧状态已恢复"))
+            } else {
+                Err(format!(
+                    "保存 TUN 设置失败：{error}；恢复未完成：{}",
+                    recovery_errors.join("；")
+                ))
+            };
         }
     }
 
@@ -96,34 +119,69 @@ fn toggle_tun_locked(state: &AppState, enable: bool) -> Result<(), String> {
                 }
             });
         if let Err(start_error) = start_result {
-            {
+            let settings_error = {
                 let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
                 store.data_mut().engine.tun_enable = previous_tun;
-                let _ = store.save();
-            }
-            if !enable {
-                // 旧的 SYSTEM 内核已由服务停掉；回滚时恢复非 TUN 内核
-                let _ = crate::service_client::stop_core();
-            }
-            let recovery_error = (was_running || previous_proxy.enabled)
-                .then(|| crate::start_core_locked(state).err())
-                .flatten();
-            let proxy_rollback_error = if previous_proxy.enabled && recovery_error.is_some() {
+                store.save().err().map(|error| error.to_string())
+            };
+            let recovery_result =
+                restore_previous_core(state, was_running || previous_proxy.enabled, previous_tun);
+            let proxy_rollback_error = if previous_proxy.enabled && recovery_result.is_err() {
                 state.sysproxy.disable().err()
             } else {
                 suspended_proxy
                     .and_then(|suspended| state.sysproxy.restore_after_failed_tun(suspended).err())
             };
-            return Err(format!(
-                "TUN 切换失败已回滚：{start_error}{}",
-                proxy_rollback_error
-                    .map(|e| format!("；代理恢复失败：{e}"))
-                    .unwrap_or_default()
-            ));
+            let mut recovery_errors = Vec::new();
+            if let Some(error) = settings_error {
+                recovery_errors.push(format!("保存旧 TUN 设置失败：{error}"));
+            }
+            if let Err(error) = recovery_result {
+                recovery_errors.push(format!("旧内核恢复失败：{error}"));
+            }
+            if let Some(error) = proxy_rollback_error {
+                recovery_errors.push(format!("系统代理恢复失败：{error}"));
+            }
+            return if recovery_errors.is_empty() {
+                Err(format!(
+                    "TUN 切换失败，旧内核与代理状态已恢复：{start_error}"
+                ))
+            } else {
+                Err(format!(
+                    "TUN 切换失败，恢复未完成：{start_error}；{}",
+                    recovery_errors.join("；")
+                ))
+            };
         }
     }
     if !enable {
-        let _ = state.sysproxy.restore_after_tun();
+        state
+            .sysproxy
+            .restore_after_tun()
+            .map_err(|error| format!("TUN 已关闭，但系统代理恢复失败：{error}"))?;
+    }
+    Ok(())
+}
+
+fn restore_previous_core(
+    state: &AppState,
+    should_run: bool,
+    previous_tun: bool,
+) -> Result<(), String> {
+    if matches!(
+        state.core().status(),
+        crate::CoreStatus::Running | crate::CoreStatus::Starting
+    ) && !state.core().stop()
+    {
+        return Err("未能停止失败的内核".into());
+    }
+    if !should_run {
+        return Ok(());
+    }
+    crate::start_core_locked(state)?;
+    crate::wait_core_running(state)?;
+    if previous_tun {
+        wait_tun_active(state)?;
     }
     Ok(())
 }

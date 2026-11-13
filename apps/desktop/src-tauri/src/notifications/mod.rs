@@ -55,6 +55,8 @@ pub enum Action {
     Nodes,
     #[serde(rename = "retryDownload")]
     RetryDownload,
+    #[serde(rename = "retrySystemProxy")]
+    RetrySystemProxy,
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -488,6 +490,28 @@ pub fn result(app: &AppHandle, source: &str, code: &str, result: Result<(), Stri
     }
     publish(app, notice);
 }
+pub fn result_with_action(
+    app: &AppHandle,
+    source: &str,
+    code: &str,
+    result: Result<(), String>,
+    action: Action,
+) {
+    let mut notice = Notice::new(
+        if result.is_ok() {
+            Kind::Success
+        } else {
+            Kind::Error
+        },
+        code,
+        source,
+    );
+    if let Err(error) = result {
+        notice.details = error;
+        notice.actions = vec![action, Action::Diagnostics];
+    }
+    publish(app, notice);
+}
 // Tauri's show() makes the window key on macOS. Order it in front without
 // activation so background failures do not steal focus or close a tracked menu.
 fn show_overlay(window: &WebviewWindow) {
@@ -898,6 +922,49 @@ pub async fn notification_action(
     action: Action,
     id: Option<String>,
 ) -> Result<(), String> {
+    if matches!(&action, Action::RetrySystemProxy) {
+        let source = {
+            let queue = service.queue.lock().unwrap_or_else(|e| e.into_inner());
+            let notice = id
+                .as_ref()
+                .and_then(|id| queue.entries.iter().find(|notice| &notice.id == id))
+                .ok_or("系统代理恢复通知已失效")?;
+            if !notice
+                .actions
+                .iter()
+                .any(|candidate| matches!(candidate, Action::RetrySystemProxy))
+            {
+                return Err("该通知不支持重试系统代理恢复".into());
+            }
+            notice.source.clone()
+        };
+        let handle = app.clone();
+        let recovery_source = source.clone();
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            let state = handle.state::<crate::AppState>();
+            let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
+            let result = state.sysproxy.retry_restore();
+            let _ = handle.emit("sysproxy://status", state.sysproxy.status());
+            crate::refresh_tray(&handle);
+            result
+        })
+        .await
+        .map_err(|error| error.to_string())?;
+        match result {
+            Ok(()) => resolve(&app, &recovery_source),
+            Err(error) => {
+                result_with_action(
+                    &app,
+                    &recovery_source,
+                    "sysproxy.restoreFailed",
+                    Err(error.clone()),
+                    Action::RetrySystemProxy,
+                );
+                return Err(error);
+            }
+        }
+        return Ok(());
+    }
     if matches!(action, Action::RetryDownload) {
         std::thread::spawn(move || {
             let _ = crate::update_check::download_and_prepare(&app);
@@ -911,6 +978,7 @@ pub async fn notification_action(
         Action::Profiles => "profiles",
         Action::Nodes => "proxies",
         Action::RetryDownload => unreachable!(),
+        Action::RetrySystemProxy => unreachable!(),
     };
     {
         let mut queue = service.queue.lock().unwrap_or_else(|e| e.into_inner());
@@ -975,6 +1043,15 @@ pub fn resolve_core_failure(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retry_system_proxy_action_uses_frontend_contract_name() {
+        assert_eq!(
+            serde_json::to_string(&Action::RetrySystemProxy).unwrap(),
+            "\"retrySystemProxy\""
+        );
+    }
+
     fn visible_queue() -> Queue {
         let mut queue = Queue::default();
         queue.ready.insert("main".into());

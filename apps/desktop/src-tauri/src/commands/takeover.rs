@@ -220,7 +220,21 @@ pub(crate) async fn set_tun(
             notifications::Notice::new(notifications::Kind::Progress, "tray.tun", "tun-switch"),
         );
         let result = crate::network::tun::toggle_tun(&state, enable);
-        notifications::result(&app, "tun-switch", "tray.tun", result.clone());
+        if result
+            .as_ref()
+            .err()
+            .is_some_and(|error| error.contains("系统代理恢复失败"))
+        {
+            notifications::result_with_action(
+                &app,
+                "tun-switch",
+                "tray.tun",
+                result.clone(),
+                notifications::Action::RetrySystemProxy,
+            );
+        } else {
+            notifications::result(&app, "tun-switch", "tray.tun", result.clone());
+        }
         let actual = state
             .store
             .lock()
@@ -240,7 +254,21 @@ pub(crate) async fn set_tun(
             notifications::Notice::new(notifications::Kind::Progress, "tray.tun", "tun-switch"),
         );
         let result = crate::network::tun_windows::toggle_tun(&state, enable);
-        notifications::result(&app, "tun-switch", "tray.tun", result.clone());
+        if result
+            .as_ref()
+            .err()
+            .is_some_and(|error| error.contains("系统代理恢复失败"))
+        {
+            notifications::result_with_action(
+                &app,
+                "tun-switch",
+                "tray.tun",
+                result.clone(),
+                notifications::Action::RetrySystemProxy,
+            );
+        } else {
+            notifications::result(&app, "tun-switch", "tray.tun", result.clone());
+        }
         let actual = state
             .store
             .lock()

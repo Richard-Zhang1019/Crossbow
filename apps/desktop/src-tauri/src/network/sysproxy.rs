@@ -1133,6 +1133,17 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         self.restore_after_tun_locked()
     }
 
+    /// 用户主动重试恢复 Crossbow 代理租约或 TUN 前系统代理快照。
+    pub fn retry_restore(&self) -> Result<(), String> {
+        if self.journal_path.exists() || self.status().enabled {
+            self.disable()?;
+        }
+        if self.tun_journal_path().exists() {
+            self.restore_after_tun()?;
+        }
+        Ok(())
+    }
+
     /// 已持有代理操作锁的内部实现。
     #[cfg_attr(target_os = "linux", allow(dead_code))]
     fn restore_after_tun_locked(&self) -> Result<(), String> {
@@ -1818,6 +1829,51 @@ mod tests {
         mgr.disable().unwrap();
         assert!(!mgr.status().enabled);
         assert!(!dir.path().join("journal.json").exists());
+    }
+
+    #[test]
+    fn failed_tun_proxy_restore_keeps_journal_for_user_retry() {
+        let dir = tempfile::tempdir().unwrap();
+        let backend = FakeBackend::new(&["Wi-Fi"]);
+        let manager = manager_with(backend.clone(), &dir);
+        let suspended = manager.suspend_for_tun().unwrap();
+        backend
+            .inner
+            .restore_fail_on
+            .lock()
+            .unwrap()
+            .push("Wi-Fi".into());
+
+        assert!(manager.restore_after_failed_tun(suspended).is_err());
+        assert!(dir.path().join("tun-proxy-journal.json").exists());
+
+        backend.inner.restore_fail_on.lock().unwrap().clear();
+        manager.retry_restore().unwrap();
+        assert!(!dir.path().join("tun-proxy-journal.json").exists());
+        assert!(backend.inner.enabled.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn user_retry_restores_proxy_journal_after_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let backend = FakeBackend::new(&["Wi-Fi"]);
+        let manager = manager_with(backend.clone(), &dir);
+        manager.enable(7897).unwrap();
+        backend
+            .inner
+            .restore_fail_on
+            .lock()
+            .unwrap()
+            .push("Wi-Fi".into());
+
+        assert!(manager.retry_restore().is_err());
+        assert!(dir.path().join("journal.json").exists());
+        assert!(manager.status().enabled);
+
+        backend.inner.restore_fail_on.lock().unwrap().clear();
+        manager.retry_restore().unwrap();
+        assert!(!dir.path().join("journal.json").exists());
+        assert!(!manager.status().enabled);
     }
 
     /// 退出清理必须等待尚未完成的授权写入，不能提前删除恢复日志。

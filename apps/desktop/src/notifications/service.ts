@@ -14,7 +14,8 @@ export type NotificationAction =
   | "logs"
   | "profiles"
   | "nodes"
-  | "retryDownload";
+  | "retryDownload"
+  | "retrySystemProxy";
 export interface Notification {
   id: string;
   kind: NotificationKind;
@@ -81,6 +82,7 @@ const copy = {
   profiles: ["打开配置", "Open profiles"],
   nodes: ["选择节点", "Pick a node"],
   retryDownload: ["重新下载", "Retry download"],
+  retrySystemProxy: ["重试系统代理恢复", "Retry system proxy recovery"],
   empty: ["本次会话暂无通知", "No notifications in this session"],
   settings: ["前往设置", "Open settings"],
   diagnostics: ["打开诊断", "Open diagnostics"],
@@ -145,6 +147,10 @@ const copy = {
   "sysproxy.coreDead": [
     "内核未运行，已关闭系统代理",
     "Core is down; system proxy turned off",
+  ],
+  "sysproxy.restoreFailed": [
+    "系统代理恢复未完成",
+    "System proxy recovery is incomplete",
   ],
   "tun.takeoverGiveUp": [
     "TUN 接管异常，已停止自动恢复",
