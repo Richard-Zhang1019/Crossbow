@@ -4,10 +4,14 @@
   "compatibility_date": "2026-11-10",
   "workers_dev": true,
   "preview_urls": false,
-  "observability": { "enabled": false },
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "invocation_logs": false, "head_sampling_rate": 1 },
+    "traces": { "enabled": false }
+  },
   "triggers": {
-    // 16:05 UTC is 00:05 the next day in Asia/Shanghai.
-    "crons": ["5 16 * * *"]
+    // Beijing 00:05, 00:10 and 00:15 on the following day.
+    "crons": ["5 16 * * *", "10 16 * * *", "15 16 * * *"]
   },
   "d1_databases": [
     {
