@@ -184,7 +184,21 @@ mod tests {
         let binary = Path::new("Contents/MacOS/Crossbow");
         fs::create_dir_all(backup.join(binary.parent().unwrap())).unwrap();
         fs::create_dir_all(target.parent().unwrap()).unwrap();
-        fs::copy("/usr/bin/true", backup.join(binary)).unwrap();
+        // A copied Apple system binary can retain platform-specific launch
+        // constraints after ad-hoc signing. Build a regular Mach-O fixture.
+        let source = temp.path().join("fixture.c");
+        fs::write(&source, b"int main(void) { return 0; }\n").unwrap();
+        let compile = Command::new("/usr/bin/clang")
+            .arg(&source)
+            .arg("-o")
+            .arg(backup.join(binary))
+            .output()
+            .unwrap();
+        assert!(
+            compile.status.success(),
+            "could not build rollback fixture: {}",
+            String::from_utf8_lossy(&compile.stderr)
+        );
         let plist = concat!(
             r#"<?xml version="1.0" encoding="UTF-8"?>"#,
             r#"<plist version="1.0"><dict>"#,
@@ -200,15 +214,13 @@ mod tests {
             .status()
             .unwrap()
             .success());
+        assert_launches(&backup.join(binary));
 
         restore(&backup, &target, binary).unwrap();
         fs::write(target.join("Contents/partial-new-file"), b"partial").unwrap();
         restore(&backup, &target, binary).unwrap();
         assert!(!target.join("Contents/partial-new-file").exists());
-        assert!(Command::new(target.join(binary))
-            .status()
-            .unwrap()
-            .success());
+        assert_launches(&target.join(binary));
         verify_signature(&backup).unwrap();
 
         fs::remove_dir_all(&target).unwrap();
@@ -253,5 +265,16 @@ mod tests {
         verify_signature(&preserved).unwrap();
         assert!(error.contains(&preserved.display().to_string()));
         assert_eq!(fs::read(&target).unwrap(), b"unexpected occupant");
+    }
+
+    fn assert_launches(executable: &Path) {
+        let output = Command::new(executable).output().unwrap();
+        assert!(
+            output.status.success(),
+            "{} exited with {}: {}",
+            executable.display(),
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }

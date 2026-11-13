@@ -955,11 +955,15 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let pidfile = directory.path().join("app.pid");
         std::fs::write(&pidfile, std::process::id().to_string()).unwrap();
-        assert_eq!(
-            acquire_app_instance(directory.path()).unwrap_err().kind(),
-            std::io::ErrorKind::WouldBlock
-        );
+        let error = acquire_app_instance(directory.path()).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::WouldBlock);
+        assert!(error
+            .to_string()
+            .contains(&format!("(pid {})", std::process::id())));
         for content in [b"".as_slice(), b"not a pid", b"0", b"4294967296"] {
+            // A concurrent fork may briefly inherit a previous flock before exec.
+            let directory = tempfile::tempdir().unwrap();
+            let pidfile = directory.path().join("app.pid");
             std::fs::write(&pidfile, content).unwrap();
             let _lock = acquire_app_instance(directory.path()).unwrap();
             assert_eq!(
