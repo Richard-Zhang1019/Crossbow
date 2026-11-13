@@ -960,6 +960,9 @@ mod tests {
             std::io::ErrorKind::WouldBlock
         );
         for content in [b"".as_slice(), b"not a pid", b"0", b"4294967296"] {
+            // A parallel fork can briefly inherit a dropped flock until exec on macOS.
+            let directory = tempfile::tempdir().unwrap();
+            let pidfile = directory.path().join("app.pid");
             std::fs::write(&pidfile, content).unwrap();
             let _lock = acquire_app_instance(directory.path()).unwrap();
             assert_eq!(
