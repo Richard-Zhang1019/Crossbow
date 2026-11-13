@@ -82,6 +82,7 @@ async function githubJson(url, request, context) {
         accept: "application/vnd.github+json",
         "user-agent": "crossbow-metrics",
         "x-github-api-version": "2026-03-10",
+        ...(context.token ? { authorization: `Bearer ${context.token}` } : {}),
       },
       signal: AbortSignal.timeout(Math.max(1, Math.min(10_000, deadline - now()))),
     });
@@ -98,7 +99,7 @@ async function githubJson(url, request, context) {
     ));
     if (rateLimited) {
       const retryAt = rateLimitUntil(response, now());
-      context.logger.warn({ day: context.day, stage: "github", outcome: "rate_limited", httpStatus: status, retryAt });
+      context.logger.warn({ day: context.day, stage: "github", outcome: "rate_limited", httpStatus: status, retryAt, tokenConfigured: Boolean(context.token) });
       // Persist a rate limit even when the response arrived at the collection cutoff.
       await snapshotStage("write_cooldown", { ...context, deadline: now() + 10_000 }, () => d1(() => db.prepare(
         `INSERT INTO github_snapshot_cooldown (id, retry_at) VALUES (1, ?)
@@ -156,12 +157,12 @@ async function releaseAssets(request, context) {
 }
 
 export async function collectSnapshot(db, scheduledTime, request = fetch, {
-  now = Date.now, wait = sleep, logger = console,
+  now = Date.now, wait = sleep, logger = console, token,
 } = {}) {
   const midnight = Math.floor((scheduledTime + SHANGHAI_OFFSET_MS) / DAY_MS) * DAY_MS - SHANGHAI_OFFSET_MS;
   const day = new Date(midnight + SHANGHAI_OFFSET_MS).toISOString().slice(0, 10);
   const deadline = midnight + CUTOFF_MS;
-  const context = { db, day, deadline, now, wait, logger };
+  const context = { db, day, deadline, now, wait, logger, token };
 
   function skip(reason, fields = {}) {
     logger.log({ day, stage: "snapshot", outcome: "skipped", reason, ...fields });
@@ -211,7 +212,7 @@ export default {
   },
   scheduled(controller, env, ctx) {
     const time = controller.scheduledTime;
-    ctx.waitUntil(collectSnapshot(env.DB, time));
+    ctx.waitUntil(collectSnapshot(env.DB, time, fetch, { token: env.GITHUB_TOKEN }));
     if (controller.cron === "5 16 * * *") {
       ctx.waitUntil(pruneActivity(env.DB, time).catch(() => {
         console.error({ stage: "prune_activity", outcome: "failed", code: "d1_error" });

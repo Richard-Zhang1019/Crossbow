@@ -79,6 +79,24 @@ function github({ stars = 123, failPageTwo = false } = {}) {
   };
 }
 
+test("sends the configured GitHub token as a bearer header", async (t) => {
+  const db = testDatabase(t);
+  const seen = [];
+  const github = async (url, init) => {
+    seen.push({ url, authorization: init?.headers?.authorization });
+    if (!url.includes("/releases")) return Response.json({ stargazers_count: 123 });
+    return Response.json([{
+      tag_name: "v0.14.1",
+      assets: [asset(1, "Crossbow_0.14.1_aarch64.dmg")],
+    }]);
+  };
+  const { options } = fixture();
+  const result = await collectSnapshot(db, tick, github, { ...options, token: "secret-token" });
+  assert.equal(result.inserted, true);
+  assert.deepEqual(seen.map(({ authorization }) => authorization),
+    ["Bearer secret-token", "Bearer secret-token"]);
+});
+
 test("collects stable installation assets across pages in one Beijing-day snapshot", async (t) => {
   const db = testDatabase(t);
   await collectSnapshot(db, tick, github(), fixture().options);
