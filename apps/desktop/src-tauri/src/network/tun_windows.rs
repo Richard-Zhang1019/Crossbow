@@ -33,6 +33,45 @@ pub fn disable_if_enabled(state: &AppState) -> Result<(), String> {
     toggle_tun_locked(state, false)
 }
 
+/// 由健康看门狗执行一次受控服务重启；只有内核和 TUN 适配器都重新就绪
+/// 才报告成功，失败时调用方应立即降级关闭 TUN。
+pub(crate) fn restart_for_health(state: &AppState) -> Result<(), String> {
+    let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
+    state.exit.ensure_open()?;
+    let tun_enabled = {
+        let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+        store.data().engine.tun_enable
+    };
+    if !tun_enabled || state.core().status() != crate::CoreStatus::Running {
+        return Err("TUN 或内核状态已变化，取消自动重启".into());
+    }
+    if !state.core().stop() {
+        return Err("无法停止 TUN 内核，取消自动重启".into());
+    }
+    crate::start_core_locked(state)?;
+
+    let deadline = Instant::now() + crate::engine::timing::WINDOWS_TUN_READY_DEADLINE;
+    loop {
+        match state.core().status() {
+            crate::CoreStatus::Running => {
+                if let Some((port, secret)) = state.core().controller() {
+                    let client = crate::engine::api::Controller { port, secret };
+                    if let Ok(Some(_device)) = client.active_tun_device() {
+                        return Ok(());
+                    }
+                }
+            }
+            crate::CoreStatus::Crashed(error) => return Err(error),
+            crate::CoreStatus::Stopped => return Err("重启后的 TUN 内核已停止".into()),
+            crate::CoreStatus::Starting => {}
+        }
+        if Instant::now() >= deadline {
+            return Err("重启后 TUN 内核或适配器未及时就绪".into());
+        }
+        std::thread::sleep(Duration::from_millis(300));
+    }
+}
+
 fn toggle_tun_locked(state: &AppState, enable: bool) -> Result<(), String> {
     let previous_tun = {
         let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
