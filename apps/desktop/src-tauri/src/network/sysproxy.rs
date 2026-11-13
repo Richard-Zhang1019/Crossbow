@@ -787,22 +787,22 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
                 .as_ref()
                 .is_some_and(|ep| ep.host == "127.0.0.1" && ep.port == port)
         }
-        if !endpoint_owned(&current.web, port)
-            || !endpoint_owned(&current.secure, port)
-            || !endpoint_owned(&current.socks, port)
-        {
-            return false;
-        }
+        let endpoints_owned = endpoint_owned(&current.web, port)
+            && endpoint_owned(&current.secure, port)
+            && endpoint_owned(&current.socks, port);
         #[cfg(windows)]
-        if let Some(config) = &current.windows {
-            if !config.pac_url.is_empty()
-                || config.flags & windows::PROXY_TYPE_AUTO_PROXY_URL != 0
-                || config.flags & windows::PROXY_TYPE_AUTO_DETECT != 0
-            {
-                return false;
-            }
+        {
+            endpoints_owned
+                && current.windows.as_ref().is_none_or(|config| {
+                    config.pac_url.is_empty()
+                        && config.flags & windows::PROXY_TYPE_AUTO_PROXY_URL == 0
+                        && config.flags & windows::PROXY_TYPE_AUTO_DETECT == 0
+                })
         }
-        true
+        #[cfg(not(windows))]
+        {
+            endpoints_owned
+        }
     }
 
     /// #458：TUN 挂起语义下的归属核对——suspend 时 Crossbow 把服务关到
@@ -940,13 +940,9 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             .operation
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        if self.shutting_down.load(Ordering::SeqCst)
-            || self.state.lock().unwrap().is_some()
-            || self.external_endpoints().is_empty()
-        {
-            return false;
-        }
-        true
+        !self.shutting_down.load(Ordering::SeqCst)
+            && self.state.lock().unwrap().is_none()
+            && !self.external_endpoints().is_empty()
     }
 
     /// 自动重建前检查外部代理，避免关闭后无法在后台再次挂起代理。
