@@ -179,7 +179,6 @@ fn redact_connection_line(line: &str) -> String {
             regex::Regex::new(r"(using )\S.*").unwrap(),
         )
     });
-    let has_connection_shape = line.contains("-->") && line.contains("using ");
     let line = target.replace_all(line, "${1}[target redacted]");
     if line.contains("using ") && !line.contains("match DIRECT") && !line.contains("match GeoIP") {
         return outbound

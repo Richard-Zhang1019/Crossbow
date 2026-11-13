@@ -2,8 +2,8 @@ import {Icon} from "@/components/Icon";
 import { Button } from "@/components/Button";
 import { notify, notificationText } from "@/notifications/service";
 import { useOperationNotice } from "@/notifications/NotificationProvider";
-import { useEffect, useRef, useState } from "react";
-import { ipc, type CheckResult } from "@/services/ipc";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ipc, type CheckResult, type CoreStatus } from "@/services/ipc";
 import { useT } from "@/i18n/i18n";
 import { PageHead } from "@/pages/Home";
 import { ProgressRing } from "@/components/ProgressRing";
@@ -19,6 +19,7 @@ export default function DiagnosticsPage() {
   const [results, setResults] = useState<CheckResult[] | null>(previousResults);
   const [completedAt, setCompletedAt] = useState<number | null>(previousCompletedAt);
   const [stale, setStale] = useState(false);
+  const [summaryText, setSummaryText] = useState<string | null>(null);
   const [runFailed,setRunFailed]=useState(false);
   const [checking, setChecking] = useState<string | null>(null);
   const [fixing, setFixing] = useState<CheckResult | null>(null);
@@ -32,6 +33,62 @@ export default function DiagnosticsPage() {
   const active = useRef(true),
     runId = useRef<string | null>(null),
     inFlight = useRef(false);
+  // #471：失败检查 id → 官网排障章节锚点（guide#troubleshooting 页内跳转）
+  const guideAnchorFor = (id: string): string | null => {
+    switch (id) {
+      case "core_running":
+      case "controller":
+        return "core";
+      case "sysproxy":
+        return "proxy-vs-tun";
+      case "listener":
+      case "proxied_traffic":
+        return "ports";
+      default:
+        return null;
+    }
+  };
+  // #471：分享摘要由结构化字段生成（排除原始日志/订阅地址/凭据/访问目标），
+  // 预览 = 复制内容；失败项附官网排障章节锚点。
+  const buildSummary = useCallback(async (): Promise<string> => {
+    const app = await ipc.appVersion().catch(() => "unknown");
+    const core = await ipc.coreVersion().catch(() => "unknown");
+    const status: CoreStatus | null = await ipc.coreStatus().catch(() => null);
+    const proxy: { enabled: boolean; port: number } | null = await ipc
+      .sysproxyStatus()
+      .catch(() => null);
+    const lines: string[] = [];
+    lines.push(`Crossbow ${app} (${navigator.platform})`);
+    lines.push(`core: ${core}${status ? ` [${status.state}]` : ""}`);
+    lines.push(
+      `sysproxy: ${proxy ? (proxy.enabled ? `on :${proxy.port}` : "off") : "unknown"}`,
+    );
+    const mixedPort = await ipc
+      .getEngineConfig()
+      .then((c) => c.mixed_port)
+      .catch(() => "unknown");
+    lines.push(`mixed-port: ${mixedPort}`);
+    if (completedAt) {
+      lines.push(`checked at: ${new Date(completedAt).toLocaleString()}`);
+    }
+    if (results?.length) {
+      const failed = results.filter((r) => !r.ok && !r.skipped);
+      lines.push(`failed checks: ${failed.length}`);
+      for (const row of failed) {
+        const anchorId = guideAnchorFor(row.id);
+        lines.push(`- ${row.id} (${row.detail})${anchorId ? ` → guide#${anchorId}` : ""}`);
+      }
+    } else {
+      lines.push("no failed checks in last run");
+    }
+    return lines.join("\n");
+  }, [results, completedAt, t]);
+
+  const copySummary = useCallback(async () => {
+    const text = await buildSummary();
+    await navigator.clipboard.writeText(text);
+    notify.resolve("diagnostics-summary");
+  }, [buildSummary]);
   useEffect(() => {
     active.current = true;
     const invalidate = () => {
@@ -60,6 +117,18 @@ export default function DiagnosticsPage() {
       void off.then(unsubscribe => unsubscribe()).catch(() => {});
     };
   }, []);
+
+  // #471：结果或环境变化后重新生成可分享摘要文本
+  useEffect(() => {
+    if (running || !results?.length) {
+      setSummaryText(null);
+      return;
+    }
+    void buildSummary().then(setSummaryText).catch(() => setSummaryText(null));
+  }, [results, buildSummary]);
+  const isZh = (navigator.language || "").toLowerCase().startsWith("zh");
+  const guideUrl = `${isZh ? "https://crossbow-client.netlify.app/zh" : "https://crossbow-client.netlify.app"}/guide#troubleshooting`;
+
   const run = async () => {
     if (!active.current || inFlight.current) return;
     inFlight.current = true;
@@ -147,6 +216,19 @@ export default function DiagnosticsPage() {
                   : t(runFailed?"diag.incomplete":applicable.length ? "diag.applicableOk" : "diag.title")}
             </h2>
           </div>
+          {!running && results?.length ? (
+            <div className="cb-diag-summary" data-testid="diag-summary">
+              <pre className="cb-diag-summary-text">{summaryText ?? t("diag.summaryBuilding")}</pre>
+              <div className="cb-diag-summary-actions">
+                <Button onClick={() => void copySummary()}>
+                  {t("diag.summaryCopy")}
+                </Button>
+                <a className="text-link" href={guideUrl} target="_blank" rel="noreferrer">
+                  {t("diag.summaryGuide")}
+                </a>
+              </div>
+            </div>
+          ) : null}
           {!running && stale && results?.length ? (
             <div className="cb-diag-stale" role="status">
               {t("diag.stale")} · {completedAt ? new Date(completedAt).toLocaleTimeString() : ""}
