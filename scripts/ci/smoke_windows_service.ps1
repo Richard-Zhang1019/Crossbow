@@ -76,6 +76,41 @@ try {
     if ($probe.ExitCode -ne 0) { throw 'Preflight rejected released executable' }
     Start-Service CrossbowService
     (Get-Service CrossbowService).WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Running, [TimeSpan]::FromSeconds(10))
+    # Exercise the actual installer abort with the service initially running
+    # and stopped. An external sharing lock must survive Restart Manager.
+    $serviceExe = Join-Path (Split-Path $gui) 'crossbow-service.exe'
+    $coreExe = Join-Path (Split-Path $gui) 'mihomo.exe'
+    $serviceHash = (Get-FileHash $serviceExe).Hash
+    $coreHash = (Get-FileHash $coreExe).Hash
+    foreach ($expectedStatus in @('Running', 'Stopped')) {
+        $service = Get-Service CrossbowService
+        if ($expectedStatus -eq 'Stopped') {
+            Stop-Service -InputObject $service
+            $service.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(10))
+        }
+        # Restart Manager registers the GUI only. Lock a sidecar so the
+        # installer reaches our preflight and cannot close the smoke runner.
+        $lock = [IO.File]::Open($coreExe, 'Open', 'Read', 'Read')
+        try {
+            $blocked = Start-Process -FilePath $installer -ArgumentList '/S' -PassThru
+            if (-not $blocked.WaitForExit(90000)) {
+                Stop-Process -Id $blocked.Id -Force -ErrorAction SilentlyContinue
+                throw "Locked upgrade timed out with service initially $expectedStatus"
+            }
+            $blocked.Refresh()
+            if ($blocked.ExitCode -ne 107) {
+                throw "Expected upgrade preflight exit 107, got $($blocked.ExitCode)"
+            }
+        } finally { $lock.Dispose() }
+        if ((Get-Service CrossbowService).Status -ne $expectedStatus) {
+            throw "Failed upgrade did not preserve service state $expectedStatus"
+        }
+        if ((Get-FileHash $gui).Hash -ne $beforeHash -or (Get-FileHash $serviceExe).Hash -ne $serviceHash -or (Get-FileHash $coreExe).Hash -ne $coreHash) {
+            throw 'Failed upgrade changed an installed executable'
+        }
+    }
+    Start-Service CrossbowService
+    (Get-Service CrossbowService).WaitForStatus('Running', [TimeSpan]::FromSeconds(10))
     # Install while the service AND an EXE at the exact installed GUI path run.
     # Use an inert process fixture: no user profile, proxy, TUN or GUI interaction.
     $fixtureDir = Join-Path $env:RUNNER_TEMP 'crossbow-upgrade-fixture'
