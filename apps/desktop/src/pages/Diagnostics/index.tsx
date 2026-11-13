@@ -9,7 +9,7 @@ import { ipc, type CheckResult } from "@/services/ipc";
 import { currentLang, useT } from "@/i18n/i18n";
 import { PageHead } from "@/pages/Home";
 import { ProgressRing } from "@/components/ProgressRing";
-import { DIAG_STEPS } from "@/lib/workflow";
+import { DIAG_STEPS, navigateTo } from "@/lib/workflow";
 import { failedChecks, guideUrl, isStale, remainingAge, shareText, type DiagnosisSnapshot } from "./report";
 
 let previousReport: DiagnosisSnapshot | null = null;
@@ -118,7 +118,15 @@ export default function DiagnosticsPage({
     fixingRef.current = true;
     setFixing(row);
     try {
-      if (row.fix === "start_core") await ipc.coreStart();
+      if (row.fix === "start_core") {
+        const [profile, engine] = await Promise.all([ipc.activeProfileId(), ipc.getEngineConfig()]);
+        if (!active.current || isStale(report, revision.current)) return;
+        if (!profile || !engine.core_installed) {
+          navigateTo({ page: "home", control: "cb-first-connection" });
+          return;
+        }
+        await ipc.coreStart();
+      }
       if (row.fix === "restart_core") await ipc.coreRestart();
       if (row.fix === "enable_sysproxy") await ipc.diagnosisEnableSysproxy();
       void notify.resolve("diagnostics-fix");

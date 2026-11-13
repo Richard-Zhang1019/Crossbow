@@ -1,0 +1,15 @@
+{
+  "date": "2026-11-13",
+  "version": "v01",
+  "status": "implemented",
+  "issue": 467,
+  "base": "e69f9ac4349f64cced38e77052726c20ebe657a4",
+  "reference": "Issue #467 的首次连接工作流与验收场景",
+  "data": "生产组件与脱敏模拟 IPC",
+  "files": ["SPEC.md", "index.html", "preview.ts", "vite.config.mts"],
+  "previews": [
+    {"file": "previews/import-light.jpg", "width": 1120, "height": 730, "theme": "light", "language": "zh"},
+    {"file": "previews/verify-light.jpg", "width": 1120, "height": 730, "theme": "light", "language": "zh"},
+    {"file": "previews/takeover-dark.jpg", "width": 880, "height": 560, "theme": "dark", "language": "en"}
+  ]
+}

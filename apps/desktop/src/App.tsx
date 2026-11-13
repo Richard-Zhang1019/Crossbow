@@ -3,7 +3,7 @@ import { UpdateEntry } from "@/components/UpdateEntry";
 import { parseNavigation, type NavigationTarget } from "@/lib/workflow";
 import { ButtonBase, Button } from "@/components/Button";
 import { notify } from "@/notifications/service";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import HomePage, { coreText } from "@/pages/Home";
 import ProxiesPage from "@/pages/Proxies";
 import ProfilesPage from "@/pages/Profiles";
@@ -233,26 +233,21 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => {
-    const navigate = (event: Event) => {
-      const next = (event as CustomEvent<string>).detail;
-      if (isPage(next)) {
-        setDestination(null);
-        setPage(next);
-        if (next === "settings") setSettingSection("app");
-        if (next === "profiles") setConfigTab("sources");
-      }
-    };
-    window.addEventListener("cb:goto", navigate);
-    return () => window.removeEventListener("cb:goto", navigate);
+  const navigate = useCallback((raw: string) => {
+    const target = parseNavigation(raw);
+    if (!target || !isPage(target.page)) return;
+    setDestination(target);
+    setPage(target.page);
+    if (target.page === "settings") setSettingSection(target.settingSection ?? "app");
+    if (target.page === "profiles") setConfigTab("sources");
   }, []);
+  useEffect(() => {
+    const onNavigate = (event: Event) => navigate((event as CustomEvent<string>).detail);
+    window.addEventListener("cb:goto", onNavigate);
+    return () => window.removeEventListener("cb:goto", onNavigate);
+  }, [navigate]);
 
-  useNotificationNavigation(raw => {
-    const target=parseNavigation(raw);if(!target||!isPage(target.page))return;
-    setDestination(target);setPage(target.page);
-    if(target.page==="settings")setSettingSection(target.settingSection??"app");
-    if(target.page==="profiles")setConfigTab("sources");
-  });
+  useNotificationNavigation(navigate);
   useEffect(()=>{
     // Settings waits for its data and focuses the actual control, never the row.
     if(!destination || destination.page === "settings")return;
@@ -367,7 +362,8 @@ export default function App() {
           </nav>
         )}
         <div className={`cb-page-content cb-view-${page}`}>
-          {page === "home" && <HomePage capabilities={capabilities} />}
+          {page === "home" && <HomePage capabilities={capabilities} connectionRevision={diagnosisRevision}
+            listeners={diagnosisListeners} setupRequest={destination?.control === "cb-first-connection" ? destination : null} />}
           {page === "proxies" && <ProxiesPage />}
           {page === "profiles" && <ProfilesPage tab={configTab} focusProfileId={destination?.profileId} navigationRequest={destination} />}
           {page === "connections" && <ConnectionsPage />}

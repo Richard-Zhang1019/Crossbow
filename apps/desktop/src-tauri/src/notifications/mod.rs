@@ -53,6 +53,8 @@ pub enum Action {
     Logs,
     Profiles,
     Nodes,
+    #[serde(rename = "continueSetup")]
+    ContinueSetup,
     #[serde(rename = "retryDownload")]
     RetryDownload,
     #[serde(rename = "retrySystemProxy")]
@@ -868,7 +870,9 @@ pub fn notification_pause(
 }
 fn navigation_target(page: &str, source: &str) -> String {
     let mut target = serde_json::json!({"page":page});
-    if page == "profiles" {
+    if page == "home" {
+        target["control"] = "cb-first-connection".into();
+    } else if page == "profiles" {
         if source.starts_with("snapshot") {
             target["control"] = "cb-config-recovery".into();
         }
@@ -1003,6 +1007,7 @@ pub async fn notification_action(
         Action::Logs => "logs",
         Action::Profiles => "profiles",
         Action::Nodes => "proxies",
+        Action::ContinueSetup => "home",
         Action::RetryDownload => unreachable!(),
         Action::RetrySystemProxy => unreachable!(),
     };
@@ -1435,6 +1440,10 @@ mod workflow_navigation_tests {
             assert_eq!(target["settingSection"], "network");
             assert_eq!(target["control"], "cb-core-download");
         }
+        let setup: serde_json::Value =
+            serde_json::from_str(&super::navigation_target("home", "core-download")).unwrap();
+        assert_eq!(setup["page"], "home");
+        assert_eq!(setup["control"], "cb-first-connection");
         let unknown: serde_json::Value =
             serde_json::from_str(&super::navigation_target("profiles", "unrelated")).unwrap();
         assert!(unknown.get("profileId").is_none());

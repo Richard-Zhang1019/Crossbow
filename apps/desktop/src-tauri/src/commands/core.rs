@@ -63,6 +63,11 @@ pub(crate) async fn core_install(
     notice.description = "preparing".into();
     notifications::publish(&app, notice);
     let handle = app.clone();
+    let downloaded_engine = if engine.as_deref() == Some("singbox") {
+        crossbow_core::Engine::SingBox
+    } else {
+        crossbow_core::Engine::Mihomo
+    };
     let result = tauri::async_runtime::spawn_blocking(move || core_install_inner(handle, engine))
         .await
         .map_err(|e| e.to_string())
@@ -77,7 +82,24 @@ pub(crate) async fn core_install(
         notice.actions = vec![notifications::Action::Settings];
         notifications::publish(&app, notice);
     } else {
-        notifications::result(&app, "core-download", "core.installReady", Ok(()));
+        let selected_engine = state
+            .store
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .data()
+            .engine
+            .engine;
+        let mut notice = notifications::Notice::new(
+            notifications::Kind::Success,
+            "core.installReady",
+            "core-download",
+        );
+        if selected_engine == downloaded_engine
+            && !matches!(state.core().status(), CoreStatus::Running)
+        {
+            notice.actions = vec![notifications::Action::ContinueSetup];
+        }
+        notifications::publish(&app, notice);
     }
     result
 }

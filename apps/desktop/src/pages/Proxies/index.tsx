@@ -16,6 +16,7 @@ import { PageHead } from "@/pages/Home";
 import SiteConnectivity from "@/components/SiteConnectivity";
 import FitItems from "@/components/FitItems";
 import { Icon } from "@/components/Icon";
+import { navigateTo } from "@/lib/workflow";
 
 /** 地区聚类（#141）：旗标优先，名称关键词兜底；顺序即 chips 顺序。 */
 const REGIONS: { key: string; flags: string[]; words: string[] }[] = [
@@ -95,7 +96,7 @@ export default function ProxiesPage() {
   const [groupName, setGroupName] = useState("");
   const [groupQuery, setGroupQuery] = useState("");
   const [groups, setGroups] = useState<GroupView[]>([]);
-  const [phase, setPhase] = useState<"loading" | "error" | "noConfig" | "stopped" | "ready">("loading");
+  const [phase, setPhase] = useState<"loading" | "error" | "noConfig" | "missingCore" | "stopped" | "ready">("loading");
   const [starting, setStarting] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
   const [testingNodes, setTestingNodes] = useState<Set<string>>(new Set());
@@ -109,10 +110,14 @@ export default function ProxiesPage() {
     const revision = ++snapshotRevision.current;
     if (!silent) setPhase("loading");
     try {
-      const [profiles, core] = await Promise.all([ipc.listProfiles(), ipc.coreStatus()]);
+      const [profile, core] = await Promise.all([ipc.activeProfileId(), ipc.coreStatus()]);
       if (revision !== snapshotRevision.current) return;
-      if (!profiles.length || core.state !== "Running") {
-        setGroups([]); setPhase(!profiles.length ? "noConfig" : "stopped"); return;
+      if (!profile || core.state !== "Running") {
+        const missing = profile && core.state !== "Starting" && !(await ipc.getEngineConfig()).core_installed;
+        if (revision !== snapshotRevision.current) return;
+        setGroups([]);
+        setPhase(!profile ? "noConfig" : missing ? "missingCore" : "stopped");
+        return;
       }
       const snapshot = await ipc.proxiesSnapshot();
       if (revision === snapshotRevision.current) { setGroups(snapshot); setPhase("ready"); }
@@ -127,8 +132,7 @@ export default function ProxiesPage() {
   useEffect(() => {
     load();
     const un = ipc.onCoreStatus((s) => {
-      if (s.state === "Running" && !selectionInFlight.current) void load();
-      else if (s.state !== "Running") { ++snapshotRevision.current; setGroups([]); setPhase("stopped"); }
+      if (!selectionInFlight.current) void load(s.state !== "Running");
     });
     // 自动组切换与托盘操作发生在页面外，展示状态以最新内核快照为准。
     const switched = () => void load();
@@ -306,7 +310,8 @@ export default function ProxiesPage() {
           <Icon name="bolt" size={24} />
           <h2>{t(`proxies.state.${phase === "ready" ? "noGroups" : phase}`)}</h2>
           <p>{t(`proxies.hint.${phase === "ready" ? "noGroups" : phase}`)}</p>
-          {phase === "noConfig" && <Button onClick={() => window.dispatchEvent(new CustomEvent("cb:goto", { detail: "profiles" }))}>{t("studio.importSource")}</Button>}
+          {phase === "noConfig" && <Button onClick={() => navigateTo({ page: "profiles", control: "cb-import-profile" })}>{t("studio.importSource")}</Button>}
+          {phase === "missingCore" && <Button onClick={() => navigateTo({ page: "home", control: "cb-first-connection" })}>{t("setup.downloadAction")}</Button>}
           {phase === "stopped" && <Button loading={starting} disabled={starting} onClick={async () => {
             setStarting(true);
             try { await notify.run("nodes-start-core", t("home.core"), () => ipc.coreStart(), undefined, { feedback: "error-only" }); }

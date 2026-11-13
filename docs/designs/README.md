@@ -15,6 +15,7 @@
 
 | 日期 | 主题 | 版本 | 状态 | 文件 | 关联 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-11-13 | 首次连接引导 | v01 | 已实现，待原生验收 | [说明与源稿](2026-11-13-first-connection/v01/SPEC.md) · [浅色导入](2026-11-13-first-connection/v01/previews/import-light.jpg) · [深色接管](2026-11-13-first-connection/v01/previews/takeover-dark.jpg) | #467 |
 | 2026-11-10 | 节点卡片随高度分页 | v01 | 已实现，待评审 | [说明与源稿](2026-11-10-adaptive-node-pagination/v01/SPEC.md) · [三行](2026-11-10-adaptive-node-pagination/v01/previews/three-rows-light.jpg) · [最小窗口两行](2026-11-10-adaptive-node-pagination/v01/previews/two-rows-dark.jpg) | #410 |
 | 2026-11-06 | 顶栏更新入口：概览不再占高 | v01 | 已实现，待评审 | [说明](2026-11-06-toolbar-update/v01/SPEC.md) · [交互矩阵](2026-11-06-toolbar-update/v01/matrix.html) · [浅色](2026-11-06-toolbar-update/v01/previews/ready-zh-light.jpg) · [窄窗深色](2026-11-06-toolbar-update/v01/previews/compact-en-dark.jpg) | #337 |
 | 2026-11-06 | 概览左侧图表与段间距同步伸缩 | v03 | 已实现，视觉验收待补 | [说明](2026-11-05-overview-height/v03/SPEC.md) · [尺寸矩阵](2026-11-05-overview-height/v03/matrix.html) · [源稿](2026-11-05-overview-height/v03/source.zip) | #318 |
