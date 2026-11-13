@@ -908,6 +908,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha2",
  "socket2",
  "tar",
  "tauri",
