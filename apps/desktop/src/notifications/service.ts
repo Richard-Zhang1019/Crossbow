@@ -152,6 +152,10 @@ const copy = {
     "系统代理恢复未完成",
     "System proxy recovery is incomplete",
   ],
+  "sysproxy.restoreFailed.hint": [
+    "系统代理可能仍指向已停止的内核端口。点击“重试系统代理恢复”，并在系统提示时完成授权；取消授权后可稍后重试。",
+    "The system proxy may still point to the stopped core. Retry system proxy recovery and complete any system authorization prompt. If you cancel, you can retry later.",
+  ],
   "tun.takeoverGiveUp": [
     "TUN 接管异常，已停止自动恢复",
     "TUN takeover abnormal; auto-recovery paused",

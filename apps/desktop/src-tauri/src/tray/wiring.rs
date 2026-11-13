@@ -5,6 +5,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 /// 系统代理端口恢复重试间隔（等待端口释放）。
 const SYS_PROXY_RETRY_WAIT: std::time::Duration = std::time::Duration::from_millis(200);
+const SYS_PROXY_RECOVERY_SOURCE: &str = "sysproxy-core-recovery";
 /// 日志清扫器：尚无应用状态时的空转等待。
 const LOGS_SWEEP_IDLE_WAIT: std::time::Duration = std::time::Duration::from_secs(600);
 /// 日志清扫器：常规清扫周期。
@@ -21,6 +22,20 @@ const SPEED_TEST_WATCHDOG_BASE: Duration = Duration::from_secs(20);
 /// 每批测速的请求预算。
 #[cfg(target_os = "macos")]
 const SPEED_TEST_WATCHDOG_PER_BATCH_SECS: u64 = 6;
+
+fn sysproxy_recovery_failure_notice(error: String) -> notifications::Notice {
+    let mut notice = notifications::Notice::new(
+        notifications::Kind::Error,
+        "sysproxy.restoreFailed",
+        SYS_PROXY_RECOVERY_SOURCE,
+    );
+    notice.details = error;
+    notice.actions = vec![
+        notifications::Action::RetrySystemProxy,
+        notifications::Action::Diagnostics,
+    ];
+    notice
+}
 
 pub(crate) fn core_status_callback(handle: AppHandle) -> crate::engine::manager::Callback {
     std::sync::Arc::new(move |status| {
@@ -71,8 +86,12 @@ pub(crate) fn core_status_callback(handle: AppHandle) -> crate::engine::manager:
             // 状态一致性守护：内核崩溃时还原系统代理，避免断网。
             let proxy_was_on = state.sysproxy.status().enabled;
             if proxy_was_on {
-                if let Err(error) = state.sysproxy.disable() {
-                    eprintln!("core crash system proxy recovery failed: {error}");
+                match state.sysproxy.disable() {
+                    Ok(()) => notifications::resolve(&handle, SYS_PROXY_RECOVERY_SOURCE),
+                    Err(error) => {
+                        eprintln!("core crash system proxy recovery failed: {error}");
+                        notifications::publish(&handle, sysproxy_recovery_failure_notice(error));
+                    }
                 }
                 let _ = handle.emit("sysproxy://status", state.sysproxy.status());
                 refresh_tray(&handle);
@@ -450,9 +469,16 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                                         );
                                         notice.duration = Some(0);
                                         notifications::publish(&handle, notice);
+                                        notifications::resolve(&handle, SYS_PROXY_RECOVERY_SOURCE);
                                     }
                                     Err(error) => {
                                         eprintln!("sysproxy stale-off failed: {error}");
+                                        let _ = handle
+                                            .emit("sysproxy://status", state.sysproxy.status());
+                                        notifications::publish(
+                                            &handle,
+                                            sysproxy_recovery_failure_notice(error),
+                                        );
                                     }
                                 }
                             }
@@ -1291,6 +1317,20 @@ pub(crate) fn refresh_tray(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn proxy_recovery_failure_notice_offers_retry_with_error_details() {
+        let notice = sysproxy_recovery_failure_notice("authorization was cancelled".into());
+
+        assert_eq!(notice.kind, notifications::Kind::Error);
+        assert_eq!(notice.code, "sysproxy.restoreFailed");
+        assert_eq!(notice.source, SYS_PROXY_RECOVERY_SOURCE);
+        assert_eq!(notice.details, "authorization was cancelled");
+        assert!(notice
+            .actions
+            .iter()
+            .any(|action| { matches!(action, notifications::Action::RetrySystemProxy) }));
+    }
 
     #[test]
     fn failed_tun_restart_does_not_consume_budget_or_start_cooldown() {

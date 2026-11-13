@@ -226,15 +226,17 @@ function NotificationCard({
     ? notice.code === "core.install"
       ? text(`stage.${notice.description}`)
       : notice.description
-    : notice.kind === "error"
-      ? text("failedHint")
-      : notice.code === "core.safeMode"
-        ? text("safeMode.hint")
-        : (notice.code === "tun.externalProxy" || notice.code === "tun.manualRecovery")
-          ? text(`${notice.code}.hint`)
-          : notice.code === "tun.disabled"
-            ? text("tun.disabled.hint")
-            : "";
+    : notice.code === "sysproxy.restoreFailed"
+      ? text(`${notice.code}.hint`)
+      : notice.kind === "error"
+        ? text("failedHint")
+        : notice.code === "core.safeMode"
+          ? text("safeMode.hint")
+          : notice.code === "tun.externalProxy" || notice.code === "tun.manualRecovery"
+            ? text(`${notice.code}.hint`)
+            : notice.code === "tun.disabled"
+              ? text("tun.disabled.hint")
+              : "";
   const detailsId = `notice-details-${notice.id}`;
   const progressing = notice.kind === "progress";
   const percent =
@@ -412,7 +414,9 @@ function HistoryRow({
         : notice.description
       : notice.code === "core.safeMode"
         ? text("safeMode.hint")
-        : (notice.code === "tun.externalProxy" || notice.code === "tun.manualRecovery")
+        : (notice.code === "tun.externalProxy" ||
+            notice.code === "tun.manualRecovery" ||
+            notice.code === "sysproxy.restoreFailed")
           ? text(`${notice.code}.hint`)
           : notice.code === "tun.disabled"
             ? text("tun.disabled.hint")
