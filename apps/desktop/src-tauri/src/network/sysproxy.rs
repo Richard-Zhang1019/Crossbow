@@ -1139,19 +1139,42 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
 
     /// 各服务当前生效的 HTTP/HTTPS/SOCKS 代理端点（含第三方设置的）。
     /// 诊断用：判断系统代理是否指向本应用端口、是否存在第三方冲突。
+    /// #468：区分「系统代理确实关闭」与「读取失败」。Some(原因) = 读取
+    /// 失败（所有服务全部报错）；None = 读取成功（含确实关闭）。
+    pub(crate) fn read_failure_reason(&self) -> Option<String> {
+        let services = self.backend.list_services().ok()?;
+        if services.is_empty() {
+            return None;
+        }
+        let failures: Vec<String> = services
+            .iter()
+            .filter_map(|svc| {
+                self.backend
+                    .service_snapshot(svc)
+                    .err()
+                    .map(|error| format!("{svc}: {error}"))
+            })
+            .collect();
+        if failures.len() == services.len() {
+            Some(failures.join("; "))
+        } else {
+            None
+        }
+    }
+
     pub fn external_endpoints(&self) -> Vec<(String, ProxyEndpoint)> {
         let mut out = Vec::new();
         if let Ok(services) = self.backend.list_services() {
             for svc in &services {
                 if let Ok(snap) = self.backend.service_snapshot(svc) {
                     if let Some(ep) = snap.web {
-                        out.push((svc.clone(), ep));
+                        out.push((format!("{svc} (http)"), ep));
                     }
                     if let Some(ep) = snap.secure {
-                        out.push((svc.clone(), ep));
+                        out.push((format!("{svc} (https)"), ep));
                     }
                     if let Some(ep) = snap.socks {
-                        out.push((svc.clone(), ep));
+                        out.push((format!("{svc} (socks)"), ep));
                     }
                 }
             }

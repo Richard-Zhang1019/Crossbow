@@ -150,8 +150,12 @@ pub fn run(state: &AppState, run_id: &str, send: impl Fn(Progress)) -> Vec<Check
             Err(e) => results.push(bad("listener", format!("{e}"), Some("restart_core"))),
         }
     }
-    // 5. 系统代理指向
+    // 5. 系统代理指向（#468：TUN-aware + 逐端点区分 + 读取失败不再折叠成空）
     results.start("sysproxy");
+    let tun_enabled = state.store.lock().unwrap().data().engine.tun_enable;
+    // TUN 接管就绪：路由在位（macOS 用既有 capture_route_present 探测；
+    // 其余平台 TUN 打开即视为接管——平台化探测属后续工作）
+    let tun_healthy = tun_enabled && crate::network::tun::capture_route_present();
     let endpoints = state.sysproxy.external_endpoints();
     if !crate::platform::capabilities().system_proxy {
         results.push(CheckResult {
@@ -161,23 +165,66 @@ pub fn run(state: &AppState, run_id: &str, send: impl Fn(Progress)) -> Vec<Check
             detail: format!("当前平台不修改系统代理；应用可使用 HTTP/SOCKS 代理 127.0.0.1:{mixed_port}，或单独开启 TUN；本项不计入通过数量"),
             fix: None,
         });
-    } else if endpoints.is_empty() {
+    } else if tun_healthy {
+        // TUN 单独运行且实际接管：系统代理关闭是预期状态，不是失败
+        results.push(CheckResult {
+            id: "sysproxy".into(),
+            ok: true,
+            skipped: false,
+            detail: "TUN 接管流量中；系统代理保持关闭为预期状态（浏览器流量已进 TUN）".into(),
+            fix: None,
+        });
+    } else if tun_enabled {
         results.push(bad(
             "sysproxy",
-            "系统代理未开启（浏览器流量不会经过本应用）",
-            Some("toggle_sysproxy"),
+            "TUN 已开启但路由未接管（TUN 自身故障，与系统代理无关）——请先诊断 TUN",
+            None,
         ));
+    } else if endpoints.is_empty() {
+        // 区分「确实关闭」与「读取失败」（#468：读取失败折叠成空列表与关闭难分）
+        match state.sysproxy.read_failure_reason() {
+            Some(reason) => results.push(CheckResult {
+                id: "sysproxy".into(),
+                ok: false,
+                skipped: false,
+                detail: format!(
+                    "系统代理状态读取失败，无法验证：{reason}（重试或检查 networksetup 权限）"
+                ),
+                fix: None,
+            }),
+            None => results.push(bad(
+                "sysproxy",
+                "系统代理未开启（浏览器流量不会经过本应用）",
+                Some("toggle_sysproxy"),
+            )),
+        }
     } else {
-        let ours = endpoints
-            .iter()
-            .any(|(_, ep)| ep.host == "127.0.0.1" && ep.port == mixed_port);
+        // 逐端点核对：Crossbow 端口 / 其他客户端 / 混合（http 对 https 错）
+        let owned = |ep: &crate::network::sysproxy::ProxyEndpoint| {
+            ep.host == "127.0.0.1" && ep.port == mixed_port
+        };
+        let ours = endpoints.iter().filter(|(_, ep)| owned(ep)).count();
         let others: Vec<String> = endpoints
             .iter()
-            .filter(|(_, ep)| !(ep.host == "127.0.0.1" && ep.port == mixed_port))
+            .filter(|(_, ep)| !owned(ep))
             .map(|(svc, ep)| format!("{svc}→{}:{}", ep.host, ep.port))
             .collect();
-        if ours {
-            results.push(ok("sysproxy", format!("系统代理指向本应用 :{mixed_port}")));
+        if !others.is_empty() && ours > 0 {
+            // 部分匹配：HTTP 指向本应用但 HTTPS 指向旧端口等情况——不能算通过
+            results.push(bad(
+                "sysproxy",
+                format!(
+                    "系统代理部分指向本应用 :{mixed_port}，其余 {} 指向 {}（浏览器部分流量走旧端点）",
+                    others.len(),
+                    others.join(", ")
+                ),
+                Some("toggle_sysproxy"),
+            ));
+        } else if ours > 0 {
+            results.push(ok(
+                "sysproxy",
+                format!("系统代理指向本应用 :{mixed_port}（{} 项）", ours),
+            ));
         } else {
             results.push(bad(
                 "sysproxy",

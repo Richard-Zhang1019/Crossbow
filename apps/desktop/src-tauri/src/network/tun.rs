@@ -61,7 +61,7 @@ pub fn takeover_drift() -> bool {
 
 /// v4 捕获路由在位：default 或分片默认路由经 TUN 接口
 #[cfg(target_os = "macos")]
-fn capture_route_present() -> bool {
+pub(crate) fn capture_route_present() -> bool {
     let Ok(output) = std::process::Command::new("netstat")
         .args(["-rn", "-f", "inet"])
         .output()
