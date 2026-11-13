@@ -342,9 +342,12 @@ pub(crate) fn probe_tun_network() -> Result<(), String> {
 
 /// #481 直连基准探测的国内外目标：国内 204 端点判定物理网络是否中断
 /// （国外直连被墙是常态，不能作为断网依据）；国外端点用于区分「机场故障」。
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 const BASELINE_PROBE_CN: &str = "http://connect.rom.miui.com/generate_204";
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 const BASELINE_PROBE_GLOBAL: &str = "http://www.gstatic.com/generate_204";
 /// 同一故障事件的提示频控窗口：期间反复测速不重复弹通知。
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 const BASELINE_REPORT_INTERVAL: Duration = Duration::from_secs(10 * 60);
 
 /// #481 判定矩阵（纯函数，便于单测）：返回 (通知 code, 严重度)。
