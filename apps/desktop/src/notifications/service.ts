@@ -152,6 +152,30 @@ const copy = {
     "内核未运行，已关闭系统代理",
     "Core is down; system proxy turned off",
   ],
+  "tray.networkDown": [
+    "本机网络连接中断，测速失败由此导致（与代理无关）",
+    "Local network is down; that is why every node timed out",
+  ],
+  "tray.networkDown.hint": [
+    "请检查 Wi-Fi 或路由器。恢复联网后节点测速即可正常。",
+    "Check your Wi-Fi or router. Node speed tests will recover once you are back online.",
+  ],
+  "tray.nodesDown": [
+    "本机网络正常，全部节点不可达",
+    "Local network is fine; every node is unreachable",
+  ],
+  "tray.nodesDown.hint": [
+    "可能为机场或节点服务故障，稍后重试测速或更换订阅。",
+    "Your provider or nodes may be down; retry the test later or switch subscriptions.",
+  ],
+  "tray.speedTestAnomaly": [
+    "本机直连正常，节点测速结果异常",
+    "Direct connectivity is fine; the speed test result looks abnormal",
+  ],
+  "tray.speedTestAnomaly.hint": [
+    "可重新发起节点测速确认。",
+    "Run the node speed test again to confirm.",
+  ],
   "sysproxy.restoreFailed": [
     "系统代理恢复未完成",
     "System proxy recovery is incomplete",

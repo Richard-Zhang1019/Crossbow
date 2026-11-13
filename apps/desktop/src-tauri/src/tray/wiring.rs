@@ -340,6 +340,72 @@ pub(crate) fn probe_tun_network() -> Result<(), String> {
     Err(last_error)
 }
 
+/// #481 直连基准探测的国内外目标：国内 204 端点判定物理网络是否中断
+/// （国外直连被墙是常态，不能作为断网依据）；国外端点用于区分「机场故障」。
+const BASELINE_PROBE_CN: &str = "http://connect.rom.miui.com/generate_204";
+const BASELINE_PROBE_GLOBAL: &str = "http://www.gstatic.com/generate_204";
+/// 同一故障事件的提示频控窗口：期间反复测速不重复弹通知。
+const BASELINE_REPORT_INTERVAL: Duration = Duration::from_secs(10 * 60);
+
+/// #481 判定矩阵（纯函数，便于单测）：返回 (通知 code, 严重度)。
+/// 国内直连失败是「本机断网」的充分信号——此时节点是否可达无从谈起；
+/// 国内可达而国外失败属常态（墙），配合测速全超时应提示机场/节点故障。
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn baseline_verdict(cn: bool, global: bool) -> (&'static str, notifications::Kind) {
+    match (cn, global) {
+        (false, _) => ("tray.networkDown", notifications::Kind::Warning),
+        (true, false) => ("tray.nodesDown", notifications::Kind::Warning),
+        (true, true) => ("tray.speedTestAnomaly", notifications::Kind::Info),
+    }
+}
+
+/// 单目标探测：任何 HTTP 响应（含 4xx/5xx）都证明 TCP 路径可达——判定
+/// 只关心链路通断，不关心服务状态码。
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn baseline_probe_one(agent: &ureq::Agent, url: &str) -> bool {
+    match agent.head(url).call() {
+        Ok(_) | Err(ureq::Error::Status(_, _)) => true,
+        Err(_) => false,
+    }
+}
+
+/// 托盘测速全部失败后的直连基准探测：只在探测完成后按判定矩阵发一次
+/// 通知（10 分钟频控），不切节点、不改任何状态——纯甄别提示，避免把
+/// 本机断网误归因为代理故障（2026-11-13 事件复盘，#481）。
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn maybe_report_baseline(handle: &AppHandle) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static LAST_REPORT_MS: AtomicU64 = AtomicU64::new(0);
+
+    let h = handle.clone();
+    std::thread::spawn(move || {
+        let agent = ureq::AgentBuilder::new()
+            .try_proxy_from_env(false)
+            .timeout(TUN_PROBE_TIMEOUT)
+            .build();
+        // 国内目标优先：断网时它先失败，国外探测不必再等一个完整超时。
+        let cn = baseline_probe_one(&agent, BASELINE_PROBE_CN);
+        let global = if cn {
+            baseline_probe_one(&agent, BASELINE_PROBE_GLOBAL)
+        } else {
+            false
+        };
+        let (code, kind) = baseline_verdict(cn, global);
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        if now_ms.saturating_sub(LAST_REPORT_MS.load(Ordering::Relaxed))
+            < BASELINE_REPORT_INTERVAL.as_millis() as u64
+        {
+            return;
+        }
+        LAST_REPORT_MS.store(now_ms, Ordering::Relaxed);
+        let notice = notifications::Notice::new(kind, code, "tray-baseline");
+        notifications::publish(&h, notice);
+    });
+}
+
 /// 健康检查重建立。与手动开关共用 core_op，进锁后再读 TUN 标志。
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 pub(crate) fn reestablish_tun_if_enabled(state: &AppState) -> Result<(), String> {
@@ -1025,6 +1091,7 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
 
         // 收集器：每条结果立即落库 + 原地刷新（菜单开着时实时可见）
         let mut done = 0usize;
+        let mut failures = 0usize;
         for (node, result) in rx {
             let Some(state) = h.try_state::<AppState>() else {
                 return;
@@ -1033,6 +1100,9 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
                 let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
                 if tray.generation() != generation {
                     return; // 新一轮测速已接管，放弃本轮剩余结果
+                }
+                if result.is_err() {
+                    failures += 1;
                 }
                 tray.apply_single_result(&node, result);
             }
@@ -1047,6 +1117,11 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
         let Some(state) = h.try_state::<AppState>() else {
             return;
         };
+        // #481：全部节点失败 → 直连基准探测，甄别「本机断网」与「节点故障」。
+        // 探测在后台线程执行（最长约两个超时窗口），不阻塞托盘恢复可点态。
+        if failures >= total {
+            maybe_report_baseline(&h);
+        }
         let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
         if tray.generation() != generation {
             return;
@@ -1295,5 +1370,37 @@ mod tests {
             .actions
             .iter()
             .any(|action| { matches!(action, notifications::Action::RetrySystemProxy) }));
+    }
+}
+
+#[cfg(all(test, any(target_os = "macos", target_os = "windows")))]
+mod baseline_tests {
+    use super::*;
+
+    /// #481 判定矩阵：国内直连失败 = 本机断网（充分信号，国外结果无关）。
+    #[test]
+    fn baseline_verdict_reports_outage_when_cn_direct_fails() {
+        let (code, kind) = baseline_verdict(false, false);
+        assert_eq!(code, "tray.networkDown");
+        assert!(matches!(kind, notifications::Kind::Warning));
+        let (code, kind) = baseline_verdict(false, true);
+        assert_eq!(code, "tray.networkDown");
+        assert!(matches!(kind, notifications::Kind::Warning));
+    }
+
+    /// 国内可达 + 国外失败：墙是常态，测速又全超时 → 节点/机场故障。
+    #[test]
+    fn baseline_verdict_reports_node_outage_when_only_global_fails() {
+        let (code, kind) = baseline_verdict(true, false);
+        assert_eq!(code, "tray.nodesDown");
+        assert!(matches!(kind, notifications::Kind::Warning));
+    }
+
+    /// 国内外都可达但测速全超时：提示测速异常（Info，低优先不惊扰）。
+    #[test]
+    fn baseline_verdict_reports_anomaly_when_both_probes_pass() {
+        let (code, kind) = baseline_verdict(true, true);
+        assert_eq!(code, "tray.speedTestAnomaly");
+        assert!(matches!(kind, notifications::Kind::Info));
     }
 }
