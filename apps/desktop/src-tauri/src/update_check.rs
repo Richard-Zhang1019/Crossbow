@@ -18,6 +18,9 @@ use crate::notifications::{self, Action, Kind, Notice};
 #[cfg_attr(target_os = "linux", allow(unused_imports))]
 use crate::tr;
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(target_os = "macos")]
+mod macos_backup;
+
 static DOWNLOADING: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -259,6 +262,8 @@ fn download_inner(app: &AppHandle) -> Result<(), String> {
 /// 用户实测（#86）：install 仅替换 .app，不会自动退出/重启——
 /// 必须显式 restart()。运行中的内核经描述符由新实例收养，无缝衔接。
 pub fn install(app: &AppHandle) -> Result<(), String> {
+    static INSTALL: Mutex<()> = Mutex::new(());
+    let _install = INSTALL.try_lock().map_err(|_| "更新安装已在进行")?;
     let bytes = DOWNLOADED
         .lock()
         .ok()
@@ -269,12 +274,19 @@ pub fn install(app: &AppHandle) -> Result<(), String> {
         .ok()
         .and_then(|p| p.clone())
         .ok_or_else(|| "没有待安装的更新".to_string())?;
-    #[cfg(windows)]
-    crate::prepare_windows_update_exit(app)?;
-    if let Err(error) = update.install(bytes) {
+    #[cfg(target_os = "macos")]
+    macos_backup::install(app, || {
+        update.install(bytes).map_err(|error| error.to_string())
+    })?;
+    #[cfg(not(target_os = "macos"))]
+    {
         #[cfg(windows)]
-        crate::cancel_windows_update_exit(app);
-        return Err(error.to_string());
+        crate::prepare_windows_update_exit(app)?;
+        if let Err(error) = update.install(bytes) {
+            #[cfg(windows)]
+            crate::cancel_windows_update_exit(app);
+            return Err(error.to_string());
+        }
     }
     // Windows installation exits the process inside update.install(); the NSIS
     // installer owns relaunch. Only macOS uses our restart/handoff below.

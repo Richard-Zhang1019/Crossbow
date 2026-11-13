@@ -1,6 +1,16 @@
 !include "LogicLib.nsh"
 !include "FileFunc.nsh"
 !define CROSSBOW_UPGRADE_HELPER "${__FILEDIR__}\prepare-upgrade.ps1"
+Var CrossbowReplacingFiles
+
+; Tauri's template does not define this callback. Its File instructions can
+; still fail after preflight, for example when another process acquires a lock.
+Function .onInstFailed
+  ${If} $CrossbowReplacingFiles == 1
+    MessageBox MB_ICONSTOP "Crossbow installation did not complete. Close other Crossbow processes and rerun the full installer as administrator using the same installation folder. Reinstalling does not remove your subscriptions or application settings." /SD IDOK
+  ${EndIf}
+FunctionEnd
+
 !macro NSIS_HOOK_PREINSTALL
   ; A LocalSystem service must never execute out of a user-writable directory.
   ; Instead of restricting the install to Program Files, harden ACLs on the
@@ -25,26 +35,28 @@
   ; Close only the app registered against this installation, then verify files
   ; can be opened exclusively before Tauri's first File instruction truncates them.
   !insertmacro CheckIfAppIsRunning "$INSTDIR\crossbow-desktop.exe" "Crossbow"
-  ; Upgrades must stop the broker AND its managed core before replacing binaries.
-  nsExec::ExecToStack 'powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -Command "try { $$s=Get-Service CrossbowService -ErrorAction SilentlyContinue; if ($$s) { Stop-Service CrossbowService -ErrorAction Stop; $$s.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Stopped,[TimeSpan]::FromSeconds(30)) }; exit 0 } catch { Write-Error $$_.Exception.Message; exit 1 }"'
-  Pop $0
-  Pop $1
-  ${If} $0 != 0
-    MessageBox MB_ICONSTOP "Cannot stop Crossbow service for upgrade. Please restart Windows and retry." /SD IDOK
-    SetErrorLevel 102
-    Abort
-  ${EndIf}
+  ; The same helper owns stopping, file preflight and restoring the old
+  ; service on failure. No application file has been replaced at this point.
   InitPluginsDir
   File "/oname=$PLUGINSDIR\prepare-upgrade.ps1" "${CROSSBOW_UPGRADE_HELPER}"
-  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$PLUGINSDIR\prepare-upgrade.ps1" -InstallDir "$INSTDIR"'
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$PLUGINSDIR\prepare-upgrade.ps1" -InstallDir "$INSTDIR" -StopServiceForUpgrade'
   Pop $0
   Pop $1
   ${If} $0 != 0
     DetailPrint "$1"
-    MessageBox MB_ICONSTOP "Crossbow files are still in use or cannot be written. No application files have been replaced. Restart Windows and rerun this installer. ($0)" /SD IDOK
-    SetErrorLevel 107
+    ${If} $0 == 3
+      MessageBox MB_ICONSTOP "No application files have been replaced, but CrossbowService could not be restored. Start CrossbowService from Windows Services as administrator or rerun the installer as administrator to repair the installation." /SD IDOK
+      SetErrorLevel 108
+    ${ElseIf} $0 == 2
+      MessageBox MB_ICONSTOP "Cannot stop CrossbowService for upgrade. No application files have been replaced. Please restart Windows and retry." /SD IDOK
+      SetErrorLevel 102
+    ${Else}
+      MessageBox MB_ICONSTOP "Crossbow files are still in use or cannot be written. No application files have been replaced. Close the program using the files and rerun this installer." /SD IDOK
+      SetErrorLevel 107
+    ${EndIf}
     Quit
   ${EndIf}
+  StrCpy $CrossbowReplacingFiles 1
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
@@ -73,7 +85,7 @@
   ${If} $0 != 0
     ${GetOptions} $CMDLINE "/S" $R0
     ${If} ${Errors}
-      MessageBox MB_ICONSTOP "Cannot configure Crossbow service ($0)." /SD IDOK
+      MessageBox MB_ICONSTOP "Cannot configure Crossbow service ($0). Rerun this installer as administrator to repair the installation." /SD IDOK
       SetErrorLevel 104
       Abort
     ${EndIf}
