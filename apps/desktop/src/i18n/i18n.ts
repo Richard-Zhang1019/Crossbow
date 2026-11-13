@@ -46,6 +46,8 @@ const dict: Record<Lang, Record<string, string>> = {
     "diag.passed": "通过",
     "diag.failed": "失败",
     "diag.progress": "已检查 {done} / {total}",
+    "diag.stale": "上次检查结果已过期（环境发生变化），请重新检查",
+    "diag.rerun": "重新检查",
     "diag.firstBlocker": "优先处理",
     "diag.nextStep": "下一步：处理此项后重新检查",
     "diag.openConfig": "检查配置",

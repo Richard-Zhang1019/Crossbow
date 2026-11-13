@@ -8,11 +8,17 @@ import { useT } from "@/i18n/i18n";
 import { PageHead } from "@/pages/Home";
 import { ProgressRing } from "@/components/ProgressRing";
 import { DIAG_STEPS } from "@/lib/workflow";
+// #469：结果快照带完成时间——接管方式/系统代理/端口等变化后判定过期，
+// 只显示「上次检查时间」并提供重新检查入口，不再把旧结论当当前状态。
 let previousResults: CheckResult[] | null = null;
+let previousCompletedAt: number | null = null;
+const STALE_AFTER_MS = 60_000;
 export default function DiagnosticsPage() {
   const t = useT();
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState<CheckResult[] | null>(previousResults);
+  const [completedAt, setCompletedAt] = useState<number | null>(previousCompletedAt);
+  const [stale, setStale] = useState(false);
   const [runFailed,setRunFailed]=useState(false);
   const [checking, setChecking] = useState<string | null>(null);
   const [fixing, setFixing] = useState<CheckResult | null>(null);
@@ -31,9 +37,12 @@ export default function DiagnosticsPage() {
     const invalidate = () => {
       coreRevision.current += 1;
       previousResults = null;
-      if (active.current) setResults(null);
+      if (active.current) { setResults(null); setCompletedAt(null); }
     };
     const off = ipc.onCoreStatus(invalidate);
+    // #469：接管方式与系统代理变化（内核可能持续 Running）同样使旧结论过期
+    const offProxy = ipc.onSysproxyStatus(() => invalidate());
+    const offSwitched = ipc.onProfileSwitched(() => invalidate());
     // Cached reports can also become stale while this page is unmounted.
     const revision = coreRevision.current;
     void off.then(() => ipc.coreStatus()).then(status => {
@@ -41,6 +50,10 @@ export default function DiagnosticsPage() {
       const core = previousResults?.find(row => row.id === "core_running");
       if (core && core.ok !== (status.state === "Running")) invalidate();
     }).catch(() => {});
+    // 挂载时若已有结果且超过过期窗口，标记为过期而非当作当前结论
+    setStale(previousCompletedAt !== null && Date.now() - previousCompletedAt > STALE_AFTER_MS);
+    void offProxy.then(unsubscribe => unsubscribe()).catch(() => {});
+    void offSwitched.then(unsubscribe => unsubscribe()).catch(() => {});
     return () => {
       active.current = false;
       runId.current = null;
@@ -67,6 +80,7 @@ export default function DiagnosticsPage() {
       const rows = await ipc.runDiagnosis(id);
       if (!active.current || coreRevision.current !== revision) return;
       previousResults = rows;
+      previousCompletedAt = Date.now();
       if (active.current && runId.current === id) {
         setResults(rows);
         void notify.resolve("diagnostics-operation");
@@ -133,6 +147,12 @@ export default function DiagnosticsPage() {
                   : t(runFailed?"diag.incomplete":applicable.length ? "diag.applicableOk" : "diag.title")}
             </h2>
           </div>
+          {!running && stale && results?.length ? (
+            <div className="cb-diag-stale" role="status">
+              {t("diag.stale")} · {completedAt ? new Date(completedAt).toLocaleTimeString() : ""}
+              <Button onClick={run}>{t("diag.rerun")}</Button>
+            </div>
+          ) : null}
           {!running && first && (
             <section
               id="cb-check-first-problem"
