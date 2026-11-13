@@ -296,7 +296,7 @@ rules:
             assert driver.invoke('core_status')['state'] == 'Running'
         subscription['content'] = original
         report['checks'].append('TUN in subscription update rejected without replacing the running configuration')
-        diagnosis = driver.invoke('run_diagnosis')
+        diagnosis = driver.invoke('run_diagnosis', {'runId': 'linux-desktop-smoke'})['rows']
         proxy_check = next(c for c in diagnosis if c['id'] == 'sysproxy')
         assert proxy_check['skipped'] and not proxy_check['ok'] and proxy_check['fix'] is None
         assert all(c['ok'] for c in diagnosis if c['id'] not in ['sysproxy', 'proxied_traffic', 'dns_direct'])

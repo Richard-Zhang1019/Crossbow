@@ -62,6 +62,14 @@ pub trait SysProxyBackend: Send + Sync {
     fn disable_service(&self, service: &str) -> Result<(), String>;
     /// 读取单个服务当前的三类代理设置（开启前快照用）。
     fn service_snapshot(&self, service: &str) -> Result<ServiceSnapshot, String>;
+    /// Active PAC/WPAD is a separate path from the manual proxy endpoints.
+    fn uses_automatic_proxy(&self, _: &str, snapshot: &ServiceSnapshot) -> Result<bool, String> {
+        const AUTO_PROXY_URL_OR_DETECT: u32 = 4 | 8;
+        Ok(snapshot
+            .windows
+            .as_ref()
+            .is_some_and(|config| config.flags & AUTO_PROXY_URL_OR_DETECT != 0))
+    }
     /// 按快照还原单个服务设置。
     fn restore_service(&self, service: &str, snap: &ServiceSnapshot) -> Result<(), String>;
 
@@ -401,6 +409,27 @@ impl SysProxyBackend for NetworkSetup {
         })
     }
 
+    fn uses_automatic_proxy(
+        &self,
+        service: &str,
+        snapshot: &ServiceSnapshot,
+    ) -> Result<bool, String> {
+        let pac = Self::run(&["-getautoproxyurl", service])?;
+        let discovery = Self::run(&["-getproxyautodiscovery", service])?;
+        let discovery = discovery
+            .lines()
+            .find_map(|line| line.trim().strip_prefix("Auto Proxy Discovery: "))
+            .ok_or("无法读取自动代理发现状态")?;
+        if snapshot.web.is_none()
+            && snapshot.secure.is_none()
+            && snapshot.socks.is_none()
+            && Self::service_enabled(service)?
+        {
+            return Err("已开启的系统代理端点无法读取".into());
+        }
+        Ok(parse_proxy_enabled(&pac) || discovery.eq_ignore_ascii_case("On"))
+    }
+
     fn restore_service(&self, service: &str, snap: &ServiceSnapshot) -> Result<(), String> {
         self.restore_services(&BTreeMap::from([(service.to_string(), snap.clone())]))
     }
@@ -446,6 +475,17 @@ pub(crate) type PlatformBackend = UnsupportedBackend;
 pub struct SysProxyStatus {
     pub enabled: bool,
     pub port: u16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProxyInspection {
+    Off,
+    Configured,
+    Mismatch {
+        http: bool,
+        https: bool,
+        socks: bool,
+    },
 }
 
 /// 单个代理槽位的原设置（HTTP/HTTPS/SOCKS 各一）。
@@ -589,11 +629,11 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         self.ensure_active()?;
-        self.enable_locked(port)
+        self.enable_locked(port, false)
     }
 
     /// 已持有代理操作锁的内部实现。
-    fn enable_locked(&self, port: u16) -> Result<(), String> {
+    fn enable_locked(&self, port: u16, require_off: bool) -> Result<(), String> {
         // A previous attempt may have changed some services before its
         // rollback failed. Recover that snapshot before taking a new one;
         // otherwise the original settings would be overwritten permanently.
@@ -606,7 +646,14 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         }
         let mut snapshot = BTreeMap::new();
         for svc in &services {
-            snapshot.insert(svc.clone(), self.backend.service_snapshot(svc)?);
+            let current = self.backend.service_snapshot(svc)?;
+            if require_off
+                && (!Self::proxy_is_disabled(&current)
+                    || self.backend.uses_automatic_proxy(svc, &current)?)
+            {
+                return Err("代理设置已变化，请重新诊断".into());
+            }
+            snapshot.insert(svc.clone(), current);
         }
         // 写盘必须发生在任何 networksetup 修改之前，异常退出也能恢复。
         self.write_journal(port, &snapshot)?;
@@ -655,7 +702,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         let saved = match std::fs::read(&tun_journal) {
             Ok(saved) => saved,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return self.enable_locked(port);
+                return self.enable_locked(port, false);
             }
             Err(error) => return Err(format!("读取 TUN 代理恢复日志失败：{error}")),
         };
@@ -1133,22 +1180,88 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         self.restore_after_failed_tun_locked(suspended)
     }
 
-    /// 各服务当前生效的 HTTP/HTTPS/SOCKS 代理端点（含第三方设置的）。
-    /// 诊断用：判断系统代理是否指向本应用端口、是否存在第三方冲突。
+    /// Diagnostic reads fail closed if any service cannot be inspected.
+    pub(crate) fn inspect(&self, port: u16) -> Result<ProxyInspection, String> {
+        let _operation = self.operation.lock().unwrap_or_else(|e| e.into_inner());
+        self.inspect_locked(port)
+    }
+
+    fn inspect_locked(&self, port: u16) -> Result<ProxyInspection, String> {
+        let services = self.backend.list_services()?;
+        if services.is_empty() {
+            return Err("未找到可检查的网络服务".into());
+        }
+        let mut owned = 0;
+        let mut disabled = 0;
+        let mut correct = [true; 3];
+        for service in &services {
+            let snapshot = self.backend.service_snapshot(service)?;
+            for (matches, endpoint) in
+                correct
+                    .iter_mut()
+                    .zip([&snapshot.web, &snapshot.secure, &snapshot.socks])
+            {
+                *matches &= endpoint
+                    .as_ref()
+                    .is_some_and(|ep| ep.host == "127.0.0.1" && ep.port == port);
+            }
+            if self.backend.uses_automatic_proxy(service, &snapshot)? {
+                continue;
+            }
+            if Self::service_owned_by_crossbow(&snapshot, port) {
+                owned += 1;
+            } else if Self::proxy_is_disabled(&snapshot) {
+                disabled += 1;
+            }
+        }
+        Ok(if owned == services.len() {
+            ProxyInspection::Configured
+        } else if disabled == services.len() {
+            ProxyInspection::Off
+        } else {
+            ProxyInspection::Mismatch {
+                http: correct[0],
+                https: correct[1],
+                socks: correct[2],
+            }
+        })
+    }
+
+    fn proxy_is_disabled(snapshot: &ServiceSnapshot) -> bool {
+        const MANUAL_OR_AUTOMATIC_PROXY: u32 = 2 | 4 | 8;
+        snapshot.web.is_none()
+            && snapshot.secure.is_none()
+            && snapshot.socks.is_none()
+            && snapshot
+                .windows
+                .as_ref()
+                .is_none_or(|config| config.flags & MANUAL_OR_AUTOMATIC_PROXY == 0)
+    }
+
+    /// A stale diagnostic can never toggle off a valid proxy or overwrite another client.
+    pub(crate) fn enable_from_diagnosis(&self, port: u16) -> Result<(), String> {
+        let _operation = self.operation.lock().unwrap_or_else(|e| e.into_inner());
+        self.ensure_active()?;
+        match self.inspect_locked(port)? {
+            ProxyInspection::Configured => Ok(()),
+            ProxyInspection::Off => self.enable_locked(port, true),
+            ProxyInspection::Mismatch { .. } => {
+                Err("代理设置已变化，请检查系统代理归属后重新诊断".into())
+            }
+        }
+    }
+
     pub fn external_endpoints(&self) -> Vec<(String, ProxyEndpoint)> {
         let mut out = Vec::new();
         if let Ok(services) = self.backend.list_services() {
-            for svc in &services {
-                if let Ok(snap) = self.backend.service_snapshot(svc) {
-                    if let Some(ep) = snap.web {
-                        out.push((svc.clone(), ep));
-                    }
-                    if let Some(ep) = snap.secure {
-                        out.push((svc.clone(), ep));
-                    }
-                    if let Some(ep) = snap.socks {
-                        out.push((svc.clone(), ep));
-                    }
+            for service in &services {
+                if let Ok(snapshot) = self.backend.service_snapshot(service) {
+                    out.extend(
+                        [snapshot.web, snapshot.secure, snapshot.socks]
+                            .into_iter()
+                            .flatten()
+                            .map(|endpoint| (service.clone(), endpoint)),
+                    );
                 }
             }
         }
@@ -1602,6 +1715,46 @@ mod tests {
 
     fn manager_with(backend: FakeBackend, dir: &tempfile::TempDir) -> FakeManager {
         SysProxyManager::new(backend, dir.path().join("journal.json"))
+    }
+
+    #[test]
+    fn diagnostic_enable_is_idempotent_and_preserves_foreign_or_unreadable_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let backend = FakeBackend::new(&["Wi-Fi", "Ethernet"]);
+        let manager = manager_with(backend.clone(), &dir);
+        assert_eq!(manager.inspect(7898).unwrap(), ProxyInspection::Off);
+        manager.enable_from_diagnosis(7898).unwrap();
+        let journal = std::fs::read(&manager.journal_path).unwrap();
+        manager.enable_from_diagnosis(7898).unwrap();
+        assert_eq!(std::fs::read(&manager.journal_path).unwrap(), journal);
+
+        let mut current = backend.service_snapshot("Wi-Fi").unwrap();
+        current.secure.as_mut().unwrap().port = 8989;
+        backend
+            .inner
+            .current
+            .lock()
+            .unwrap()
+            .insert("Wi-Fi".into(), current.clone());
+        assert_eq!(
+            manager.inspect(7898).unwrap(),
+            ProxyInspection::Mismatch {
+                http: true,
+                https: false,
+                socks: true,
+            }
+        );
+        assert!(manager.enable_from_diagnosis(7898).is_err());
+        assert_eq!(backend.service_snapshot("Wi-Fi").unwrap(), current);
+
+        backend
+            .inner
+            .snapshot_fail_on
+            .lock()
+            .unwrap()
+            .push("Ethernet".into());
+        assert!(manager.inspect(7898).is_err());
+        assert!(manager.enable_from_diagnosis(7898).is_err());
     }
 
     #[test]

@@ -1,139 +1,181 @@
-import {Icon} from "@/components/Icon";
+import Dialog from "@/components/Dialog";
+import { useClipboardFeedback } from "@/hooks/useClipboardFeedback";
+import { Icon } from "@/components/Icon";
 import { Button } from "@/components/Button";
 import { notify, notificationText } from "@/notifications/service";
 import { useOperationNotice } from "@/notifications/NotificationProvider";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { ipc, type CheckResult } from "@/services/ipc";
-import { useT } from "@/i18n/i18n";
+import { currentLang, useT } from "@/i18n/i18n";
 import { PageHead } from "@/pages/Home";
 import { ProgressRing } from "@/components/ProgressRing";
 import { DIAG_STEPS } from "@/lib/workflow";
-let previousResults: CheckResult[] | null = null;
-export default function DiagnosticsPage() {
+import { failedChecks, guideUrl, isStale, remainingAge, shareText, type DiagnosisSnapshot } from "./report";
+
+let previousReport: DiagnosisSnapshot | null = null;
+
+export default function DiagnosticsPage({
+  revision, listeners, appVersion,
+}: {
+  revision: MutableRefObject<number>;
+  listeners: Promise<void> | null;
+  appVersion: string;
+}) {
   const t = useT();
+  const [report, setReport] = useState(previousReport);
+  const [, refreshAge] = useState(0);
+  const [progress, setProgress] = useState<CheckResult[]>([]);
   const [running, setRunning] = useState(false);
-  const [results, setResults] = useState<CheckResult[] | null>(previousResults);
-  const [runFailed,setRunFailed]=useState(false);
+  const [runFailed, setRunFailed] = useState(false);
   const [checking, setChecking] = useState<string | null>(null);
   const [fixing, setFixing] = useState<CheckResult | null>(null);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const { copied, copy, clear } = useClipboardFeedback<string>("diagnostics-summary-copy");
   const restartRunning = useOperationNotice("core-restart")?.kind === "progress";
   const repairRunning = !!fixing || restartRunning;
   const repairLabel = restartRunning || fixing?.fix === "restart_core"
     ? notificationText("core.restarting")
     : fixing?.fix === "start_core" ? t("diag.startingCore") : t("diag.switchingProxy");
   const fixingRef = useRef(false);
-  const coreRevision = useRef(0);
-  const active = useRef(true),
-    runId = useRef<string | null>(null),
-    inFlight = useRef(false);
+  const active = useRef(true);
+  const runId = useRef<string | null>(null);
+
   useEffect(() => {
     active.current = true;
-    const invalidate = () => {
-      coreRevision.current += 1;
-      previousResults = null;
-      if (active.current) setResults(null);
-    };
-    const off = ipc.onCoreStatus(invalidate);
-    // Cached reports can also become stale while this page is unmounted.
-    const revision = coreRevision.current;
-    void off.then(() => ipc.coreStatus()).then(status => {
-      if (!active.current || coreRevision.current !== revision) return;
-      const core = previousResults?.find(row => row.id === "core_running");
-      if (core && core.ok !== (status.state === "Running")) invalidate();
-    }).catch(() => {});
     return () => {
       active.current = false;
       runId.current = null;
-      void off.then(unsubscribe => unsubscribe()).catch(() => {});
     };
   }, []);
+
+  const stale = !!report && isStale(report, revision.current);
+  useEffect(() => {
+    if (!report || stale) return;
+    const refresh = () => refreshAge(age => age + 1);
+    const timer = window.setTimeout(refresh, remainingAge(report));
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [report, stale]);
+
   const run = async () => {
-    if (!active.current || inFlight.current) return;
-    inFlight.current = true;
+    if (!active.current || runId.current || !listeners) return;
+    const id = crypto.randomUUID();
+    runId.current = id;
     setRunning(true);
     setRunFailed(false);
-    setResults([]);
-    const id = crypto.randomUUID();
-    const revision = coreRevision.current;
-    runId.current = id;
+    setProgress([]);
+    const runRevision = revision.current;
+    const isActiveRun = () => active.current && runId.current === id;
     let off: (() => void) | undefined;
     try {
-      off = await ipc.onDiagnosisProgress((p) => {
-        if (!active.current || p.run_id !== runId.current || coreRevision.current !== revision) return;
-        if (!p.result) setChecking(p.id);
-        else setResults((old) => [...(old ?? []).filter((r) => r.id !== p.id), p.result!]);
+      await listeners;
+      if (!isActiveRun()) return;
+      off = await ipc.onDiagnosisProgress(p => {
+        if (!isActiveRun() || p.run_id !== id || revision.current !== runRevision) return;
+        if (p.result) {
+          const row = p.result;
+          setProgress(old => [...old.filter(r => r.id !== p.id), row]);
+        } else {
+          setChecking(p.id);
+        }
       });
-      if (!active.current) return;
-      const rows = await ipc.runDiagnosis(id);
-      if (!active.current || coreRevision.current !== revision) return;
-      previousResults = rows;
-      if (active.current && runId.current === id) {
-        setResults(rows);
-        void notify.resolve("diagnostics-operation");
+      if (!isActiveRun()) return;
+      if (revision.current !== runRevision) {
+        setRunFailed(true);
+        return;
       }
-    } catch (e) {
-      if (active.current) {setRunFailed(true);notify.error(e, "diagnostics-operation");}
+      const result = await ipc.runDiagnosis(id);
+      if (!isActiveRun()) return;
+      if (revision.current !== runRevision) {
+        setRunFailed(true);
+        return;
+      }
+      const snapshot = { ...result, completedAt: Date.now(), revision: runRevision };
+      previousReport = snapshot;
+      setReport(snapshot);
+      void notify.resolve("diagnostics-operation");
+    } catch (error) {
+      if (isActiveRun()) {
+        setRunFailed(true);
+        notify.error(error, "diagnostics-operation");
+      }
     } finally {
       off?.();
-      inFlight.current = false;
-      if (active.current) {
+      if (isActiveRun()) {
+        runId.current = null;
         setChecking(null);
         setRunning(false);
       }
     }
   };
-  const fix = async (r: CheckResult) => {
-    if (!r.fix || fixingRef.current || inFlight.current || restartRunning) return;
+
+  const fix = async (row: CheckResult) => {
+    if (!row.fix || !report || isStale(report, revision.current)
+      || fixingRef.current || runId.current || restartRunning) return;
     fixingRef.current = true;
-    setFixing(r);
+    setFixing(row);
     try {
-      if (r.fix === "start_core") await ipc.coreStart();
-      if (r.fix === "restart_core") await ipc.coreRestart();
-      if (r.fix === "toggle_sysproxy") await ipc.sysproxyToggle();
+      if (row.fix === "start_core") await ipc.coreStart();
+      if (row.fix === "restart_core") await ipc.coreRestart();
+      if (row.fix === "enable_sysproxy") await ipc.diagnosisEnableSysproxy();
       void notify.resolve("diagnostics-fix");
       await run();
-    } catch (e) {
-      if (r.fix === "start_core") notify.error(e, "diagnostics-fix");
+    } catch (error) {
+      if (row.fix === "start_core") notify.error(error, "diagnostics-fix");
     } finally {
       fixingRef.current = false;
       if (active.current) setFixing(null);
     }
   };
-  const first = results?.find((r) => !r.ok && !r.skipped),
-    applicable = results?.filter((r) => !r.skipped) ?? [];
+
+  const results = running ? progress : report?.rows;
+  const failed = failedChecks(results ?? []);
+  const first = failed[0];
+  const applicable = results?.some(row => !row.skipped);
+  const canRepair = !running && !runFailed && !stale;
+  const summaryText = summaryOpen && report ? shareText(report, appVersion, stale || runFailed) : null;
+  const resultTitle = running
+    ? t("diag.progress", { done: progress.length, total: DIAG_STEPS.length })
+    : runFailed ? t("diag.incomplete")
+    : stale ? t("diag.stale")
+    : first ? t("diag.resultIssues", { n: failed.length })
+    : applicable ? t("diag.applicableOk") : t("diag.title");
   const goConfig = () => window.dispatchEvent(new CustomEvent("cb:goto", { detail: "profiles" }));
   return (
     <div className="cb-diagnostics-page">
       <PageHead title={t("diag.title")} meta={t("diag.hint")}>
-        <Button
-          variant="primary"
-          loading={running || repairRunning}
-          onClick={() => void run()}
-        >
-          <span role="status">{running ? t("diag.running") : repairRunning ? repairLabel : t("diag.run")}</span>
+        {report && !running && (
+          <Button onClick={() => setSummaryOpen(true)}>
+            {t("diag.summaryPreview")}
+          </Button>
+        )}
+        <Button variant="primary" disabled={!listeners} loading={running || repairRunning} onClick={() => void run()}>
+          <span role="status">{running ? t("diag.running") : repairRunning ? repairLabel : t(stale || runFailed ? "diag.rerun" : "diag.run")}</span>
         </Button>
       </PageHead>
-      {results === null ? (
+      {!results && !runFailed ? (
         <div className="cb-empty">
           <p>{repairRunning ? repairLabel : t("diag.hint")}</p>
         </div>
       ) : (
         <>
           <div className="cb-diag-summary" aria-live="polite">
-            {!running && !runFailed && results.length === DIAG_STEPS.length && applicable.length > 0 && !first ? <span className="cb-diagnostic-result" data-result="passed" aria-hidden="true"><Icon name="check" size={22} strokeWidth={2}/></span> : running || runFailed ? <ProgressRing
-              value={(results.length / DIAG_STEPS.length) * 100}
-              label={t("diag.progress", { done: results.length, total: DIAG_STEPS.length })}
-              size={28}
-            /> : <span className="cb-diagnostic-result" data-result="attention" aria-hidden="true"><Icon name="activity" size={22}/></span>}
-            <h2>
-              {running
-                ? t("diag.progress", { done: results.length, total: DIAG_STEPS.length })
-                : first
-                  ? t("diag.resultIssues", { n: results.filter((r) => !r.ok && !r.skipped).length })
-                  : t(runFailed?"diag.incomplete":applicable.length ? "diag.applicableOk" : "diag.title")}
-            </h2>
+            {running ? (
+              <ProgressRing value={progress.length / DIAG_STEPS.length * 100} label={resultTitle} size={28} />
+            ) : (
+              <span className="cb-diagnostic-result" data-result={canRepair && applicable && !first ? "passed" : "attention"} aria-hidden="true">
+                <Icon name={canRepair && applicable && !first ? "check" : "activity"} size={22} />
+              </span>
+            )}
+            <div>
+              <h2>{resultTitle}</h2>
+              {!running && report && <p>{t("diag.checkedAt", { time: new Date(report.completedAt).toLocaleString() })}</p>}
+            </div>
           </div>
-          {!running && first && (
+          {canRepair && first && (
             <section
               id="cb-check-first-problem"
               tabIndex={-1}
@@ -167,7 +209,7 @@ export default function DiagnosticsPage() {
           )}
           <div className="cb-diag-results">
             {DIAG_STEPS.map((id) => {
-              const row = results.find((r) => r.id === id),
+              const row = results?.find((r) => r.id === id),
                 state = row
                   ? row.skipped
                     ? "diag.skipped"
@@ -189,9 +231,19 @@ export default function DiagnosticsPage() {
                   <div>
                     <h3>{t(`check.${id}`)}</h3>
                     {row?.detail && <p className="cb-selectable">{row.detail}</p>}
+                    {!running && report && row && !row.ok && !row.skipped && (
+                      <a className="cb-diagnostic-guide" href={guideUrl(id, currentLang(), report.context)}
+                        onClick={event => {
+                          event.preventDefault();
+                          void ipc.openDiagnosisGuide(event.currentTarget.href)
+                            .catch(error => notify.error(error, "diagnostics-guide"));
+                        }}>
+                        {t("diag.summaryGuide")}
+                      </a>
+                    )}
                   </div>
                   <span>{t(state)}</span>
-                  {!running && row?.fix && (
+                  {canRepair && row?.fix && (
                     <Button
                       size="small"
                       loading={fixing?.id === id}
@@ -206,6 +258,16 @@ export default function DiagnosticsPage() {
             })}
           </div>
         </>
+      )}
+      {summaryText !== null && (
+        <Dialog title={t("diag.summaryPreview")} onClose={() => { clear(); setSummaryOpen(false); }}>
+          <pre className="cb-share-preview cb-selectable cb-mono">{summaryText}</pre>
+          <div className="actions">
+            <Button variant="primary" onClick={() => void copy(summaryText, () => summaryText)}>
+              <span role="status">{t(copied === summaryText ? "workflow.copied" : "diag.summaryCopy")}</span>
+            </Button>
+          </div>
+        </Dialog>
       )}
     </div>
   );

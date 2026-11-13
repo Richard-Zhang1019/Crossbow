@@ -160,11 +160,91 @@ fn clean_lines(lines: Vec<String>) -> Result<String, String> {
         return Err("Log selection is too large".into());
     }
     Ok(lines
-        .into_iter()
-        .map(|s| crate::notifications::redact(&s))
+        .iter()
+        .map(|line| share_log_line(line))
         .collect::<Vec<_>>()
         .join("\n"))
 }
+
+/// Export only recognized categories. Free-form messages can contain arbitrary
+/// credentials, user paths, node names and destinations even without URI syntax.
+fn share_log_line(line: &str) -> String {
+    let (level, message) = ["debug", "info", "warning", "error"]
+        .into_iter()
+        .find_map(|level| {
+            line.strip_prefix('[')?
+                .strip_prefix(level)?
+                .strip_prefix("] ")
+                .map(|message| (level, message))
+        })
+        .unwrap_or(("unknown", line));
+    let protocol = ["TCP", "UDP", "TUN", "MIXED"].into_iter().find(|protocol| {
+        message
+            .strip_prefix('[')
+            .and_then(|rest| rest.strip_prefix(protocol))
+            .is_some_and(|rest| rest.starts_with("] "))
+    });
+    if let Some(protocol) = protocol {
+        if let Some((_, right)) = message.split_once("-->") {
+            let (target_and_rule, outbound) = right.rsplit_once(" using ").unwrap_or((right, ""));
+            let rule = target_and_rule
+                .split_once(" match ")
+                .and_then(|(_, rule)| rule.split(['(', ' ', '\t']).next())
+                .filter(|rule| {
+                    matches!(
+                        *rule,
+                        "Match"
+                            | "Domain"
+                            | "DomainSuffix"
+                            | "DomainKeyword"
+                            | "GeoIP"
+                            | "GeoSite"
+                            | "IPCIDR"
+                            | "IPCIDR6"
+                            | "RuleSet"
+                            | "ProcessName"
+                            | "ProcessPath"
+                            | "DstPort"
+                            | "SrcPort"
+                    )
+                })
+                .unwrap_or("unknown");
+            let outbound = match outbound.trim() {
+                "DIRECT" => "DIRECT",
+                "REJECT" | "REJECT-DROP" => "REJECT",
+                _ => "[outbound redacted]",
+            };
+            return format!(
+                "[{level}] [{protocol}] [target redacted] match {rule} using {outbound}"
+            );
+        }
+    }
+    for (prefix, direction) in [
+        ("inbound connection from ", "inbound"),
+        ("inbound connection to ", "inbound"),
+        ("outbound connection to ", "outbound"),
+        ("inbound packet connection from ", "inbound"),
+        ("outbound packet connection to ", "outbound"),
+    ] {
+        if message.contains(prefix) {
+            return format!("[{level}] {direction} connection [endpoint redacted]");
+        }
+    }
+    let normalized = message.to_ascii_lowercase();
+    let category = [
+        "timeout",
+        "connection refused",
+        "network unreachable",
+        "dns",
+        "tls",
+        "authentication",
+    ]
+    .into_iter()
+    .find(|category| normalized.contains(category))
+    .unwrap_or("details omitted");
+    format!("[{level}] [{category}]")
+}
+
 #[tauri::command]
 pub fn redact_log_lines(lines: Vec<String>) -> Result<String, String> {
     clean_lines(lines)
@@ -241,5 +321,30 @@ mod tests {
             .to_string();
         assert!(store.snapshot_data(&id).is_ok());
         let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+#[cfg(test)]
+mod redact_470_tests {
+    use super::*;
+
+    #[test]
+    fn share_log_redacts_destinations_rule_values_and_credentials() {
+        let fixtures = [
+            "[info] [TCP] 127.0.0.1:53100 --> target.example.test:443 match GeoIP(private) using Node-A",
+            "[info] [UDP] 127.0.0.1:53101 --> intranet.example:443 match DomainSuffix(intranet.example) using DIRECT",
+            "[debug] [42] outbound/hysteria2[secret-node]: outbound connection to [2001:db8::22]:443",
+            "[error] hysteria2://fixture-password@node.example:443 token: bare-secret /Users/fixture",
+        ];
+        let out = clean_lines(fixtures.map(str::to_owned).to_vec()).unwrap();
+        assert_eq!(
+            out,
+            concat!(
+                "[info] [TCP] [target redacted] match GeoIP using [outbound redacted]\n",
+                "[info] [UDP] [target redacted] match DomainSuffix using DIRECT\n",
+                "[debug] outbound connection [endpoint redacted]\n",
+                "[error] [details omitted]",
+            )
+        );
     }
 }

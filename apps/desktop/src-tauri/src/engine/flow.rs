@@ -737,7 +737,9 @@ pub fn profile_group_order_str(content: &str) -> Vec<String> {
 
 pub(crate) fn select_proxy_inner(state: &AppState, group: &str, name: &str) -> Result<(), String> {
     let _op = state.proxy_op.lock().unwrap_or_else(|e| e.into_inner());
-    controller_client(state)?.select_proxy(group, name)
+    controller_client(state)?.select_proxy(group, name)?;
+    let _ = state.app.emit("proxy://selection-changed", ());
+    Ok(())
 }
 
 // ---------- 设置命令 ----------

@@ -428,7 +428,8 @@ fn now_ms() -> u64 {
 pub fn redact(text: &str) -> String {
     static PATTERNS: OnceLock<(Regex, Regex, Regex)> = OnceLock::new();
     let (urls, bearer, keys) = PATTERNS.get_or_init(|| (
-        Regex::new(r#"(?i)(?:https?|socks5|ss|trojan|vmess|vless)://[^\s<>\"']+"#).unwrap(),
+        // #470：scheme 收敛为通配（hysteria2/tuic/ssr 等未列协议同样命中）
+        Regex::new(r#"(?i)[a-z][a-z0-9+.-]*://[^\s<>\"']+"#).unwrap(),
         Regex::new(r#"(?i)bearer\s+[^\s,;"}]+"#).unwrap(),
         Regex::new(r#"(?i)((?:token|secret|password|passwd|authorization|api[_-]?key)[\"']?\s*[:=]\s*)(?:\"[^\"]*\"|'[^']*'|[^\s,;&}]+)"#).unwrap(),
     ));
@@ -436,8 +437,11 @@ pub fn redact(text: &str) -> String {
         url::Url::parse(&caps[0])
             .ok()
             .and_then(|u| {
-                u.host_str()
-                    .map(|host| format!("{}://{host}/[redacted]", u.scheme()))
+                // Only retain web origins without embedded credentials.
+                (matches!(u.scheme(), "http" | "https")
+                    && u.username().is_empty()
+                    && u.password().is_none())
+                .then(|| format!("{}/[redacted]", u.origin().ascii_serialization()))
             })
             .unwrap_or_else(|| "[redacted URL]".into())
     });
@@ -1001,6 +1005,15 @@ mod tests {
         }
         assert!(serialized.contains("redacted"));
     }
+    #[test]
+    fn node_uris_are_redacted_even_if_the_scheme_has_no_userinfo() {
+        let output = redact("tuic://id:secret@node.test:443 ssr://credential-in-host https://subscription.test/private");
+        assert_eq!(
+            output,
+            "[redacted URL] [redacted URL] https://subscription.test/[redacted]"
+        );
+    }
+
     #[test]
     fn displayed_time_pauses_without_a_renderer_and_while_interacting() {
         let mut queue = visible_queue();

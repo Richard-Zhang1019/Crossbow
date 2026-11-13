@@ -106,7 +106,7 @@ pub(crate) fn current_outbound(
 pub(crate) async fn run_diagnosis(
     app: AppHandle,
     run_id: String,
-) -> Result<Vec<crate::diagnostics::diagnose::CheckResult>, String> {
+) -> Result<crate::diagnostics::diagnose::DiagnosticReport, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         crate::diagnostics::diagnose::run(&state, &run_id, |progress| {
@@ -116,6 +116,52 @@ pub(crate) async fn run_diagnosis(
     .await
     .map_err(|e| e.to_string())
 }
+#[tauri::command]
+pub(crate) async fn open_diagnosis_guide(url: String) -> Result<(), String> {
+    let url = url::Url::parse(&url).map_err(|_| "Invalid troubleshooting URL")?;
+    if url.origin().ascii_serialization() != "https://crossbow-client.netlify.app"
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || !matches!(url.path(), "/guide" | "/zh/guide")
+        || url.query().is_some()
+        || !matches!(
+            url.fragment(),
+            Some(
+                "quick-start"
+                    | "engines"
+                    | "ports"
+                    | "proxy-vs-tun"
+                    | "windows"
+                    | "troubleshooting"
+            )
+        )
+    {
+        return Err("Invalid troubleshooting URL".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        #[cfg(target_os = "macos")]
+        let mut command = crate::process::command("/usr/bin/open");
+        #[cfg(windows)]
+        let mut command = {
+            let mut command = crate::process::command("rundll32.exe");
+            command.arg("url.dll,FileProtocolHandler");
+            command
+        };
+        #[cfg(not(any(target_os = "macos", windows)))]
+        let mut command = crate::process::command("xdg-open");
+        let status = command
+            .arg(url.as_str())
+            .status()
+            .map_err(|error| error.to_string())?;
+        status
+            .success()
+            .then_some(())
+            .ok_or_else(|| format!("Could not open troubleshooting guide: {status}"))
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 #[tauri::command]
 pub(crate) fn unsubscribe_logs(state: State<AppState>, subscriber: String) -> Result<(), String> {
     state.ws.end_log_view(&subscriber);

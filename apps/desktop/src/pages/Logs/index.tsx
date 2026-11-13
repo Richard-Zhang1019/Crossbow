@@ -1,5 +1,6 @@
 import { useClipboardFeedback } from "@/hooks/useClipboardFeedback";
 import {Icon} from "@/components/Icon";
+import Dialog from "@/components/Dialog";
 import Select from "@/components/Select";
 import {SearchField} from "@/components/Controls";
 import { ButtonBase, Button } from "@/components/Button";
@@ -172,6 +173,7 @@ export default function LogsPage() {
   const [following,setFollowing]=useState(true);
   const [exporting,setExporting]=useState(false);
   const exportFlight=useRef(false);
+  const [exportPreview, setExportPreview] = useState<{ lines: string[]; text: string } | null>(null);
   const { copied: copiedLine, copy } = useClipboardFeedback<LogEntry>("logs-copy");
   // Keep the reading target still while new logs continue to arrive in the buffer.
   const [readingLines, setReadingLines] = useState<LogEntry[] | null>(null);
@@ -395,7 +397,29 @@ export default function LogsPage() {
   );
   const copyLine = (line: LogEntry) =>
     copy(line, () => ipc.redactLogLines([`[${line.type}] ${line.payload}`]));
-  const exportLogs=async()=>{if(exportFlight.current)return;exportFlight.current=true;setExporting(true);try{const saved=await ipc.exportLogLines(filtered.map(l=>`[${l.type}] ${l.payload}`));if(saved)notify.success(t("logs.exported"),"logs-export");}catch(e){notify.error(e,"logs-export");}finally{exportFlight.current=false;setExporting(false);}};
+  const withLogExport = async (action: () => Promise<void>) => {
+    if (exportFlight.current) return;
+    exportFlight.current = true;
+    setExporting(true);
+    try {
+      await action();
+    } catch (error) {
+      notify.error(error, "logs-export");
+    } finally {
+      exportFlight.current = false;
+      setExporting(false);
+    }
+  };
+  const previewLogs = () => withLogExport(async () => {
+    const lines = filtered.map(line => `[${line.type}] ${line.payload}`);
+    setExportPreview({ lines, text: await ipc.redactLogLines(lines) });
+  });
+  const exportLogs = () => withLogExport(async () => {
+    if (exportPreview && await ipc.exportLogLines(exportPreview.lines)) {
+      setExportPreview(null);
+      notify.success(t("logs.exported"), "logs-export");
+    }
+  });
   const resume=()=>{pinned.current=true;setFollowing(true);if(boxRef.current)boxRef.current.scrollTop=boxRef.current.scrollHeight;};
   const copyButton=(line:LogEntry)=><ButtonBase className="cb-log-copy" onClick={()=>void copyLine(line)} aria-label={t("logs.copyLine")} title={t("logs.copyLine")}>{copiedLine===line?"✓":t("workflow.copy")}</ButtonBase>;
 
@@ -420,7 +444,7 @@ export default function LogsPage() {
         <div className="cb-data-actions">
           <Button title={!following?t("logs.followPaused"):undefined} onClick={()=>{if(following){pinned.current=false;setFollowing(false)}else resume()}}>{t(following?"logs.pauseFollow":"logs.follow")}</Button>
           {!following&&<Button className="cb-log-bottom" iconOnly title={t("logs.bottom")} aria-label={t("logs.bottom")} onClick={resume}><Icon name="download"/></Button>}
-          <Button className="cb-log-export cb-log-secondary-action" aria-label={t("logs.export")} disabled={!filtered.length||exporting} loading={exporting} title={t("logs.exportHint",{n:filtered.length})} onClick={()=>void exportLogs()}><Icon name="download"/><span className="cb-log-action-label">{t("logs.export")}</span></Button>
+          <Button className="cb-log-export cb-log-secondary-action" aria-label={t("logs.export")} disabled={!filtered.length||exporting} loading={exporting} title={t("logs.exportHint",{n:filtered.length})} onClick={()=>void previewLogs()}><Icon name="download"/><span className="cb-log-action-label">{t("logs.export")}</span></Button>
           <Button className="cb-log-clear cb-log-secondary-action" aria-label={t("logs.clear")} title={t("logs.clear")} onClick={clear} disabled={lines.length===0||loading} loading={clearing}><Icon name="trash"/><span className="cb-log-action-label">{t("logs.clear")}</span></Button>
         </div>
         <span className="sr-only" role="status">{!following?t("logs.followPaused"):""}</span>
@@ -561,6 +585,15 @@ export default function LogsPage() {
           </>
         )}
       </div>
+      {exportPreview && (
+        <Dialog title={t("logs.export")} onClose={() => setExportPreview(null)}>
+          <p>{t("logs.shareScope")}</p>
+          <pre className="cb-share-preview cb-selectable cb-mono">{exportPreview.text}</pre>
+          <div className="actions">
+            <Button variant="primary" loading={exporting} onClick={() => void exportLogs()}>{t("logs.export")}</Button>
+          </div>
+        </Dialog>
+      )}
     </div>
   );
 }

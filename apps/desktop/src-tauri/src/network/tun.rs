@@ -80,6 +80,16 @@ fn capture_route_present() -> bool {
     })
 }
 
+/// Verify only routes on the device identified by Crossbow's live controller.
+#[cfg(target_os = "macos")]
+pub(crate) fn diagnostic_capture_route(device: &str) -> Option<bool> {
+    ipv4_routes().ok().map(|routes| {
+        routes
+            .iter()
+            .any(|(destination, interface)| interface == device && is_default_route(destination))
+    })
+}
+
 /// 把 TUN 内核放到版本化的用户数据目录，避免更新 `.app` 时覆盖掉
 /// 已授权的 setuid 文件。只有核心版本变化时才需要重新授权。
 fn persistent_core_bin(state: &AppState, source: &Path) -> Result<PathBuf, String> {
