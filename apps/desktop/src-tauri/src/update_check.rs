@@ -18,6 +18,9 @@ use crate::notifications::{self, Action, Kind, Notice};
 #[cfg_attr(target_os = "linux", allow(unused_imports))]
 use crate::tr;
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(target_os = "macos")]
+mod macos_backup;
+
 static DOWNLOADING: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -255,110 +258,12 @@ fn download_inner(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// #463：macOS 备份目录（数据目录下 backup/）。
-#[cfg(target_os = "macos")]
-fn macos_backup_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?
-        .join("backup");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    Ok(dir)
-}
-
-/// #463：定位当前 .app 包根（crossbow-desktop.exe 的祖先目录里找 *.app）。
-#[cfg(target_os = "macos")]
-fn macos_current_app_bundle() -> Option<std::path::PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    let mut cur = exe.parent()?;
-    loop {
-        if cur.extension().is_some_and(|e| e == "app") {
-            return Some(cur.to_path_buf());
-        }
-        cur = cur.parent()?;
-    }
-}
-
-/// #463：递归拷贝目录（保留符号链接；拷贝失败即报错，绝不半途静默）。
-#[cfg(target_os = "macos")]
-fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<(), String> {
-    std::fs::create_dir_all(dst).map_err(|e| e.to_string())?;
-    for entry in std::fs::read_dir(src).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let from = entry.path();
-        let to = dst.join(entry.file_name());
-        let meta = std::fs::symlink_metadata(&from).map_err(|e| e.to_string())?;
-        if meta.is_symlink() {
-            #[cfg(unix)]
-            {
-                let target = std::fs::read_link(&from).map_err(|e| e.to_string())?;
-                std::os::unix::fs::symlink(&target, &to).map_err(|e| e.to_string())?;
-            }
-        } else if meta.is_dir() {
-            copy_dir_recursive(&from, &to)?;
-        } else {
-            std::fs::copy(&from, &to).map_err(|e| e.to_string())?;
-        }
-    }
-    Ok(())
-}
-
-/// #463：把当前运行的 .app 拷到数据目录 backup/，返回备份路径。
-/// 拷贝失败返回 Err（调用方在无备份情况下仍允许继续安装——保持既有
-/// 行为，不强阻塞）。
-#[cfg(target_os = "macos")]
-fn macos_backup_current_app(app: &AppHandle) -> Result<Option<std::path::PathBuf>, String> {
-    let Some(bundle) = macos_current_app_bundle() else {
-        return Ok(None);
-    };
-    let backup_dir = macos_backup_dir(app)?;
-    let target = backup_dir.join(bundle.file_name().unwrap_or_default());
-    if target.exists() {
-        std::fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
-    }
-    copy_dir_recursive(&bundle, &target).map_err(|e| e.to_string())?;
-    Ok(Some(target))
-}
-
-/// #463：安装失败后，若原 .app 已不存在（被 updater 移走未落回），从
-/// 备份整目录还原回原位置；还原失败时保留备份路径供用户手动恢复。
-#[cfg(target_os = "macos")]
-fn macos_restore_app_backup(_app: &AppHandle, backup: Option<&std::path::PathBuf>) -> String {
-    let Some(backup) = backup else {
-        return "无可还原备份".into();
-    };
-    if !backup.exists() {
-        return format!("备份不存在：{}", backup.display());
-    }
-    let Some(target) = macos_current_app_bundle() else {
-        return format!(
-            "原入口已缺失；旧版保留在 {}，请手动拷回 /Applications 并覆盖同名目录",
-            backup.display()
-        );
-    };
-    match copy_dir_recursive(backup, &target) {
-        Ok(()) => format!("已从备份还原旧版到 {}", target.display()),
-        Err(error) => {
-            format!(
-                "自动还原失败（{error}）；旧版保留在 {}，请手动拷回 /Applications",
-                backup.display()
-            )
-        }
-    }
-}
-
-/// #463：安装成功后清理备份目录。
-#[cfg(target_os = "macos")]
-fn macos_remove_backup(app: &AppHandle) -> Result<(), String> {
-    let dir = macos_backup_dir(app)?;
-    std::fs::remove_dir_all(dir).map_err(|e| e.to_string())
-}
-
 /// 重启并安装（macOS：替换 .app 后自动重启）。
 /// 用户实测（#86）：install 仅替换 .app，不会自动退出/重启——
 /// 必须显式 restart()。运行中的内核经描述符由新实例收养，无缝衔接。
 pub fn install(app: &AppHandle) -> Result<(), String> {
+    static INSTALL: Mutex<()> = Mutex::new(());
+    let _install = INSTALL.try_lock().map_err(|_| "更新安装已在进行")?;
     let bytes = DOWNLOADED
         .lock()
         .ok()
@@ -370,31 +275,18 @@ pub fn install(app: &AppHandle) -> Result<(), String> {
         .and_then(|p| p.clone())
         .ok_or_else(|| "没有待安装的更新".to_string())?;
     #[cfg(target_os = "macos")]
-    let backup = macos_backup_current_app(app)?;
-    if let Err(error) = update.install(bytes) {
-        #[cfg(windows)]
-        crate::cancel_windows_update_exit(app);
-        // #463（macOS）：updater 可能已移走旧 .app 且未落新版——立即从备份
-        // 还原，保证旧版本仍可从原入口启动；还原也失败时保留备份并在错误
-        // 里给出手动恢复路径。
-        #[cfg(target_os = "macos")]
-        {
-            let restore_note = macos_restore_app_backup(app, backup.as_ref());
-            return Err(format!(
-                "{error}；更新替换失败，{} {restore_note}",
-                backup
-                    .as_ref()
-                    .map(|p| format!("旧版已保留于 {}", p.display()))
-                    .unwrap_or_else(|| "旧版备份不可用".into())
-            ));
-        }
-        #[cfg(not(target_os = "macos"))]
-        return Err(error.to_string());
-    }
-    // 安装成功（进程即将重启）：清理备份目录
-    #[cfg(target_os = "macos")]
+    macos_backup::install(app, || {
+        update.install(bytes).map_err(|error| error.to_string())
+    })?;
+    #[cfg(not(target_os = "macos"))]
     {
-        let _ = macos_remove_backup(app);
+        #[cfg(windows)]
+        crate::prepare_windows_update_exit(app)?;
+        if let Err(error) = update.install(bytes) {
+            #[cfg(windows)]
+            crate::cancel_windows_update_exit(app);
+            return Err(error.to_string());
+        }
     }
     // Windows installation exits the process inside update.install(); the NSIS
     // installer owns relaunch. Only macOS uses our restart/handoff below.
