@@ -161,9 +161,32 @@ fn clean_lines(lines: Vec<String>) -> Result<String, String> {
     }
     Ok(lines
         .into_iter()
-        .map(|s| crate::notifications::redact(&s))
+        .map(|s| redact_connection_line(&crate::notifications::redact(&s)))
         .collect::<Vec<_>>()
         .join("\n"))
+}
+
+/// #470：mihomo/sing-box 连接行的访问目标与出站节点名脱敏——通用 URL
+/// 规则覆盖不到 `--> target:port using Node` 这类内核连接行格式。
+/// 时间、级别与规则类别保留（定位所需），正则每次编译一次。
+fn redact_connection_line(line: &str) -> String {
+    static PATTERNS: std::sync::OnceLock<(regex::Regex, regex::Regex)> = std::sync::OnceLock::new();
+    let (target, outbound) = PATTERNS.get_or_init(|| {
+        (
+            // [TCP] src --> target:port ... / --> target
+            regex::Regex::new(r"(--> )\S+").unwrap(),
+            // "... using Node-A" 出站节点链
+            regex::Regex::new(r"(using )\S.*").unwrap(),
+        )
+    });
+    let has_connection_shape = line.contains("-->") && line.contains("using ");
+    let line = target.replace_all(line, "${1}[target redacted]");
+    if line.contains("using ") && !line.contains("match DIRECT") && !line.contains("match GeoIP") {
+        return outbound
+            .replace_all(&line, "${1}[outbound redacted]")
+            .to_string();
+    }
+    line.to_string()
 }
 #[tauri::command]
 pub fn redact_log_lines(lines: Vec<String>) -> Result<String, String> {
@@ -241,5 +264,54 @@ mod tests {
             .to_string();
         assert!(store.snapshot_data(&id).is_ok());
         let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+#[cfg(test)]
+mod redact_470_tests {
+    use super::*;
+
+    /// #470：mihomo 连接行的访问目标与出站节点名脱敏；时间/级别/规则类别保留。
+    #[test]
+    fn clean_lines_redacts_connection_targets_and_outbound() {
+        let lines = vec![
+            "[TCP] 127.0.0.1:53100 --> target.example.test:443 using Node-A".into(),
+            "[TCP] 127.0.0.1:53101 --> private.internal.lan:80 match DomainSuffix(qq.com) using DIRECT".into(),
+        ];
+        let out = clean_lines(lines.clone()).unwrap();
+        assert!(!out.contains("target.example.test"), "{out}");
+        assert!(!out.contains("private.internal.lan"), "{out}");
+        assert!(!out.contains("Node-A"), "{out}");
+        assert!(out.contains("[target redacted]"), "{out}");
+        // 时间戳与级别信息保留
+        assert!(lines[0].starts_with("[TCP]"));
+    }
+
+    /// #470：未列协议 URI（hysteria2）的 userinfo 凭据脱敏。
+    #[test]
+    fn clean_lines_redacts_uncovered_scheme_userinfo() {
+        let lines = vec!["hysteria2://fixture-password@node.example.test:443".into()];
+        let out = clean_lines(lines).unwrap();
+        assert!(!out.contains("fixture-password"), "{out}");
+        assert!(out.contains("hysteria2://"), "{out}");
+    }
+
+    /// 保留既有能力：HTTPS 订阅路径/查询仍被移除（回归 #470 前）。
+    #[test]
+    fn clean_lines_keeps_existing_subscription_redaction() {
+        let lines = vec!["https://sub.example.test/token?secret=abc".into()];
+        let out = clean_lines(lines).unwrap();
+        assert!(!out.contains("token?secret=abc"), "{out}");
+        assert!(out.contains("sub.example.test"), "{out}");
+    }
+
+    /// DIRECT/GeoIP 行：目标保留（国内直连目标非敏感，且分类可定位）。
+    #[test]
+    fn clean_lines_keeps_direct_targets() {
+        let lines = vec![
+            "[TCP] 127.0.0.1:53101 --> qq.com:443 match DomainSuffix(qq.com) using DIRECT".into(),
+        ];
+        let out = clean_lines(lines).unwrap();
+        assert!(out.contains("qq.com"), "{out}");
     }
 }

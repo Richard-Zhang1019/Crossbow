@@ -428,7 +428,8 @@ fn now_ms() -> u64 {
 pub fn redact(text: &str) -> String {
     static PATTERNS: OnceLock<(Regex, Regex, Regex)> = OnceLock::new();
     let (urls, bearer, keys) = PATTERNS.get_or_init(|| (
-        Regex::new(r#"(?i)(?:https?|socks5|ss|trojan|vmess|vless)://[^\s<>\"']+"#).unwrap(),
+        // #470：scheme 收敛为通配（hysteria2/tuic/ssr 等未列协议同样命中）
+        Regex::new(r#"(?i)[a-z][a-z0-9+.-]*://[^\s<>\"']+"#).unwrap(),
         Regex::new(r#"(?i)bearer\s+[^\s,;"}]+"#).unwrap(),
         Regex::new(r#"(?i)((?:token|secret|password|passwd|authorization|api[_-]?key)[\"']?\s*[:=]\s*)(?:\"[^\"]*\"|'[^']*'|[^\s,;&}]+)"#).unwrap(),
     ));
@@ -436,8 +437,11 @@ pub fn redact(text: &str) -> String {
         url::Url::parse(&caps[0])
             .ok()
             .and_then(|u| {
-                u.host_str()
-                    .map(|host| format!("{}://{host}/[redacted]", u.scheme()))
+                u.host_str().map(|host| {
+                    // #470：userinfo 里的节点凭据（如 hysteria2://pass@host）不保留
+                    let port = u.port().map(|p| format!(":{p}")).unwrap_or_default();
+                    format!("{}://[redacted]{}{port}/[redacted]", u.scheme(), host)
+                })
             })
             .unwrap_or_else(|| "[redacted URL]".into())
     });
