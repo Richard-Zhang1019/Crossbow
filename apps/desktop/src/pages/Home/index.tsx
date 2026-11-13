@@ -1,7 +1,7 @@
 import SegmentedControl from "@/components/SegmentedControl";
 import { Switch } from "@/components/Controls";
 import { HelpPopover } from "@/components/PopoverPanel";
-import { Button } from "@/components/Button";
+import { Button, ButtonBase } from "@/components/Button";
 import NodeName from "@/components/NodeName";
 import { nodeNameText } from "@/components/NodeName/nodeFlags";
 import { notify, notificationText } from "@/notifications/service";
@@ -58,6 +58,9 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
   const [setupOperation, setSetupOperation] = useState<"download" | "start" | "verify" | null>(null);
   const [portConflict, setPortConflict] = useState(false);
   const [verification, setVerification] = useState<{ revision: number; profileId: string | null; reachable: boolean } | null>(null);
+  const verifyAction = useRef<HTMLButtonElement>(null);
+  const verifyStatus = useRef<HTMLSpanElement>(null);
+  const focusVerifyStatus = useRef(false);
   const installNotice = useOperationNotice("core-download");
   const [rates, setRates] = useState<{ up: number; down: number }[]>([]);
   const [lastTrafficAt, setLastTrafficAt] = useState(0);
@@ -346,6 +349,19 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
   const downloadFailed = setupStep === "download" && installNotice?.kind === "error";
   const portBlocked = setupStep === "start" && portConflict;
   const verificationFailed = setupStep === "verify" && currentVerification?.reachable === false;
+  const verifying = setupOperation === "verify";
+  const showVerifyAction = setupStep === "verify";
+  const verifyDisabled = busy || !listeners || verifying;
+  const networkStatus = currentVerification?.reachable ? "setup.verified"
+    : setupStep !== "verify" ? "home.networkDiagnosis"
+    : verifying ? "setup.verifying"
+    : verificationFailed ? "setup.verifyFailed"
+    : "setup.verifyPending";
+  useEffect(() => {
+    if (showVerifyAction || !focusVerifyStatus.current) return;
+    focusVerifyStatus.current = false;
+    if (currentVerification?.reachable) verifyStatus.current?.focus({ preventScroll: true });
+  }, [showVerifyAction, currentVerification]);
   const setupNote = downloadFailed ? t("setup.downloadFailed")
     : portBlocked ? t("setup.portConflict")
     : setupStep === "download" && downloadRunning
@@ -381,6 +397,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
           undefined, { feedback: "error-only", titleKey: "setup.verifyAction" });
         if (!mounted.current || revision !== connectionRevision.current) return;
         const reachable = outcome.ok && outcome.value.status === "ok";
+        focusVerifyStatus.current = reachable && document.activeElement === verifyAction.current;
         setVerification({ revision, profileId: activeId, reachable });
         if (reachable) setProgress("complete");
       }
@@ -466,9 +483,25 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
           <section className="cb-home-path" aria-label={t("studio.path")}>
             <div className="cb-path-heading">
               <h3>{t("studio.path")}</h3>
-              <span title={outbound?.chain.map(nodeNameText).join(" → ")}>
+              {(!outbound?.node || outbound.chain[0] !== outbound.node) && <span
+                className="cb-path-outbound"
+                title={outbound?.chain.map(nodeNameText).join(" → ")}
+              >
                 <NodeName name={outbound?.chain[0] ?? t(`mode.${mode}`)} />
-              </span>
+              </span>}
+              {showVerifyAction && <ButtonBase
+                ref={verifyAction}
+                className="cb-path-test"
+                title={t("setup.verifyHint")}
+                aria-describedby="cb-verify-scope"
+                aria-disabled={verifyDisabled || undefined}
+                aria-busy={verifying || undefined}
+                onClick={() => { if (!verifyDisabled) void runSetup("verify"); }}
+              >
+                <Icon name={verificationFailed ? "refresh" : "activity"} size={13} />
+                <span>{t(verificationFailed ? "setup.retryVerify" : "setup.verifyAction")}</span>
+              </ButtonBase>}
+              {showVerifyAction && <span id="cb-verify-scope" hidden>{t("setup.verifyHint")}</span>}
             </div>
             <ConnectionFlow
               enabled={
@@ -626,19 +659,13 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
                 <div>
                   <dt>{t("home.healthNetwork")}</dt>
                   <dd>
-                    <span role="status" className={currentVerification?.reachable ? "cb-health-verified"
-                      : verificationFailed ? "cb-health-failed" : "cb-health-unverified"}
-                      title={t(currentVerification ? "setup.verifyHint" : "home.networkScope")}>
-                      {currentVerification?.reachable ? <><Icon name="check" size={13} />{t("setup.verified")}</>
-                        : verificationFailed ? t("setup.verifyFailed") : setupStep === "verify" ? null : t("home.networkDiagnosis")}
+                    <span ref={verifyStatus} role="status" tabIndex={-1}
+                      className={currentVerification?.reachable ? "cb-health-verified"
+                        : verificationFailed && !verifying ? "cb-health-failed" : "cb-health-unverified"}
+                      title={t(setupStep === "verify" || currentVerification ? "setup.verifyHint" : "home.networkScope")}>
+                      {currentVerification?.reachable && <Icon name="check" size={13} />}
+                      {t(networkStatus)}
                     </span>
-                    {setupStep === "verify" && <Button size="small" title={t("setup.verifyHint")}
-                      loading={setupOperation === "verify"} disabled={busy || !listeners}
-                      aria-describedby="cb-verify-scope" onClick={() => void runSetup("verify")}>
-                      <Icon name={verificationFailed ? "refresh" : "activity"} size={13} />
-                      {t(verificationFailed ? "setup.retryVerify" : "setup.verifyAction")}
-                    </Button>}
-                    {setupStep === "verify" && <span id="cb-verify-scope" hidden>{t("setup.verifyHint")}</span>}
                   </dd>
                 </div>
               </dl>

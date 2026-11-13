@@ -367,22 +367,48 @@ summary:focus-visible {
 .cb-path-heading {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  min-height: 24px;
+  gap: 10px;
 }
 .cb-path-heading h3 {
+  flex: none;
   font-size: var(--font-sm);
   font-weight: 500;
   color: var(--cb-text-dim);
 }
-.cb-path-heading > span {
+.cb-path-outbound {
   max-width: 50%;
+  min-width: 0;
+  margin-inline-start: auto;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
   font-size: var(--font-xs);
   color: var(--cb-text-dim);
 }
+.cb-path-test {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  gap: 5px;
+  min-height: 24px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--cb-accent);
+  font: inherit;
+  font-size: var(--font-xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.cb-path-heading h3 + .cb-path-test { margin-inline-start: auto; }
+.cb-path-test:hover:not([aria-disabled="true"]) span {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.cb-path-test[aria-disabled="true"] { color: var(--cb-text-dim); }
+.cb-path-test[aria-busy="true"] { cursor: wait; }
 .cb-route-flow {
   position: relative;
   display: grid;
@@ -2197,7 +2223,6 @@ textarea:focus-visible,
 .cb-health-summary dt { color:var(--cb-text-dim); flex:none; font-size: var(--font-xs); }
 .cb-health-summary dd { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:4px 8px; margin:0; color:var(--cb-text); font-weight:500; min-width:0; text-align:right; }
 .cb-health-unverified { color:var(--cb-text-dim); font-weight:400; }
-.cb-health-unverified:empty { position:absolute; }
 .cb-health-verified { display:inline-flex; align-items:center; gap:4px; color:var(--cb-ok); }
 .cb-health-failed { color:var(--cb-warn); }
 .cb-connection-state[data-setup] { max-height:none; }
