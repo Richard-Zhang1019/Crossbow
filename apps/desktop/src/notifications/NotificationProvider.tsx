@@ -15,6 +15,7 @@ import { ProgressRing } from "@/components/ProgressRing";
 import { Icon } from "@/components/Icon";
 import { ipc } from "@/services/ipc";
 import {
+  notificationHint,
   notificationText as text,
   type Notification,
   type NotificationSnapshot,
@@ -234,9 +235,7 @@ function NotificationCard({
           ? text("safeMode.hint")
           : notice.code === "tun.externalProxy" || notice.code === "tun.manualRecovery"
             ? text(`${notice.code}.hint`)
-            : notice.code === "tun.disabled"
-              ? text("tun.disabled.hint")
-              : "";
+            : notificationHint(notice.code);
   const detailsId = `notice-details-${notice.id}`;
   const progressing = notice.kind === "progress";
   const percent =
@@ -418,11 +417,7 @@ function HistoryRow({
             notice.code === "tun.manualRecovery" ||
             notice.code === "sysproxy.restoreFailed")
           ? text(`${notice.code}.hint`)
-          : notice.code === "tun.disabled"
-            ? text("tun.disabled.hint")
-            : kind === "error"
-              ? text("failedHint")
-              : "";
+          : notificationHint(notice.code) || (kind === "error" ? text("failedHint") : "");
   const read = () =>
     void invoke("notification_mark_read", { id: notice.id }).catch(
       console.error,

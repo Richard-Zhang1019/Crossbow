@@ -154,6 +154,30 @@ const copy = {
     "内核未运行，已关闭系统代理",
     "Core is down; system proxy turned off",
   ],
+  "tray.baselineUnreachable": [
+    "节点测速全超时，两个网络探测目标均未响应",
+    "All node tests timed out and neither connectivity probe responded",
+  ],
+  "tray.baselineUnreachable.hint": [
+    "请先检查本机网络、DNS 或路由器，再重试测速。",
+    "Check your network connection, DNS or router, then retry the node tests.",
+  ],
+  "tray.baselineReachable": [
+    "节点测速全超时，至少一个网络探测目标可达",
+    "All node tests timed out, but a connectivity probe responded",
+  ],
+  "tray.baselineReachable.hint": [
+    "可以重试测速，或打开诊断检查代理链路。",
+    "Retry the node tests or open Diagnostics to check the proxy connection.",
+  ],
+  "tray.baselineTunActive": [
+    "节点测速全超时，TUN 已开启",
+    "All node tests timed out with TUN enabled",
+  ],
+  "tray.baselineTunActive.hint": [
+    "已跳过直连探测。打开诊断查看当前连接。",
+    "The direct connectivity check was skipped. Open Diagnostics to check the current connection.",
+  ],
   "sysproxy.restoreFailed": [
     "系统代理恢复未完成",
     "System proxy recovery is incomplete",
@@ -200,6 +224,11 @@ export function notificationText(
   for (const [key, replacement] of Object.entries(params ?? {}))
     value = value.replace(`{${key}}`, String(replacement));
   return value;
+}
+
+export function notificationHint(code: string): string {
+  const key = `${code}.hint`;
+  return Object.hasOwn(copy, key) ? notificationText(key) : "";
 }
 
 // Serialize publication per operation, so a fast result cannot arrive before

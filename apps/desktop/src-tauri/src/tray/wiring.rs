@@ -340,6 +340,113 @@ pub(crate) fn probe_tun_network() -> Result<(), String> {
     Err(last_error)
 }
 
+// The only caller is the macOS tray. Keep the TUN watchdog's probes separate:
+// they intentionally test the tunnel rather than the path without an HTTP proxy.
+#[cfg(target_os = "macos")]
+const BASELINE_TARGETS: [&str; 2] = [
+    "https://connect.rom.miui.com/generate_204",
+    "https://www.baidu.com/",
+];
+#[cfg(target_os = "macos")]
+const BASELINE_REPORT_INTERVAL: Duration = Duration::from_secs(10 * 60);
+#[cfg(target_os = "macos")]
+const BASELINE_NOTICE_SOURCE: &str = "tray-baseline";
+
+#[cfg(target_os = "macos")]
+fn all_nodes_timed_out(total: usize, timeouts: usize) -> bool {
+    total != 0 && timeouts == total
+}
+
+#[cfg(target_os = "macos")]
+fn baseline_verdict(reachable: Option<bool>) -> (&'static str, notifications::Kind) {
+    match reachable {
+        Some(false) => ("tray.baselineUnreachable", notifications::Kind::Warning),
+        Some(true) => ("tray.baselineReachable", notifications::Kind::Info),
+        None => ("tray.baselineTunActive", notifications::Kind::Info),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn baseline_probe_one(agent: &ureq::Agent, url: &str) -> bool {
+    // Any authenticated HTTPS response establishes reachability of this
+    // endpoint. A redirect doesn't require probing an unrelated destination.
+    matches!(
+        agent.head(url).call(),
+        Ok(_) | Err(ureq::Error::Status(_, _))
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn report_speed_test_baseline(handle: &AppHandle, generation: u64, core_pid: u32) {
+    use std::sync::Mutex;
+    use std::time::Instant;
+    static LAST_REPORT: Mutex<Option<Instant>> = Mutex::new(None);
+
+    let app = handle.clone();
+    std::thread::spawn(move || {
+        // A concurrent run leaves the existing probe in charge. Check the
+        // cooldown before making requests and count only published results.
+        let Ok(mut last_report) = LAST_REPORT.try_lock() else {
+            return;
+        };
+        if last_report.is_some_and(|last| last.elapsed() < BASELINE_REPORT_INTERVAL) {
+            return;
+        }
+        let Some(state) = app.try_state::<AppState>() else {
+            return;
+        };
+        let current_tun = || {
+            if state
+                .config_transition
+                .load(std::sync::atomic::Ordering::Acquire)
+                || state.exit.ensure_open().is_err()
+            {
+                return None;
+            }
+            let core = state.core();
+            if core.status() != CoreStatus::Running || core.pid() != Some(core_pid) {
+                return None;
+            }
+            Some(state.store.lock().ok()?.data().engine.tun_enable)
+        };
+        let Some(tun_enabled) = current_tun() else {
+            return;
+        };
+        let reachable = if tun_enabled {
+            // Disabling HTTP proxy discovery does not bypass the OS tunnel.
+            None
+        } else {
+            let agent = ureq::AgentBuilder::new()
+                .try_proxy_from_env(false)
+                .timeout_connect(TUN_PROBE_TIMEOUT)
+                .timeout(TUN_PROBE_TIMEOUT)
+                .redirects(0)
+                .build();
+            Some(
+                BASELINE_TARGETS
+                    .iter()
+                    .any(|url| baseline_probe_one(&agent, url)),
+            )
+        };
+        // Do not publish through a concurrent takeover/core transaction.
+        let Ok(_core_operation) = state.core_op.try_lock() else {
+            return;
+        };
+        if current_tun() != Some(tun_enabled) {
+            return;
+        }
+        let tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
+        if tray.generation() != generation {
+            return;
+        }
+        let (code, kind) = baseline_verdict(reachable);
+        let mut notice = notifications::Notice::new(kind, code, BASELINE_NOTICE_SOURCE);
+        notice.actions = vec![notifications::Action::Diagnostics];
+        notifications::publish(&app, notice);
+        *last_report = Some(Instant::now());
+    });
+}
+
 /// 健康检查重建立。与手动开关共用 core_op，进锁后再读 TUN 标志。
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 pub(crate) fn reestablish_tun_if_enabled(state: &AppState) -> Result<(), String> {
@@ -904,6 +1011,7 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
         tray.generation()
     };
     update_tray_node_menu(handle, true);
+    let core_pid = state.core().pid();
 
     // 并发池测速：每个节点独立请求，完成一个就立即原地刷新菜单——
     // 不再等全组返回（组延迟接口是一次请求测全部，节点多时末尾节点
@@ -1001,17 +1109,9 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
                 };
                 while let Some(node) = queue.lock().ok().and_then(|mut q| q.pop_front()) {
                     let result = match &client {
-                        Ok(c) => c.test_node_delay(&node).map_err(|e| {
-                            let low = e.to_lowercase();
-                            if low.contains("timed out")
-                                || low.contains("timeout")
-                                || low.contains("deadline")
-                                || low.contains("504")
-                            {
-                                "timeout".to_string()
-                            } else {
-                                "failed".to_string()
-                            }
+                        Ok(c) => c.measure_node_delay(&node).map_err(|error| match error {
+                            crate::engine::api::NodeDelayError::Timeout(_) => "timeout".to_string(),
+                            crate::engine::api::NodeDelayError::Failed(_) => "failed".to_string(),
                         }),
                         Err(_) => Err("failed".to_string()),
                     };
@@ -1025,6 +1125,8 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
 
         // 收集器：每条结果立即落库 + 原地刷新（菜单开着时实时可见）
         let mut done = 0usize;
+        let mut timeouts = 0usize;
+        let mut successes = 0usize;
         for (node, result) in rx {
             let Some(state) = h.try_state::<AppState>() else {
                 return;
@@ -1033,6 +1135,16 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
                 let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
                 if tray.generation() != generation {
                     return; // 新一轮测速已接管，放弃本轮剩余结果
+                }
+                if result
+                    .as_ref()
+                    .err()
+                    .is_some_and(|reason| reason == "timeout")
+                {
+                    timeouts += 1;
+                }
+                if result.is_ok() {
+                    successes += 1;
                 }
                 tray.apply_single_result(&node, result);
             }
@@ -1052,9 +1164,18 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
             return;
         }
         tray.end_test();
+        let finished_generation = tray.generation();
+        if successes == total {
+            notifications::resolve(&h, BASELINE_NOTICE_SOURCE);
+        }
         drop(tray);
         let data = tray_menu_data(&state);
         crate::tray::speed::update_node_menu(&h, &data.title, &data.rows, data.testing);
+        if all_nodes_timed_out(total, timeouts) {
+            if let Some(pid) = core_pid {
+                report_speed_test_baseline(&h, finished_generation, pid);
+            }
+        }
         // URLTest may pick a different member during testing. Re-read the
         // controller selection instead of deriving it from measured delays.
         refresh_tray_nodes(&h, true);
@@ -1295,5 +1416,59 @@ mod tests {
             .actions
             .iter()
             .any(|action| { matches!(action, notifications::Action::RetrySystemProxy) }));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn only_a_complete_batch_of_timeouts_triggers_a_probe() {
+        assert!(all_nodes_timed_out(3, 3));
+        assert!(!all_nodes_timed_out(3, 2));
+        assert!(!all_nodes_timed_out(3, 0));
+        assert!(!all_nodes_timed_out(0, 0));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn baseline_messages_describe_evidence_or_tun_skip() {
+        for (reachable, expected_code) in [
+            (Some(false), "tray.baselineUnreachable"),
+            (Some(true), "tray.baselineReachable"),
+            (None, "tray.baselineTunActive"),
+        ] {
+            let (code, kind) = baseline_verdict(reachable);
+            assert_eq!(code, expected_code);
+            assert_eq!(
+                matches!(kind, notifications::Kind::Warning),
+                reachable == Some(false)
+            );
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn baseline_accepts_a_response_without_following_redirects() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut request = [0; 1024];
+            assert!(stream.read(&mut request).unwrap() > 0);
+            stream
+                .write_all(b"HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                .unwrap();
+        });
+        let agent = ureq::builder()
+            .try_proxy_from_env(false)
+            .timeout_connect(Duration::from_secs(2))
+            .timeout(Duration::from_secs(2))
+            .redirects(0)
+            .build();
+        assert!(baseline_probe_one(&agent, &url));
+        server.join().unwrap();
+        assert!(!baseline_probe_one(&agent, &url));
     }
 }
