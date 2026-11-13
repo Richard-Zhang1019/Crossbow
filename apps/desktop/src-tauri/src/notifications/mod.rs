@@ -55,6 +55,8 @@ pub enum Action {
     Nodes,
     #[serde(rename = "retryDownload")]
     RetryDownload,
+    #[serde(rename = "retrySystemProxy")]
+    RetrySystemProxy,
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -488,6 +490,28 @@ pub fn result(app: &AppHandle, source: &str, code: &str, result: Result<(), Stri
     }
     publish(app, notice);
 }
+pub fn result_with_action(
+    app: &AppHandle,
+    source: &str,
+    code: &str,
+    result: Result<(), String>,
+    action: Action,
+) {
+    let mut notice = Notice::new(
+        if result.is_ok() {
+            Kind::Success
+        } else {
+            Kind::Error
+        },
+        code,
+        source,
+    );
+    if let Err(error) = result {
+        notice.details = error;
+        notice.actions = vec![action, Action::Diagnostics];
+    }
+    publish(app, notice);
+}
 // Tauri's show() makes the window key on macOS. Order it in front without
 // activation so background failures do not steal focus or close a tracked menu.
 fn show_overlay(window: &WebviewWindow) {
@@ -761,7 +785,11 @@ pub fn window_destroyed(app: &AppHandle, label: &str) {
     }
 }
 #[tauri::command]
-pub fn notification_publish(service: State<Notifications>, notice: Notice) -> String {
+pub fn notification_publish(service: State<Notifications>, mut notice: Notice) -> String {
+    // Only the backend may offer a retry that changes the system proxy.
+    notice
+        .actions
+        .retain(|action| !matches!(action, Action::RetrySystemProxy));
     service
         .queue
         .lock()
@@ -898,6 +926,71 @@ pub async fn notification_action(
     action: Action,
     id: Option<String>,
 ) -> Result<(), String> {
+    if matches!(&action, Action::RetrySystemProxy) {
+        return tauri::async_runtime::spawn_blocking(move || {
+            let state = app.state::<crate::AppState>();
+            let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
+            state.exit.ensure_open()?;
+            let source = {
+                let service = app.state::<Notifications>();
+                let queue = service.queue.lock().unwrap_or_else(|e| e.into_inner());
+                let notice = id
+                    .as_ref()
+                    .and_then(|id| queue.entries.iter().find(|notice| &notice.id == id))
+                    .filter(|notice| notice.is_pending())
+                    .ok_or("系统代理恢复通知已失效")?;
+                if !notice
+                    .actions
+                    .iter()
+                    .any(|action| matches!(action, Action::RetrySystemProxy))
+                {
+                    return Err("该通知不支持重试系统代理恢复".into());
+                }
+                notice.source.clone()
+            };
+            let after_tun = match source.as_str() {
+                "tun-switch" | "tray-tun" | "tun-health" => true,
+                "sysproxy-core-recovery" => false,
+                _ => return Err("该通知不支持重试系统代理恢复".into()),
+            };
+            if state
+                .store
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .data()
+                .engine
+                .tun_enable
+            {
+                return Err("TUN 正在使用，请先关闭 TUN 再恢复系统代理".into());
+            }
+            let core_running = match state.core().status() {
+                crate::CoreStatus::Running => true,
+                crate::CoreStatus::Stopped | crate::CoreStatus::Crashed(_) => false,
+                crate::CoreStatus::Starting => return Err("内核正在启动，请稍后重试".into()),
+            };
+            if core_running && !after_tun {
+                // The old listener is no longer down. Retire the obsolete action quietly.
+                resolve(&app, &source);
+                return Ok(());
+            }
+            let result = state.sysproxy.retry_restore(core_running, after_tun);
+            let _ = app.emit("sysproxy://status", state.sysproxy.status());
+            crate::refresh_tray(&app);
+            match &result {
+                Ok(()) => resolve(&app, &source),
+                Err(error) => result_with_action(
+                    &app,
+                    &source,
+                    "sysproxy.restoreFailed",
+                    Err(error.clone()),
+                    Action::RetrySystemProxy,
+                ),
+            }
+            result
+        })
+        .await
+        .map_err(|error| error.to_string())?;
+    }
     if matches!(action, Action::RetryDownload) {
         std::thread::spawn(move || {
             let _ = crate::update_check::download_and_prepare(&app);
@@ -911,6 +1004,7 @@ pub async fn notification_action(
         Action::Profiles => "profiles",
         Action::Nodes => "proxies",
         Action::RetryDownload => unreachable!(),
+        Action::RetrySystemProxy => unreachable!(),
     };
     {
         let mut queue = service.queue.lock().unwrap_or_else(|e| e.into_inner());
@@ -924,6 +1018,36 @@ pub async fn notification_action(
     }
     crate::show_main_window(&app);
     Ok(())
+}
+
+#[cfg(any(target_os = "macos", windows))]
+pub(crate) fn tun_result(
+    app: &AppHandle,
+    state: &crate::AppState,
+    source: &str,
+    code: &str,
+    outcome: Result<(), String>,
+) {
+    let tun_enabled = state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .engine
+        .tun_enable;
+    let core_down = matches!(
+        state.core().status(),
+        crate::CoreStatus::Stopped | crate::CoreStatus::Crashed(_)
+    );
+    if outcome.is_err()
+        && !tun_enabled
+        && (state.sysproxy.has_pending_tun_restore()
+            || (core_down && state.sysproxy.has_pending_proxy_restore()))
+    {
+        result_with_action(app, source, code, outcome, Action::RetrySystemProxy);
+    } else {
+        result(app, source, code, outcome);
+    }
 }
 #[tauri::command]
 pub fn notification_ack_navigation(window: WebviewWindow, service: State<Notifications>) {
@@ -975,6 +1099,15 @@ pub fn resolve_core_failure(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retry_system_proxy_action_uses_frontend_contract_name() {
+        assert_eq!(
+            serde_json::to_string(&Action::RetrySystemProxy).unwrap(),
+            "\"retrySystemProxy\""
+        );
+    }
+
     fn visible_queue() -> Queue {
         let mut queue = Queue::default();
         queue.ready.insert("main".into());

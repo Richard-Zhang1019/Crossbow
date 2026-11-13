@@ -335,12 +335,10 @@ pub(crate) fn handle_menu(app: &AppHandle, id: &str) {
                     let _ = handle.emit("tun://status", actual);
                     let _ = handle.emit("sysproxy://status", state.sysproxy.status());
                     refresh_tray(&handle);
-                    if let Err(error) = result {
+                    if let Err(error) = &result {
                         eprintln!("tray TUN toggle failed: {error}");
-                        show_tray_toggle_error(&handle, "tray-tun", "tray.tun", error);
-                    } else {
-                        notifications::result(&handle, "tray-tun", "tray.tun", Ok(()));
                     }
+                    notifications::tun_result(&handle, &state, "tray-tun", "tray.tun", result);
                 });
             }
             #[cfg(target_os = "macos")]
@@ -374,12 +372,10 @@ pub(crate) fn handle_menu(app: &AppHandle, id: &str) {
                     let _ = handle.emit("tun://status", actual);
                     let _ = handle.emit("sysproxy://status", state.sysproxy.status());
                     refresh_tray(&handle);
-                    if let Err(error) = result {
+                    if let Err(error) = &result {
                         eprintln!("tray TUN toggle failed: {error}");
-                        show_tray_toggle_error(&handle, "tray-tun", "tray.tun", error);
-                    } else {
-                        notifications::result(&handle, "tray-tun", "tray.tun", Ok(()));
                     }
+                    notifications::tun_result(&handle, &state, "tray-tun", "tray.tun", result);
                 });
             }
             Ok(())

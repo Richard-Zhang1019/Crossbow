@@ -5,6 +5,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 /// 系统代理端口恢复重试间隔（等待端口释放）。
 const SYS_PROXY_RETRY_WAIT: std::time::Duration = std::time::Duration::from_millis(200);
+const SYS_PROXY_RECOVERY_SOURCE: &str = "sysproxy-core-recovery";
 /// 日志清扫器：尚无应用状态时的空转等待。
 const LOGS_SWEEP_IDLE_WAIT: std::time::Duration = std::time::Duration::from_secs(600);
 /// 日志清扫器：常规清扫周期。
@@ -21,6 +22,20 @@ const SPEED_TEST_WATCHDOG_BASE: Duration = Duration::from_secs(20);
 /// 每批测速的请求预算。
 #[cfg(target_os = "macos")]
 const SPEED_TEST_WATCHDOG_PER_BATCH_SECS: u64 = 6;
+
+fn sysproxy_recovery_failure_notice(error: String) -> notifications::Notice {
+    let mut notice = notifications::Notice::new(
+        notifications::Kind::Error,
+        "sysproxy.restoreFailed",
+        SYS_PROXY_RECOVERY_SOURCE,
+    );
+    notice.details = error;
+    notice.actions = vec![
+        notifications::Action::RetrySystemProxy,
+        notifications::Action::Diagnostics,
+    ];
+    notice
+}
 
 pub(crate) fn core_status_callback(handle: AppHandle) -> crate::engine::manager::Callback {
     std::sync::Arc::new(move |status| {
@@ -71,8 +86,12 @@ pub(crate) fn core_status_callback(handle: AppHandle) -> crate::engine::manager:
             // 状态一致性守护：内核崩溃时还原系统代理，避免断网。
             let proxy_was_on = state.sysproxy.status().enabled;
             if proxy_was_on {
-                if let Err(error) = state.sysproxy.disable() {
-                    eprintln!("core crash system proxy recovery failed: {error}");
+                match state.sysproxy.disable() {
+                    Ok(()) => notifications::resolve(&handle, SYS_PROXY_RECOVERY_SOURCE),
+                    Err(error) => {
+                        eprintln!("core crash system proxy recovery failed: {error}");
+                        notifications::publish(&handle, sysproxy_recovery_failure_notice(error));
+                    }
                 }
                 let _ = handle.emit("sysproxy://status", state.sysproxy.status());
                 refresh_tray(&handle);
@@ -335,22 +354,60 @@ pub(crate) fn reestablish_tun_if_enabled(state: &AppState) -> Result<(), String>
     }
 }
 
-/// 连通性失败时关 TUN。持锁后再读标志，避免和用户的开关打架。
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-pub(crate) fn disable_tun_if_enabled(state: &AppState) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", windows))]
+pub(crate) enum HealthRecovery {
+    Superseded,
+    Restarted,
+    Disabled,
+}
+
+#[cfg(target_os = "macos")]
+fn recover_for_health(
+    state: &AppState,
+    expected_pid: Option<u32>,
+    expected_status: &CoreStatus,
+    may_restart: bool,
+) -> Result<HealthRecovery, String> {
+    let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
+    state.exit.ensure_open()?;
+    if !state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .engine
+        .tun_enable
+        || state.core().pid() != expected_pid
+        || &state.core().status() != expected_status
     {
-        crate::network::tun::disable_if_enabled(state)
+        return Ok(HealthRecovery::Superseded);
     }
-    #[cfg(windows)]
+    if may_restart
+        && *expected_status == CoreStatus::Running
+        && expected_pid.is_some()
+        && state.core().signal_graceful_restart()
     {
-        crate::network::tun_windows::disable_if_enabled(state)
+        return Ok(HealthRecovery::Restarted);
     }
-    #[cfg(not(any(target_os = "macos", windows)))]
-    {
-        let _ = state;
-        Ok(())
-    }
+    crate::network::tun::disable_for_health_locked(state)?;
+    Ok(HealthRecovery::Disabled)
+}
+
+#[cfg(windows)]
+use crate::network::tun_windows::recover_for_health;
+
+#[cfg(any(target_os = "macos", windows))]
+fn emit_tun_recovery_status(app: &AppHandle, state: &AppState) {
+    let enabled = state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .engine
+        .tun_enable;
+    let _ = app.emit("tun://status", enabled);
+    let _ = app.emit("sysproxy://status", state.sysproxy.status());
+    refresh_tray(app);
 }
 
 /// TUN 健康检查：每 5 秒检查真实网络连通性；连续 3 次失败时关闭 TUN
@@ -378,6 +435,7 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
         let mut wedge_restarts = 0u8;
         let mut wedge_cooldown_until = std::time::Instant::now();
         let mut sysproxy_dead_ticks = 0u8;
+        let mut last_probe_pid = None;
         loop {
             let cycle_started = std::time::Instant::now();
             if let Some(state) = handle.try_state::<AppState>() {
@@ -389,12 +447,19 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                     .engine
                     .tun_enable;
                 let core_status = state.core().status();
-                #[cfg(unix)]
                 let core_pid = state.core().pid();
+                if last_probe_pid != core_pid {
+                    failures = 0;
+                    last_probe_pid = core_pid;
+                }
                 if !tun_enabled
                     || core_status == CoreStatus::Starting
                     || state.exit.ensure_open().is_err()
                 {
+                    if !tun_enabled {
+                        wedge_restarts = 0;
+                        wedge_cooldown_until = cycle_started;
+                    }
                     if !tun_enabled && external_proxy_notice.update(false) == Some(false) {
                         notifications::resolve(&handle, "tun-external-proxy");
                     }
@@ -438,9 +503,16 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                                         );
                                         notice.duration = Some(0);
                                         notifications::publish(&handle, notice);
+                                        notifications::resolve(&handle, SYS_PROXY_RECOVERY_SOURCE);
                                     }
                                     Err(error) => {
                                         eprintln!("sysproxy stale-off failed: {error}");
+                                        let _ = handle
+                                            .emit("sysproxy://status", state.sysproxy.status());
+                                        notifications::publish(
+                                            &handle,
+                                            sysproxy_recovery_failure_notice(error),
+                                        );
                                     }
                                 }
                             }
@@ -468,7 +540,8 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                     }
                     let cooling = std::time::Instant::now() < reestablish_cooldown_until;
                     #[cfg(target_os = "macos")]
-                    let drifted = !cooling && crate::network::tun::takeover_drift();
+                    let drifted =
+                        !wedge_cooling && !cooling && crate::network::tun::takeover_drift();
                     #[cfg(not(target_os = "macos"))]
                     let drifted = false;
                     if !cooling {
@@ -549,7 +622,9 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                         }
                     }
 
-                    let probe = if core_status == CoreStatus::Running {
+                    let probe = if wedge_cooling {
+                        Ok(())
+                    } else if core_status == CoreStatus::Running {
                         // A second proxy client may re-enable a stale macOS
                         // proxy after Crossbow has established its route.
                         let conflict = crate::network::sysproxy::check_external_proxy_for_tun(
@@ -600,6 +675,7 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                             if !skip_probe && !drifted && !cooling {
                                 notifications::resolve(&handle, "tun-health");
                                 reported_recovery_failure = false;
+                                wedge_restarts = 0;
                             }
                             failures = 0;
                         }
@@ -610,103 +686,59 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                                 timing::FAILURE_BUDGET
                             );
                             if failures >= timing::FAILURE_BUDGET {
-                                let still_enabled = state
-                                    .store
-                                    .lock()
-                                    .unwrap_or_else(|e| e.into_inner())
-                                    .data()
-                                    .engine
-                                    .tun_enable;
-                                if still_enabled && wedge_restarts < timing::WEDGE_RESTART_BUDGET {
-                                    // 重启内核优先（#350）：SIGTERM 让 mihomo 走退出钩子
-                                    // 恢复路由，崩溃自动重启链路拉起新内核重建 TUN——
-                                    // 这才真正修复 gvisor 栈僵死。直接关 TUN 会让国外
-                                    // 流量直连被墙（系统代理未开时表现为整机断网）。
-                                    wedge_restarts = wedge_restarts.saturating_add(1);
-                                    failures = 0;
-                                    reported_recovery_failure = false;
-                                    wedge_cooldown_until =
-                                        std::time::Instant::now() + timing::WEDGE_COOLDOWN;
-                                    let mut notice = notifications::Notice::new(
-                                        notifications::Kind::Warning,
-                                        "tun.wedgeRestart",
-                                        "tun-health",
-                                    );
-                                    notice.duration = Some(0);
-                                    notice.actions = vec![notifications::Action::Diagnostics];
-                                    notifications::publish(&handle, notice);
-                                    #[cfg(unix)]
-                                    let restarted = {
-                                        let _operation =
-                                            state.core_op.lock().unwrap_or_else(|e| e.into_inner());
-                                        state.exit.ensure_open().is_ok()
-                                            && state
-                                                .store
-                                                .lock()
-                                                .unwrap_or_else(|e| e.into_inner())
-                                                .data()
-                                                .engine
-                                                .tun_enable
-                                            && state.core().status() == CoreStatus::Running
-                                            && core_pid.is_some()
-                                            && state.core().pid() == core_pid
-                                            && state.core().signal_graceful_restart()
-                                    };
-                                    #[cfg(not(unix))]
-                                    let restarted = false;
-                                    eprintln!(
-                                        "tun health: restarting core to recover wedged TUN (attempt {wedge_restarts}/{}, signaled={restarted})",
-                                        timing::WEDGE_RESTART_BUDGET
-                                    );
-                                } else if still_enabled {
-                                    match disable_tun_if_enabled(&state) {
-                                        Ok(()) => {
-                                            failures = 0;
-                                            reported_recovery_failure = false;
-                                            let _ = handle.emit("tun://status", false);
-                                            let _ = handle
-                                                .emit("sysproxy://status", state.sysproxy.status());
-                                            refresh_tray(&handle);
-                                            let mut notice = notifications::Notice::new(
-                                                notifications::Kind::Warning,
-                                                "tun.disabled",
+                                failures = 0;
+                                let outcome = recover_for_health(
+                                    &state,
+                                    core_pid,
+                                    &core_status,
+                                    wedge_restarts < timing::WEDGE_RESTART_BUDGET,
+                                );
+                                match outcome {
+                                    Ok(HealthRecovery::Superseded) => {}
+                                    Ok(HealthRecovery::Restarted) => {
+                                        wedge_restarts = wedge_restarts.saturating_add(1);
+                                        wedge_cooldown_until =
+                                            std::time::Instant::now() + timing::WEDGE_COOLDOWN;
+                                        reported_recovery_failure = false;
+                                        let mut notice = notifications::Notice::new(
+                                            notifications::Kind::Warning,
+                                            if cfg!(windows) {
+                                                "tun.wedgeRecovered"
+                                            } else {
+                                                "tun.wedgeRestart"
+                                            },
+                                            "tun-health",
+                                        );
+                                        notice.duration = Some(0);
+                                        notice.actions = vec![notifications::Action::Diagnostics];
+                                        notifications::publish(&handle, notice);
+                                    }
+                                    Ok(HealthRecovery::Disabled) => {
+                                        reported_recovery_failure = false;
+                                        emit_tun_recovery_status(&handle, &state);
+                                        let mut notice = notifications::Notice::new(
+                                            notifications::Kind::Warning,
+                                            "tun.disabled",
+                                            "tun-health",
+                                        );
+                                        notice.duration = Some(0);
+                                        notice.actions = vec![notifications::Action::Diagnostics];
+                                        notifications::publish(&handle, notice);
+                                    }
+                                    Err(disable_error) => {
+                                        eprintln!("tun health recovery failed: {disable_error}");
+                                        emit_tun_recovery_status(&handle, &state);
+                                        if !reported_recovery_failure {
+                                            notifications::tun_result(
+                                                &handle,
+                                                &state,
                                                 "tun-health",
+                                                "tun.disableFailed",
+                                                Err(disable_error),
                                             );
-                                            notice.duration = Some(0);
-                                            notice.actions =
-                                                vec![notifications::Action::Diagnostics];
-                                            notifications::publish(&handle, notice);
-                                        }
-                                        Err(disable_error) => {
-                                            failures = 0;
-                                            eprintln!(
-                                                "tun health recovery could not disable TUN: {disable_error}"
-                                            );
-                                            let actual = state
-                                                .store
-                                                .lock()
-                                                .unwrap_or_else(|e| e.into_inner())
-                                                .data()
-                                                .engine
-                                                .tun_enable;
-                                            let _ = handle.emit("tun://status", actual);
-                                            let _ = handle
-                                                .emit("sysproxy://status", state.sysproxy.status());
-                                            refresh_tray(&handle);
-                                            if !reported_recovery_failure {
-                                                notifications::result(
-                                                    &handle,
-                                                    "tun-health",
-                                                    "tun.disableFailed",
-                                                    Err(disable_error.clone()),
-                                                );
-                                                reported_recovery_failure = true;
-                                            }
+                                            reported_recovery_failure = true;
                                         }
                                     }
-                                } else {
-                                    failures = 0;
-                                    reported_recovery_failure = false;
                                 }
                             }
                         }
@@ -1244,5 +1276,24 @@ pub(crate) fn refresh_tray(app: &AppHandle) {
             }
             Err(e) => eprintln!("rebuild tray menu: {e}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn proxy_recovery_failure_notice_offers_retry_with_error_details() {
+        let notice = sysproxy_recovery_failure_notice("authorization was cancelled".into());
+
+        assert_eq!(notice.kind, notifications::Kind::Error);
+        assert_eq!(notice.code, "sysproxy.restoreFailed");
+        assert_eq!(notice.source, SYS_PROXY_RECOVERY_SOURCE);
+        assert_eq!(notice.details, "authorization was cancelled");
+        assert!(notice
+            .actions
+            .iter()
+            .any(|action| { matches!(action, notifications::Action::RetrySystemProxy) }));
     }
 }

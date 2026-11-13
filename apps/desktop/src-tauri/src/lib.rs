@@ -961,7 +961,7 @@ mod tests {
             .to_string()
             .contains(&format!("(pid {})", std::process::id())));
         for content in [b"".as_slice(), b"not a pid", b"0", b"4294967296"] {
-            // A concurrent fork may briefly inherit a previous flock before exec.
+            // A parallel fork can briefly inherit a dropped flock until exec on macOS.
             let directory = tempfile::tempdir().unwrap();
             let pidfile = directory.path().join("app.pid");
             std::fs::write(&pidfile, content).unwrap();
