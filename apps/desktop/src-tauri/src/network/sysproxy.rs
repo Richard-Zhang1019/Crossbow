@@ -374,6 +374,7 @@ impl SysProxyBackend for NetworkSetup {
     ) -> Result<(), String> {
         let mut commands = Vec::new();
         let mut errors = Vec::new();
+        let mut changed = Vec::new();
         for (service, snapshot) in snapshots {
             // 取消授权没有写入；相同状态直接跳过，回滚不再重复弹授权窗口。
             let matches = match Self::snapshot_matches(service, snapshot) {
@@ -385,10 +386,19 @@ impl SysProxyBackend for NetworkSetup {
             };
             if !matches {
                 commands.extend(Self::restore_commands(service, snapshot));
+                changed.push((service, snapshot));
             }
         }
         if let Err(error) = Self::run_batch(&commands, true) {
             errors.push(error);
+        } else {
+            for (service, snapshot) in changed {
+                match Self::snapshot_matches(service, snapshot) {
+                    Ok(true) => {}
+                    Ok(false) => errors.push(format!("{service}: 系统代理恢复结果与快照不一致")),
+                    Err(error) => errors.push(format!("{service}: {error}")),
+                }
+            }
         }
         if errors.is_empty() {
             Ok(())
@@ -565,6 +575,8 @@ pub(crate) struct SuspendedSysProxy {
     snapshot: BTreeMap<String, ServiceSnapshot>,
     journal: Option<Vec<u8>>,
     enabled_port: Option<u16>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    windows_suspended_from: BTreeMap<String, WindowsProxyConfig>,
 }
 
 impl<B: SysProxyBackend> SysProxyManager<B> {
@@ -793,6 +805,15 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             snapshot: journal.snapshot,
             journal: None,
             enabled_port: None,
+            windows_suspended_from: current
+                .iter()
+                .filter_map(|(service, snapshot)| {
+                    snapshot
+                        .windows
+                        .clone()
+                        .map(|config| (service.clone(), config))
+                })
+                .collect(),
         };
         if previous_tun_journal.is_none() {
             crate::platform::fs_perms::write_private(
@@ -852,17 +873,21 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         }
     }
 
-    /// #458：TUN 挂起语义下的归属核对——suspend 时 Crossbow 把服务关到
-    /// 全空；当前仍有代理端点（或 Windows server/PAC 非空）= 其他客户端
-    /// 在 TUN 期间接管，跳过还原保留其配置。
-    fn service_untouched_since_suspend(current: &ServiceSnapshot) -> bool {
-        current.web.is_none()
-            && current.secure.is_none()
-            && current.socks.is_none()
-            && current
-                .windows
-                .as_ref()
-                .is_none_or(|config| config.server.is_empty() && config.pac_url.is_empty())
+    fn service_untouched_since_suspend(
+        current: &ServiceSnapshot,
+        suspended_from: Option<&WindowsProxyConfig>,
+    ) -> bool {
+        if let Some(config) = &current.windows {
+            // WinInet suspends the flags and retains the inactive server and PAC values.
+            const WININET_DIRECT_ONLY: u32 = 1; // PROXY_TYPE_DIRECT
+            return config.flags == WININET_DIRECT_ONLY
+                && suspended_from.is_none_or(|before| {
+                    config.server == before.server
+                        && config.pac_url == before.pac_url
+                        && config.bypass == before.bypass
+                });
+        }
+        current.web.is_none() && current.secure.is_none() && current.socks.is_none()
     }
 
     /// #458：恢复前按服务归属核对。仍归 Crossbow 的服务按快照还原；
@@ -1030,14 +1055,17 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
     #[cfg_attr(target_os = "linux", allow(dead_code))]
     fn suspend_for_tun_locked(&self) -> Result<SuspendedSysProxy, String> {
         let tun_journal = self.tun_journal_path();
-        if let Ok(saved) = std::fs::read(&tun_journal) {
-            let suspended = serde_json::from_slice(&saved)
-                .map_err(|error| format!("read TUN proxy journal: {error}"))?;
-            // Another proxy client may re-enable its system proxy while TUN is
-            // running. Keep the original snapshot, but clear the live settings.
-            self.backend
-                .disable_services(&self.backend.list_services()?)?;
-            return Ok(suspended);
+        match std::fs::read(&tun_journal) {
+            Ok(saved) => {
+                let suspended = serde_json::from_slice(&saved)
+                    .map_err(|error| format!("read TUN proxy journal: {error}"))?;
+                // Preserve the original snapshot across TUN restarts.
+                self.backend
+                    .disable_services(&self.backend.list_services()?)?;
+                return Ok(suspended);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("读取 TUN 代理恢复日志失败：{error}")),
         }
         let services = self.backend.list_services()?;
         if services.is_empty() {
@@ -1051,6 +1079,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             snapshot,
             journal: std::fs::read(&self.journal_path).ok(),
             enabled_port: *self.state.lock().unwrap(),
+            windows_suspended_from: BTreeMap::new(),
         };
         let journal = serde_json::to_vec(&suspended)
             .map_err(|error| format!("serialize TUN proxy journal: {error}"))?;
@@ -1080,17 +1109,36 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             .operation
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        self.restore_after_failed_tun_locked(suspended)
+        self.restore_suspended_proxy_locked(suspended, false)
     }
 
     /// 已持有代理操作锁的内部实现。
-    fn restore_after_failed_tun_locked(&self, suspended: SuspendedSysProxy) -> Result<(), String> {
+    fn restore_suspended_proxy_locked(
+        &self,
+        mut suspended: SuspendedSysProxy,
+        core_down: bool,
+    ) -> Result<(), String> {
         // #458：逐服务归属核对——被其他客户端接管的服务跳过还原（其当前
         // 配置即最新事实，快照已过期）；挂起未清干净的 Crossbow 残留端点
         // 仍按快照还原，避免退出后指向失效端口。读取当前设置失败视为整体
         // 失败：保留双 journal 供重试，绝不静默丢弃用户原设置。
+        let original = if core_down && suspended.enabled_port.is_some() {
+            let raw = suspended
+                .journal
+                .as_deref()
+                .ok_or("TUN 恢复日志缺少原系统代理快照")?;
+            Some(
+                serde_json::from_slice::<Journal>(raw)
+                    .map_err(|error| format!("读取原系统代理快照失败：{error}"))?,
+            )
+        } else {
+            None
+        };
         let mut errors = Vec::new();
-        for (service, snapshot_before) in &suspended.snapshot {
+        let target = original
+            .as_ref()
+            .map_or(&suspended.snapshot, |journal| &journal.snapshot);
+        for (service, snapshot_before) in target {
             let current = match self.backend.service_snapshot(service) {
                 Ok(current) => current,
                 Err(error) => {
@@ -1101,7 +1149,16 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             let crossbow_residue = suspended
                 .enabled_port
                 .is_some_and(|port| Self::service_owned_by_crossbow(&current, port));
-            if !Self::service_untouched_since_suspend(&current) && !crossbow_residue {
+            let suspended_from = suspended.windows_suspended_from.get(service).or_else(|| {
+                suspended
+                    .snapshot
+                    .get(service)
+                    .and_then(|snapshot| snapshot.windows.as_ref())
+            });
+            if current == *snapshot_before
+                || (!Self::service_untouched_since_suspend(&current, suspended_from)
+                    && !crossbow_residue)
+            {
                 continue;
             }
             if let Err(error) = self.backend.restore_service(service, snapshot_before) {
@@ -1110,6 +1167,10 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         }
         if !errors.is_empty() {
             return Err(errors.join("; "));
+        }
+        if original.is_some() {
+            suspended.journal = None;
+            suspended.enabled_port = None;
         }
         match suspended.journal {
             Some(journal) => crate::platform::fs_perms::write_private(&self.journal_path, &journal)
@@ -1133,6 +1194,41 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         self.restore_after_tun_locked()
     }
 
+    pub(crate) fn has_pending_tun_restore(&self) -> bool {
+        // Report unreadable journals as pending, so an explicit retry can explain the error.
+        !self
+            .tun_journal_path()
+            .try_exists()
+            .is_ok_and(|exists| !exists)
+    }
+
+    #[cfg(any(target_os = "macos", windows))]
+    pub(crate) fn has_pending_proxy_restore(&self) -> bool {
+        self.status().enabled || !self.journal_path.try_exists().is_ok_and(|exists| !exists)
+    }
+
+    /// Callers hold core_op and have already confirmed that TUN is off.
+    pub(crate) fn retry_restore(&self, core_running: bool, after_tun: bool) -> Result<(), String> {
+        let _operation = self.operation.lock().unwrap_or_else(|e| e.into_inner());
+        if core_running {
+            if !after_tun {
+                return Err("内核已恢复运行，无需关闭系统代理".into());
+            }
+            if !self.has_pending_tun_restore() {
+                return Ok(());
+            }
+            if self.status().enabled {
+                return Err("系统代理正在使用，请先关闭系统代理再恢复 TUN 前的设置".into());
+            }
+            return self.restore_after_tun_locked();
+        }
+        self.disable_locked()?;
+        if after_tun {
+            self.recover_tun_without_core_locked()?;
+        }
+        Ok(())
+    }
+
     /// 已持有代理操作锁的内部实现。
     #[cfg_attr(target_os = "linux", allow(dead_code))]
     fn restore_after_tun_locked(&self) -> Result<(), String> {
@@ -1140,12 +1236,14 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             return Ok(());
         }
         let path = self.tun_journal_path();
-        let Ok(saved) = std::fs::read(path) else {
-            return Ok(());
+        let saved = match std::fs::read(path) {
+            Ok(saved) => saved,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(format!("读取 TUN 代理恢复日志失败：{error}")),
         };
         let suspended = serde_json::from_slice(&saved)
             .map_err(|error| format!("read TUN proxy journal: {error}"))?;
-        self.restore_after_failed_tun_locked(suspended)
+        self.restore_suspended_proxy_locked(suspended, false)
     }
 
     /// A cold launch has no Crossbow listener yet. If Crossbow owned the
@@ -1162,22 +1260,14 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
     /// 已持有代理操作锁的内部实现。
     fn recover_tun_without_core_locked(&self) -> Result<(), String> {
         let path = self.tun_journal_path();
-        let Ok(saved) = std::fs::read(path) else {
-            return Ok(());
+        let saved = match std::fs::read(path) {
+            Ok(saved) => saved,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(format!("读取 TUN 代理恢复日志失败：{error}")),
         };
-        let mut suspended: SuspendedSysProxy = serde_json::from_slice(&saved)
+        let suspended: SuspendedSysProxy = serde_json::from_slice(&saved)
             .map_err(|error| format!("read TUN proxy journal: {error}"))?;
-        if suspended.enabled_port.is_some() {
-            suspended.snapshot = suspended
-                .journal
-                .as_deref()
-                .and_then(|raw| serde_json::from_slice::<Journal>(raw).ok())
-                .map(|journal| journal.snapshot)
-                .unwrap_or_default();
-            suspended.journal = None;
-            suspended.enabled_port = None;
-        }
-        self.restore_after_failed_tun_locked(suspended)
+        self.restore_suspended_proxy_locked(suspended, true)
     }
 
     /// Diagnostic reads fail closed if any service cannot be inspected.
@@ -1818,6 +1908,107 @@ mod tests {
         mgr.disable().unwrap();
         assert!(!mgr.status().enabled);
         assert!(!dir.path().join("journal.json").exists());
+    }
+
+    #[test]
+    fn failed_tun_proxy_restore_keeps_journal_for_user_retry() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = ServiceSnapshot {
+            web: Some(ProxyEndpoint {
+                host: "proxy.example".into(),
+                port: 8888,
+            }),
+            ..Default::default()
+        };
+        let backend = FakeBackend::new(&["Wi-Fi"]).with_preset("Wi-Fi", original.clone());
+        let manager = manager_with(backend.clone(), &dir);
+        let suspended = manager.suspend_for_tun().unwrap();
+        backend
+            .inner
+            .current
+            .lock()
+            .unwrap()
+            .insert("Wi-Fi".into(), ServiceSnapshot::default());
+        backend
+            .inner
+            .restore_fail_on
+            .lock()
+            .unwrap()
+            .push("Wi-Fi".into());
+
+        assert!(manager.restore_after_failed_tun(suspended).is_err());
+        assert!(dir.path().join("tun-proxy-journal.json").exists());
+
+        backend.inner.restore_fail_on.lock().unwrap().clear();
+        manager.retry_restore(false, true).unwrap();
+        assert!(!dir.path().join("tun-proxy-journal.json").exists());
+        assert!(backend.inner.enabled.lock().unwrap().is_empty());
+        assert_eq!(backend.service_snapshot("Wi-Fi").unwrap(), original);
+    }
+
+    #[test]
+    fn old_recovery_action_preserves_a_running_cores_proxy() {
+        let dir = tempfile::tempdir().unwrap();
+        let backend = FakeBackend::new(&["Wi-Fi"]);
+        let manager = manager_with(backend, &dir);
+        manager.enable(7897).unwrap();
+        assert!(manager.retry_restore(true, false).is_err());
+        manager.retry_restore(true, true).unwrap();
+        assert_eq!(manager.status().port, 7897);
+        assert!(dir.path().join("journal.json").exists());
+    }
+
+    #[test]
+    fn wininet_suspension_retains_inactive_settings_without_claiming_new_ones() {
+        let before = ServiceSnapshot {
+            windows: Some(WindowsProxyConfig {
+                flags: 1 | 2 | 4,
+                server: "proxy.example:8888".into(),
+                pac_url: "https://proxy.example/settings.pac".into(),
+                bypass: "<local>".into(),
+            }),
+            ..Default::default()
+        };
+        let mut suspended = before.clone();
+        suspended.windows.as_mut().unwrap().flags = 1;
+        assert!(FakeManager::service_untouched_since_suspend(
+            &suspended,
+            before.windows.as_ref()
+        ));
+        suspended.windows.as_mut().unwrap().flags |= 4;
+        assert!(!FakeManager::service_untouched_since_suspend(
+            &suspended,
+            before.windows.as_ref()
+        ));
+        suspended.windows.as_mut().unwrap().flags = 1;
+        suspended.windows.as_mut().unwrap().pac_url = "https://other.example/settings.pac".into();
+        assert!(!FakeManager::service_untouched_since_suspend(
+            &suspended,
+            before.windows.as_ref()
+        ));
+    }
+
+    #[test]
+    fn user_retry_restores_proxy_journal_after_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let backend = FakeBackend::new(&["Wi-Fi"]);
+        let manager = manager_with(backend.clone(), &dir);
+        manager.enable(7897).unwrap();
+        backend
+            .inner
+            .restore_fail_on
+            .lock()
+            .unwrap()
+            .push("Wi-Fi".into());
+
+        assert!(manager.retry_restore(false, false).is_err());
+        assert!(dir.path().join("journal.json").exists());
+        assert!(manager.status().enabled);
+
+        backend.inner.restore_fail_on.lock().unwrap().clear();
+        manager.retry_restore(false, false).unwrap();
+        assert!(!dir.path().join("journal.json").exists());
+        assert!(!manager.status().enabled);
     }
 
     /// 退出清理必须等待尚未完成的授权写入，不能提前删除恢复日志。

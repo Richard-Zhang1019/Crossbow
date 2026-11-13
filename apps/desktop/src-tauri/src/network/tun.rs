@@ -340,17 +340,8 @@ pub fn reestablish_if_enabled(state: &AppState) -> Result<(), String> {
     toggle_tun_locked(state, true)
 }
 
-/// 连通性失败时关闭。持锁后再读，避免关掉用户刚刚打开的 TUN。
-pub fn disable_if_enabled(state: &AppState) -> Result<(), String> {
-    let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
-    state.exit.ensure_open()?;
-    let enabled = {
-        let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-        store.data().engine.tun_enable
-    };
-    if !enabled {
-        return Ok(());
-    }
+/// 健康监测持有 core_op，且已确认当前会话与失败探测一致。
+pub(crate) fn disable_for_health_locked(state: &AppState) -> Result<(), String> {
     state.sysproxy.ensure_unattended_tun_restore()?;
     ensure_unattended_root(state)?;
     toggle_tun_locked(state, false)
