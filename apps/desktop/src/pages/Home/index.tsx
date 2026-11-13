@@ -5,12 +5,14 @@ import { Button } from "@/components/Button";
 import NodeName from "@/components/NodeName";
 import { nodeNameText } from "@/components/NodeName/nodeFlags";
 import { notify, notificationText } from "@/notifications/service";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useOperationNotice } from "@/notifications/NotificationProvider";
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import {
   CORE_MODES,
   ipc,
   type CoreMode,
   type CoreStatus,
+  type EngineConfigView,
   type OutboundInfo,
   type Profile,
   type SysProxyStatus,
@@ -22,14 +24,22 @@ import { Icon } from "@/components/Icon";
 import { ConnectionFlow } from "@/components/ConnectionFlow";
 
 import { cumulativeTotals, createReadGate } from "@/lib/stateReliability";
+import { navigateTo, type NavigationTarget } from "@/lib/workflow";
+import { nextSetupStep, readSetupProgress, writeSetupProgress, type SetupProgress } from "./firstConnection";
 
 const POINTS = 120;
 
 /** 概览：连接状态、路径与趋势，配合独立的接管控制区。 */
-export default function HomePage({ capabilities }: { capabilities: PlatformCapabilities | null }) {
+export default function HomePage({ capabilities, connectionRevision, listeners, setupRequest }: {
+  capabilities: PlatformCapabilities | null;
+  connectionRevision: MutableRefObject<number>;
+  listeners: Promise<void> | null;
+  setupRequest: NavigationTarget | null;
+}) {
   const t = useT();
   const explicitProxy = capabilities !== null && !capabilities.system_proxy;
-  const [mixedPort, setMixedPort] = useState<number | null>(null);
+  const [engine, setEngine] = useState<EngineConfigView | null>(null);
+  const mixedPort = engine?.mixed_port;
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [core, setCore] = useState<CoreStatus>({ state: "Stopped" });
@@ -44,6 +54,11 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
   });
   const [mode, setMode] = useState<CoreMode>("rule");
   const [busy, setBusy] = useState(false);
+  const [setupProgress, setSetupProgress] = useState(readSetupProgress);
+  const [setupOperation, setSetupOperation] = useState<"download" | "start" | "verify" | null>(null);
+  const [portConflict, setPortConflict] = useState(false);
+  const [verification, setVerification] = useState<{ revision: number; profileId: string | null; reachable: boolean } | null>(null);
+  const installNotice = useOperationNotice("core-download");
   const [rates, setRates] = useState<{ up: number; down: number }[]>([]);
   const [lastTrafficAt, setLastTrafficAt] = useState(0);
   const [totals, setTotals] = useState<{ up: number | null; down: number | null }>({ up: null, down: null });
@@ -133,7 +148,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
       read("proxy", ipc.sysproxyStatus, setProxy),
       read("tun", ipc.tunStatus, setTun),
       read("mode", ipc.coreMode, setMode),
-      read("port", () => ipc.getEngineConfig().then(c => c.mixed_port), setMixedPort),
+      read("engine", ipc.getEngineConfig, setEngine),
       status?.state === "Running" ? read("outbound", ipc.currentOutbound, setOutbound) : Promise.resolve(),
     ]);
     if (mounted.current && errors.some(({key, version}) => readGate.current.current(key, version))) notify.error(t("home.stateReadFailed"), "home-state-read");
@@ -227,6 +242,13 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
   }, [refresh]);
 
   useEffect(()=>{const changed=()=>void refresh();window.addEventListener("cb:profile-switched",changed);return()=>window.removeEventListener("cb:profile-switched",changed)},[refresh]);
+  useEffect(() => {
+    const off = ipc.onEngineChanged(() => void refresh());
+    return () => void off.then(unlisten => unlisten());
+  }, [refresh]);
+  useEffect(() => {
+    if (installNotice?.kind === "success") void refresh();
+  }, [installNotice?.kind, installNotice?.updatedAt, refresh]);
 
   // 状态自愈：事件丢失或 WS 通道冻结（内核重启竞态，#111）最迟 30s 对齐
   // 一次。重订借后端替换语义——新读线程以当前 port/secret 顶替旧通道，
@@ -293,6 +315,77 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
   const latest = rates[rates.length - 1];
   const running = core.state === "Running" || core.state === "Starting";
   const routingEnabled = proxy.enabled || tun.enabled;
+  const needsProfile = known.has("active") && !readErrors.has("active") && !activeId;
+  const setProgress = (progress: NonNullable<SetupProgress>) => {
+    writeSetupProgress(progress);
+    setSetupProgress(progress);
+  };
+  const handledSetupRequest = useRef<NavigationTarget | null>(null);
+  useEffect(() => {
+    if (needsProfile) setProgress("pending");
+    if (setupRequest && setupRequest !== handledSetupRequest.current && canControl) {
+      handledSetupRequest.current = setupRequest;
+      if (readSetupProgress() !== "complete" || core.state === "Stopped" || core.state === "Crashed") {
+        setProgress("pending");
+      }
+    }
+  }, [needsProfile, setupRequest, canControl, core.state]);
+  const setupStep = needsProfile ? "import" : canControl && capabilities && !readErrors.has("engine") && engine
+    ? nextSetupStep({
+      progress: setupProgress,
+      configured: !!activeId,
+      installed: engine.core_installed,
+      coreState: core.state,
+      takeoverAvailable: capabilities.system_proxy || capabilities.tun,
+      takeoverEnabled: routingEnabled,
+    })
+    : null;
+  const currentVerification = verification?.revision === connectionRevision.current &&
+    verification.profileId === activeId && canControl && core.state === "Running" ? verification : null;
+  const downloadRunning = installNotice?.kind === "progress";
+  const runSetup = async (operation: "download" | "start" | "verify") => {
+    if (setupOperation || busy || !engine || (operation === "verify" && !listeners)) return;
+    setSetupOperation(operation);
+    setBusy(true);
+    try {
+      if (operation === "download") {
+        try {
+          await ipc.coreInstall(engine.engine);
+        } catch {
+          // Download failures and progress use the backend operation notice.
+        }
+      } else if (operation === "start") {
+        setPortConflict(false);
+        await notify.run("setup-core-start", t("setup.startAction"), async () => {
+          try {
+            await ipc.coreStart();
+          } catch (error) {
+            if (mounted.current) setPortConflict(String(error).includes("无法绑定"));
+            throw error;
+          }
+        }, undefined, { feedback: "error-only", titleKey: "setup.startAction" });
+      } else {
+        await listeners;
+        if (!mounted.current) return;
+        const revision = connectionRevision.current;
+        setVerification(null);
+        const outcome = await notify.run("setup-verify", t("setup.verifyAction"), () => ipc.testSite("github"),
+          undefined, { feedback: "error-only", titleKey: "setup.verifyAction" });
+        if (!mounted.current || revision !== connectionRevision.current) return;
+        const reachable = outcome.ok && outcome.value.status === "ok";
+        setVerification({ revision, profileId: activeId, reachable });
+        if (reachable) setProgress("complete");
+      }
+    } catch (error) {
+      if (mounted.current) notify.error(error, "setup-verify");
+    } finally {
+      if (mounted.current) {
+        if (operation !== "verify") await refresh();
+        setSetupOperation(null);
+        setBusy(false);
+      }
+    }
+  };
   const explicitOnly = explicitProxy && !tun.enabled;
   const proxyLabel = t(explicitProxy ? "linux.explicitProxy" : "studio.proxy");
   const proxyHint = explicitProxy
@@ -351,8 +444,39 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
               <span className="cb-home-mode">{known.has("mode") ? t(`mode.${mode}`) : "—"}</span>
             </div>
             <h2>{statusTitle}</h2>
-            {(readErrors.size>0||!canControl||!active||!running||!routingEnabled||explicitOnly)&&<p role={readErrors.size ? "status" : undefined}>{statusHint}</p>}
+            {(readErrors.size > 0 || !setupStep && (!canControl || !active || !running || !routingEnabled || explicitOnly)) &&
+              <p role={readErrors.size ? "status" : undefined}>{statusHint}</p>}
             {readErrors.size > 0 && <Button size="small" onClick={() => void refresh()}>{t("home.retryState")}</Button>}
+            {setupStep && <section className="cb-first-connection" aria-label={t("setup.label")}>
+              <div>
+                <h3>{t(`setup.${setupStep}Title`)}</h3>
+                <p role="status">{setupStep === "download" && downloadRunning
+                  ? notificationText(`stage.${installNotice.description || "preparing"}`)
+                  : setupStep === "download" && installNotice?.kind === "error" ? t("setup.downloadFailed")
+                  : setupStep === "verify" && currentVerification ? t("setup.verifyFailed")
+                  : setupStep === "start" && portConflict ? t("setup.portConflict")
+                  : setupStep === "takeover" && !capabilities?.system_proxy ? t("setup.tunHint")
+                  : t(`setup.${setupStep}Hint`)}</p>
+              </div>
+              <div className="cb-first-connection-actions">
+                {setupStep === "start" && portConflict && <Button size="small" onClick={() => navigateTo({
+                  page: "settings", settingSection: "network", control: "cb-port-setting",
+                })}>{t("setup.editPort")}</Button>}
+                {setupStep === "verify" && currentVerification && <Button size="small" onClick={() => go("diagnostics")}>{t("nav.diagnostics")}</Button>}
+                <Button variant="primary" size="small" loading={setupOperation === setupStep || (setupStep === "download" && downloadRunning) ||
+                    (setupStep === "start" && core.state === "Starting")}
+                  disabled={busy || (setupStep === "verify" && !listeners)}
+                  onClick={() => {
+                    if (setupStep === "import") navigateTo({ page: "profiles", control: "cb-import-profile" });
+                    else if (setupStep === "takeover") {
+                      document.getElementById(capabilities?.system_proxy ? "cb-setup-system-proxy" : "cb-setup-tun")?.focus();
+                    }
+                    else void runSetup(setupStep);
+                  }}>
+                  {t(setupStep === "download" && installNotice?.kind === "error" ? "setup.retryDownload" : `setup.${setupStep}Action`)}
+                </Button>
+              </div>
+            </section>}
           </div>
           <section className="cb-home-path" aria-label={t("studio.path")}>
             <div className="cb-path-heading">
@@ -420,7 +544,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
           </section>
           <div className="cb-home-bottom">
             <div className="cb-home-actions">
-              <Button variant="primary"  onClick={() => go("proxies")}>
+              <Button variant={setupStep ? "secondary" : "primary"} onClick={() => go("proxies")}>
                 <Icon name="bolt" />
                 {t("studio.chooseNode")}
               </Button>
@@ -467,7 +591,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                   <b>{proxyLabel}</b>
                   <p>{proxyHint}</p>
                 </div>
-                <Switch checked={proxyOn} aria-label={proxyLabel}
+                <Switch id="cb-setup-system-proxy" checked={proxyOn} aria-label={proxyLabel}
                   onChange={() => {void (explicitProxy ? toggleCore() : toggleProxy());}}
                   disabled={!canControl || busy || core.state === "Starting" || !active || (explicitProxy ? tun.enabled : !capabilities?.system_proxy)}
                 />
@@ -477,7 +601,7 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
                   <b>{t("settings.tun")}</b>
                   <p>{t(capabilities?.tun ? (explicitProxy ? "linux.tunHint" : "studio.tunHint") : "linux.takeoverUnavailable")}</p>
                 </div>
-                <Switch checked={tun.enabled} aria-label={t("settings.tun")}
+                <Switch id="cb-setup-tun" checked={tun.enabled} aria-label={t("settings.tun")}
                   onChange={() => void toggleTun()}
                   disabled={!canControl || busy || core.state === "Starting" || !active || !capabilities?.tun}
                 />
@@ -495,7 +619,12 @@ export default function HomePage({ capabilities }: { capabilities: PlatformCapab
             <dl className="cb-health-summary" aria-label={t("home.healthSummary")}>
               <div><dt>{t("home.healthCore")}</dt><dd>{known.has("core") && !readErrors.has("core") ? coreText(t, core) : t("home.statePending")}</dd></div>
               <div><dt>{t("home.healthTakeover")}</dt><dd>{!canControl ? t("home.statePending") : routingEnabled ? t("home.takeoverConfigured") : t(explicitProxy ? "home.manualTakeover" : "home.takeoverOff")}</dd></div>
-              <div title={t("home.networkScope")}><dt>{t("home.healthNetwork")}</dt><dd className="cb-health-unverified">{t("home.networkDiagnosis")}</dd></div>
+              <div title={t(currentVerification?.reachable ? "setup.verifyHint" : "home.networkScope")}>
+                <dt>{t("home.healthNetwork")}</dt>
+                <dd className={currentVerification?.reachable ? undefined : "cb-health-unverified"}>
+                  {t(currentVerification?.reachable ? "setup.verified" : "home.networkDiagnosis")}
+                </dd>
+              </div>
             </dl>
             </section>
             <section className="cb-rate-card" aria-label={t("home.rate")}>

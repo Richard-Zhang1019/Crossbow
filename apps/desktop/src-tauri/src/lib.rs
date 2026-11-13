@@ -330,13 +330,25 @@ fn handle_crossbow_url(app: &AppHandle, raw: &str) {
             }
             show_main_window(&app);
             match import_url_blocking(&state, target.as_str(), None) {
-                Ok(_) => {
+                Ok(profile) => {
                     let mut notice = notifications::Notice::new(
                         notifications::Kind::Success,
                         "import.done",
                         "deep-link-import",
                     );
                     notice.description = origin;
+                    let is_active = state
+                        .store
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .data()
+                        .active_profile
+                        .as_deref()
+                        == Some(profile.id.as_str());
+                    if is_active {
+                        notice.actions = vec![notifications::Action::ContinueSetup];
+                        let _ = app.emit("profile://switched", profile.id.as_str());
+                    }
                     notifications::publish(&app, notice);
                     refresh_tray(&app);
                 }

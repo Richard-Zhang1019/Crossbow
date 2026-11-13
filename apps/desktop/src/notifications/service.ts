@@ -14,6 +14,7 @@ export type NotificationAction =
   | "logs"
   | "profiles"
   | "nodes"
+  | "continueSetup"
   | "retryDownload"
   | "retrySystemProxy";
 export interface Notification {
@@ -81,6 +82,7 @@ const copy = {
   history: ["最近通知", "Recent notifications"],
   profiles: ["打开配置", "Open profiles"],
   nodes: ["选择节点", "Pick a node"],
+  continueSetup: ["继续连接", "Continue setup"],
   retryDownload: ["重新下载", "Retry download"],
   retrySystemProxy: ["重试系统代理恢复", "Retry system proxy recovery"],
   empty: ["本次会话暂无通知", "No notifications in this session"],

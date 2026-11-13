@@ -351,6 +351,32 @@ summary:focus-visible {
   color: var(--cb-text-dim);
   margin: 0;
 }
+.cb-first-connection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  column-gap: 12px;
+  row-gap: 8px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--cb-surface-2);
+}
+.cb-first-connection > div:first-child {
+  flex: 1 1 170px;
+  min-width: 0;
+}
+.cb-first-connection h3 {
+  margin: 0 0 2px;
+  font-size: var(--font-sm);
+  font-weight: 600;
+}
+.cb-first-connection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 .cb-home-path {
   display: flex;
   flex-direction: column;

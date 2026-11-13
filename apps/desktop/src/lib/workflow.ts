@@ -33,6 +33,10 @@ export type NavigationTarget = {
   control?: string;
   checkId?: string;
 };
+export function navigateTo(target: NavigationTarget) {
+  window.dispatchEvent(new CustomEvent("cb:goto", { detail: JSON.stringify(target) }));
+}
+
 export function parseNavigation(raw: string): NavigationTarget | null {
   try {
     const v = raw.startsWith("{") ? JSON.parse(raw) : { page: raw };
@@ -52,12 +56,15 @@ export function parseNavigation(raw: string): NavigationTarget | null {
         typeof v.control === "string" &&
         [
           "mixed-port",
+          "cb-port-setting",
           "cb-update-status",
           "cb-tun-control",
           "cb-core-download",
           "cb-log-search",
           "cb-profile-detail",
           "cb-config-recovery",
+          "cb-import-profile",
+          "cb-first-connection",
         ].includes(v.control)
           ? v.control
           : undefined,

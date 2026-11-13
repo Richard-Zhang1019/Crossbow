@@ -2,7 +2,7 @@ import {Input} from "@/components/Controls";
 import type { NavigationTarget } from "@/lib/workflow";
 import ConfigRecovery from "@/components/ConfigRecovery";
 import { Button, ButtonBase } from "@/components/Button";
-import { notify } from "@/notifications/service";
+import { notify, notificationText } from "@/notifications/service";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { ipc, type Profile, type ProfileStatus } from "@/services/ipc";
@@ -14,6 +14,7 @@ import Dialog from "@/components/Dialog";
 import { Icon } from "@/components/Icon";
 import { ProgressRing } from "@/components/ProgressRing";
 import { PageHead } from "@/pages/Home";
+import { writeSetupProgress } from "@/pages/Home/firstConnection";
 
 function fmtBytesLocal(n: number): string {
   if (n <= 0) return "0 B";
@@ -53,7 +54,6 @@ export default function ProfilesPage({
   const [recovering,setRecovering]=useState(false);
   const [creatingOverride,setCreatingOverride]=useState(false);
   const [statuses,setStatuses]=useState<ProfileStatus[]>([]);
-  useEffect(()=>{if(focusProfileId)setSelectedId(focusProfileId);if(navigationRequest?.control==="cb-config-recovery")setRecovering(true)},[focusProfileId,navigationRequest]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -62,6 +62,12 @@ export default function ProfilesPage({
   const [busy, setBusy] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const importingFiles = useRef(false);
+  useEffect(() => {
+    if (focusProfileId) setSelectedId(focusProfileId);
+    if (navigationRequest?.control === "cb-config-recovery") setRecovering(true);
+    if (navigationRequest?.control === "cb-import-profile") setImporting(true);
+  }, [focusProfileId, navigationRequest]);
 
   const refresh = useCallback(async () => {
     const results=await Promise.allSettled([ipc.listProfiles(),ipc.activeProfileId(),ipc.profileStatuses()]);
@@ -82,15 +88,33 @@ export default function ProfilesPage({
     return () => void un.then((f) => f());
   }, [refresh]);
 
-  const importPaths = useCallback(
-    async (paths: string[]) => {
-      for (const p of paths) {
-        await run2(p, () => ipc.importProfileFile(p));
+  const importProfiles = useCallback(async (tasks: Array<() => Promise<Profile>>) => {
+    if (!tasks.length || importingFiles.current) return false;
+    importingFiles.current = true;
+    setBusy("import");
+    try {
+      let allSucceeded = true;
+      for (const [index, task] of tasks.entries()) {
+        // A transient read failure should still let the user import the profile.
+        const previous = await ipc.activeProfileId().catch(() => undefined);
+        const result = await notify.run(`profile-import-${index}`, "", task, notificationText("import.done"), {
+          titleKey: "profiles.title",
+          nextActions: previous === null ? ["continueSetup"] : ["nodes"],
+        });
+        if (!result.ok) allSucceeded = false;
+        else if (previous === null) {
+          writeSetupProgress("pending");
+          window.dispatchEvent(new CustomEvent("cb:profile-switched"));
+        }
       }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
+      await refresh();
+      if (allSucceeded) setImporting(false);
+      return allSucceeded;
+    } finally {
+      importingFiles.current = false;
+      setBusy(null);
+    }
+  }, [refresh]);
 
   useEffect(() => {
     let un: (() => void) | undefined;
@@ -103,7 +127,7 @@ export default function ProfilesPage({
           setDragOver(false);
         } else if (event.payload.type === "drop") {
           setDragOver(false);
-          void importPaths(event.payload.paths);
+          void importProfiles(event.payload.paths.map(path => () => ipc.importProfileFile(path)));
         }
       })
       .then((u) => {
@@ -115,24 +139,21 @@ export default function ProfilesPage({
       disposed = true;
       un?.();
     };
-  }, [importPaths]);
+  }, [importProfiles]);
 
   const run = async (
     key: string,
     fn: () => Promise<unknown>,
-    meta?: { successMsg?: string; import?: boolean },
   ) => {
     setBusy(key);
     try {
       const outcome=await notify.run(`profile-${key}`, t("profiles.title"), fn,
-        meta?.successMsg,
+        undefined,
         {
         feedback: /^(update|activate|remove|interval|rename)-/.test(key)
           ? "error-only"
           : "task",
         titleKey: "profiles.title",
-        // 条 7（Ref #369）：导入成功的下一步是选节点
-        nextActions: meta?.import ? ["nodes"] : undefined,
       });
       if(outcome.ok&&key.startsWith("activate-"))window.dispatchEvent(new CustomEvent("cb:profile-switched"));
       await refresh();
@@ -140,26 +161,11 @@ export default function ProfilesPage({
       setBusy(null);
     }
   };
-  const run2 = (
-    key: string,
-    fn: () => Promise<unknown>,
-    meta?: { successMsg?: string; import?: boolean },
-  ) => run(key, fn, meta);
-
-  const chosenFiles = async (files: FileList | null) => {
+  const chosenFiles = (files: FileList | null) => {
     if (!files?.length) return;
-    for (const f of Array.from(files)) {
-      await run(
-        f.name,
-        async () => {
-          const text = await f.text();
-          return ipc.importProfileContent(f.name.replace(/\.[^.]+$/, ""), text);
-        },
-        { successMsg: t("toast.imported", { url: f.name }), import: true },
-      );
-    }
-    // 导入完成后与 URL 导入一致：自动关闭弹窗（失败会以通知卡提示，可重开重试）
-    setImporting(false);
+    void importProfiles(Array.from(files, file => async () =>
+      ipc.importProfileContent(file.name.replace(/\.[^.]+$/, ""), await file.text()),
+    ));
   };
 
   const selected =
@@ -169,16 +175,9 @@ export default function ProfilesPage({
   useEffect(()=>{
     if(focusProfileId&&selected?.id===focusProfileId){const frame=requestAnimationFrame(()=>document.getElementById("cb-profile-detail")?.focus());return()=>cancelAnimationFrame(frame);}
   },[focusProfileId,selected?.id]);
-  const importUrl = () =>
-    run(
-      "import",
-      async () => {
-        await ipc.importProfileUrl(url.trim());
-        setUrl("");
-        setImporting(false);
-      },
-      { successMsg: t("toast.imported", { url: url.trim() }), import: true },
-    );
+  const importUrl = async () => {
+    if (await importProfiles([() => ipc.importProfileUrl(url.trim())])) setUrl("");
+  };
   return (
     <div className="cb-profiles-page">
       <PageHead
