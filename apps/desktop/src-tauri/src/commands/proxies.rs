@@ -1,6 +1,6 @@
 // 自动生成自 lib.rs 的 command 分域提取（#423）。use crate::* 引入根模块项。
 use crate::*;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 #[tauri::command]
 pub(crate) async fn test_node_delay(
@@ -21,7 +21,9 @@ pub(crate) async fn reset_proxy_selection(app: AppHandle, group: String) -> Resu
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         let _op = state.proxy_op.lock().unwrap_or_else(|e| e.into_inner());
-        controller_client(&state)?.reset_proxy_selection(&group)
+        controller_client(&state)?.reset_proxy_selection(&group)?;
+        let _ = app.emit("proxy://selection-changed", ());
+        Ok(())
     })
     .await
     .map_err(|e| e.to_string())?

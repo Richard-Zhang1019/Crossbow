@@ -19,6 +19,7 @@ serde.workspace = true
 serde_json.workspace = true
 ureq = "2"
 regex = "1"
+os_info = { version = "3", default-features = false }
 socket2 = "0.6"
 uuid = { version = "1", features = ["v4"] }
 tungstenite = "0.30"

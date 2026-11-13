@@ -122,6 +122,20 @@ export interface CheckResult {
   fix: string | null;
 }
 
+export interface DiagnosticReport {
+  rows: CheckResult[];
+  context: {
+    os: string;
+    os_version: string | null;
+    engine: "mihomo" | "sing-box";
+    core_state: "running" | "starting" | "stopped" | "crashed";
+    core_version: string | null;
+    proxy: "configured" | "off" | "mismatch" | "unknown" | "unsupported";
+    tun: "ready" | "off" | "inactive" | "unknown";
+    mixed_port: number;
+  };
+}
+
 export interface DiagnosisProgress { run_id: string; id: string; result: CheckResult | null }
 export interface ProfileStatus { id:string; last_success:number|null; next_update:number|null; retry:boolean; failure:string|null; failure_at?:number|null; using_previous:boolean; changes:{added:number;removed:number;changed:number}|null }
 export interface ConfigSnapshot {id:string;at:number;profiles:number;overrides:number;active:string|null}
@@ -332,7 +346,10 @@ export const ipc = {
   testGroupDelay: (group: string) =>
     invoke<Record<string, number>>("test_group_delay", { group }),
   testNodeDelay: (node: string) => invoke<number>("test_node_delay", { node }),
-  runDiagnosis: (runId: string) => invoke<CheckResult[]>("run_diagnosis", { runId }),
+  runDiagnosis: (runId: string) => invoke<DiagnosticReport>("run_diagnosis", { runId }),
+  openDiagnosisGuide: (url: string) => invoke<void>("open_diagnosis_guide", { url }),
+  diagnosisEnableSysproxy: () => invoke<void>("diagnosis_enable_sysproxy"),
+  onProxySelectionChanged: (cb: () => void) => listen("proxy://selection-changed", cb),
   onDiagnosisProgress: (cb:(p:DiagnosisProgress)=>void) => listen<DiagnosisProgress>("diagnosis://progress", e=>cb(parsePayload<DiagnosisProgress>(e.payload))),
   profileStatuses: () => invoke<ProfileStatus[]>("profile_statuses"),
   configSnapshots: () => invoke<ConfigSnapshot[]>("config_snapshots"),

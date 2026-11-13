@@ -437,11 +437,11 @@ pub fn redact(text: &str) -> String {
         url::Url::parse(&caps[0])
             .ok()
             .and_then(|u| {
-                u.host_str().map(|host| {
-                    // #470：userinfo 里的节点凭据（如 hysteria2://pass@host）不保留
-                    let port = u.port().map(|p| format!(":{p}")).unwrap_or_default();
-                    format!("{}://[redacted]{}{port}/[redacted]", u.scheme(), host)
-                })
+                // Only retain web origins without embedded credentials.
+                (matches!(u.scheme(), "http" | "https")
+                    && u.username().is_empty()
+                    && u.password().is_none())
+                .then(|| format!("{}/[redacted]", u.origin().ascii_serialization()))
             })
             .unwrap_or_else(|| "[redacted URL]".into())
     });
@@ -1005,6 +1005,15 @@ mod tests {
         }
         assert!(serialized.contains("redacted"));
     }
+    #[test]
+    fn node_uris_are_redacted_even_if_the_scheme_has_no_userinfo() {
+        let output = redact("tuic://id:secret@node.test:443 ssr://credential-in-host https://subscription.test/private");
+        assert_eq!(
+            output,
+            "[redacted URL] [redacted URL] https://subscription.test/[redacted]"
+        );
+    }
+
     #[test]
     fn displayed_time_pauses_without_a_renderer_and_while_interacting() {
         let mut queue = visible_queue();

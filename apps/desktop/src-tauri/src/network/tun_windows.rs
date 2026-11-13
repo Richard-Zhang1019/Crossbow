@@ -154,3 +154,16 @@ pub const TUN_DEVICE: &str = "Crossbow";
 pub fn ensure_route_available() -> Result<BTreeSet<(String, String)>, String> {
     Ok(BTreeSet::new())
 }
+
+/// Verify the named adapter is actually up using the operating system.
+pub(crate) fn diagnostic_adapter_ready(device: &str) -> Option<bool> {
+    let output = crate::process::command("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command",
+            "$ErrorActionPreference = 'Stop'; Get-NetAdapter | Where-Object Status -eq 'Up' | Select-Object -ExpandProperty Name"])
+        .output().ok()?;
+    output.status.success().then(|| {
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .any(|line| line.trim().eq_ignore_ascii_case(device))
+    })
+}

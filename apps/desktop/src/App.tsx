@@ -3,7 +3,7 @@ import { UpdateEntry } from "@/components/UpdateEntry";
 import { parseNavigation, type NavigationTarget } from "@/lib/workflow";
 import { ButtonBase, Button } from "@/components/Button";
 import { notify } from "@/notifications/service";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import HomePage, { coreText } from "@/pages/Home";
 import ProxiesPage from "@/pages/Proxies";
 import ProfilesPage from "@/pages/Profiles";
@@ -80,6 +80,35 @@ export default function App() {
   const [coreStatus, setCoreStatus] = useState<CoreStatus | null>(null);
   const [coreLabel, setCoreLabel] = useState<string>("");
   const [capabilities, setCapabilities] = useState<PlatformCapabilities | null>(null);
+  const diagnosisRevision = useRef(0);
+  const [diagnosisListeners, setDiagnosisListeners] = useState<Promise<void> | null>(null);
+  const [, setDiagnosisRevision] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    const invalidate = () => {
+      if (!active) return;
+      diagnosisRevision.current += 1;
+      setDiagnosisRevision(diagnosisRevision.current);
+    };
+    const subscriptions = [
+      ipc.onCoreStatus(invalidate),
+      ipc.onSysproxyStatus(invalidate),
+      ipc.onTunStatus(invalidate),
+      ipc.onProfileSwitched(invalidate),
+      ipc.onProxySelectionChanged(invalidate),
+      ipc.onCoreMode(invalidate),
+    ];
+    const ready = Promise.all(subscriptions).then(() => {});
+    void ready.catch(invalidate);
+    setDiagnosisListeners(ready);
+    return () => {
+      active = false;
+      for (const subscription of subscriptions) {
+        void subscription.then(off => off()).catch(() => {});
+      }
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -342,7 +371,7 @@ export default function App() {
           {page === "proxies" && <ProxiesPage />}
           {page === "profiles" && <ProfilesPage tab={configTab} focusProfileId={destination?.profileId} navigationRequest={destination} />}
           {page === "connections" && <ConnectionsPage />}
-          {page === "diagnostics" && <DiagnosticsPage />}
+          {page === "diagnostics" && <DiagnosticsPage revision={diagnosisRevision} listeners={diagnosisListeners} appVersion={appVersion} />}
           {page === "logs" && <LogsPage />}
           {page === "settings" && (
             <div className="cb-context-layout cb-settings-layout">

@@ -19,7 +19,7 @@ pub struct CheckResult {
     pub skipped: bool,
     /// 技术细节（直接展示的补充信息）。
     pub detail: String,
-    /// 可执行修复动作 id：start_core / restart_core / toggle_sysproxy。
+    /// 可执行修复动作 id：start_core / restart_core / enable_sysproxy。
     pub fix: Option<String>,
 }
 
@@ -81,13 +81,21 @@ impl Report<'_> {
         });
     }
 }
-pub fn run(state: &AppState, run_id: &str, send: impl Fn(Progress)) -> Vec<CheckResult> {
+pub fn run(state: &AppState, run_id: &str, send: impl Fn(Progress)) -> DiagnosticReport {
     let mut results = Report {
         rows: Vec::new(),
         run_id,
         send: &send,
     };
-    let mixed_port = state.store.lock().unwrap().data().engine.mixed_port;
+    let (mixed_port, tun_enabled, engine) = {
+        let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+        let settings = &store.data().engine;
+        let engine = match settings.engine {
+            crossbow_core::Engine::Mihomo => "mihomo",
+            crossbow_core::Engine::SingBox => "sing-box",
+        };
+        (settings.mixed_port, settings.tun_enable, engine)
+    };
 
     // 1. 内核状态
     results.start("core_running");
@@ -150,92 +158,32 @@ pub fn run(state: &AppState, run_id: &str, send: impl Fn(Progress)) -> Vec<Check
             Err(e) => results.push(bad("listener", format!("{e}"), Some("restart_core"))),
         }
     }
-    // 5. 系统代理指向（#468：TUN-aware + 逐端点区分 + 读取失败不再折叠成空）
+    // System proxy settings and TUN capture are independent of the explicit HTTP probe.
     results.start("sysproxy");
-    let tun_enabled = state.store.lock().unwrap().data().engine.tun_enable;
-    // TUN 接管就绪：路由在位（macOS 用既有 capture_route_present 探测；
-    // 其余平台 TUN 打开即视为接管——平台化探测属后续工作）
-    let tun_healthy = tun_enabled && crate::network::tun::capture_route_present();
-    let endpoints = state.sysproxy.external_endpoints();
-    if !crate::platform::capabilities().system_proxy {
-        results.push(CheckResult {
-            id: "sysproxy".into(),
-            ok: false,
-            skipped: true,
-            detail: format!("当前平台不修改系统代理；应用可使用 HTTP/SOCKS 代理 127.0.0.1:{mixed_port}，或单独开启 TUN；本项不计入通过数量"),
-            fix: None,
-        });
-    } else if tun_healthy {
-        // TUN 单独运行且实际接管：系统代理关闭是预期状态，不是失败
-        results.push(CheckResult {
-            id: "sysproxy".into(),
-            ok: true,
-            skipped: false,
-            detail: "TUN 接管流量中；系统代理保持关闭为预期状态（浏览器流量已进 TUN）".into(),
-            fix: None,
-        });
-    } else if tun_enabled {
-        results.push(bad(
-            "sysproxy",
-            "TUN 已开启但路由未接管（TUN 自身故障，与系统代理无关）——请先诊断 TUN",
-            None,
-        ));
-    } else if endpoints.is_empty() {
-        // 区分「确实关闭」与「读取失败」（#468：读取失败折叠成空列表与关闭难分）
-        match state.sysproxy.read_failure_reason() {
-            Some(reason) => results.push(CheckResult {
-                id: "sysproxy".into(),
-                ok: false,
-                skipped: false,
-                detail: format!(
-                    "系统代理状态读取失败，无法验证：{reason}（重试或检查 networksetup 权限）"
-                ),
-                fix: None,
-            }),
-            None => results.push(bad(
-                "sysproxy",
-                "系统代理未开启（浏览器流量不会经过本应用）",
-                Some("toggle_sysproxy"),
-            )),
+    let (proxy, mismatch) = if crate::platform::capabilities().system_proxy {
+        use crate::network::sysproxy::ProxyInspection;
+        match state.sysproxy.inspect(mixed_port) {
+            Ok(ProxyInspection::Configured) => ("configured", None),
+            Ok(ProxyInspection::Off) => ("off", None),
+            Ok(ProxyInspection::Mismatch { http, https, socks }) => {
+                let protocols = [("HTTP", http), ("HTTPS", https), ("SOCKS", socks)]
+                    .into_iter()
+                    .filter_map(|(protocol, matches)| (!matches).then_some(protocol))
+                    .collect::<Vec<_>>();
+                let detail = if protocols.is_empty() {
+                    "检测到自动代理设置，无法确认流量经过本应用".into()
+                } else {
+                    format!("{} 未全部指向本应用 :{mixed_port}", protocols.join(" / "))
+                };
+                ("mismatch", Some(detail))
+            }
+            Err(_) => ("unknown", None),
         }
     } else {
-        // 逐端点核对：Crossbow 端口 / 其他客户端 / 混合（http 对 https 错）
-        let owned = |ep: &crate::network::sysproxy::ProxyEndpoint| {
-            ep.host == "127.0.0.1" && ep.port == mixed_port
-        };
-        let ours = endpoints.iter().filter(|(_, ep)| owned(ep)).count();
-        let others: Vec<String> = endpoints
-            .iter()
-            .filter(|(_, ep)| !owned(ep))
-            .map(|(svc, ep)| format!("{svc}→{}:{}", ep.host, ep.port))
-            .collect();
-        if !others.is_empty() && ours > 0 {
-            // 部分匹配：HTTP 指向本应用但 HTTPS 指向旧端口等情况——不能算通过
-            results.push(bad(
-                "sysproxy",
-                format!(
-                    "系统代理部分指向本应用 :{mixed_port}，其余 {} 指向 {}（浏览器部分流量走旧端点）",
-                    others.len(),
-                    others.join(", ")
-                ),
-                Some("toggle_sysproxy"),
-            ));
-        } else if ours > 0 {
-            results.push(ok(
-                "sysproxy",
-                format!("系统代理指向本应用 :{mixed_port}（{} 项）", ours),
-            ));
-        } else {
-            results.push(bad(
-                "sysproxy",
-                format!(
-                    "系统代理指向 {}（非本应用，可能存在第三方客户端）",
-                    others.join(", ")
-                ),
-                Some("toggle_sysproxy"),
-            ));
-        }
-    }
+        ("unsupported", None)
+    };
+    let tun = inspect_tun(state, tun_enabled);
+    results.push(takeover_result(proxy, tun, &status, mixed_port, mismatch));
 
     // 6. 代理连通性（经混合端口访问 204 端点）
     results.start("proxied_traffic");
@@ -243,7 +191,10 @@ pub fn run(state: &AppState, run_id: &str, send: impl Fn(Progress)) -> Vec<Check
         results.skip("proxied_traffic");
     } else {
         match proxied_probe(mixed_port) {
-            Ok(()) => results.push(ok("proxied_traffic", "经内核访问外网正常（HTTP 204）")),
+            Ok(()) => results.push(ok(
+                "proxied_traffic",
+                "经混合端口显式 HTTP 代理访问测试站点成功（HTTP 204）",
+            )),
             Err(e) => results.push(bad("proxied_traffic", e, None)),
         }
     }
@@ -257,7 +208,148 @@ pub fn run(state: &AppState, run_id: &str, send: impl Fn(Progress)) -> Vec<Check
         Err(e) => results.push(bad("dns_direct", format!("系统 DNS 解析失败：{e}"), None)),
     }
 
-    results.rows
+    let core_version = results
+        .rows
+        .iter()
+        .find(|row| row.id == "controller" && row.ok)
+        .and_then(|row| {
+            let version = row.detail.trim().trim_start_matches('v');
+            (version.len() <= 40
+                && !version.is_empty()
+                && version
+                    .bytes()
+                    .all(|c| c.is_ascii_digit() || matches!(c, b'.' | b'-' | b'+')))
+            .then(|| version.to_owned())
+        });
+    let os_version = os_info::get().version().to_string();
+    let os_version = os_version
+        .bytes()
+        .all(|c| c.is_ascii_digit() || c == b'.')
+        .then_some(os_version);
+    DiagnosticReport {
+        rows: results.rows,
+        context: DiagnosticContext {
+            os: std::env::consts::OS,
+            os_version,
+            engine,
+            core_state: match status {
+                crate::CoreStatus::Running => "running",
+                crate::CoreStatus::Starting => "starting",
+                crate::CoreStatus::Stopped => "stopped",
+                crate::CoreStatus::Crashed(_) => "crashed",
+            },
+            core_version,
+            proxy,
+            tun,
+            mixed_port,
+        },
+    }
+}
+
+#[derive(Serialize)]
+pub struct DiagnosticReport {
+    rows: Vec<CheckResult>,
+    context: DiagnosticContext,
+}
+
+#[derive(Serialize)]
+struct DiagnosticContext {
+    os: &'static str,
+    os_version: Option<String>,
+    engine: &'static str,
+    core_state: &'static str,
+    core_version: Option<String>,
+    proxy: &'static str,
+    tun: &'static str,
+    mixed_port: u16,
+}
+
+fn takeover_result(
+    proxy: &str,
+    tun: &str,
+    status: &crate::CoreStatus,
+    port: u16,
+    mismatch: Option<String>,
+) -> CheckResult {
+    let result = match proxy {
+        "configured" => ok(
+            "sysproxy",
+            format!("系统代理端点指向本应用 :{port}；未验证浏览器是否使用该设置"),
+        ),
+        "off" if tun == "ready" => ok("sysproxy", "系统代理已关闭，Crossbow 的 TUN 接管已就绪"),
+        "off" if tun == "off" => bad(
+            "sysproxy",
+            "系统代理未开启；仍可通过混合端口使用显式代理",
+            (*status == crate::CoreStatus::Running).then_some("enable_sysproxy"),
+        ),
+        "off" | "unsupported" => CheckResult {
+            id: "sysproxy".into(),
+            ok: false,
+            skipped: true,
+            detail: "系统代理未使用".into(),
+            fix: None,
+        },
+        "mismatch" => bad(
+            "sysproxy",
+            mismatch.unwrap_or_else(|| "系统代理端点不匹配".into()),
+            None,
+        ),
+        _ => bad("sysproxy", "系统代理读取失败，无法验证端点", None),
+    };
+    let tun_detail = match tun {
+        "ready" if proxy != "off" => Some(("Crossbow 的 TUN 接管已就绪", false)),
+        "inactive" => Some(("TUN 已开启，但 Crossbow 的捕获路由或适配器未就绪", true)),
+        "unknown" => Some(("无法验证 Crossbow 的 TUN 接管状态", true)),
+        _ => None,
+    };
+    match tun_detail {
+        Some((detail, failed)) if failed => {
+            bad("sysproxy", format!("{}；{detail}", result.detail), None)
+        }
+        Some((detail, _)) => CheckResult {
+            ok: result.ok || result.skipped,
+            skipped: false,
+            detail: format!("{}；{detail}", result.detail),
+            ..result
+        },
+        None => result,
+    }
+}
+
+fn inspect_tun(state: &AppState, enabled: bool) -> &'static str {
+    if !enabled {
+        return "off";
+    }
+    if state.core().status() != crate::CoreStatus::Running {
+        return "inactive";
+    }
+    #[cfg(any(target_os = "macos", windows))]
+    let ready =
+        state.core().controller().and_then(
+            |(port, secret)| match (crate::engine::api::Controller { port, secret })
+                .active_tun_device()
+            {
+                Ok(Some(device)) => {
+                    #[cfg(target_os = "macos")]
+                    return crate::network::tun::diagnostic_capture_route(&device);
+                    #[cfg(windows)]
+                    return crate::network::tun_windows::diagnostic_adapter_ready(&device);
+                }
+                Ok(None) => Some(false),
+                Err(_) => None,
+            },
+        );
+    #[cfg(target_os = "linux")]
+    let ready = crate::network::linux_service::status()
+        .ok()
+        .map(|status| status.is_some_and(|status| status.active));
+    #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
+    let ready = None;
+    match ready {
+        Some(true) => "ready",
+        Some(false) => "inactive",
+        None => "unknown",
+    }
 }
 
 /// 经混合端口探测 204 端点。
@@ -277,6 +369,19 @@ fn proxied_probe(mixed_port: u16) -> Result<(), String> {
 
 #[cfg(test)]
 mod progress_tests {
+    #[test]
+    fn a_live_tun_does_not_mask_bad_or_unknown_system_proxy_settings() {
+        let running = crate::CoreStatus::Running;
+        let tun_only = super::takeover_result("off", "ready", &running, 7898, None);
+        assert!(tun_only.ok && tun_only.fix.is_none());
+        for proxy in ["mismatch", "unknown"] {
+            let row = super::takeover_result(proxy, "ready", &running, 7898, None);
+            assert!(!row.ok && !row.skipped && row.fix.is_none());
+        }
+        let row = super::takeover_result("configured", "inactive", &running, 7898, None);
+        assert!(!row.ok && row.fix.is_none());
+    }
+
     #[test]
     fn reports_start_and_skip_with_the_original_run_id() {
         let events = std::cell::RefCell::new(Vec::new());

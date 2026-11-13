@@ -18,6 +18,50 @@ pub(crate) async fn sysproxy_toggle(
     result
 }
 #[tauri::command]
+pub(crate) async fn diagnosis_enable_sysproxy(app: AppHandle) -> Result<(), String> {
+    let handle = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let state = handle.state::<AppState>();
+        let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
+        state.exit.ensure_open()?;
+        if !platform::capabilities().system_proxy {
+            return Err("当前平台不支持系统代理接管".into());
+        }
+        let (port, tun) = {
+            let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+            (
+                store.data().engine.mixed_port,
+                store.data().engine.tun_enable,
+            )
+        };
+        if tun || state.core().status() != CoreStatus::Running {
+            return Err("接管状态已变化，请重新诊断".into());
+        }
+        let was_enabled = state.sysproxy.status().enabled;
+        state.sysproxy.enable_from_diagnosis(port)?;
+        if !was_enabled
+            && state.sysproxy.status().enabled
+            && state.core().status() != CoreStatus::Running
+        {
+            state
+                .sysproxy
+                .disable()
+                .map_err(|e| format!("内核已停止，代理恢复失败：{e}"))?;
+            return Err("内核已停止，系统代理已恢复".into());
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())
+    .and_then(|result| result);
+    let state = app.state::<AppState>();
+    let _ = app.emit("sysproxy://status", state.sysproxy.status());
+    refresh_tray(&app);
+    notifications::result(&app, "diagnostics-proxy", "tray.proxy", result.clone());
+    result
+}
+
+#[tauri::command]
 pub(crate) fn sysproxy_status(state: State<AppState>) -> SysProxyStatus {
     state.sysproxy.status()
 }

@@ -61,7 +61,7 @@ pub fn takeover_drift() -> bool {
 
 /// v4 捕获路由在位：default 或分片默认路由经 TUN 接口
 #[cfg(target_os = "macos")]
-pub(crate) fn capture_route_present() -> bool {
+fn capture_route_present() -> bool {
     let Ok(output) = std::process::Command::new("netstat")
         .args(["-rn", "-f", "inet"])
         .output()
@@ -77,6 +77,16 @@ pub(crate) fn capture_route_present() -> bool {
             }
             _ => false,
         }
+    })
+}
+
+/// Verify only routes on the device identified by Crossbow's live controller.
+#[cfg(target_os = "macos")]
+pub(crate) fn diagnostic_capture_route(device: &str) -> Option<bool> {
+    ipv4_routes().ok().map(|routes| {
+        routes
+            .iter()
+            .any(|(destination, interface)| interface == device && is_default_route(destination))
     })
 }
 

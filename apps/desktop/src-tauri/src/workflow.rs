@@ -160,33 +160,91 @@ fn clean_lines(lines: Vec<String>) -> Result<String, String> {
         return Err("Log selection is too large".into());
     }
     Ok(lines
-        .into_iter()
-        .map(|s| redact_connection_line(&crate::notifications::redact(&s)))
+        .iter()
+        .map(|line| share_log_line(line))
         .collect::<Vec<_>>()
         .join("\n"))
 }
 
-/// #470：mihomo/sing-box 连接行的访问目标与出站节点名脱敏——通用 URL
-/// 规则覆盖不到 `--> target:port using Node` 这类内核连接行格式。
-/// 时间、级别与规则类别保留（定位所需），正则每次编译一次。
-fn redact_connection_line(line: &str) -> String {
-    static PATTERNS: std::sync::OnceLock<(regex::Regex, regex::Regex)> = std::sync::OnceLock::new();
-    let (target, outbound) = PATTERNS.get_or_init(|| {
-        (
-            // [TCP] src --> target:port ... / --> target
-            regex::Regex::new(r"(--> )\S+").unwrap(),
-            // "... using Node-A" 出站节点链
-            regex::Regex::new(r"(using )\S.*").unwrap(),
-        )
+/// Export only recognized categories. Free-form messages can contain arbitrary
+/// credentials, user paths, node names and destinations even without URI syntax.
+fn share_log_line(line: &str) -> String {
+    let (level, message) = ["debug", "info", "warning", "error"]
+        .into_iter()
+        .find_map(|level| {
+            line.strip_prefix('[')?
+                .strip_prefix(level)?
+                .strip_prefix("] ")
+                .map(|message| (level, message))
+        })
+        .unwrap_or(("unknown", line));
+    let protocol = ["TCP", "UDP", "TUN", "MIXED"].into_iter().find(|protocol| {
+        message
+            .strip_prefix('[')
+            .and_then(|rest| rest.strip_prefix(protocol))
+            .is_some_and(|rest| rest.starts_with("] "))
     });
-    let line = target.replace_all(line, "${1}[target redacted]");
-    if line.contains("using ") && !line.contains("match DIRECT") && !line.contains("match GeoIP") {
-        return outbound
-            .replace_all(&line, "${1}[outbound redacted]")
-            .to_string();
+    if let Some(protocol) = protocol {
+        if let Some((_, right)) = message.split_once("-->") {
+            let (target_and_rule, outbound) = right.rsplit_once(" using ").unwrap_or((right, ""));
+            let rule = target_and_rule
+                .split_once(" match ")
+                .and_then(|(_, rule)| rule.split(['(', ' ', '\t']).next())
+                .filter(|rule| {
+                    matches!(
+                        *rule,
+                        "Match"
+                            | "Domain"
+                            | "DomainSuffix"
+                            | "DomainKeyword"
+                            | "GeoIP"
+                            | "GeoSite"
+                            | "IPCIDR"
+                            | "IPCIDR6"
+                            | "RuleSet"
+                            | "ProcessName"
+                            | "ProcessPath"
+                            | "DstPort"
+                            | "SrcPort"
+                    )
+                })
+                .unwrap_or("unknown");
+            let outbound = match outbound.trim() {
+                "DIRECT" => "DIRECT",
+                "REJECT" | "REJECT-DROP" => "REJECT",
+                _ => "[outbound redacted]",
+            };
+            return format!(
+                "[{level}] [{protocol}] [target redacted] match {rule} using {outbound}"
+            );
+        }
     }
-    line.to_string()
+    for (prefix, direction) in [
+        ("inbound connection from ", "inbound"),
+        ("inbound connection to ", "inbound"),
+        ("outbound connection to ", "outbound"),
+        ("inbound packet connection from ", "inbound"),
+        ("outbound packet connection to ", "outbound"),
+    ] {
+        if message.contains(prefix) {
+            return format!("[{level}] {direction} connection [endpoint redacted]");
+        }
+    }
+    let normalized = message.to_ascii_lowercase();
+    let category = [
+        "timeout",
+        "connection refused",
+        "network unreachable",
+        "dns",
+        "tls",
+        "authentication",
+    ]
+    .into_iter()
+    .find(|category| normalized.contains(category))
+    .unwrap_or("details omitted");
+    format!("[{level}] [{category}]")
 }
+
 #[tauri::command]
 pub fn redact_log_lines(lines: Vec<String>) -> Result<String, String> {
     clean_lines(lines)
@@ -270,47 +328,23 @@ mod tests {
 mod redact_470_tests {
     use super::*;
 
-    /// #470：mihomo 连接行的访问目标与出站节点名脱敏；时间/级别/规则类别保留。
     #[test]
-    fn clean_lines_redacts_connection_targets_and_outbound() {
-        let lines = vec![
-            "[TCP] 127.0.0.1:53100 --> target.example.test:443 using Node-A".into(),
-            "[TCP] 127.0.0.1:53101 --> private.internal.lan:80 match DomainSuffix(qq.com) using DIRECT".into(),
+    fn share_log_redacts_destinations_rule_values_and_credentials() {
+        let fixtures = [
+            "[info] [TCP] 127.0.0.1:53100 --> target.example.test:443 match GeoIP(private) using Node-A",
+            "[info] [UDP] 127.0.0.1:53101 --> intranet.example:443 match DomainSuffix(intranet.example) using DIRECT",
+            "[debug] [42] outbound/hysteria2[secret-node]: outbound connection to [2001:db8::22]:443",
+            "[error] hysteria2://fixture-password@node.example:443 token: bare-secret /Users/fixture",
         ];
-        let out = clean_lines(lines.clone()).unwrap();
-        assert!(!out.contains("target.example.test"), "{out}");
-        assert!(!out.contains("private.internal.lan"), "{out}");
-        assert!(!out.contains("Node-A"), "{out}");
-        assert!(out.contains("[target redacted]"), "{out}");
-        // 时间戳与级别信息保留
-        assert!(lines[0].starts_with("[TCP]"));
-    }
-
-    /// #470：未列协议 URI（hysteria2）的 userinfo 凭据脱敏。
-    #[test]
-    fn clean_lines_redacts_uncovered_scheme_userinfo() {
-        let lines = vec!["hysteria2://fixture-password@node.example.test:443".into()];
-        let out = clean_lines(lines).unwrap();
-        assert!(!out.contains("fixture-password"), "{out}");
-        assert!(out.contains("hysteria2://"), "{out}");
-    }
-
-    /// 保留既有能力：HTTPS 订阅路径/查询仍被移除（回归 #470 前）。
-    #[test]
-    fn clean_lines_keeps_existing_subscription_redaction() {
-        let lines = vec!["https://sub.example.test/token?secret=abc".into()];
-        let out = clean_lines(lines).unwrap();
-        assert!(!out.contains("token?secret=abc"), "{out}");
-        assert!(out.contains("sub.example.test"), "{out}");
-    }
-
-    /// DIRECT/GeoIP 行：目标保留（国内直连目标非敏感，且分类可定位）。
-    #[test]
-    fn clean_lines_keeps_direct_targets() {
-        let lines = vec![
-            "[TCP] 127.0.0.1:53101 --> qq.com:443 match DomainSuffix(qq.com) using DIRECT".into(),
-        ];
-        let out = clean_lines(lines).unwrap();
-        assert!(out.contains("qq.com"), "{out}");
+        let out = clean_lines(fixtures.map(str::to_owned).to_vec()).unwrap();
+        assert_eq!(
+            out,
+            concat!(
+                "[info] [TCP] [target redacted] match GeoIP using [outbound redacted]\n",
+                "[info] [UDP] [target redacted] match DomainSuffix using DIRECT\n",
+                "[debug] outbound connection [endpoint redacted]\n",
+                "[error] [details omitted]",
+            )
+        );
     }
 }
