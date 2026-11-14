@@ -42,6 +42,10 @@
 - 桌面构建：`cd apps/desktop && npm run tauri build -- --config '{"bundle":{"createUpdaterArtifacts":false}}'`
 - 后端测试：`cargo test --lib --manifest-path apps/desktop/src-tauri/Cargo.toml`
 - 发版：`scripts/release-macos.sh`（签名+公证+DMG，见 docs/RELEASE.md）
+- 版本号修改（发版必经）：一律用 `scripts/ci/set_release_version.py`
+  （交互式，一次更新 Cargo/workspace、tauri.conf、package.json、README
+  全部引用），禁止手改任何单处版本号；改完
+  `python3 scripts/ci/release_checks.py source` 必须通过
 - 依赖镜像已配置（rsproxy）；Windows 编译验证只走 GitHub Actions
 
 ## Issue 流程
