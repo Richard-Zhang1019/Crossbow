@@ -36,8 +36,11 @@ pub struct TrayState {
     /// 延迟缓存（测速成功节点，毫秒）
     delays: BTreeMap<String, u64>,
     /// 最近一次测速失败节点（红色「失败」徽标）
-    /// 测速失败原因（"timeout" | "failed"）；成功节点从 map 移除。
+    /// 测速失败原因（"timeout" | "failed" | "controller"）；成功节点从 map 移除。
     failed: BTreeMap<String, String>,
+    /// #491：复核目标（独立运营方）成功的节点——延迟与主目标不混排，
+    /// 徽标单独标注复核路径。
+    reviewed: BTreeSet<String>,
     testing: bool,
     /// 本轮尚未完成的测速目标，结果逐个到达时移除。
     pending: BTreeSet<String>,
@@ -201,8 +204,17 @@ impl TrayState {
 
     /// 单节点测速结果落库（增量）：成功写延迟并清失败标记；
     /// 失败记原因（"timeout" | "failed"），徽标直接展示该原因。
+    /// #491：主目标超时但复核目标成功——记录延迟并标注复核路径。
+    pub fn apply_reviewed_result(&mut self, node: &str, ms: u64) {
+        self.pending.remove(node);
+        self.delays.insert(node.to_string(), ms);
+        self.failed.remove(node);
+        self.reviewed.insert(node.to_string());
+    }
+
     pub fn apply_single_result(&mut self, node: &str, result: Result<u64, String>) {
         self.pending.remove(node);
+        self.reviewed.remove(node);
         match result {
             Ok(ms) if ms > 0 => {
                 self.delays.insert(node.to_string(), ms);
@@ -279,13 +291,16 @@ impl TrayState {
                         .and_then(|current| self.delays.get(current))
                         .or_else(|| self.delays.get(n))
                 };
+                let reviewed = self.reviewed.contains(n);
                 let (badge, ms) = if pending {
                     ("…".to_string(), None)
                 } else if display_delay.is_none() {
-                    // 失败徽标直接展示原因（timeout / failed），无记录视为未测
+                    // 失败徽标直接展示原因（timeout / failed / controller），
+                    // 无记录视为未测
                     (fail_reason.unwrap_or_else(|| "—".into()), None)
                 } else {
                     match display_delay {
+                        Some(ms) if reviewed => (format!("{ms}ms·复核"), Some(*ms)),
                         Some(ms) => (format!("{ms}ms"), Some(*ms)),
                         None => ("—".to_string(), None),
                     }
@@ -503,5 +518,24 @@ mod tests {
         assert!(!result.pending);
         assert_eq!(result.badge, "failed");
         assert_eq!(result.ms, None);
+    }
+
+    /// #491：复核目标成功的延迟以「复核」徽标单独展示，不与主目标混排。
+    #[test]
+    fn reviewed_result_shows_review_path_badge() {
+        let mut state = fixture();
+        state.begin_test();
+        let generation = state.generation();
+        assert!(state.set_test_targets(generation, &["HK".to_string(), "JP".to_string()]));
+        state.apply_reviewed_result("HK", 45);
+        assert_eq!(row(&state, "HK").badge, "45ms·复核");
+        assert_eq!(row(&state, "HK").ms, Some(45));
+        // 常规结果覆盖复核标记（新一轮以主目标结果为准）。
+        state.apply_single_result("HK", Ok(50));
+        assert_eq!(row(&state, "HK").badge, "50ms");
+        // 失败同样清除复核标记。
+        state.apply_reviewed_result("HK", 45);
+        state.apply_single_result("HK", Err("timeout".into()));
+        assert_eq!(row(&state, "HK").badge, "timeout");
     }
 }
