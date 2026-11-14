@@ -73,6 +73,16 @@ pub trait SysProxyBackend: Send + Sync {
     /// 按快照还原单个服务设置。
     fn restore_service(&self, service: &str, snap: &ServiceSnapshot) -> Result<(), String>;
 
+    /// 自动恢复绝不走交互授权入口。默认拒绝，平台/测试后端须显式实现。
+    #[cfg(any(target_os = "macos", test))]
+    fn enable_service_unattended(&self, _: &str, _: u16) -> Result<(), String> {
+        Err("后台系统代理恢复需要手动授权".into())
+    }
+    #[cfg(any(target_os = "macos", test))]
+    fn restore_service_unattended(&self, _: &str, _: &ServiceSnapshot) -> Result<(), String> {
+        Err("后台系统代理恢复需要手动授权".into())
+    }
+
     /// 交互授权后端在后台变更前预检，其他平台无需管理员弹窗。
     #[cfg_attr(target_os = "linux", allow(dead_code))]
     fn restoration_requires_authorization(
@@ -245,6 +255,59 @@ impl NetworkSetup {
         }
     }
 
+    /// 使用当前进程已有权限，不调用 osascript、不提示授权。
+    fn run_unattended(commands: &[String], restoring: bool) -> Result<(), String> {
+        Self::run_unattended_until(commands, restoring, std::time::Duration::from_secs(10))
+    }
+
+    fn run_unattended_until(
+        commands: &[String],
+        restoring: bool,
+        timeout: std::time::Duration,
+    ) -> Result<(), String> {
+        use std::io::{Read, Seek, SeekFrom};
+        use std::os::unix::process::CommandExt;
+        let output = tempfile::tempfile().map_err(|e| e.to_string())?;
+        let mut reader = output.try_clone().map_err(|e| e.to_string())?;
+        let mut child = std::process::Command::new("/bin/sh")
+            .args(["-c", &Self::batch_script(commands, restoring)])
+            .process_group(0)
+            .stdout(output.try_clone().map_err(|e| e.to_string())?)
+            .stderr(output)
+            .spawn()
+            .map_err(|error| format!("后台系统代理恢复失败：{error}"))?;
+        let deadline = std::time::Instant::now() + timeout;
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break Some(status),
+                Err(_) => break None,
+                _ if std::time::Instant::now() >= deadline => break None,
+                _ => std::thread::sleep(std::time::Duration::from_millis(10)),
+            }
+        };
+        let Some(status) = status else {
+            // SAFETY: 子进程由本函数创建独立进程组，杀死整组避免超时后迟到写入。
+            unsafe {
+                libc::kill(-(child.id() as i32), libc::SIGKILL);
+            }
+            let _ = child.wait();
+            return Err("后台系统代理恢复超时，请手动重新开启系统代理".into());
+        };
+        if status.success() {
+            Ok(())
+        } else {
+            reader.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+            let mut detail = String::new();
+            reader
+                .take(8192)
+                .read_to_string(&mut detail)
+                .map_err(|e| e.to_string())?;
+            Err(format!(
+                "请手动重新开启系统代理以授权恢复：{status} {detail}"
+            ))
+        }
+    }
+
     /// 生成单个服务的开启命令，供整批执行与单服务调用共用。
     fn enable_commands(service: &str, port: u16) -> Vec<String> {
         let port = port.to_string();
@@ -311,6 +374,19 @@ impl NetworkSetup {
 
 #[cfg(target_os = "macos")]
 impl SysProxyBackend for NetworkSetup {
+    fn enable_service_unattended(&self, service: &str, port: u16) -> Result<(), String> {
+        Self::run_unattended(&Self::enable_commands(service, port), false)
+    }
+    fn restore_service_unattended(
+        &self,
+        service: &str,
+        snapshot: &ServiceSnapshot,
+    ) -> Result<(), String> {
+        if Self::snapshot_matches(service, snapshot)? {
+            return Ok(());
+        }
+        Self::run_unattended(&Self::restore_commands(service, snapshot), true)
+    }
     fn restoration_requires_authorization(
         &self,
         snapshots: &BTreeMap<String, ServiceSnapshot>,
@@ -550,6 +626,15 @@ pub struct ServiceSnapshot {
     pub bypass: Option<String>,
 }
 
+/// 当前主服务的所有槽位与自动代理共同决定归属；未知/读取失败由 Result 保留。
+#[cfg(any(target_os = "macos", test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RecoveryProxyState {
+    Owned,
+    Missing,
+    Foreign,
+}
+
 /// journal v2：开启前的原设置快照，disable 时优先还原快照（保住第三方客户端
 /// 的配置），无快照才退回全量关闭。
 #[derive(Debug, Serialize, Deserialize)]
@@ -642,6 +727,97 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             .unwrap_or_else(|error| error.into_inner());
         self.ensure_active()?;
         self.enable_locked(port, false)
+    }
+
+    #[cfg(any(target_os = "macos", test))]
+    fn recovery_state_locked(
+        &self,
+        service: &str,
+        port: u16,
+    ) -> Result<(RecoveryProxyState, ServiceSnapshot), String> {
+        self.ensure_active()?;
+        if *self.state.lock().unwrap_or_else(|e| e.into_inner()) != Some(port) {
+            return Err("系统代理接管意图已变化".into());
+        }
+        if !self.backend.list_services()?.iter().any(|s| s == service) {
+            return Err("主网络服务已变化".into());
+        }
+        let snapshot = self.backend.service_snapshot(service)?;
+        let automatic = self.backend.uses_automatic_proxy(service, &snapshot)?;
+        let foreign = automatic
+            || [&snapshot.web, &snapshot.secure, &snapshot.socks]
+                .into_iter()
+                .flatten()
+                .any(|ep| ep.host != "127.0.0.1" || ep.port != port);
+        let state = if foreign {
+            RecoveryProxyState::Foreign
+        } else if Self::service_owned_by_crossbow(&snapshot, port) {
+            RecoveryProxyState::Owned
+        } else {
+            RecoveryProxyState::Missing
+        };
+        Ok((state, snapshot))
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(crate) fn recovery_state(
+        &self,
+        service: &str,
+        port: u16,
+    ) -> Result<RecoveryProxyState, String> {
+        let _operation = self.operation.lock().unwrap_or_else(|e| e.into_inner());
+        self.recovery_state_locked(service, port)
+            .map(|(state, _)| state)
+    }
+
+    /// 只修复新主服务的缺失槽位；不重新 enable 全部服务、不覆盖原始恢复快照。
+    #[cfg(any(target_os = "macos", test))]
+    pub(crate) fn reapply_primary(
+        &self,
+        service: &str,
+        port: u16,
+    ) -> Result<RecoveryProxyState, String> {
+        let _operation = self.operation.lock().unwrap_or_else(|e| e.into_inner());
+        let (ownership, before) = self.recovery_state_locked(service, port)?;
+        if ownership != RecoveryProxyState::Missing {
+            return Ok(ownership);
+        }
+        let mut journal = self
+            .read_journal()
+            .filter(|j| j.port == port)
+            .ok_or("系统代理恢复快照不可用，请手动重新开启系统代理")?;
+        journal
+            .snapshot
+            .entry(service.to_string())
+            .or_insert_with(|| before.clone());
+        self.write_journal(port, &journal.snapshot)?;
+        let result = self
+            .backend
+            .enable_service_unattended(service, port)
+            .and_then(|()| self.ensure_active())
+            .and_then(|()| {
+                let (state, _) = self.recovery_state_locked(service, port)?;
+                if state == RecoveryProxyState::Owned {
+                    Ok(())
+                } else {
+                    Err("后台代理写入后状态不一致".into())
+                }
+            });
+        if let Err(error) = result {
+            // 只回滚本次主服务。外部客户端已写入任一槽位时不再覆盖它。
+            let current = self.backend.service_snapshot(service)?;
+            let foreign = [&current.web, &current.secure, &current.socks]
+                .into_iter()
+                .flatten()
+                .any(|ep| ep.host != "127.0.0.1" || ep.port != port);
+            if !foreign && !self.backend.uses_automatic_proxy(service, &current)? {
+                if let Err(rollback) = self.backend.restore_service_unattended(service, &before) {
+                    return Err(format!("{error}；回滚失败：{rollback}"));
+                }
+            }
+            return Err(error);
+        }
+        Ok(RecoveryProxyState::Owned)
     }
 
     /// 已持有代理操作锁的内部实现。
@@ -1690,6 +1866,16 @@ mod tests {
     }
 
     impl SysProxyBackend for FakeBackend {
+        fn enable_service_unattended(&self, service: &str, port: u16) -> Result<(), String> {
+            self.enable_service(service, port)
+        }
+        fn restore_service_unattended(
+            &self,
+            service: &str,
+            snap: &ServiceSnapshot,
+        ) -> Result<(), String> {
+            self.restore_service(service, snap)
+        }
         fn restoration_requires_authorization(
             &self,
             _: &BTreeMap<String, ServiceSnapshot>,
@@ -1857,6 +2043,221 @@ mod tests {
             .push("Ethernet".into());
         assert!(manager.inspect(7898).is_err());
         assert!(manager.enable_from_diagnosis(7898).is_err());
+    }
+
+    #[test]
+    fn network_reapply_only_changes_primary_and_retains_original_journal() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = ServiceSnapshot {
+            bypass: Some("corp.example".into()),
+            ..Default::default()
+        };
+        let backend = FakeBackend::new(&["Office WLAN", "Ethernet"])
+            .with_preset("Office WLAN", original.clone());
+        let manager = manager_with(backend.clone(), &dir);
+        manager.enable(7898).unwrap();
+        let saved = std::fs::read(&manager.journal_path).unwrap();
+        backend
+            .inner
+            .current
+            .lock()
+            .unwrap()
+            .insert("Office WLAN".into(), ServiceSnapshot::default());
+        backend.enable_service("Ethernet", 9000).unwrap();
+        let foreign = backend.service_snapshot("Ethernet").unwrap();
+        assert_eq!(
+            manager.reapply_primary("Office WLAN", 7898).unwrap(),
+            RecoveryProxyState::Owned
+        );
+        assert_eq!(std::fs::read(&manager.journal_path).unwrap(), saved);
+        assert_eq!(backend.service_snapshot("Ethernet").unwrap(), foreign);
+        manager.disable().unwrap();
+        assert_eq!(backend.service_snapshot("Office WLAN").unwrap(), original);
+        assert_eq!(backend.service_snapshot("Ethernet").unwrap(), foreign);
+    }
+
+    #[test]
+    fn network_reapply_checks_every_slot_and_automatic_proxy() {
+        let dir = tempfile::tempdir().unwrap();
+        let backend = FakeBackend::new(&["Wi-Fi"]);
+        let manager = manager_with(backend.clone(), &dir);
+        manager.enable(7898).unwrap();
+        let owned = backend.service_snapshot("Wi-Fi").unwrap();
+        for slot in 0..3 {
+            let mut mixed = owned.clone();
+            let ep = Some(ProxyEndpoint {
+                host: "proxy.example".into(),
+                port: 9000,
+            });
+            match slot {
+                0 => mixed.web = ep,
+                1 => mixed.secure = ep,
+                _ => mixed.socks = ep,
+            }
+            backend
+                .inner
+                .current
+                .lock()
+                .unwrap()
+                .insert("Wi-Fi".into(), mixed.clone());
+            assert_eq!(
+                manager.reapply_primary("Wi-Fi", 7898).unwrap(),
+                RecoveryProxyState::Foreign
+            );
+            assert_eq!(backend.service_snapshot("Wi-Fi").unwrap(), mixed);
+        }
+        let pac = ServiceSnapshot {
+            windows: Some(WindowsProxyConfig {
+                flags: 4,
+                pac_url: "http://pac.example/pac".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        backend
+            .inner
+            .current
+            .lock()
+            .unwrap()
+            .insert("Wi-Fi".into(), pac.clone());
+        assert_eq!(
+            manager.reapply_primary("Wi-Fi", 7898).unwrap(),
+            RecoveryProxyState::Foreign
+        );
+        assert_eq!(backend.service_snapshot("Wi-Fi").unwrap(), pac);
+    }
+
+    #[test]
+    fn network_reapply_failure_rolls_back_only_primary_and_preserves_recovery() {
+        let dir = tempfile::tempdir().unwrap();
+        let backend = FakeBackend::new(&["Wi-Fi", "Ethernet"]);
+        let manager = manager_with(backend.clone(), &dir);
+        manager.enable(7898).unwrap();
+        let ethernet = backend.service_snapshot("Ethernet").unwrap();
+        let mut partial = backend.service_snapshot("Wi-Fi").unwrap();
+        partial.secure = None;
+        backend
+            .inner
+            .current
+            .lock()
+            .unwrap()
+            .insert("Wi-Fi".into(), partial.clone());
+        backend.inner.fail_on.lock().unwrap().push("Wi-Fi".into());
+        let journal = std::fs::read(&manager.journal_path).unwrap();
+        assert!(manager
+            .reapply_primary("Wi-Fi", 7898)
+            .unwrap_err()
+            .contains("boom"));
+        assert_eq!(backend.service_snapshot("Wi-Fi").unwrap(), partial);
+        assert_eq!(backend.service_snapshot("Ethernet").unwrap(), ethernet);
+        assert_eq!(std::fs::read(&manager.journal_path).unwrap(), journal);
+        assert!(manager.status().enabled);
+        backend.inner.fail_on.lock().unwrap().clear();
+        assert_eq!(
+            manager.reapply_primary("Wi-Fi", 7898).unwrap(),
+            RecoveryProxyState::Owned
+        );
+    }
+
+    #[test]
+    fn network_reapply_aborts_on_disabled_shutdown_unreadable_or_wrong_port() {
+        let dir = tempfile::tempdir().unwrap();
+        let backend = FakeBackend::new(&["Wi-Fi"]);
+        let manager = manager_with(backend.clone(), &dir);
+        assert!(manager.reapply_primary("Wi-Fi", 7898).is_err());
+        assert!(!manager.journal_path.exists());
+        manager.enable(7898).unwrap();
+        assert!(manager.reapply_primary("Wi-Fi", 7899).is_err());
+        assert!(manager.reapply_primary("Unknown", 7898).is_err());
+        backend
+            .inner
+            .snapshot_fail_on
+            .lock()
+            .unwrap()
+            .push("Wi-Fi".into());
+        assert!(manager.reapply_primary("Wi-Fi", 7898).is_err());
+        backend.inner.snapshot_fail_on.lock().unwrap().clear();
+        manager.shutting_down.store(true, Ordering::SeqCst);
+        assert!(manager.reapply_primary("Wi-Fi", 7898).is_err());
+        manager.shutting_down.store(false, Ordering::SeqCst);
+        manager.disable().unwrap();
+        assert!(manager.reapply_primary("Wi-Fi", 7898).is_err());
+        assert_eq!(
+            backend.service_snapshot("Wi-Fi").unwrap(),
+            ServiceSnapshot::default()
+        );
+    }
+
+    #[test]
+    fn queued_network_reapply_cannot_resurrect_disabled_proxy() {
+        let dir = tempfile::tempdir().unwrap();
+        let backend = FakeBackend::new(&["Wi-Fi"]);
+        let manager = Arc::new(manager_with(backend.clone(), &dir));
+        manager.enable(7898).unwrap();
+        let operation = manager.operation.lock().unwrap();
+        let queued = manager.clone();
+        let worker = std::thread::spawn(move || queued.reapply_primary("Wi-Fi", 7898));
+        // 模拟先取得操作锁的关闭事务；后来的恢复必须在锁内重新读取意图。
+        manager.disable_locked().unwrap();
+        drop(operation);
+        assert!(worker.join().unwrap().is_err());
+        assert!(!manager.status().enabled);
+        assert!(!manager.journal_path.exists());
+        assert_eq!(
+            backend.service_snapshot("Wi-Fi").unwrap(),
+            ServiceSnapshot::default()
+        );
+    }
+
+    #[test]
+    fn new_primary_is_added_without_replacing_other_original_snapshots() {
+        let dir = tempfile::tempdir().unwrap();
+        let backend = FakeBackend::new(&["Wi-Fi", "New Ethernet"]);
+        let manager = manager_with(backend.clone(), &dir);
+        manager.enable(7898).unwrap();
+        let mut old = manager.read_journal().unwrap();
+        old.snapshot.remove("New Ethernet");
+        manager.write_journal(7898, &old.snapshot).unwrap();
+        backend
+            .inner
+            .current
+            .lock()
+            .unwrap()
+            .insert("New Ethernet".into(), ServiceSnapshot::default());
+        manager.reapply_primary("New Ethernet", 7898).unwrap();
+        let new = manager.read_journal().unwrap();
+        assert_eq!(new.snapshot["Wi-Fi"], old.snapshot["Wi-Fi"]);
+        assert_eq!(new.snapshot["New Ethernet"], ServiceSnapshot::default());
+        manager.disable().unwrap();
+        assert_eq!(
+            backend.service_snapshot("New Ethernet").unwrap(),
+            ServiceSnapshot::default()
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn unattended_timeout_kills_children_before_they_can_write_late() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("late-write");
+        let script = format!("sleep 0.2; touch '{}'", marker.display());
+        assert!(NetworkSetup::run_unattended_until(
+            &[script],
+            false,
+            std::time::Duration::from_millis(20)
+        )
+        .is_err());
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        assert!(!marker.exists());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn unattended_shell_does_not_require_interactive_authorization() {
+        let _guard = crate::lifecycle::authorization::BackgroundGuard::enter();
+        assert!(crate::lifecycle::authorization::require_interactive().is_err());
+        assert!(NetworkSetup::run_unattended(&["true".into()], false).is_ok());
+        assert!(NetworkSetup::run_unattended(&["false".into()], false).is_err());
     }
 
     #[test]

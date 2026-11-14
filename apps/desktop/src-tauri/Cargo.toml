@@ -49,8 +49,10 @@ dispatch2 = "0.3"
 core-foundation = "0.9"
 system-configuration = "0.7"
 objc2 = "0.6"
+block2 = "0.6"
 objc2-app-kit = { version = "0.3", features = [
     "std",
+    "NSWorkspace",
     "NSButton",
     "NSColor",
     "NSFont",
@@ -79,7 +81,7 @@ objc2-app-kit = { version = "0.3", features = [
     "NSTextField",
     "NSEvent",
 ] }
-objc2-foundation = { version = "0.3", features = ["std", "NSGeometry", "NSString", "NSDictionary", "NSArray", "NSAttributedString", "NSNotification", "NSRange"] }
+objc2-foundation = { version = "0.3", features = ["std", "NSGeometry", "NSString", "NSDictionary", "NSArray", "NSAttributedString", "NSNotification", "NSOperation", "block2", "NSRange"] }
 raw-window-handle = "0.6"
 
 [target.'cfg(windows)'.dependencies]
