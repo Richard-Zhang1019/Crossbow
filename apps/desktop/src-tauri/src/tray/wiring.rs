@@ -14,14 +14,40 @@ const LOGS_SWEEP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(
 #[cfg(any(target_os = "macos", windows))]
 const TUN_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 /// 托盘批量测速并发上限，也是看门狗计算每批节点数的依据。
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 const SPEED_TEST_CONCURRENCY: usize = 10;
-/// 托盘批量测速看门狗基础余量。
+/// 两个目标各自预留内核响应时间，总预算不超过可见测速生命周期。
+#[cfg(any(target_os = "macos", test))]
+fn speed_test_timeout(total: usize) -> Duration {
+    let batches = total.div_ceil(SPEED_TEST_CONCURRENCY) as u64;
+    Duration::from_secs(
+        batches
+            .saturating_mul(crate::engine::api::NODE_DELAY_REQUEST_BUDGET.as_secs() * 2)
+            .saturating_add(20)
+            .min(crate::tray::state::TESTING_VISIBLE_SECS),
+    )
+}
+
 #[cfg(target_os = "macos")]
-const SPEED_TEST_WATCHDOG_BASE: Duration = Duration::from_secs(20);
-/// 每批测速的请求预算。
+fn delay_test_current_without_tray(state: &AppState, pid: Option<u32>) -> bool {
+    state.exit.ensure_open().is_ok()
+        && !state
+            .config_transition
+            .load(std::sync::atomic::Ordering::SeqCst)
+        && pid.is_some()
+        && state.core().pid() == pid
+        && state.core().status() == CoreStatus::Running
+}
+
 #[cfg(target_os = "macos")]
-const SPEED_TEST_WATCHDOG_PER_BATCH_SECS: u64 = 6;
+fn delay_test_current(state: &AppState, generation: u64, pid: Option<u32>) -> bool {
+    delay_test_current_without_tray(state, pid)
+        && state
+            .node_menu
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .accepts_results(generation)
+}
 
 fn sysproxy_recovery_failure_notice(error: String) -> notifications::Notice {
     let mut notice = notifications::Notice::new(
@@ -983,20 +1009,14 @@ pub(crate) fn refresh_tray_nodes(handle: &AppHandle, keep_menu_open: bool) {
         if !menu_updated {
             refresh_tray(&h);
         }
-        // 部分节点还没有延迟数据时自动补一轮测速（静默，不抢菜单交互）
-        let missing = {
-            let st = h.state::<AppState>();
-            let tray = st.node_menu.lock().unwrap_or_else(|e| e.into_inner());
-            // 「缺测」= 无延迟且非失败（timeout/failed 徽标的节点已测过，
-            // 不能再计入缺失，否则自动补测会无限循环）
-            tray.snapshot("", "当前")
-                .rows
-                .iter()
-                .filter(|r| r.ms.is_none() && r.badge != "timeout" && r.badge != "failed")
-                .count()
-        };
+        // 已分类的控制器失败、取消和跳过均不是缺测，不自动循环重测。
+        let missing = state
+            .node_menu
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .has_missing_results();
         #[cfg(target_os = "macos")]
-        if missing > 0 {
+        if missing {
             run_tray_delay_test(&h);
         }
     });
@@ -1010,11 +1030,15 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
     };
     let generation = {
         let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
-        if !tray.begin_test() {
-            return; // 已在测速
+        if tray.cancel_test() {
+            drop(tray);
+            update_tray_node_menu(handle, false);
+            return;
         }
+        tray.begin_test();
         tray.generation()
     };
+    let started = std::time::Instant::now();
     update_tray_node_menu(handle, true);
     let core_pid = state.core().pid();
 
@@ -1028,16 +1052,16 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
         };
         let mut targets: Vec<String> = {
             let tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
-            tray.node_names()
+            tray.test_target_names()
         };
         let client = controller_client(&state);
         // 自动选择组（URLTest）的成员并入待测集合（去重）
         if let Ok(client) = &client {
+            let root_targets = targets.clone();
             if let Ok(groups) = client.groups() {
-                for g in groups
-                    .iter()
-                    .filter(|g| g.kind.eq_ignore_ascii_case("URLTest"))
-                {
+                for g in groups.iter().filter(|g| {
+                    g.kind.eq_ignore_ascii_case("URLTest") && root_targets.contains(&g.name)
+                }) {
                     for node in &g.nodes {
                         if !targets.contains(&node.name) {
                             targets.push(node.name.clone());
@@ -1048,7 +1072,10 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
         }
         if client.is_err() {
             let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
-            if tray.generation() == generation {
+            if tray.accepts_results(generation) {
+                for node in &targets {
+                    tray.apply_single_result(node, Err("controller".into()));
+                }
                 tray.end_test();
             }
             drop(tray);
@@ -1077,9 +1104,8 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
 
         // 看门狗按并发批次估算等待上限，超时恢复可点态。
         let watchdog_handle = h.clone();
-        let batches = total.div_ceil(SPEED_TEST_CONCURRENCY) as u64;
-        let watchdog_timeout = SPEED_TEST_WATCHDOG_BASE
-            + Duration::from_secs(batches * SPEED_TEST_WATCHDOG_PER_BATCH_SECS);
+        let deadline = started + speed_test_timeout(total);
+        let watchdog_timeout = deadline.saturating_duration_since(std::time::Instant::now());
         std::thread::spawn(move || {
             std::thread::sleep(watchdog_timeout);
             let Some(state) = watchdog_handle.try_state::<AppState>() else {
@@ -1102,7 +1128,8 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
         let queue = std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::from(
             targets,
         )));
-        let (tx, rx) = std::sync::mpsc::channel::<(String, Result<u64, String>)>();
+        let (tx, rx) =
+            std::sync::mpsc::channel::<(String, Result<crate::engine::api::DelaySample, String>)>();
         for _ in 0..total.min(SPEED_TEST_CONCURRENCY) {
             let queue = queue.clone();
             let tx = tx.clone();
@@ -1112,13 +1139,49 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
                     Some(s) => controller_client(&s),
                     None => return,
                 };
-                while let Some(node) = queue.lock().ok().and_then(|mut q| q.pop_front()) {
+                let url_scoped_history = h_worker.try_state::<AppState>().is_some_and(|state| {
+                    state
+                        .store
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .data()
+                        .engine
+                        .engine
+                        == crossbow_core::Engine::Mihomo
+                });
+                let current = || {
+                    h_worker
+                        .try_state::<AppState>()
+                        .is_some_and(|state| delay_test_current(&state, generation, core_pid))
+                };
+                loop {
+                    if !current() || std::time::Instant::now() >= deadline {
+                        break;
+                    }
+                    let Some(node) = queue.lock().ok().and_then(|mut q| q.pop_front()) else {
+                        break;
+                    };
                     let result = match &client {
-                        Ok(c) => c.measure_node_delay(&node).map_err(|error| match error {
-                            crate::engine::api::NodeDelayError::Timeout(_) => "timeout".to_string(),
-                            crate::engine::api::NodeDelayError::Failed(_) => "failed".to_string(),
-                        }),
-                        Err(_) => Err("failed".to_string()),
+                        Ok(c) => c
+                            .measure_node_delay_with_review(
+                                &node,
+                                &current,
+                                deadline,
+                                url_scoped_history,
+                            )
+                            .map_err(|error| {
+                                match error {
+                                    crate::engine::api::NodeDelayError::Timeout(_) => "timeout",
+                                    crate::engine::api::NodeDelayError::Controller(_) => {
+                                        "controller"
+                                    }
+                                    crate::engine::api::NodeDelayError::Failed(_) => "failed",
+                                    crate::engine::api::NodeDelayError::Cancelled(_) => "cancelled",
+                                    crate::engine::api::NodeDelayError::Skipped(_) => "skipped",
+                                }
+                                .to_string()
+                            }),
+                        Err(_) => Err("controller".to_string()),
                     };
                     if tx.send((node, result)).is_err() {
                         break;
@@ -1136,10 +1199,19 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
             let Some(state) = h.try_state::<AppState>() else {
                 return;
             };
+            if !delay_test_current(&state, generation, core_pid) {
+                let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
+                if tray.accepts_results(generation) {
+                    tray.cancel_test();
+                }
+                drop(tray);
+                update_tray_node_menu(&h, false);
+                return;
+            }
             {
                 let mut tray = state.node_menu.lock().unwrap_or_else(|e| e.into_inner());
-                if tray.generation() != generation {
-                    return; // 新一轮测速已接管，放弃本轮剩余结果
+                if !tray.accepts_results(generation) {
+                    return;
                 }
                 if result
                     .as_ref()
@@ -1151,7 +1223,10 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
                 if result.is_ok() {
                     successes += 1;
                 }
-                tray.apply_single_result(&node, result);
+                match result {
+                    Ok(sample) => tray.apply_delay_sample(&node, sample),
+                    Err(reason) => tray.apply_single_result(&node, Err(reason)),
+                }
             }
             let data = tray_menu_data(&state);
             crate::tray::speed::update_node_menu(&h, &data.title, &data.rows, data.testing);
@@ -1168,6 +1243,11 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
         if tray.generation() != generation {
             return;
         }
+        tray.skip_pending(if delay_test_current_without_tray(&state, core_pid) {
+            "skipped"
+        } else {
+            "cancelled"
+        });
         tray.end_test();
         let finished_generation = tray.generation();
         if successes == total {
@@ -1344,12 +1424,12 @@ pub(crate) fn tray_menu_entries(
     {
         if !data.rows.is_empty() {
             let label = if data.testing {
-                tr(&lang, "延迟测速中…", "Testing latency…")
+                tr(&lang, "取消测速", "Cancel latency test")
             } else {
                 tr(&lang, "延迟测速", "Test latency")
             };
             let mut nodes = vec![
-                Entry::action("tray-delay-test", label, !data.testing),
+                Entry::action("tray-delay-test", label, true),
                 Entry::Separator,
             ];
             nodes.extend(data.rows.iter().map(|row| {
@@ -1408,6 +1488,13 @@ pub(crate) fn refresh_tray(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn batch_budget_covers_two_requests_but_stays_inside_visible_lifetime() {
+        assert_eq!(speed_test_timeout(40), Duration::from_secs(76));
+        assert_eq!(speed_test_timeout(70), Duration::from_secs(118));
+        assert_eq!(speed_test_timeout(10000), Duration::from_secs(120));
+    }
 
     #[test]
     fn proxy_recovery_failure_notice_offers_retry_with_error_details() {

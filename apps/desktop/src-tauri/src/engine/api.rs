@@ -11,6 +11,13 @@ use serde::Serialize;
 pub const MODES: [&str; 3] = ["direct", "rule", "global"];
 /// 测速目标 URL（204 无正文，机场/内核通用基准）。
 const BENCHMARK_URL: &str = "http://www.gstatic.com/generate_204";
+/// #491：主目标超时后的复核目标——与主目标不同运营方（Google vs Cloudflare），
+/// 保留独立目标结果，避免把单目标异常泛化为节点故障。
+const BENCHMARK_URL_REVIEW: &str = "https://cp.cloudflare.com/generate_204";
+#[cfg(any(target_os = "macos", test))]
+const BENCHMARK_URL_HTTPS: &str = "https://www.gstatic.com/generate_204";
+#[cfg(any(target_os = "macos", test))]
+pub(crate) const NODE_DELAY_REQUEST_BUDGET: Duration = Duration::from_secs(7);
 
 #[derive(Debug, Clone, Serialize)]
 pub struct NodeView {
@@ -37,19 +44,41 @@ pub struct Controller {
     pub secret: String,
 }
 
+/// 一次节点延迟采样：目标主/复核由 `reviewed` 标记。
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+pub(crate) struct DelaySample {
+    pub delay_ms: u64,
+    pub reviewed: bool,
+    pub target: String,
+    pub tested_at_ms: u64,
+    pub sample_count: u8,
+}
+
 #[derive(Debug)]
 pub(crate) enum NodeDelayError {
+    /// 内核对该目标的测速预算耗尽；本身不能证明节点故障。
     Timeout(String),
+    /// 内核完成节点探测但失败（503 或零延迟）。
     Failed(String),
+    /// 控制器传输失败（连不上内核 API）——不是节点故障，徽标需与
+    /// 节点超时区分（#491）。
+    Controller(String),
+    #[cfg(any(target_os = "macos", test))]
+    Cancelled(String),
+    Skipped(String),
 }
 
 impl NodeDelayError {
     fn from_request(node: &str, error: ureq::Error) -> Self {
         let details = format!("node delay {node}: {error}");
-        if matches!(error, ureq::Error::Status(504, _)) {
-            Self::Timeout(details)
-        } else {
-            Self::Failed(details)
+        match error {
+            // 目标探测预算耗尽；与控制器传输错误分开。
+            ureq::Error::Status(504, _) => Self::Timeout(details),
+            // 连不上控制器 API：控制器/本地链路故障，不是节点故障。
+            ureq::Error::Transport(_) => Self::Controller(details),
+            ureq::Error::Status(503, _) => Self::Failed(details),
+            ureq::Error::Status(404, _) => Self::Skipped(details),
+            _ => Self::Controller(details),
         }
     }
 }
@@ -57,7 +86,12 @@ impl NodeDelayError {
 impl std::fmt::Display for NodeDelayError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Timeout(details) | Self::Failed(details) => f.write_str(details),
+            Self::Timeout(details)
+            | Self::Failed(details)
+            | Self::Controller(details)
+            | Self::Skipped(details) => f.write_str(details),
+            #[cfg(any(target_os = "macos", test))]
+            Self::Cancelled(details) => f.write_str(details),
         }
     }
 }
@@ -71,6 +105,24 @@ pub struct OutboundInfo {
     pub delay_ms: Option<u64>,
     /// 决策链（规则目标组 → 出口）。
     pub chain: Vec<String>,
+}
+
+/// mihomo 的通用 history 混合所有测试 URL；复核值不能回流为主目标延迟。
+fn comparable_delay(node: &serde_json::Value) -> Option<u64> {
+    let extra = node.get("extra");
+    let history = if let Some(primary) = extra.and_then(|extra| extra.get(BENCHMARK_URL)) {
+        primary.get("history")
+    } else if extra.is_some_and(|extra| extra.get(BENCHMARK_URL_REVIEW).is_some()) {
+        None
+    } else {
+        node.get("history") // sing-box/旧控制器没有按 URL 分组时保留兼容。
+    };
+    history
+        .and_then(|h| h.as_array())
+        .and_then(|a| a.last())
+        .and_then(|entry| entry.get("delay"))
+        .and_then(|d| d.as_u64())
+        .filter(|d| *d > 0)
 }
 
 impl Controller {
@@ -251,13 +303,7 @@ impl Controller {
                 .filter_map(|m| m.as_str())
                 .map(|m| {
                     let child = all.get(m);
-                    let delay = child
-                        .and_then(|c| c.get("history"))
-                        .and_then(|h| h.as_array())
-                        .and_then(|a| a.last())
-                        .and_then(|e| e.get("delay"))
-                        .and_then(|d| d.as_u64())
-                        .filter(|delay| *delay > 0);
+                    let delay = child.and_then(comparable_delay);
                     // 组嵌组时延迟取组内当前节点不可得，显示为未测即可
                     NodeView {
                         name: m.to_string(),
@@ -410,13 +456,7 @@ impl Controller {
                     Some(next) if !next.is_empty() => cur = next.to_string(),
                     Some(_) => break,
                     None => {
-                        let delay = node
-                            .get("history")
-                            .and_then(|h| h.as_array())
-                            .and_then(|a| a.last())
-                            .and_then(|e| e.get("delay"))
-                            .and_then(|d| d.as_u64())
-                            .filter(|delay| *delay > 0);
+                        let delay = comparable_delay(node);
                         return (cur, delay);
                     }
                 }
@@ -538,30 +578,108 @@ impl Controller {
     /// A gateway timeout from the controller is a completed node test.
     /// A transport failure talking to the controller is a different failure.
     pub(crate) fn measure_node_delay(&self, node: &str) -> Result<u64, NodeDelayError> {
+        self.measure_via(node, BENCHMARK_URL)
+    }
+
+    fn measure_via(&self, node: &str, url: &str) -> Result<u64, NodeDelayError> {
+        self.measure_via_with_timeout(node, url, Duration::from_secs(30))
+    }
+
+    fn measure_via_with_timeout(
+        &self,
+        node: &str,
+        url: &str,
+        timeout: Duration,
+    ) -> Result<u64, NodeDelayError> {
         let path = format!(
-            "{}?url={}&timeout=5000",
-            build_path(&["/proxies", node, "delay"]),
-            BENCHMARK_URL
+            "{}?url={url}&timeout=5000",
+            build_path(&["/proxies", node, "delay"])
         );
-        let agent = Self::slow_agent();
+        let agent = ureq::AgentBuilder::new()
+            .try_proxy_from_env(false)
+            .redirects(0)
+            .timeout(timeout)
+            .build();
         let resp = Self::req_on(&agent, self.port, &self.secret, "GET", &path)
             .call()
             .map_err(|error| NodeDelayError::from_request(node, error))?;
-        if resp.status() >= 400 {
-            return Err(NodeDelayError::Failed(format!(
+        if resp.status() != 200 {
+            return Err(NodeDelayError::Controller(format!(
                 "node delay {node}: HTTP {}",
                 resp.status()
             )));
         }
         let text = resp
             .into_string()
-            .map_err(|error| NodeDelayError::Failed(error.to_string()))?;
+            .map_err(|error| NodeDelayError::Controller(error.to_string()))?;
         let v: serde_json::Value = serde_json::from_str(&text)
-            .map_err(|error| NodeDelayError::Failed(error.to_string()))?;
-        v.get("delay")
-            .and_then(|d| d.as_u64())
-            .filter(|delay| *delay > 0)
-            .ok_or_else(|| NodeDelayError::Failed(format!("node delay {node}: no delay field")))
+            .map_err(|error| NodeDelayError::Controller(error.to_string()))?;
+        let delay = v.get("delay").and_then(|d| d.as_u64()).ok_or_else(|| {
+            NodeDelayError::Controller(format!("node delay {node}: no delay field"))
+        })?;
+        if delay == 0 {
+            Err(NodeDelayError::Failed(format!(
+                "node delay {node}: zero delay"
+            )))
+        } else {
+            Ok(delay)
+        }
+    }
+
+    /// 主目标固定；仅节点超时复核 HTTPS。每次新请求前及发布结果前均检查取消。
+    #[cfg(any(target_os = "macos", test))]
+    pub(crate) fn measure_node_delay_with_review(
+        &self,
+        node: &str,
+        current: &impl Fn() -> bool,
+        deadline: std::time::Instant,
+        url_scoped_history: bool,
+    ) -> Result<DelaySample, NodeDelayError> {
+        let check = || {
+            if !current() {
+                Err(NodeDelayError::Cancelled("测速已取消或配置已变化".into()))
+            } else if std::time::Instant::now() >= deadline {
+                Err(NodeDelayError::Skipped("批次总预算已耗尽".into()))
+            } else {
+                Ok(())
+            }
+        };
+        let probe = |url| {
+            check()?;
+            let timeout = deadline
+                .saturating_duration_since(std::time::Instant::now())
+                .min(NODE_DELAY_REQUEST_BUDGET);
+            if timeout.is_zero() {
+                return Err(NodeDelayError::Skipped("批次总预算已耗尽".into()));
+            }
+            let result = self.measure_via_with_timeout(node, url, timeout);
+            check()?;
+            result
+        };
+        // sing-box 的测速会覆盖同一份选路历史，且忽略 HTTP URL。
+        // 未能按 URL 分离历史的控制器只测固定 HTTPS 主目标，不注入异站延迟。
+        let primary = if url_scoped_history {
+            BENCHMARK_URL
+        } else {
+            BENCHMARK_URL_HTTPS
+        };
+        let (delay_ms, reviewed, target, sample_count) = match probe(primary) {
+            Ok(ms) => (ms, false, primary, 1),
+            Err(NodeDelayError::Timeout(_)) if url_scoped_history => {
+                (probe(BENCHMARK_URL_REVIEW)?, true, BENCHMARK_URL_REVIEW, 2)
+            }
+            Err(other) => return Err(other),
+        };
+        Ok(DelaySample {
+            delay_ms,
+            reviewed,
+            target: target.into(),
+            sample_count,
+            tested_at_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+        })
     }
 }
 
@@ -608,10 +726,239 @@ pub(crate) mod tests {
         ));
         assert_eq!(controller.test_node_delay(node).unwrap(), 42);
         server.join().unwrap();
+        // 控制器不可达 = Controller（不是节点故障，#491）。
         assert!(matches!(
             controller.measure_node_delay(node),
-            Err(NodeDelayError::Failed(_))
+            Err(NodeDelayError::Controller(_))
         ));
+    }
+
+    /// #491：主目标超时 → 不同运营方的复核目标再测一次；复核成功单独
+    /// 标记（不与主目标混排），两目标超时分别归为目标探测超时。控制层错误不复核。
+    #[test]
+    fn timeout_review_uses_independent_target_and_marks_the_sample() {
+        let node = "Node 504";
+        let primary = format!(
+            "{}?url={BENCHMARK_URL}&timeout=5000",
+            build_path(&["/proxies", node, "delay"])
+        );
+        let review = format!(
+            "{}?url={BENCHMARK_URL_REVIEW}&timeout=5000",
+            build_path(&["/proxies", node, "delay"])
+        );
+        let (controller, server) = scripted_controller(vec![
+            ("GET", primary.clone(), 504, "{}".into()),
+            ("GET", review.clone(), 200, "{\"delay\":88}".into()),
+        ]);
+        let sample = controller
+            .measure_node_delay_with_review(
+                node,
+                &|| true,
+                std::time::Instant::now() + Duration::from_secs(20),
+                true,
+            )
+            .unwrap();
+        assert_eq!(sample.delay_ms, 88);
+        assert!(sample.reviewed);
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn review_failure_is_a_node_timeout_and_controller_errors_skip_review() {
+        let node = "Node both";
+        let primary = format!(
+            "{}?url={BENCHMARK_URL}&timeout=5000",
+            build_path(&["/proxies", node, "delay"])
+        );
+        let review = format!(
+            "{}?url={BENCHMARK_URL_REVIEW}&timeout=5000",
+            build_path(&["/proxies", node, "delay"])
+        );
+        // 两轮都超时 = Timeout（不等同于控制器错误），且请求顺序 = 主 → 复核。
+        let (controller, server) = scripted_controller(vec![
+            ("GET", primary.clone(), 504, "{}".into()),
+            ("GET", review.clone(), 504, "{}".into()),
+        ]);
+        assert!(matches!(
+            controller.measure_node_delay_with_review(
+                node,
+                &|| true,
+                std::time::Instant::now() + Duration::from_secs(20),
+                true,
+            ),
+            Err(NodeDelayError::Timeout(_))
+        ));
+        server.join().unwrap();
+
+        // 控制器传输失败（服务器已关）：直接 Controller，不发复核请求。
+        let (controller, dead_server) = scripted_controller(vec![]);
+        dead_server.join().unwrap();
+        assert!(matches!(
+            controller.measure_node_delay_with_review(
+                node,
+                &|| true,
+                std::time::Instant::now() + Duration::from_secs(20),
+                true,
+            ),
+            Err(NodeDelayError::Controller(_))
+        ));
+        let _ = controller;
+    }
+
+    #[test]
+    fn healthy_primary_has_one_sample_and_cancelled_or_expired_tests_make_no_requests() {
+        let node = "one";
+        let primary = format!(
+            "{}?url={BENCHMARK_URL}&timeout=5000",
+            build_path(&["/proxies", node, "delay"])
+        );
+        let (controller, server) =
+            scripted_controller(vec![("GET", primary, 200, "{\"delay\":33}".into())]);
+        let sample = controller
+            .measure_node_delay_with_review(
+                node,
+                &|| true,
+                std::time::Instant::now() + Duration::from_secs(5),
+                true,
+            )
+            .unwrap();
+        assert_eq!(sample.target, BENCHMARK_URL);
+        assert_eq!(sample.sample_count, 1);
+        assert!(!sample.reviewed);
+        assert!(sample.tested_at_ms > 0);
+        server.join().unwrap();
+        assert!(matches!(
+            controller.measure_node_delay_with_review(
+                node,
+                &|| false,
+                std::time::Instant::now() + Duration::from_secs(5),
+                true
+            ),
+            Err(NodeDelayError::Cancelled(_))
+        ));
+        assert!(matches!(
+            controller.measure_node_delay_with_review(
+                node,
+                &|| true,
+                std::time::Instant::now(),
+                true
+            ),
+            Err(NodeDelayError::Skipped(_))
+        ));
+    }
+
+    #[test]
+    fn cancellation_during_primary_prevents_late_success_and_review_requests() {
+        for status in [200, 504] {
+            let node = "cancel";
+            let primary = format!(
+                "{}?url={BENCHMARK_URL}&timeout=5000",
+                build_path(&["/proxies", node, "delay"])
+            );
+            let (controller, server) =
+                scripted_controller(vec![("GET", primary, status, "{\"delay\":30}".into())]);
+            let checks = std::cell::Cell::new(0);
+            let current = || {
+                let old = checks.get();
+                checks.set(old + 1);
+                old == 0
+            };
+            assert!(matches!(
+                controller.measure_node_delay_with_review(
+                    node,
+                    &current,
+                    std::time::Instant::now() + Duration::from_secs(5),
+                    true
+                ),
+                Err(NodeDelayError::Cancelled(_))
+            ));
+            server.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn controllers_with_shared_selection_history_do_not_get_an_alternate_target() {
+        let node = "shared-history";
+        let primary = format!(
+            "{}?url={BENCHMARK_URL_HTTPS}&timeout=5000",
+            build_path(&["/proxies", node, "delay"])
+        );
+        let (controller, server) = scripted_controller(vec![("GET", primary, 504, "{}".into())]);
+        assert!(matches!(
+            controller.measure_node_delay_with_review(
+                node,
+                &|| true,
+                std::time::Instant::now() + Duration::from_secs(5),
+                false
+            ),
+            Err(NodeDelayError::Timeout(_))
+        ));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn malformed_controller_reply_is_not_a_node_failure() {
+        let node = "bad-json";
+        let primary = format!(
+            "{}?url={BENCHMARK_URL}&timeout=5000",
+            build_path(&["/proxies", node, "delay"])
+        );
+        let (controller, server) =
+            scripted_controller(vec![("GET", primary, 200, "invalid JSON".into())]);
+        assert!(matches!(
+            controller.measure_node_delay_with_review(
+                node,
+                &|| true,
+                std::time::Instant::now() + Duration::from_secs(5),
+                true
+            ),
+            Err(NodeDelayError::Controller(_))
+        ));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn controller_statuses_and_removed_nodes_are_not_node_failures() {
+        for status in [302, 400, 401, 403, 404, 500] {
+            let node = "status";
+            let path = format!(
+                "{}?url={BENCHMARK_URL}&timeout=5000",
+                build_path(&["/proxies", node, "delay"])
+            );
+            let (controller, server) =
+                scripted_controller(vec![("GET", path, status, "{}".into())]);
+            let result = controller.measure_node_delay_with_review(
+                node,
+                &|| true,
+                std::time::Instant::now() + Duration::from_secs(5),
+                true,
+            );
+            if status == 404 {
+                assert!(matches!(result, Err(NodeDelayError::Skipped(_))));
+            } else {
+                assert!(matches!(result, Err(NodeDelayError::Controller(_))));
+            }
+            server.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn groups_do_not_reuse_review_latency_as_a_primary_measurement() {
+        let raw = serde_json::json!({"proxies": {
+            "Group": {"type": "Selector", "all": ["A", "B", "C", "Legacy"]},
+            "A": {"type":"Direct", "history":[{"delay":88}], "extra": {
+                BENCHMARK_URL: {"history":[{"delay":31}]}, BENCHMARK_URL_REVIEW: {"history":[{"delay":88}]}}},
+            "B": {"type":"Direct", "history":[{"delay":88}], "extra": {
+                BENCHMARK_URL: {"history":[{"delay":0}]}, BENCHMARK_URL_REVIEW: {"history":[{"delay":88}]}}},
+            "C": {"type":"Direct", "history":[{"delay":88}], "extra": {BENCHMARK_URL_REVIEW: {"history":[{"delay":88}]}}},
+            "Legacy": {"type":"Direct", "history":[{"delay":42}]}
+        }});
+        let (controller, server) =
+            scripted_controller(vec![("GET", "/proxies".into(), 200, raw.to_string())]);
+        let groups = controller.groups().unwrap();
+        let values: Vec<_> = groups[0].nodes.iter().map(|node| node.delay_ms).collect();
+        assert_eq!(values, vec![Some(31), None, None, Some(42)]);
+        server.join().unwrap();
     }
 
     /// A scripted controller checks the actual HTTP contract and request order.

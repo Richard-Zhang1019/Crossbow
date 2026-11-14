@@ -543,6 +543,37 @@ fn update_node_row_view(
         return;
     };
     let badge_text_width = set_badge_text(&badge, &row.badge);
+    let tooltip = row.sample.as_ref().map(|sample| {
+        if row.current_label == "当前" {
+            format!(
+                "{}ms · {} 次请求\n{}",
+                sample.delay_ms, sample.sample_count, sample.target
+            )
+        } else {
+            format!(
+                "{}ms · {} requests\n{}",
+                sample.delay_ms, sample.sample_count, sample.target
+            )
+        }
+    });
+    let tooltip = tooltip.or_else(|| {
+        row.failure.as_deref().map(|reason| {
+            match (reason, row.current_label == "当前") {
+                ("controller", true) => "控制器请求失败",
+                ("controller", false) => "Controller request failed",
+                ("cancelled", true) => "测速已取消",
+                ("cancelled", false) => "Latency test cancelled",
+                ("skipped", true) => "本次测速已跳过",
+                ("skipped", false) => "Latency test skipped",
+                ("timeout", true) => "节点测速超时",
+                ("timeout", false) => "Node delay test timed out",
+                (_, true) => "测速失败",
+                (_, false) => "Latency test failed",
+            }
+            .to_string()
+        })
+    });
+    badge.setToolTip(tooltip.as_deref().map(NSString::from_str).as_deref());
     let badge_width = (badge_text_width + 9.0).clamp(26.0, LATENCY_COLUMN_WIDTH);
     let column_right = menu_width - HOVER_HORIZONTAL_INSET - ROW_CONTENT_INSET;
     let column_left = column_right - LATENCY_COLUMN_WIDTH;
@@ -1152,20 +1183,21 @@ fn update_node_rows(root: &NSMenu, title: &str, rows: &[TrayNodeRow], testing: b
     submenu.setMinimumWidth(NODE_MENU_WIDTH);
     let mtm = MainThreadMarker::from(root);
     let action = items.objectAtIndex(0);
-    let chinese = action.title().to_string().starts_with("延迟");
+    let title = action.title().to_string();
+    let chinese = title.starts_with("延迟") || title.starts_with("取消");
     let text = match (testing, chinese) {
-        (true, true) => "延迟测速中…",
+        (true, true) => "取消测速",
         (false, true) => "延迟测速",
-        (true, false) => "Testing latency…",
+        (true, false) => "Cancel latency test",
         (false, false) => "Test latency",
     };
     action.setTitle(&NSString::from_str(text));
-    action.setEnabled(!testing);
+    action.setEnabled(true);
     let view = action
         .view()
         .and_then(|view| view.downcast::<TrayActionRowView>().ok())
         .unwrap_or_else(|| make_action_row_view(mtm));
-    update_action_row_view(&view, text, !testing, NODE_MENU_WIDTH);
+    update_action_row_view(&view, text, true, NODE_MENU_WIDTH);
     action.setView(Some(&view));
 
     for (item, row) in items.iter().skip(2).zip(rows) {
