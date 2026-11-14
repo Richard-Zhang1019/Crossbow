@@ -135,6 +135,18 @@ pub struct FaultEvidence {
     pub mode: String,
     pub started_at_ms: u64,
     pub resolved_at_ms: Option<u64>,
+    /// #499：恢复确认探针独立保存——故障时的各层样本永不覆写，
+    /// 诊断与导出分别展示故障快照与恢复结果。
+    #[serde(default)]
+    pub recovery: Option<RecoveryProbe>,
+    /// #499：上下文已变化（换代/接管关闭）且恢复未确认——记录退出
+    /// 实时判定与去重，仅保留供回查。
+    #[serde(default)]
+    pub superseded: bool,
+    /// #499：旧格式文件（无独立恢复探针）——故障时的出口层样本可能
+    /// 已被恢复探针覆盖，界面明确标注证据受限。
+    #[serde(default)]
+    pub legacy: bool,
     generation: Generation,
     pub profile_id: Option<String>,
     pub mixed_port: u16,
@@ -146,6 +158,32 @@ pub struct FaultEvidence {
     pub direct_cn: ProbeEvidence,
     pub direct_global: ProbeEvidence,
     pub proxy_https: ProbeEvidence,
+}
+
+/// 恢复确认时的探针结果（独立于故障时样本）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveryProbe {
+    pub at_ms: u64,
+    pub proxy_https: ProbeEvidence,
+}
+
+/// #499：恢复确认 = 记录恢复时间与恢复探针，故障时样本保持原样。
+#[cfg(any(target_os = "macos", test))]
+fn apply_resolution(evidence: &mut FaultEvidence, probe: ProbeEvidence, at_ms: u64) {
+    evidence.resolved_at_ms = Some(at_ms);
+    evidence.recovery = Some(RecoveryProbe {
+        at_ms,
+        proxy_https: probe,
+    });
+}
+
+/// #499：上下文已变化且恢复未确认 → 标记退出实时判定（保留可回查）。
+#[cfg(any(target_os = "macos", test))]
+fn mark_superseded(evidence: &mut FaultEvidence) {
+    if evidence.resolved_at_ms.is_none() {
+        evidence.superseded = true;
+    }
 }
 
 #[cfg(any(target_os = "macos", test))]
@@ -341,8 +379,10 @@ pub(crate) fn inspect_network_change(
     let observed_at = now_ms();
     let mut existing = read_record(&state.data_dir.join("sysproxy-fault.json"));
     if existing.as_ref().is_some_and(|e| e.generation != *gen) {
-        publish(handle, state, gen, None);
-        existing = None;
+        // #499：换代 = 上下文已变化，恢复未确认——保留可回查。
+        mark_superseded(existing.as_mut().unwrap());
+        let superseded = existing.as_ref().unwrap().clone();
+        publish(handle, state, gen, Some(&superseded));
     }
     let mut evidence = run_round(handle, state, gen.clone(), probe.clone(), started, deadline);
     evidence.resolved_at_ms = probe.reachable().then_some(observed_at);
@@ -350,8 +390,7 @@ pub(crate) fn inspect_network_change(
         Action::Capture => publish(handle, state, gen, Some(&evidence)),
         Action::Resolve => {
             if let Some(mut old) = existing {
-                old.resolved_at_ms = Some(observed_at);
-                old.proxy_https = probe;
+                apply_resolution(&mut old, probe, observed_at);
                 publish(handle, state, gen, Some(&old));
             }
         }
@@ -376,19 +415,22 @@ fn read_record(path: &Path) -> Option<FaultEvidence> {
     if bytes.len() as u64 > MAX_RECORD_BYTES {
         return None;
     }
-    serde_json::from_slice(&bytes).ok()
+    let mut evidence: FaultEvidence = serde_json::from_slice(&bytes).ok()?;
+    // #499：旧格式（#494 时代）没有独立恢复探针字段——故障时的出口层
+    // 样本可能已被恢复探针覆盖，标注证据受限供界面提示。缺 generation
+    // 的更早格式无法反序列化，保持既有的拒绝行为。
+    let raw: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    if raw.get("recovery").is_none() {
+        evidence.legacy = true;
+    }
+    Some(evidence)
 }
 
 #[cfg(target_os = "macos")]
 pub fn load(state: &AppState) -> Option<FaultEvidence> {
-    let evidence = read_record(&state.data_dir.join("sysproxy-fault.json"))?;
-    if evidence.resolved_at_ms.is_none() {
-        let current = snapshot(state, Instant::now() + Duration::from_secs(1))?;
-        if !active(&current) || evidence.generation != current {
-            return None;
-        }
-    }
-    Some(evidence)
+    // #499：记录（含换代未确认恢复的历史）始终可回查；实时判定与去重
+    // 由 tick/decide 的代比较负责，界面按 recovery/superseded 推导状态。
+    read_record(&state.data_dir.join("sysproxy-fault.json"))
 }
 
 // 第一版只在 macOS 采集。其他平台保留 IPC 合约，不读取或生成证据。
@@ -530,6 +572,9 @@ fn run_round(
         mode: "sysproxy".into(),
         started_at_ms,
         resolved_at_ms: proxy_https.reachable().then(now_ms),
+        recovery: None,
+        superseded: false,
+        legacy: false,
         profile_id: gen.profile_id.clone(),
         mixed_port: gen.mixed_port,
         generation: gen,
@@ -591,15 +636,19 @@ pub fn tick(handle: &tauri::AppHandle, ticks: u32) {
             .as_ref()
             .is_some_and(|e| e.resolved_at_ms.is_none() && e.generation != gen)
         {
-            publish(&handle, &state, &gen, None);
-            existing = None;
+            // #499：换代 = 上下文已变化，恢复未确认——保留可回查，
+            // 退出实时判定与去重（不再删除）。
+            mark_superseded(existing.as_mut().unwrap());
+            let superseded = existing.as_ref().unwrap().clone();
+            publish(&handle, &state, &gen, Some(&superseded));
         }
         if !active(&gen) {
-            if existing
-                .as_ref()
-                .is_some_and(|e| e.resolved_at_ms.is_none())
-            {
-                publish(&handle, &state, &gen, None);
+            if let Some(evidence) = existing.as_mut() {
+                if evidence.resolved_at_ms.is_none() && !evidence.superseded {
+                    mark_superseded(evidence);
+                    let superseded = evidence.clone();
+                    publish(&handle, &state, &gen, Some(&superseded));
+                }
             }
             return;
         }
@@ -609,8 +658,7 @@ pub fn tick(handle: &tauri::AppHandle, ticks: u32) {
             Action::Nothing => {}
             Action::Resolve => {
                 if let Some(mut evidence) = existing {
-                    evidence.resolved_at_ms = Some(now_ms());
-                    evidence.proxy_https = probe;
+                    apply_resolution(&mut evidence, probe, now_ms());
                     publish(&handle, &state, &gen, Some(&evidence));
                 }
             }
@@ -626,6 +674,20 @@ pub fn tick(handle: &tauri::AppHandle, ticks: u32) {
 mod tests {
     use super::*;
     use std::net::TcpListener;
+
+    /// 顶层剥离指定键（模拟 #494 时代文件缺新字段）。
+    fn json_strip_keys(value: &serde_json::Value, keys: &[&str]) -> serde_json::Value {
+        match value {
+            serde_json::Value::Object(map) => {
+                let mut out = map.clone();
+                for key in keys {
+                    out.remove(*key);
+                }
+                serde_json::Value::Object(out)
+            }
+            other => other.clone(),
+        }
+    }
 
     fn outcome(class: &str, http_status: Option<u16>) -> ProbeOutcome {
         ProbeOutcome {
@@ -663,6 +725,9 @@ mod tests {
             mode: "sysproxy".into(),
             started_at_ms: 1,
             resolved_at_ms: None,
+            recovery: None,
+            superseded: false,
+            legacy: false,
             generation: gen(),
             profile_id: Some("A".into()),
             mixed_port: 7898,
@@ -877,5 +942,76 @@ mod tests {
         assert!(request_outcome(agent.get(&url), 200).is_ok());
         assert!(!probe_one(None, &url, Instant::now() + Duration::from_secs(1)).is_ok());
         worker.join().unwrap();
+    }
+
+    // ===== #499：故障样本与恢复探针分离，换代历史可回查 =====
+
+    /// 恢复确认只写独立恢复探针与时间；故障时各层样本保持原样。
+    #[test]
+    fn resolution_preserves_fault_time_samples() {
+        let mut evidence = evidence();
+        let fault_https = evidence.proxy_https.clone();
+        assert_eq!(fault_https, failed());
+        apply_resolution(&mut evidence, healthy(), 42);
+        // 故障时的主目标+复核结果仍然可追溯（issue 验收第 1 条）。
+        assert_eq!(evidence.proxy_https, fault_https);
+        assert_eq!(evidence.proxy_https.primary.class, "timeout");
+        let recovery = evidence.recovery.expect("recovery probe recorded");
+        assert_eq!(recovery.at_ms, 42);
+        assert_eq!(recovery.proxy_https, healthy());
+        assert_eq!(evidence.resolved_at_ms, Some(42));
+    }
+
+    /// 上下文变化标记只作用于未确认恢复的记录，且不改动任何样本。
+    #[test]
+    fn superseded_marks_unresolved_records_only() {
+        let mut unresolved = evidence();
+        mark_superseded(&mut unresolved);
+        assert!(unresolved.superseded);
+        assert_eq!(unresolved.proxy_https, failed());
+
+        let mut resolved = evidence();
+        apply_resolution(&mut resolved, healthy(), 42);
+        mark_superseded(&mut resolved);
+        assert!(!resolved.superseded, "已验证恢复的记录不受换代影响");
+    }
+
+    /// 旧格式文件（无独立恢复探针字段）标记 legacy 供界面提示证据受限。
+    #[test]
+    fn pre_499_files_are_flagged_as_limited_evidence() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("fault.json");
+        let mut old = evidence();
+        old.recovery = None;
+        save(&path, &old).unwrap();
+        // 手工去掉新字段（模拟 #494 时代文件）。
+        let raw: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let stripped = json_strip_keys(&raw, &["recovery", "superseded", "legacy"]);
+        std::fs::write(&path, serde_json::to_vec(&stripped).unwrap()).unwrap();
+        let record = read_record(&path).unwrap();
+        assert!(record.legacy, "旧格式必须标注证据受限");
+        // 新格式文件不标注。
+        let mut current = evidence();
+        current.recovery = Some(RecoveryProbe {
+            at_ms: 9,
+            proxy_https: healthy(),
+        });
+        save(&path, &current).unwrap();
+        assert!(!read_record(&path).unwrap().legacy);
+    }
+
+    /// 换代未确认的记录可被读回（load 不再按代过滤），迟到结果无法把它
+    /// 标为恢复（decide 的代比较不变）。
+    #[test]
+    fn superseded_records_stay_queryable_and_refuse_late_resolution() {
+        let mut old = evidence();
+        mark_superseded(&mut old);
+        let new = Generation {
+            session: "new-session".into(),
+            ..gen()
+        };
+        assert_eq!(decide(Some(&old), &new, &failed()), Action::Capture);
+        assert_eq!(decide(Some(&old), &new, &healthy()), Action::Nothing);
     }
 }

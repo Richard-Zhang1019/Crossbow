@@ -65,10 +65,18 @@ export interface FaultEvidenceLayer {
   review: FaultEvidenceProbe | null;
 }
 
+export interface FaultEvidenceRecovery {
+  atMs: number;
+  proxyHttps: FaultEvidenceLayer;
+}
+
 export interface FaultEvidence {
   mode: string;
   startedAtMs: number;
   resolvedAtMs: number | null;
+  recovery: FaultEvidenceRecovery | null;
+  superseded: boolean;
+  legacy: boolean;
   profileId: string | null;
   mixedPort: number;
   sysproxyObserved: string[];

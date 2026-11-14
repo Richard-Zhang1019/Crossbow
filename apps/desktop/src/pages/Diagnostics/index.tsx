@@ -209,8 +209,8 @@ export default function DiagnosticsPage({
       {fault && <section className="cb-card cb-fault-evidence" aria-label={t("fault.title")}>
         <div className="cb-fault-evidence-head">
           <h2>{t("fault.title")}</h2>
-          <span className={fault.resolvedAtMs ? "cb-fault-state" : "cb-fault-state ongoing"} role="status">
-            {t(fault.resolvedAtMs ? "fault.resolved" : "fault.ongoing")}
+          <span className={fault.recovery ? "cb-fault-state" : "cb-fault-state ongoing"} role="status">
+            {t(fault.recovery ? "fault.resolved" : fault.superseded ? "fault.superseded" : "fault.ongoing")}
           </span>
         </div>
         <p className="cb-fault-time">
@@ -224,6 +224,12 @@ export default function DiagnosticsPage({
           <div><dt>{t("fault.directGlobal")}</dt><dd>{layerText(fault.directGlobal)}</dd></div>
           <div><dt>{t("fault.proxyHttps")}</dt><dd>{layerText(fault.proxyHttps)}</dd></div>
         </dl>
+        <p className="cb-fault-time">
+          {fault.recovery
+            ? `${t("fault.recoveryProbe")}：${layerText(fault.recovery.proxyHttps)} · ${new Date(fault.recovery.atMs).toLocaleString(currentLang() === "en" ? "en-US" : "zh-CN")}`
+            : t("fault.noRecoveryProbe")}
+        </p>
+        {fault.legacy && <p className="cb-fault-time">{t("fault.legacyNote")}</p>}
         <p className="cb-fault-time">{t("fault.pathUnverified")}</p>
         {fault.sysproxyObserved.length > 0 && (
           <p className="cb-fault-observed cb-selectable">
