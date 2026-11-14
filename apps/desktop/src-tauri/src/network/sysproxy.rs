@@ -646,6 +646,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
 
     /// 已持有代理操作锁的内部实现。
     fn enable_locked(&self, port: u16, require_off: bool) -> Result<(), String> {
+        crate::diagnostics::fault_evidence::invalidate();
         // A previous attempt may have changed some services before its
         // rollback failed. Recover that snapshot before taking a new one;
         // otherwise the original settings would be overwritten permanently.
@@ -710,6 +711,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
 
     /// 已持有代理操作锁的内部实现。
     fn enable_during_tun_locked(&self, port: u16) -> Result<(), String> {
+        crate::diagnostics::fault_evidence::invalidate();
         let tun_journal = self.tun_journal_path();
         let saved = match std::fs::read(&tun_journal) {
             Ok(saved) => saved,
@@ -784,6 +786,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
 
     /// 已持有代理操作锁的内部实现。
     fn disable_during_tun_locked(&self) -> Result<(), String> {
+        crate::diagnostics::fault_evidence::invalidate();
         if self.state.lock().unwrap().is_none() {
             return Ok(());
         }
@@ -925,6 +928,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
 
     /// 已持有代理操作锁的内部实现。
     fn disable_locked(&self) -> Result<(), String> {
+        crate::diagnostics::fault_evidence::invalidate();
         let journal = self.read_journal();
         if self.journal_path.exists() && journal.is_none() {
             return Err("系统代理恢复日志无法读取，未覆盖现有代理设置".into());
@@ -1054,6 +1058,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
     /// 已持有代理操作锁的内部实现。
     #[cfg_attr(target_os = "linux", allow(dead_code))]
     fn suspend_for_tun_locked(&self) -> Result<SuspendedSysProxy, String> {
+        crate::diagnostics::fault_evidence::invalidate();
         let tun_journal = self.tun_journal_path();
         match std::fs::read(&tun_journal) {
             Ok(saved) => {
@@ -1118,6 +1123,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         mut suspended: SuspendedSysProxy,
         core_down: bool,
     ) -> Result<(), String> {
+        crate::diagnostics::fault_evidence::invalidate();
         // #458：逐服务归属核对——被其他客户端接管的服务跳过还原（其当前
         // 配置即最新事实，快照已过期）；挂起未清干净的 Crossbow 残留端点
         // 仍按快照还原，避免退出后指向失效端口。读取当前设置失败视为整体
@@ -1356,6 +1362,11 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             }
         }
         out
+    }
+
+    /// 正在交接系统代理时，不发布跨越交接边界的诊断结果。
+    pub(crate) fn observation_ready(&self) -> bool {
+        self.operation.try_lock().is_ok()
     }
 
     pub fn status(&self) -> SysProxyStatus {

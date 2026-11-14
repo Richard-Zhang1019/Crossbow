@@ -5,18 +5,14 @@ import { Button } from "@/components/Button";
 import { notify, notificationText } from "@/notifications/service";
 import { useOperationNotice } from "@/notifications/NotificationProvider";
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
-import { ipc, type CheckResult, type FaultEvidence, type FaultEvidenceProbe } from "@/services/ipc";
+import { ipc, type CheckResult, type FaultEvidence, type FaultEvidenceLayer } from "@/services/ipc";
 import { currentLang, useT } from "@/i18n/i18n";
 import { PageHead } from "@/pages/Home";
 import { ProgressRing } from "@/components/ProgressRing";
 import { DIAG_STEPS, navigateTo } from "@/lib/workflow";
-import { failedChecks, guideUrl, isStale, remainingAge, shareText, type DiagnosisSnapshot } from "./report";
+import { failedChecks, faultEvidenceText, faultProbeText, guideUrl, isStale, remainingAge, shareText, type DiagnosisSnapshot } from "./report";
 
 let previousReport: DiagnosisSnapshot | null = null;
-
-/** http_status 类别附带状态码；其余类别无码可示。 */
-const fmtStatus = (probe: FaultEvidenceProbe) =>
-  probe.class === "http_status" && probe.httpStatus != null ? ` ${probe.httpStatus}` : "";
 
 export default function DiagnosticsPage({
   revision, listeners, appVersion,
@@ -53,18 +49,37 @@ export default function DiagnosticsPage({
     };
   }, []);
 
-  // #488：最近一次系统代理故障取证（观察模式，可能为空）；焦点时刷新。
+  // 更新事件使打开的诊断页同步恢复/清理结果；序号阻止迟到读取覆盖新状态。
   useEffect(() => {
     let cancelled = false;
+    let request = 0;
+    let offs: (() => void)[] = [];
     const load = () => {
+      const id = ++request;
       ipc.sysproxyFaultEvidence()
-        .then(evidence => { if (!cancelled) setFault(evidence); })
-        .catch(() => {});
+        .then(evidence => {
+          if (!cancelled && id === request) {
+            setFault(evidence);
+            void notify.resolve("diagnostics-fault");
+          }
+        })
+        .catch(error => {
+          if (!cancelled && id === request) {
+            setFault(null);
+            notify.error(error, "diagnostics-fault");
+          }
+        });
     };
+    for (const register of [ipc.onFaultEvidenceUpdated, ipc.onSysproxyStatus, ipc.onCoreStatus]) {
+      register(load).then(off => { if (cancelled) off(); else offs.push(off); })
+        .catch(error => { if (!cancelled) notify.error(error, "diagnostics-fault"); });
+    }
     load();
     window.addEventListener("focus", load);
     return () => {
       cancelled = true;
+      ++request;
+      offs.forEach(off => off());
       window.removeEventListener("focus", load);
     };
   }, []);
@@ -165,7 +180,13 @@ export default function DiagnosticsPage({
   const first = failed[0];
   const applicable = results?.some(row => !row.skipped);
   const canRepair = !running && !runFailed && !stale;
-  const summaryText = summaryOpen && report ? shareText(report, appVersion, stale || runFailed) : null;
+  const summaryText = summaryOpen ? [
+    report ? shareText(report, appVersion, stale || runFailed) : null,
+    fault ? faultEvidenceText(fault) : null,
+  ].filter(Boolean).join("\n\n") : null;
+  const layerText = (layer: FaultEvidenceLayer) =>
+    `${t("fault.primary")} ${faultProbeText(layer.primary, t)}` +
+    (layer.review ? ` · ${t("fault.review")} ${faultProbeText(layer.review, t)}` : "");
   const resultTitle = running
     ? t("diag.progress", { done: progress.length, total: DIAG_STEPS.length })
     : runFailed ? t("diag.incomplete")
@@ -176,7 +197,7 @@ export default function DiagnosticsPage({
   return (
     <div className="cb-diagnostics-page">
       <PageHead title={t("diag.title")} meta={t("diag.hint")}>
-        {report && !running && (
+        {(report || fault) && !running && (
           <Button onClick={() => setSummaryOpen(true)}>
             {t("diag.summaryPreview")}
           </Button>
@@ -198,11 +219,12 @@ export default function DiagnosticsPage({
         </p>
         <dl className="cb-fault-layers">
           <div><dt>{t("fault.mixedPort")}</dt><dd>{fault.mixedPortOk ? t("fault.class.ok") : t("fault.class.connect")}</dd></div>
-          <div><dt>{t("fault.controller")}</dt><dd>{t(`fault.class.${fault.controller.class}`)}{fmtStatus(fault.controller)}</dd></div>
-          <div><dt>{t("fault.directCn")}</dt><dd>{t(`fault.class.${fault.directCn.class}`)}{fmtStatus(fault.directCn)}</dd></div>
-          <div><dt>{t("fault.directGlobal")}</dt><dd>{t(`fault.class.${fault.directGlobal.class}`)}{fmtStatus(fault.directGlobal)}</dd></div>
-          <div><dt>{t("fault.proxyHttps")}</dt><dd>{t(`fault.class.${fault.proxyHttps.class}`)}{fmtStatus(fault.proxyHttps)}</dd></div>
+          <div><dt>{t("fault.controller")}</dt><dd>{faultProbeText(fault.controller, t)}</dd></div>
+          <div><dt>{t("fault.directCn")}</dt><dd>{layerText(fault.directCn)}</dd></div>
+          <div><dt>{t("fault.directGlobal")}</dt><dd>{layerText(fault.directGlobal)}</dd></div>
+          <div><dt>{t("fault.proxyHttps")}</dt><dd>{layerText(fault.proxyHttps)}</dd></div>
         </dl>
+        <p className="cb-fault-time">{t("fault.pathUnverified")}</p>
         {fault.sysproxyObserved.length > 0 && (
           <p className="cb-fault-observed cb-selectable">
             {t("fault.observed")}：{fault.sysproxyObserved.join("；")}
