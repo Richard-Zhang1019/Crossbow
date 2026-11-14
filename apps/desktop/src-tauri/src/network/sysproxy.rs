@@ -1365,6 +1365,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
     }
 
     /// 正在交接系统代理时，不发布跨越交接边界的诊断结果。
+    #[cfg(target_os = "macos")]
     pub(crate) fn observation_ready(&self) -> bool {
         self.operation.try_lock().is_ok()
     }

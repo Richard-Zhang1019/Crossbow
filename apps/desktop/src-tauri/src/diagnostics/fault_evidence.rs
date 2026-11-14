@@ -1,45 +1,70 @@
 //! macOS 系统代理故障现场：低频 HTTPS 金丝雀、单轮分层证据、观察模式（#488）。
 //! 不切节点、不重启内核、不修改系统代理。主探针及独立复核分别留存。
 
+#[cfg(any(target_os = "macos", test))]
 use std::io::{Read, Write};
+#[cfg(target_os = "macos")]
 use std::net::TcpStream;
+#[cfg(any(target_os = "macos", test))]
 use std::path::Path;
+#[cfg(any(target_os = "macos", test))]
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(target_os = "macos")]
 use std::sync::{LazyLock, Mutex};
+#[cfg(any(target_os = "macos", test))]
 use std::time::{Duration, Instant};
 
+#[cfg(any(target_os = "macos", test))]
 use serde::{Deserialize, Serialize};
+#[cfg(target_os = "macos")]
 use sha2::{Digest, Sha256};
+#[cfg(target_os = "macos")]
 use tauri::{Emitter, Manager};
 
 use crate::AppState;
 
+#[cfg(target_os = "macos")]
 pub const CANARY_INTERVAL_TICKS: u32 = 24;
+#[cfg(any(target_os = "macos", test))]
 const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
+#[cfg(target_os = "macos")]
 const ROUND_TIMEOUT: Duration = Duration::from_secs(30);
+#[cfg(any(target_os = "macos", test))]
 const MAX_RECORD_BYTES: u64 = 16 * 1024;
+#[cfg(target_os = "macos")]
 const DIRECT_CN: [&str; 2] = [
     "http://connect.rom.miui.com/generate_204",
     "http://wifi.vivo.com.cn/generate_204",
 ];
+#[cfg(any(target_os = "macos", test))]
 const DIRECT_GLOBAL: [&str; 2] = [
     "https://www.gstatic.com/generate_204",
     "https://cp.cloudflare.com/generate_204",
 ];
+#[cfg(any(target_os = "macos", test))]
 const PROXY_TARGETS: [&str; 2] = DIRECT_GLOBAL;
 
+#[cfg(target_os = "macos")]
 static ROUND_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "macos")]
 static OBSERVATION_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 // 发布与配置/接管入口共用此锁：关开或改回原值也会使旧结果失效（防 ABA）。
+#[cfg(target_os = "macos")]
 static REVISION: Mutex<u64> = Mutex::new(0);
+#[cfg(target_os = "macos")]
 static SESSION: LazyLock<String> = LazyLock::new(|| uuid::Uuid::new_v4().to_string());
 
 pub(crate) fn invalidate() {
-    let mut revision = REVISION.lock().unwrap_or_else(|e| e.into_inner());
-    *revision = revision.wrapping_add(1);
+    #[cfg(target_os = "macos")]
+    {
+        let mut revision = REVISION.lock().unwrap_or_else(|e| e.into_inner());
+        *revision = revision.wrapping_add(1);
+    }
 }
 
+#[cfg(any(target_os = "macos", test))]
 struct Flight<'a>(&'a AtomicBool);
+#[cfg(any(target_os = "macos", test))]
 impl<'a> Flight<'a> {
     fn enter(flag: &'a AtomicBool) -> Option<Self> {
         flag.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -47,18 +72,21 @@ impl<'a> Flight<'a> {
             .map(|_| Self(flag))
     }
 }
+#[cfg(any(target_os = "macos", test))]
 impl Drop for Flight<'_> {
     fn drop(&mut self) {
         self.0.store(false, Ordering::SeqCst);
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProbeOutcome {
     pub class: String,
     pub http_status: Option<u16>,
 }
+#[cfg(any(target_os = "macos", test))]
 impl ProbeOutcome {
     fn unknown() -> Self {
         Self {
@@ -71,18 +99,21 @@ impl ProbeOutcome {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProbeEvidence {
     pub primary: ProbeOutcome,
     pub review: Option<ProbeOutcome>,
 }
+#[cfg(any(target_os = "macos", test))]
 impl ProbeEvidence {
     fn reachable(&self) -> bool {
         self.primary.is_ok() || self.review.as_ref().is_some_and(ProbeOutcome::is_ok)
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Generation {
@@ -97,6 +128,7 @@ struct Generation {
     network_context: Option<String>,
 }
 
+#[cfg(any(target_os = "macos", test))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FaultEvidence {
@@ -116,6 +148,7 @@ pub struct FaultEvidence {
     pub proxy_https: ProbeEvidence,
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn classify_status(status: u16, expected_status: u16) -> &'static str {
     if status == expected_status {
         "ok"
@@ -124,6 +157,7 @@ fn classify_status(status: u16, expected_status: u16) -> &'static str {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
 pub fn classify_transport(text: &str) -> &'static str {
     let low = text.to_lowercase();
     if low.contains("timed out") || low.contains("deadline") || low.contains("timeout") {
@@ -139,12 +173,14 @@ pub fn classify_transport(text: &str) -> &'static str {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn budget(deadline: Instant) -> Option<Duration> {
     deadline
         .checked_duration_since(Instant::now())
         .filter(|d| !d.is_zero())
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn probe_one(proxy: Option<u16>, url: &str, deadline: Instant) -> ProbeOutcome {
     let Some(timeout) = budget(deadline) else {
         return ProbeOutcome::unknown();
@@ -162,6 +198,7 @@ fn probe_one(proxy: Option<u16>, url: &str, deadline: Instant) -> ProbeOutcome {
     request_outcome(builder.build().head(url), 204)
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn request_outcome(request: ureq::Request, expected_status: u16) -> ProbeOutcome {
     match request.call() {
         Ok(resp) => ProbeOutcome {
@@ -179,12 +216,14 @@ fn request_outcome(request: ureq::Request, expected_status: u16) -> ProbeOutcome
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn probe_with_review(proxy: Option<u16>, urls: &[&str; 2], deadline: Instant) -> ProbeEvidence {
     let primary = probe_one(proxy, urls[0], deadline);
     let review = (!primary.is_ok()).then(|| probe_one(proxy, urls[1], deadline));
     ProbeEvidence { primary, review }
 }
 
+#[cfg(target_os = "macos")]
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -223,11 +262,8 @@ fn network_context(deadline: Instant) -> Option<String> {
     reader.take(MAX_RECORD_BYTES).read_to_end(&mut bytes).ok()?;
     Some(format!("{:x}", Sha256::digest(bytes)))
 }
-#[cfg(not(target_os = "macos"))]
-fn network_context(_: Instant) -> Option<String> {
-    None
-}
 
+#[cfg(target_os = "macos")]
 fn generation(
     state: &AppState,
     revision: u64,
@@ -264,16 +300,19 @@ fn generation(
     })
 }
 
+#[cfg(target_os = "macos")]
 fn snapshot(state: &AppState, deadline: Instant) -> Option<Generation> {
     let network = network_context(deadline);
     let revision = *REVISION.lock().unwrap_or_else(|e| e.into_inner());
     generation(state, revision, network)
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn active(gen: &Generation) -> bool {
     !gen.tun_enabled && gen.sysproxy_enabled
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn read_record(path: &Path) -> Option<FaultEvidence> {
     let mut bytes = Vec::new();
     std::fs::File::open(path)
@@ -287,6 +326,7 @@ fn read_record(path: &Path) -> Option<FaultEvidence> {
     serde_json::from_slice(&bytes).ok()
 }
 
+#[cfg(target_os = "macos")]
 pub fn load(state: &AppState) -> Option<FaultEvidence> {
     let evidence = read_record(&state.data_dir.join("sysproxy-fault.json"))?;
     if evidence.resolved_at_ms.is_none() {
@@ -298,6 +338,13 @@ pub fn load(state: &AppState) -> Option<FaultEvidence> {
     Some(evidence)
 }
 
+// 第一版只在 macOS 采集。其他平台保留 IPC 合约，不读取或生成证据。
+#[cfg(not(target_os = "macos"))]
+pub fn load(_: &AppState) -> Option<serde_json::Value> {
+    None
+}
+
+#[cfg(any(target_os = "macos", test))]
 fn save(path: &Path, evidence: &FaultEvidence) -> Result<(), String> {
     let mut bytes = serde_json::to_vec(evidence).map_err(|e| e.to_string())?;
     bytes.push(b'\n');
@@ -314,6 +361,7 @@ fn save(path: &Path, evidence: &FaultEvidence) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
 fn publish(
     handle: &tauri::AppHandle,
     state: &AppState,
@@ -349,6 +397,7 @@ fn publish(
     }
 }
 
+#[cfg(target_os = "macos")]
 fn observe_endpoints(handle: &tauri::AppHandle, deadline: Instant) -> Vec<String> {
     let Some(flight) = Flight::enter(&OBSERVATION_IN_FLIGHT) else {
         return vec![];
@@ -389,6 +438,7 @@ fn observe_endpoints(handle: &tauri::AppHandle, deadline: Instant) -> Vec<String
         .unwrap_or_default()
 }
 
+#[cfg(target_os = "macos")]
 fn run_round(
     handle: &tauri::AppHandle,
     state: &AppState,
@@ -440,12 +490,14 @@ fn run_round(
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
 #[derive(Debug, PartialEq, Eq)]
 enum Action {
     Nothing,
     Resolve,
     Capture,
 }
+#[cfg(any(target_os = "macos", test))]
 fn decide(existing: Option<&FaultEvidence>, gen: &Generation, probe: &ProbeEvidence) -> Action {
     let same = existing.filter(|e| &e.generation == gen);
     if probe.reachable() {
@@ -463,6 +515,7 @@ fn decide(existing: Option<&FaultEvidence>, gen: &Generation, probe: &ProbeEvide
     }
 }
 
+#[cfg(target_os = "macos")]
 pub fn tick(handle: &tauri::AppHandle, ticks: u32) {
     if !ticks.is_multiple_of(CANARY_INTERVAL_TICKS) {
         return;
