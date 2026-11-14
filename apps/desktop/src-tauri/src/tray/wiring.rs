@@ -1102,7 +1102,7 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
         let queue = std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::from(
             targets,
         )));
-        let (tx, rx) = std::sync::mpsc::channel::<(String, Result<u64, String>)>();
+        let (tx, rx) = std::sync::mpsc::channel::<(String, Result<(u64, bool), String>)>();
         for _ in 0..total.min(SPEED_TEST_CONCURRENCY) {
             let queue = queue.clone();
             let tx = tx.clone();
@@ -1113,13 +1113,31 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
                     None => return,
                 };
                 while let Some(node) = queue.lock().ok().and_then(|mut q| q.pop_front()) {
-                    let result = match &client {
-                        Ok(c) => c.measure_node_delay(&node).map_err(|error| match error {
-                            crate::engine::api::NodeDelayError::Timeout(_) => "timeout".to_string(),
-                            crate::engine::api::NodeDelayError::Failed(_) => "failed".to_string(),
+                    // #491：新一轮测速/取消后停止发起新请求（不再消耗队列）。
+                    let superseded = h_worker
+                        .try_state::<AppState>()
+                        .map(|s| {
+                            s.node_menu
+                                .lock()
+                                .map(|tray| tray.generation() != generation)
+                                .unwrap_or(true)
+                        })
+                        .unwrap_or(true);
+                    if superseded {
+                        break;
+                    }
+                    let outcome = match &client {
+                        Ok(c) => c.measure_node_delay_with_review(&node).map_err(|error| {
+                            match error {
+                                crate::engine::api::NodeDelayError::Timeout(_) => "timeout",
+                                crate::engine::api::NodeDelayError::Controller(_) => "controller",
+                                crate::engine::api::NodeDelayError::Failed(_) => "failed",
+                            }
+                            .to_string()
                         }),
-                        Err(_) => Err("failed".to_string()),
+                        Err(_) => Err("controller".to_string()),
                     };
+                    let result = outcome.map(|sample| (sample.delay_ms, sample.reviewed));
                     if tx.send((node, result)).is_err() {
                         break;
                     }
@@ -1151,7 +1169,11 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
                 if result.is_ok() {
                     successes += 1;
                 }
-                tray.apply_single_result(&node, result);
+                match result {
+                    // #491：复核成功的延迟单独标记，不与主目标混排。
+                    Ok((ms, true)) => tray.apply_reviewed_result(&node, ms),
+                    outcome => tray.apply_single_result(&node, outcome.map(|(ms, _)| ms)),
+                }
             }
             let data = tray_menu_data(&state);
             crate::tray::speed::update_node_menu(&h, &data.title, &data.rows, data.testing);

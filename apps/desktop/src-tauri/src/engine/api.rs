@@ -11,6 +11,9 @@ use serde::Serialize;
 pub const MODES: [&str; 3] = ["direct", "rule", "global"];
 /// 测速目标 URL（204 无正文，机场/内核通用基准）。
 const BENCHMARK_URL: &str = "http://www.gstatic.com/generate_204";
+/// #491：主目标超时后的复核目标——与主目标不同运营方（Google vs Cloudflare），
+/// 用于区分「目的站不通」与「节点故障」。复核延迟单独标记，不与主目标混排。
+const BENCHMARK_URL_REVIEW: &str = "http://cp.cloudflare.com/generate_204";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct NodeView {
@@ -37,19 +40,33 @@ pub struct Controller {
     pub secret: String,
 }
 
+/// 一次节点延迟采样：目标主/复核由 `reviewed` 标记。
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct DelaySample {
+    pub delay_ms: u64,
+    pub reviewed: bool,
+}
+
 #[derive(Debug)]
 pub(crate) enum NodeDelayError {
+    /// 内核对节点测速返回超时（两轮目标都超时 = 节点故障）。
     Timeout(String),
+    /// 内核返回的其他 HTTP 错误。
     Failed(String),
+    /// 控制器传输失败（连不上内核 API）——不是节点故障，徽标需与
+    /// 节点超时区分（#491）。
+    Controller(String),
 }
 
 impl NodeDelayError {
     fn from_request(node: &str, error: ureq::Error) -> Self {
         let details = format!("node delay {node}: {error}");
-        if matches!(error, ureq::Error::Status(504, _)) {
-            Self::Timeout(details)
-        } else {
-            Self::Failed(details)
+        match error {
+            // 内核超时 = 节点对该目标不可达（节点故障类）。
+            ureq::Error::Status(504, _) => Self::Timeout(details),
+            // 连不上控制器 API：控制器/本地链路故障，不是节点故障。
+            ureq::Error::Transport(_) => Self::Controller(details),
+            _ => Self::Failed(details),
         }
     }
 }
@@ -57,7 +74,9 @@ impl NodeDelayError {
 impl std::fmt::Display for NodeDelayError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Timeout(details) | Self::Failed(details) => f.write_str(details),
+            Self::Timeout(details) | Self::Failed(details) | Self::Controller(details) => {
+                f.write_str(details)
+            }
         }
     }
 }
@@ -538,10 +557,13 @@ impl Controller {
     /// A gateway timeout from the controller is a completed node test.
     /// A transport failure talking to the controller is a different failure.
     pub(crate) fn measure_node_delay(&self, node: &str) -> Result<u64, NodeDelayError> {
+        self.measure_via(node, BENCHMARK_URL)
+    }
+
+    fn measure_via(&self, node: &str, url: &str) -> Result<u64, NodeDelayError> {
         let path = format!(
-            "{}?url={}&timeout=5000",
-            build_path(&["/proxies", node, "delay"]),
-            BENCHMARK_URL
+            "{}?url={url}&timeout=5000",
+            build_path(&["/proxies", node, "delay"])
         );
         let agent = Self::slow_agent();
         let resp = Self::req_on(&agent, self.port, &self.secret, "GET", &path)
@@ -562,6 +584,30 @@ impl Controller {
             .and_then(|d| d.as_u64())
             .filter(|delay| *delay > 0)
             .ok_or_else(|| NodeDelayError::Failed(format!("node delay {node}: no delay field")))
+    }
+
+    /// #491：批量测速用。主目标（固定，保证批次内可比）超时时，用不同
+    /// 运营方的复核目标再测一次——复核成功 = 节点正常、目的站/链路问题，
+    /// 延迟以 `reviewed: true` 单独标记（不与主目标混排）；复核也失败 =
+    /// 节点故障。控制层错误不复核（与节点无关）。
+    pub(crate) fn measure_node_delay_with_review(
+        &self,
+        node: &str,
+    ) -> Result<DelaySample, NodeDelayError> {
+        match self.measure_via(node, BENCHMARK_URL) {
+            Ok(delay_ms) => Ok(DelaySample {
+                delay_ms,
+                reviewed: false,
+            }),
+            Err(NodeDelayError::Timeout(_)) => {
+                let delay_ms = self.measure_via(node, BENCHMARK_URL_REVIEW)?;
+                Ok(DelaySample {
+                    delay_ms,
+                    reviewed: true,
+                })
+            }
+            Err(other) => Err(other),
+        }
     }
 }
 
@@ -608,10 +654,66 @@ pub(crate) mod tests {
         ));
         assert_eq!(controller.test_node_delay(node).unwrap(), 42);
         server.join().unwrap();
+        // 控制器不可达 = Controller（不是节点故障，#491）。
         assert!(matches!(
             controller.measure_node_delay(node),
-            Err(NodeDelayError::Failed(_))
+            Err(NodeDelayError::Controller(_))
         ));
+    }
+
+    /// #491：主目标超时 → 不同运营方的复核目标再测一次；复核成功单独
+    /// 标记（不与主目标混排），复核也失败 = 节点故障。控制层错误不复核。
+    #[test]
+    fn timeout_review_uses_independent_target_and_marks_the_sample() {
+        let node = "Node 504";
+        let primary = format!(
+            "{}?url={BENCHMARK_URL}&timeout=5000",
+            build_path(&["/proxies", node, "delay"])
+        );
+        let review = format!(
+            "{}?url={BENCHMARK_URL_REVIEW}&timeout=5000",
+            build_path(&["/proxies", node, "delay"])
+        );
+        let (controller, server) = scripted_controller(vec![
+            ("GET", primary.clone(), 504, "{}".into()),
+            ("GET", review.clone(), 200, "{\"delay\":88}".into()),
+        ]);
+        let sample = controller.measure_node_delay_with_review(node).unwrap();
+        assert_eq!(sample.delay_ms, 88);
+        assert!(sample.reviewed);
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn review_failure_is_a_node_timeout_and_controller_errors_skip_review() {
+        let node = "Node both";
+        let primary = format!(
+            "{}?url={BENCHMARK_URL}&timeout=5000",
+            build_path(&["/proxies", node, "delay"])
+        );
+        let review = format!(
+            "{}?url={BENCHMARK_URL_REVIEW}&timeout=5000",
+            build_path(&["/proxies", node, "delay"])
+        );
+        // 两轮都超时 = 节点故障（Timeout），且请求顺序 = 主 → 复核。
+        let (controller, server) = scripted_controller(vec![
+            ("GET", primary.clone(), 504, "{}".into()),
+            ("GET", review.clone(), 504, "{}".into()),
+        ]);
+        assert!(matches!(
+            controller.measure_node_delay_with_review(node),
+            Err(NodeDelayError::Timeout(_))
+        ));
+        server.join().unwrap();
+
+        // 控制器传输失败（服务器已关）：直接 Controller，不发复核请求。
+        let (controller, dead_server) = scripted_controller(vec![]);
+        dead_server.join().unwrap();
+        assert!(matches!(
+            controller.measure_node_delay_with_review(node),
+            Err(NodeDelayError::Controller(_))
+        ));
+        let _ = controller;
     }
 
     /// A scripted controller checks the actual HTTP contract and request order.
