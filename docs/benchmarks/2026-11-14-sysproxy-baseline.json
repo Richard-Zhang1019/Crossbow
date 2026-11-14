@@ -1,0 +1,124 @@
+{
+ "mode": "sysproxy",
+ "core": "Mihomo Meta v1.19.32 darwin arm64 with go1.26.8 Wed Sep 30 17:00:14 UTC 2026",
+ "egress": "DIRECT",
+ "env": {
+  "os": "macOS-27.2-arm64-arm-64bit-Mach-O",
+  "arch": "arm64",
+  "recorded_at": "2026-11-14T17:06:18+0800"
+ },
+ "targets": {
+  "probe": [
+   "http://www.gstatic.com/generate_204",
+   "http://cp.cloudflare.com/generate_204"
+  ],
+  "dns": "www.gstatic.com",
+  "upstream": "127.0.0.1:61926"
+ },
+ "params": {
+  "latency_samples": 30,
+  "throughput_mb": 8
+ },
+ "cold_first_request_ms": {
+  "controller_ready_ms": 118.5,
+  "first_proxied_ok_ms": 122
+ },
+ "rounds": [
+  {
+   "latency_samples": 30,
+   "latency_ok": 30,
+   "latencies_ms": [
+    4,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "p50_ms": 0,
+   "p95_ms": 1,
+   "public_p50_ms": 116,
+   "public_ok": 10,
+   "public_samples": 10,
+   "throughput_mb_s": 1384.1,
+   "cpu_avg_percent": 1.4,
+   "cpu_peak_percent": 1.7,
+   "rss_peak_kb": 35632
+  },
+  {
+   "latency_samples": 30,
+   "latency_ok": 30,
+   "latencies_ms": [
+    29,
+    25,
+    2,
+    4,
+    21,
+    2,
+    1,
+    1,
+    1,
+    2,
+    1,
+    1,
+    1,
+    1,
+    4,
+    3,
+    2,
+    3,
+    1,
+    3,
+    4,
+    10,
+    1,
+    5,
+    3,
+    7,
+    3,
+    0,
+    0,
+    1
+   ],
+   "p50_ms": 2,
+   "p95_ms": 25,
+   "public_p50_ms": 135,
+   "public_ok": 10,
+   "public_samples": 10,
+   "throughput_mb_s": 1116.0,
+   "cpu_avg_percent": 0.4,
+   "cpu_peak_percent": 0.8,
+   "rss_peak_kb": 30160
+  }
+ ],
+ "dns_direct": {
+  "count": 10,
+  "p50_ms": 1,
+  "p95_ms": 26
+ },
+ "recovery_ms": 109
+}
