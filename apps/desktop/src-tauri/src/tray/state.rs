@@ -348,12 +348,7 @@ impl TrayState {
                             .as_ref()
                             .is_some_and(|name| self.pending.contains(name)));
                 // 延迟、失败和复核来源必须同属当前成员，不能借用组本身的标记。
-                let source = current_node
-                    .as_ref()
-                    .filter(|name| {
-                        self.delays.contains_key(*name) || self.failed.contains_key(*name)
-                    })
-                    .unwrap_or(n);
+                let source = current_node.as_ref().unwrap_or(n);
                 let fail_reason = self.failed.get(source).cloned();
                 let display_delay = fail_reason
                     .is_none()
@@ -640,6 +635,19 @@ mod tests {
         assert!(!row(&state, "Auto")
             .sample
             .is_some_and(|sample| sample.reviewed));
+        // 自动组已换到尚无样本的新成员时，不能借用组缓存的旧复核值。
+        state.apply_group_data(
+            Some("Auto".into()),
+            vec![("Auto".into(), Some(100))],
+            Some((
+                "Auto".into(),
+                Some("Unmeasured".into()),
+                vec![("Unmeasured".into(), None)],
+            )),
+        );
+        assert_eq!(row(&state, "Auto").badge, "—");
+        assert!(row(&state, "Auto").sample.is_none());
+        assert!(state.has_missing_results());
     }
 
     #[test]
