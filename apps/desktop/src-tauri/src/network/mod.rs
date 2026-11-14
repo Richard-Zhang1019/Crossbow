@@ -3,6 +3,7 @@
 pub mod coexist;
 #[cfg(target_os = "linux")]
 pub mod linux_service;
+pub mod network_watch;
 pub mod site_tests;
 pub mod sysproxy;
 #[cfg(target_os = "macos")]

@@ -57,7 +57,7 @@ pub struct ProbeOutcome {
 }
 
 impl ProbeOutcome {
-    fn is_ok(&self) -> bool {
+    pub(crate) fn is_ok(&self) -> bool {
         self.class == "ok"
     }
 }
@@ -214,6 +214,27 @@ fn record_path(state: &AppState) -> PathBuf {
     state.data_dir.join("sysproxy-fault.json")
 }
 
+/// 故障恢复确认：同代未恢复记录补记 resolved_at（恢复 = 首个成功的
+/// 经代理请求，#490 网络事件同样复用）。
+pub(crate) fn confirm_recovery(state: &AppState, evidence: &FaultEvidence) {
+    let gen = generation(state);
+    if evidence.profile_id == gen.profile_id && evidence.mixed_port == gen.mixed_port {
+        let mut resolved = evidence.clone();
+        resolved.resolved_at_ms = Some(now_ms());
+        let _ = save(state, &resolved);
+    }
+}
+
+/// 落盘一轮取证：仅在无未恢复记录时写入（开记录抑制，#488 语义）。
+pub(crate) fn record_round_if_needed(state: &AppState, evidence: FaultEvidence) -> bool {
+    if let Some(existing) = load(state) {
+        if existing.resolved_at_ms.is_none() {
+            return false;
+        }
+    }
+    save(state, &evidence).is_ok()
+}
+
 pub fn load(state: &AppState) -> Option<FaultEvidence> {
     let bytes = std::fs::read(record_path(state)).ok()?;
     // 有界防御：超过 16KB 的文件视为损坏证据，直接丢弃。
@@ -246,7 +267,7 @@ fn remove(state: &AppState, handle: &tauri::AppHandle) {
 
 /// 一轮分层取证。代（配置/内核/接管状态）在完成后复核：不匹配即丢弃，
 /// 迟到的结果永远无法覆盖新状态（issue 验收第 3 条）。
-fn run_round(state: &AppState) -> Option<FaultEvidence> {
+pub(crate) fn run_round(state: &AppState) -> Option<FaultEvidence> {
     let gen = generation(state);
     let mixed_port = gen.mixed_port;
     let sysproxy_observed: Vec<String> = state
@@ -349,13 +370,7 @@ pub fn tick(handle: &tauri::AppHandle, ticks: u32) {
         if canary {
             if let Some(evidence) = existing.filter(|e| e.resolved_at_ms.is_none()) {
                 // 故障恢复确认：补记 resolved_at（同代才有效）。
-                let gen = generation(&state);
-                if evidence.profile_id == gen.profile_id && evidence.mixed_port == gen.mixed_port {
-                    let mut resolved = evidence;
-                    resolved.resolved_at_ms = Some(now_ms());
-                    let _ = save(&state, &resolved);
-                    let _ = h.emit("sysproxy://fault-updated", ());
-                }
+                confirm_recovery(&state, &evidence);
             }
             return;
         }
