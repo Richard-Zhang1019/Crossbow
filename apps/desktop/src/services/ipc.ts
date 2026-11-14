@@ -55,6 +55,25 @@ export interface CoreStatus {
   message?: string;
 }
 
+export interface FaultEvidenceProbe {
+  class: string;
+  httpStatus: number | null;
+}
+
+export interface FaultEvidence {
+  mode: string;
+  startedAtMs: number;
+  resolvedAtMs: number | null;
+  profileId: string | null;
+  mixedPort: number;
+  sysproxyObserved: string[];
+  mixedPortOk: boolean;
+  controller: FaultEvidenceProbe;
+  directCn: FaultEvidenceProbe;
+  directGlobal: FaultEvidenceProbe;
+  proxyHttps: FaultEvidenceProbe;
+}
+
 export interface SysProxyStatus {
   enabled: boolean;
   port: number;
@@ -313,6 +332,7 @@ export const ipc = {
   testSite: (id: string) => invoke<SiteResult>("test_site", { id }),
   coreStatus: () => invoke<CoreStatus>("core_status"),
   sysproxyStatus: () => invoke<SysProxyStatus>("sysproxy_status"),
+  sysproxyFaultEvidence: () => invoke<FaultEvidence | null>("sysproxy_fault_evidence"),
   sysproxyToggle: () => invoke<void>("sysproxy_toggle"),
   coreMode: () => invoke<CoreMode>("core_mode"),
   setCoreMode: (mode: CoreMode) => invoke<void>("set_core_mode", { mode }),

@@ -5,7 +5,7 @@ import { Button } from "@/components/Button";
 import { notify, notificationText } from "@/notifications/service";
 import { useOperationNotice } from "@/notifications/NotificationProvider";
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
-import { ipc, type CheckResult } from "@/services/ipc";
+import { ipc, type CheckResult, type FaultEvidence, type FaultEvidenceProbe } from "@/services/ipc";
 import { currentLang, useT } from "@/i18n/i18n";
 import { PageHead } from "@/pages/Home";
 import { ProgressRing } from "@/components/ProgressRing";
@@ -13,6 +13,10 @@ import { DIAG_STEPS, navigateTo } from "@/lib/workflow";
 import { failedChecks, guideUrl, isStale, remainingAge, shareText, type DiagnosisSnapshot } from "./report";
 
 let previousReport: DiagnosisSnapshot | null = null;
+
+/** http_status 类别附带状态码；其余类别无码可示。 */
+const fmtStatus = (probe: FaultEvidenceProbe) =>
+  probe.class === "http_status" && probe.httpStatus != null ? ` ${probe.httpStatus}` : "";
 
 export default function DiagnosticsPage({
   revision, listeners, appVersion,
@@ -30,6 +34,7 @@ export default function DiagnosticsPage({
   const [checking, setChecking] = useState<string | null>(null);
   const [fixing, setFixing] = useState<CheckResult | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [fault, setFault] = useState<FaultEvidence | null>(null);
   const { copied, copy, clear } = useClipboardFeedback<string>("diagnostics-summary-copy");
   const restartRunning = useOperationNotice("core-restart")?.kind === "progress";
   const repairRunning = !!fixing || restartRunning;
@@ -45,6 +50,22 @@ export default function DiagnosticsPage({
     return () => {
       active.current = false;
       runId.current = null;
+    };
+  }, []);
+
+  // #488：最近一次系统代理故障取证（观察模式，可能为空）；焦点时刷新。
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      ipc.sysproxyFaultEvidence()
+        .then(evidence => { if (!cancelled) setFault(evidence); })
+        .catch(() => {});
+    };
+    load();
+    window.addEventListener("focus", load);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", load);
     };
   }, []);
 
@@ -164,6 +185,30 @@ export default function DiagnosticsPage({
           <span role="status">{running ? t("diag.running") : repairRunning ? repairLabel : t(stale || runFailed ? "diag.rerun" : "diag.run")}</span>
         </Button>
       </PageHead>
+      {fault && <section className="cb-card cb-fault-evidence" aria-label={t("fault.title")}>
+        <div className="cb-fault-evidence-head">
+          <h2>{t("fault.title")}</h2>
+          <span className={fault.resolvedAtMs ? "cb-fault-state" : "cb-fault-state ongoing"} role="status">
+            {t(fault.resolvedAtMs ? "fault.resolved" : "fault.ongoing")}
+          </span>
+        </div>
+        <p className="cb-fault-time">
+          {t("fault.startedAt")}：{new Date(fault.startedAtMs).toLocaleString(currentLang() === "en" ? "en-US" : "zh-CN")}
+          {fault.resolvedAtMs != null && <> · {t("fault.resolvedAt")}：{new Date(fault.resolvedAtMs).toLocaleString(currentLang() === "en" ? "en-US" : "zh-CN")}</>}
+        </p>
+        <dl className="cb-fault-layers">
+          <div><dt>{t("fault.mixedPort")}</dt><dd>{fault.mixedPortOk ? t("fault.class.ok") : t("fault.class.connect")}</dd></div>
+          <div><dt>{t("fault.controller")}</dt><dd>{t(`fault.class.${fault.controller.class}`)}{fmtStatus(fault.controller)}</dd></div>
+          <div><dt>{t("fault.directCn")}</dt><dd>{t(`fault.class.${fault.directCn.class}`)}{fmtStatus(fault.directCn)}</dd></div>
+          <div><dt>{t("fault.directGlobal")}</dt><dd>{t(`fault.class.${fault.directGlobal.class}`)}{fmtStatus(fault.directGlobal)}</dd></div>
+          <div><dt>{t("fault.proxyHttps")}</dt><dd>{t(`fault.class.${fault.proxyHttps.class}`)}{fmtStatus(fault.proxyHttps)}</dd></div>
+        </dl>
+        {fault.sysproxyObserved.length > 0 && (
+          <p className="cb-fault-observed cb-selectable">
+            {t("fault.observed")}：{fault.sysproxyObserved.join("；")}
+          </p>
+        )}
+      </section>}
       {!results && !runFailed ? (
         <div className="cb-empty">
           <p>{repairRunning ? repairLabel : t("diag.hint")}</p>

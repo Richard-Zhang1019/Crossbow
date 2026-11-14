@@ -2315,3 +2315,54 @@ textarea:focus-visible,
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+
+/* #488：系统代理故障取证卡（诊断页，观察模式）。 */
+.cb-fault-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+}
+.cb-fault-evidence-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cb-fault-evidence-head h2 {
+  margin: 0;
+  font-size: var(--font-md);
+  font-weight: 600;
+}
+.cb-fault-state {
+  font-size: var(--font-xs);
+  color: var(--cb-text-dim);
+}
+.cb-fault-state.ongoing {
+  color: var(--cb-accent);
+  font-weight: 600;
+}
+.cb-fault-time,
+.cb-fault-observed {
+  margin: 0;
+  font-size: var(--font-xs);
+  color: var(--cb-text-dim);
+}
+.cb-fault-layers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+}
+.cb-fault-layers > div {
+  display: flex;
+  gap: 6px;
+  font-size: var(--font-xs);
+}
+.cb-fault-layers dt {
+  color: var(--cb-text-dim);
+}
+.cb-fault-layers dd {
+  margin: 0;
+  color: var(--cb-text);
+}
