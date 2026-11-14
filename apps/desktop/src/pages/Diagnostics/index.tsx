@@ -5,12 +5,12 @@ import { Button } from "@/components/Button";
 import { notify, notificationText } from "@/notifications/service";
 import { useOperationNotice } from "@/notifications/NotificationProvider";
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
-import { ipc, type CheckResult } from "@/services/ipc";
+import { ipc, type CheckResult, type FaultEvidence, type FaultEvidenceLayer } from "@/services/ipc";
 import { currentLang, useT } from "@/i18n/i18n";
 import { PageHead } from "@/pages/Home";
 import { ProgressRing } from "@/components/ProgressRing";
 import { DIAG_STEPS, navigateTo } from "@/lib/workflow";
-import { failedChecks, guideUrl, isStale, remainingAge, shareText, type DiagnosisSnapshot } from "./report";
+import { failedChecks, faultEvidenceText, faultProbeText, guideUrl, isStale, remainingAge, shareText, type DiagnosisSnapshot } from "./report";
 
 let previousReport: DiagnosisSnapshot | null = null;
 
@@ -30,6 +30,7 @@ export default function DiagnosticsPage({
   const [checking, setChecking] = useState<string | null>(null);
   const [fixing, setFixing] = useState<CheckResult | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [fault, setFault] = useState<FaultEvidence | null>(null);
   const { copied, copy, clear } = useClipboardFeedback<string>("diagnostics-summary-copy");
   const restartRunning = useOperationNotice("core-restart")?.kind === "progress";
   const repairRunning = !!fixing || restartRunning;
@@ -45,6 +46,41 @@ export default function DiagnosticsPage({
     return () => {
       active.current = false;
       runId.current = null;
+    };
+  }, []);
+
+  // 更新事件使打开的诊断页同步恢复/清理结果；序号阻止迟到读取覆盖新状态。
+  useEffect(() => {
+    let cancelled = false;
+    let request = 0;
+    let offs: (() => void)[] = [];
+    const load = () => {
+      const id = ++request;
+      ipc.sysproxyFaultEvidence()
+        .then(evidence => {
+          if (!cancelled && id === request) {
+            setFault(evidence);
+            void notify.resolve("diagnostics-fault");
+          }
+        })
+        .catch(error => {
+          if (!cancelled && id === request) {
+            setFault(null);
+            notify.error(error, "diagnostics-fault");
+          }
+        });
+    };
+    for (const register of [ipc.onFaultEvidenceUpdated, ipc.onSysproxyStatus, ipc.onCoreStatus]) {
+      register(load).then(off => { if (cancelled) off(); else offs.push(off); })
+        .catch(error => { if (!cancelled) notify.error(error, "diagnostics-fault"); });
+    }
+    load();
+    window.addEventListener("focus", load);
+    return () => {
+      cancelled = true;
+      ++request;
+      offs.forEach(off => off());
+      window.removeEventListener("focus", load);
     };
   }, []);
 
@@ -144,7 +180,13 @@ export default function DiagnosticsPage({
   const first = failed[0];
   const applicable = results?.some(row => !row.skipped);
   const canRepair = !running && !runFailed && !stale;
-  const summaryText = summaryOpen && report ? shareText(report, appVersion, stale || runFailed) : null;
+  const summaryText = summaryOpen ? [
+    report ? shareText(report, appVersion, stale || runFailed) : null,
+    fault ? faultEvidenceText(fault) : null,
+  ].filter(Boolean).join("\n\n") : null;
+  const layerText = (layer: FaultEvidenceLayer) =>
+    `${t("fault.primary")} ${faultProbeText(layer.primary, t)}` +
+    (layer.review ? ` · ${t("fault.review")} ${faultProbeText(layer.review, t)}` : "");
   const resultTitle = running
     ? t("diag.progress", { done: progress.length, total: DIAG_STEPS.length })
     : runFailed ? t("diag.incomplete")
@@ -155,7 +197,7 @@ export default function DiagnosticsPage({
   return (
     <div className="cb-diagnostics-page">
       <PageHead title={t("diag.title")} meta={t("diag.hint")}>
-        {report && !running && (
+        {(report || fault) && !running && (
           <Button onClick={() => setSummaryOpen(true)}>
             {t("diag.summaryPreview")}
           </Button>
@@ -164,6 +206,31 @@ export default function DiagnosticsPage({
           <span role="status">{running ? t("diag.running") : repairRunning ? repairLabel : t(stale || runFailed ? "diag.rerun" : "diag.run")}</span>
         </Button>
       </PageHead>
+      {fault && <section className="cb-card cb-fault-evidence" aria-label={t("fault.title")}>
+        <div className="cb-fault-evidence-head">
+          <h2>{t("fault.title")}</h2>
+          <span className={fault.resolvedAtMs ? "cb-fault-state" : "cb-fault-state ongoing"} role="status">
+            {t(fault.resolvedAtMs ? "fault.resolved" : "fault.ongoing")}
+          </span>
+        </div>
+        <p className="cb-fault-time">
+          {t("fault.startedAt")}：{new Date(fault.startedAtMs).toLocaleString(currentLang() === "en" ? "en-US" : "zh-CN")}
+          {fault.resolvedAtMs != null && <> · {t("fault.resolvedAt")}：{new Date(fault.resolvedAtMs).toLocaleString(currentLang() === "en" ? "en-US" : "zh-CN")}</>}
+        </p>
+        <dl className="cb-fault-layers">
+          <div><dt>{t("fault.mixedPort")}</dt><dd>{fault.mixedPortOk ? t("fault.class.ok") : t("fault.class.connect")}</dd></div>
+          <div><dt>{t("fault.controller")}</dt><dd>{faultProbeText(fault.controller, t)}</dd></div>
+          <div><dt>{t("fault.directCn")}</dt><dd>{layerText(fault.directCn)}</dd></div>
+          <div><dt>{t("fault.directGlobal")}</dt><dd>{layerText(fault.directGlobal)}</dd></div>
+          <div><dt>{t("fault.proxyHttps")}</dt><dd>{layerText(fault.proxyHttps)}</dd></div>
+        </dl>
+        <p className="cb-fault-time">{t("fault.pathUnverified")}</p>
+        {fault.sysproxyObserved.length > 0 && (
+          <p className="cb-fault-observed cb-selectable">
+            {t("fault.observed")}：{fault.sysproxyObserved.join("；")}
+          </p>
+        )}
+      </section>}
       {!results && !runFailed ? (
         <div className="cb-empty">
           <p>{repairRunning ? repairLabel : t("diag.hint")}</p>

@@ -783,6 +783,7 @@ pub fn run() {
             core_stop,
             core_status,
             sysproxy_status,
+            sysproxy_fault_evidence,
             sysproxy_toggle,
             diagnosis_enable_sysproxy,
             core_mode,
