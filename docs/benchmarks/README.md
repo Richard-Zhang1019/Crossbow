@@ -62,6 +62,33 @@ Windows 基线待对应实现与受控环境验证。Windows 未提供 `ps` 时�
 样本全部成功。查看 `probe_failures`、各组成功率与错误分类。不能从一个 DIRECT
 回环基线推导节点协议、TUN 或弱网下的默认值。
 
+## schema 2 原生记录（2026-11-14）
+
+[显式代理 v2 JSON](2026-11-14-explicit-proxy-v2.json) 来自干净提交 `5c1488e`，
+macOS 27.2 / Apple M2（8 逻辑 CPU、16 GiB）/ Python 3.14.7 / mihomo v1.19.32。
+通过关闭代理负对照、实际代理 peer、逐连接 DIRECT 日志和实收字节数验证。
+
+| 轮次 | 回环 204 | P50 / P95（ms） | 回环端到端吞吐（MiB/s） |
+| --- | --- | --- | --- |
+| 1 | 30/30 | 0.553 / 0.651 | 3058.589 |
+| 2 | 30/30 | 0.348 / 0.548 | 3000.564 |
+
+吞吐每次 64 MiB、每轮至少 1 秒；冷启动和受控进程重启各测一次。公网四次
+HTTPS 样本均为证书验证错误码 20，客户端启动时 CA 加载数为 0、默认 CA 文件与
+目录均不可用，因此没有有效公网 204 延迟，不能判断线路或内核网络性能。
+系统解析器观测 3/3 成功，路径及缓存仍未控制。子进程全部回收；以上仅支持
+本次回环工作负载，不支持 TUN、真实系统代理接管或默认值调参结论。
+
+复跑本份参数（保留完整证书验证）：
+
+```sh
+NO_PROXY='*' no_proxy='*' python3 scripts/benchmark/bench_network.py \
+  --core apps/desktop/src-tauri/binaries/mihomo-aarch64-apple-darwin \
+  --mode explicit-proxy --samples 30 --throughput-mib 64 --rounds 2 \
+  --load-seconds 1 --public-samples 1 --dns-samples 3 --timeout 5 \
+  --output target/network-benchmark
+```
+
 ## 旧数据
 
 [`2026-11-14-sysproxy-baseline.json`](2026-11-14-sysproxy-baseline.json) 保留原始数值，
