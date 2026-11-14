@@ -94,7 +94,7 @@ impl ProbeOutcome {
             http_status: None,
         }
     }
-    fn is_ok(&self) -> bool {
+    pub(crate) fn is_ok(&self) -> bool {
         self.class == "ok"
     }
 }
@@ -116,7 +116,7 @@ impl ProbeEvidence {
 #[cfg(any(target_os = "macos", test))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Generation {
+pub(crate) struct Generation {
     session: String,
     revision: u64,
     profile_id: Option<String>,
@@ -305,6 +305,59 @@ fn snapshot(state: &AppState, deadline: Instant) -> Option<Generation> {
     let network = network_context(deadline);
     let revision = *REVISION.lock().unwrap_or_else(|e| e.into_inner());
     generation(state, revision, network)
+}
+
+// 网络恢复复用同一代标识与 HTTPS 探针；等待开始前取样，执行前在 core_op 下复核。
+#[cfg(target_os = "macos")]
+pub(crate) fn recovery_snapshot(state: &AppState) -> Option<Generation> {
+    let gen = snapshot(state, Instant::now() + Duration::from_secs(1))?;
+    (active(&gen) && gen.network_context.is_some()).then_some(gen)
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn recovery_current(state: &AppState, gen: &Generation) -> bool {
+    recovery_snapshot(state).as_ref() == Some(gen)
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn direct_ready(deadline: Instant) -> bool {
+    probe_with_review(None, &DIRECT_CN, deadline).reachable()
+}
+
+/// 与周期观察共享单飞及发布规则。只有真正成功的代理 HTTPS 才能解除故障。
+#[cfg(target_os = "macos")]
+pub(crate) fn inspect_network_change(
+    handle: &tauri::AppHandle,
+    state: &AppState,
+    gen: &Generation,
+) -> Option<FaultEvidence> {
+    let _flight = Flight::enter(&ROUND_IN_FLIGHT)?;
+    if !recovery_current(state, gen) {
+        return None;
+    }
+    let deadline = Instant::now() + ROUND_TIMEOUT;
+    let started = now_ms();
+    let probe = probe_with_review(Some(gen.mixed_port), &PROXY_TARGETS, deadline);
+    let observed_at = now_ms();
+    let mut existing = read_record(&state.data_dir.join("sysproxy-fault.json"));
+    if existing.as_ref().is_some_and(|e| e.generation != *gen) {
+        publish(handle, state, gen, None);
+        existing = None;
+    }
+    let mut evidence = run_round(handle, state, gen.clone(), probe.clone(), started, deadline);
+    evidence.resolved_at_ms = probe.reachable().then_some(observed_at);
+    match decide(existing.as_ref(), gen, &probe) {
+        Action::Capture => publish(handle, state, gen, Some(&evidence)),
+        Action::Resolve => {
+            if let Some(mut old) = existing {
+                old.resolved_at_ms = Some(observed_at);
+                old.proxy_https = probe;
+                publish(handle, state, gen, Some(&old));
+            }
+        }
+        Action::Nothing => {}
+    }
+    Some(evidence)
 }
 
 #[cfg(any(target_os = "macos", test))]
@@ -705,6 +758,19 @@ mod tests {
             old.resolved_at_ms = Some(2);
             assert_eq!(decide(Some(&old), &gen(), &probe), Action::Nothing);
             worker.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn captive_portal_and_http_errors_are_not_readiness_or_recovery() {
+        for status in [200, 302, 403, 429, 503] {
+            let (port, worker) = server(vec![status, status]);
+            let url = format!("http://127.0.0.1:{port}/generate_204");
+            let probe =
+                probe_with_review(None, &[&url, &url], Instant::now() + Duration::from_secs(3));
+            assert!(!probe.reachable());
+            assert_eq!(decide(Some(&evidence()), &gen(), &probe), Action::Nothing);
+            assert_eq!(worker.join().unwrap().len(), 2);
         }
     }
 

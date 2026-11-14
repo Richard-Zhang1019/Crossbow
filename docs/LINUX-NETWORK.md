@@ -92,6 +92,8 @@ GitHub Actions 的 ubuntu-24.04 runner 是一次性真实 VM：完整 systemd、
 | IPv6 公网数据面 | CI runner 无公网 IPv6 | 已知限制（双栈规则/路由已验，数据面由命名空间测试覆盖） |
 | Wayland/niri 图形授权 | 桌面环境差异 | 不适用（此前一次性 KVM 已覆盖 KDE/Xorg 图形授权） |
 
+公网 HTTPS 验收使用独立提供方的 `https://www.gstatic.com/generate_204` 与 `https://cp.cloudflare.com/generate_204`，避免把共享 runner 上 GitHub API 的拒绝响应当成 TUN 故障（#498）。首站传输失败或响应非 204 时复核另一站，两站均失败则验收失败；成功响应仍必须逐连接匹配 TUN 内核 DIRECT 日志，缺少日志不触发站点切换。TLS 校验、IPv4 请求和禁用显式代理保持开启。
+
 脚本要求显式指定 `--disposable-vm`，并在检测到既有 Crossbow 服务、安装文件或 TUN 资源时停止。CI 通过预置 polkit 规则完成授权。在 `rp_filter` 为严格值时，脚本临时将其设为 2。退出时移除测试规则并恢复原值。
 
 ## 验证与未完成的实机验收

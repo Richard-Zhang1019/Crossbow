@@ -623,6 +623,9 @@ pub fn run() {
             #[cfg(any(target_os = "macos", windows))]
             spawn_tun_health_monitor(app.handle());
 
+            #[cfg(target_os = "macos")]
+            crate::network::network_watch::spawn(app.handle().clone());
+
             // 订阅自动更新调度器
             scheduler::spawn(app.handle().clone());
 
