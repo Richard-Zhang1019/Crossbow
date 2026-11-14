@@ -16,7 +16,7 @@ tray / menu bar.
 
 <img width="1120" height="720" alt="image" src="https://github.com/user-attachments/assets/29a26e8a-b8ce-425b-9f17-9a228d83d211" />
 
-**Current version:** [v0.14.3](https://github.com/Richard-Zhang1019/Crossbow/releases/tag/v0.14.3).
+**Current version:** [v0.14.4](https://github.com/Richard-Zhang1019/Crossbow/releases/tag/v0.14.4).
 Available as a macOS Apple Silicon DMG, a Windows x64 installer, and an experimental Linux
 x86_64 archive. Windows is under active development; TUN uses the controlled system service
 bundled with the installer. For compatibility issues, please open an issue with the app
@@ -34,9 +34,9 @@ recovery boundaries: [Linux network takeover](docs/LINUX-NETWORK.md).
 
 | Platform | Package | Notes |
 |---|---|---|
-| macOS Apple Silicon | [Download DMG](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.14.3/Crossbow_0.14.3_aarch64.dmg) | Drag into Applications; Developer ID signed and notarized |
-| Windows x64 | [Download installer](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.14.3/Crossbow_0.14.3_x64-setup.exe) | No Windows code signing yet — verify the official source and checksums |
-| Linux x86_64 (experimental) | [Download tar.gz](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.14.3/Crossbow_0.14.3_linux_x86_64.tar.gz) | Extract and run `run.sh` as a regular user; dependencies and TUN setup in the bundled `README.txt` |
+| macOS Apple Silicon | [Download DMG](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.14.4/Crossbow_0.14.4_aarch64.dmg) | Drag into Applications; Developer ID signed and notarized |
+| Windows x64 | [Download installer](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.14.4/Crossbow_0.14.4_x64-setup.exe) | No Windows code signing yet — verify the official source and checksums |
+| Linux x86_64 (experimental) | [Download tar.gz](https://github.com/Richard-Zhang1019/Crossbow/releases/download/v0.14.4/Crossbow_0.14.4_linux_x86_64.tar.gz) | Extract and run `run.sh` as a regular user; dependencies and TUN setup in the bundled `README.txt` |
 
 Downloads and release notes live on [GitHub Releases](https://github.com/Richard-Zhang1019/Crossbow/releases/latest);
 third-party components and licenses are listed in [THIRD-PARTY-NOTICES](docs/THIRD-PARTY-NOTICES.md).
