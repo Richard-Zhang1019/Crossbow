@@ -14,6 +14,7 @@
 /// 托盘节点行：（名称, 延迟 ms | None）。
 type TrayNodeRows = Vec<(String, Option<u64>)>;
 
+use crate::engine::api::DelaySample;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
@@ -40,7 +41,8 @@ pub struct TrayState {
     failed: BTreeMap<String, String>,
     /// #491：复核目标（独立运营方）成功的节点——延迟与主目标不混排，
     /// 徽标单独标注复核路径。
-    reviewed: BTreeSet<String>,
+    samples: BTreeMap<String, DelaySample>,
+    automatic_nodes: BTreeSet<String>,
     testing: bool,
     /// 本轮尚未完成的测速目标，结果逐个到达时移除。
     pending: BTreeSet<String>,
@@ -68,6 +70,9 @@ pub struct TrayNodeRow {
     pub selected: bool,
     /// 该行仍有本轮测速结果待返回；渲染为 loading 而非旧延迟。
     pub pending: bool,
+    /// 显式采样的真实目标、时间和请求数；控制器历史无这些信息。
+    pub(crate) sample: Option<DelaySample>,
+    pub(crate) failure: Option<String>,
 }
 
 /// 渲染托盘节点子菜单所需的纯数据快照。
@@ -105,6 +110,17 @@ impl TrayState {
         self.nodes.clone()
     }
 
+    /// 包含已知的自动组成员，控制器不可用时也能清除这些成员的旧成功状态。
+    pub fn test_target_names(&self) -> Vec<String> {
+        let mut names = self.node_names();
+        for name in &self.automatic_nodes {
+            if !names.contains(name) {
+                names.push(name.clone());
+            }
+        }
+        names
+    }
+
     /// 探测并写入主组：由 lib.rs 注入探测闭包（按配置顺序找第一个有成员的组）。
     /// 返回 true 表示新探测到了主组。
     pub fn init_group(&mut self, probe: &dyn Fn() -> Option<String>) -> bool {
@@ -123,9 +139,22 @@ impl TrayState {
         members: Vec<(String, Option<u64>)>,
         automatic: Option<(String, Option<String>, TrayNodeRows)>,
     ) {
-        let known: BTreeSet<&String> = members.iter().map(|(n, _)| n).collect();
+        let names: Vec<_> = members.iter().map(|(n, _)| n.clone()).collect();
+        let automatic_nodes: BTreeSet<_> = automatic
+            .as_ref()
+            .map(|(_, _, members)| members.iter().map(|(name, _)| name.clone()).collect())
+            .unwrap_or_default();
+        if self.testing && (self.nodes != names || self.automatic_nodes != automatic_nodes) {
+            self.cancel_test();
+        }
+        self.automatic_nodes = automatic_nodes;
+        let known: BTreeSet<_> = names
+            .into_iter()
+            .chain(self.automatic_nodes.iter().cloned())
+            .collect();
         self.delays.retain(|n, _| known.contains(n));
         self.failed.retain(|n, _| known.contains(n));
+        self.samples.retain(|n, _| known.contains(n));
         for (n, d) in &members {
             // A failed explicit test takes precedence over older controller
             // history until the next successful test updates this node.
@@ -160,7 +189,7 @@ impl TrayState {
             return false;
         }
         self.testing = true;
-        self.pending = self.nodes.iter().cloned().collect();
+        self.pending = self.test_target_names().into_iter().collect();
         self.testing_since = Some(Instant::now());
         self.generation += 1;
         true
@@ -185,16 +214,46 @@ impl TrayState {
         self.pending.clear();
     }
 
-    /// 只允许仍在运行的当前代次超时；已完成节点保留结果，未完成节点标记超时。
+    /// 总预算耗尽只把未完成目标标为跳过，不把它们伪装成节点超时。
     pub fn expire_test(&mut self, generation: u64) -> bool {
         if !self.testing || self.generation != generation {
             return false;
         }
         for node in std::mem::take(&mut self.pending) {
-            self.apply_single_result(&node, Err("timeout".into()));
+            self.apply_single_result(&node, Err("skipped".into()));
         }
         self.end_test();
         true
+    }
+
+    /// 取消只影响尚未完成的目标；完成结果保留，旧 worker 失去写入权。
+    pub fn cancel_test(&mut self) -> bool {
+        if !self.testing {
+            return false;
+        }
+        self.skip_pending("cancelled");
+        self.end_test();
+        true
+    }
+
+    pub fn skip_pending(&mut self, reason: &str) {
+        for node in std::mem::take(&mut self.pending) {
+            self.apply_single_result(&node, Err(reason.into()));
+        }
+    }
+
+    pub fn accepts_results(&self, generation: u64) -> bool {
+        self.testing && self.generation == generation
+    }
+
+    /// 自动补测只针对未测项；任何已分类失败/取消/跳过都不是缺测。
+    pub fn has_missing_results(&self) -> bool {
+        !self.testing
+            && self
+                .nodes
+                .iter()
+                .chain(self.automatic_nodes.iter())
+                .any(|n| !self.delays.contains_key(n) && !self.failed.contains_key(n))
     }
 
     /// 当前代次（迟到的旧结果以此判断是否仍然有效）。
@@ -202,19 +261,30 @@ impl TrayState {
         self.generation
     }
 
-    /// 单节点测速结果落库（增量）：成功写延迟并清失败标记；
-    /// 失败记原因（"timeout" | "failed"），徽标直接展示该原因。
-    /// #491：主目标超时但复核目标成功——记录延迟并标注复核路径。
-    pub fn apply_reviewed_result(&mut self, node: &str, ms: u64) {
-        self.pending.remove(node);
-        self.delays.insert(node.to_string(), ms);
-        self.failed.remove(node);
-        self.reviewed.insert(node.to_string());
+    pub(crate) fn apply_delay_sample(&mut self, node: &str, sample: DelaySample) {
+        self.apply_single_result(node, Ok(sample.delay_ms));
+        if sample.delay_ms > 0 {
+            self.samples.insert(node.into(), sample);
+        }
+    }
+
+    #[cfg(test)]
+    fn apply_reviewed_result(&mut self, node: &str, ms: u64) {
+        self.apply_delay_sample(
+            node,
+            DelaySample {
+                delay_ms: ms,
+                reviewed: true,
+                target: "https://cp.cloudflare.com/generate_204".into(),
+                tested_at_ms: 1,
+                sample_count: 2,
+            },
+        );
     }
 
     pub fn apply_single_result(&mut self, node: &str, result: Result<u64, String>) {
         self.pending.remove(node);
-        self.reviewed.remove(node);
+        self.samples.remove(node);
         match result {
             Ok(ms) if ms > 0 => {
                 self.delays.insert(node.to_string(), ms);
@@ -277,30 +347,46 @@ impl TrayState {
                         || current_node
                             .as_ref()
                             .is_some_and(|name| self.pending.contains(name)));
-                let fail_reason = self.failed.get(n).cloned().or_else(|| {
-                    current_node
-                        .as_ref()
-                        .and_then(|current| self.failed.get(current))
-                        .cloned()
-                });
-                let display_delay = if fail_reason.is_some() {
-                    None
-                } else {
-                    current_node
-                        .as_ref()
-                        .and_then(|current| self.delays.get(current))
-                        .or_else(|| self.delays.get(n))
-                };
-                let reviewed = self.reviewed.contains(n);
+                // 延迟、失败和复核来源必须同属当前成员，不能借用组本身的标记。
+                let source = current_node
+                    .as_ref()
+                    .filter(|name| {
+                        self.delays.contains_key(*name) || self.failed.contains_key(*name)
+                    })
+                    .unwrap_or(n);
+                let fail_reason = self.failed.get(source).cloned();
+                let display_delay = fail_reason
+                    .is_none()
+                    .then(|| self.delays.get(source))
+                    .flatten();
+                let sample = self.samples.get(source).cloned();
+                let reviewed = sample.as_ref().is_some_and(|sample| sample.reviewed);
                 let (badge, ms) = if pending {
                     ("…".to_string(), None)
                 } else if display_delay.is_none() {
                     // 失败徽标直接展示原因（timeout / failed / controller），
                     // 无记录视为未测
-                    (fail_reason.unwrap_or_else(|| "—".into()), None)
+                    let badge = match fail_reason.as_deref() {
+                        Some("controller") => "API",
+                        Some("cancelled") if current_label == "当前" => "取消",
+                        Some("cancelled") => "cancel",
+                        Some("skipped") if current_label == "当前" => "跳过",
+                        Some("skipped") => "skip",
+                        Some(reason) => reason,
+                        None => "—",
+                    };
+                    (badge.into(), None)
                 } else {
                     match display_delay {
-                        Some(ms) if reviewed => (format!("{ms}ms·复核"), Some(*ms)),
+                        Some(_) if reviewed => (
+                            (if current_label == "当前" {
+                                "复核"
+                            } else {
+                                "review"
+                            })
+                            .into(),
+                            None,
+                        ),
                         Some(ms) => (format!("{ms}ms"), Some(*ms)),
                         None => ("—".to_string(), None),
                     }
@@ -318,6 +404,8 @@ impl TrayState {
                     ms,
                     selected: *n == self.now,
                     pending,
+                    sample: (!pending).then_some(sample).flatten(),
+                    failure: (!pending).then_some(fail_reason).flatten(),
                 }
             })
             .collect::<Vec<_>>();
@@ -480,7 +568,7 @@ mod tests {
         state.apply_single_result("JP", Ok(70));
         assert!(state.expire_test(generation));
         assert_eq!(row(&state, "JP").ms, Some(70));
-        assert_eq!(row(&state, "HK").badge, "timeout");
+        assert_eq!(row(&state, "HK").badge, "skip");
         assert!(state
             .snapshot("Nodes", "Current")
             .rows
@@ -528,8 +616,9 @@ mod tests {
         let generation = state.generation();
         assert!(state.set_test_targets(generation, &["HK".to_string(), "JP".to_string()]));
         state.apply_reviewed_result("HK", 45);
-        assert_eq!(row(&state, "HK").badge, "45ms·复核");
-        assert_eq!(row(&state, "HK").ms, Some(45));
+        assert_eq!(row(&state, "HK").badge, "review");
+        assert_eq!(row(&state, "HK").ms, None);
+        assert_eq!(row(&state, "HK").sample.unwrap().delay_ms, 45);
         // 常规结果覆盖复核标记（新一轮以主目标结果为准）。
         state.apply_single_result("HK", Ok(50));
         assert_eq!(row(&state, "HK").badge, "50ms");
@@ -537,5 +626,96 @@ mod tests {
         state.apply_reviewed_result("HK", 45);
         state.apply_single_result("HK", Err("timeout".into()));
         assert_eq!(row(&state, "HK").badge, "timeout");
+    }
+    #[test]
+    fn automatic_row_uses_its_current_members_review_metadata() {
+        let mut state = fixture();
+        state.apply_reviewed_result("JP", 45);
+        assert_eq!(row(&state, "Auto").badge, "review");
+        assert_eq!(row(&state, "Auto").ms, None);
+        assert_eq!(row(&state, "Auto").sample.unwrap().sample_count, 2);
+        state.apply_reviewed_result("Auto", 20);
+        state.apply_single_result("JP", Ok(70));
+        assert_eq!(row(&state, "Auto").badge, "70ms");
+        assert!(!row(&state, "Auto")
+            .sample
+            .is_some_and(|sample| sample.reviewed));
+    }
+
+    #[test]
+    fn controller_cancelled_and_budget_skips_are_not_missing_samples() {
+        let mut state = fixture();
+        state.apply_single_result("Auto", Err("controller".into()));
+        state.apply_single_result("JP", Err("cancelled".into()));
+        state.apply_single_result("HK", Err("skipped".into()));
+        assert!(!state.has_missing_results());
+        assert_eq!(row(&state, "JP").badge, "cancel");
+        assert_eq!(row(&state, "HK").badge, "skip");
+        assert_eq!(row(&state, "HK").failure.as_deref(), Some("skipped"));
+    }
+
+    #[test]
+    fn cancel_keeps_completed_samples_and_rejects_old_workers() {
+        let mut state = fixture();
+        state.begin_test();
+        let old = state.generation();
+        state.apply_single_result("JP", Ok(71));
+        assert!(state.cancel_test());
+        assert!(!state.accepts_results(old));
+        assert_eq!(row(&state, "JP").ms, Some(71));
+        assert_eq!(row(&state, "HK").failure.as_deref(), Some("cancelled"));
+        assert!(!state.has_missing_results());
+        assert!(!state.cancel_test());
+        assert!(state.begin_test());
+        assert!(!state.accepts_results(old));
+    }
+
+    #[test]
+    fn group_refresh_preserves_automatic_only_members_failure_and_review() {
+        let mut state = TrayState::default();
+        let refresh = |state: &mut TrayState| {
+            state.apply_group_data(
+                Some("Auto".into()),
+                vec![("Auto".into(), Some(100))],
+                Some((
+                    "Auto".into(),
+                    Some("OnlyMember".into()),
+                    vec![("OnlyMember".into(), Some(100))],
+                )),
+            )
+        };
+        refresh(&mut state);
+        state.begin_test();
+        for node in state.test_target_names() {
+            state.apply_single_result(&node, Err("controller".into()));
+        }
+        state.end_test();
+        refresh(&mut state);
+        assert_eq!(row(&state, "Auto").badge, "API");
+        state.apply_reviewed_result("OnlyMember", 80);
+        refresh(&mut state);
+        assert_eq!(row(&state, "Auto").badge, "review");
+        assert!(!state.has_missing_results());
+    }
+
+    #[test]
+    fn membership_changes_cancel_and_removed_nodes_lose_review_metadata() {
+        let mut state = fixture();
+        state.apply_reviewed_result("HK", 30);
+        state.begin_test();
+        let old = state.generation();
+        state.apply_group_data(Some("JP".into()), vec![("JP".into(), Some(70))], None);
+        assert!(!state.accepts_results(old));
+        state.apply_group_data(Some("HK".into()), vec![("HK".into(), Some(60))], None);
+        assert_eq!(row(&state, "HK").badge, "60ms");
+        assert!(row(&state, "HK").sample.is_none());
+    }
+
+    #[test]
+    fn invalid_zero_review_is_a_failure_not_a_successful_sample() {
+        let mut state = fixture();
+        state.apply_reviewed_result("HK", 0);
+        assert_eq!(row(&state, "HK").badge, "failed");
+        assert!(row(&state, "HK").sample.is_none());
     }
 }
