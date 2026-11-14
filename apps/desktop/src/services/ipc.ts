@@ -60,6 +60,11 @@ export interface FaultEvidenceProbe {
   httpStatus: number | null;
 }
 
+export interface FaultEvidenceLayer {
+  primary: FaultEvidenceProbe;
+  review: FaultEvidenceProbe | null;
+}
+
 export interface FaultEvidence {
   mode: string;
   startedAtMs: number;
@@ -69,9 +74,10 @@ export interface FaultEvidence {
   sysproxyObserved: string[];
   mixedPortOk: boolean;
   controller: FaultEvidenceProbe;
-  directCn: FaultEvidenceProbe;
-  directGlobal: FaultEvidenceProbe;
-  proxyHttps: FaultEvidenceProbe;
+  directPath: string;
+  directCn: FaultEvidenceLayer;
+  directGlobal: FaultEvidenceLayer;
+  proxyHttps: FaultEvidenceLayer;
 }
 
 export interface SysProxyStatus {
@@ -333,6 +339,7 @@ export const ipc = {
   coreStatus: () => invoke<CoreStatus>("core_status"),
   sysproxyStatus: () => invoke<SysProxyStatus>("sysproxy_status"),
   sysproxyFaultEvidence: () => invoke<FaultEvidence | null>("sysproxy_fault_evidence"),
+  onFaultEvidenceUpdated: (cb: () => void) => listen("sysproxy://fault-updated", cb),
   sysproxyToggle: () => invoke<void>("sysproxy_toggle"),
   coreMode: () => invoke<CoreMode>("core_mode"),
   setCoreMode: (mode: CoreMode) => invoke<void>("set_core_mode", { mode }),

@@ -1,188 +1,229 @@
-//! #488：macOS 系统代理模式（TUN 关闭）的故障取证——观察模式。
-//!
-//! 背景：2026-11-13 与更早的全量超时事件里，内核存活、端口监听、控制器
-//! 有响应、外网请求却持续超时，几分钟后自行恢复。既有兜底只覆盖内核
-//! 停止/崩溃；故障发生时没有任何分层证据留下，恢复后无法归因。
-//!
-//! 机制（第一版仅 macOS）：
-//! - 托盘看门狗每 tick 递增计数；每 CANARY_INTERVAL_TICKS（≈2 分钟）发一次
-//!   经混合端口的 204 金丝雀。正常联网时请求量 = 1 次/2 分钟。
-//! - 金丝雀失败 → 执行一轮分层取证（系统代理实际指向、混合端口、控制器、
-//!   直连基准国内/国外双端点、经代理 HTTPS），关键失败用独立端点复核。
-//! - 已有未恢复记录时不再重复取证（单飞 + 开记录抑制）；金丝雀恢复成功
-//!   则补记 resolved_at（恢复确认）。配置切换/接管关闭后，旧记录与迟到
-//!   结果按代丢弃。
-//! - 只记录错误类别、时间、模式与本地端口上下文；不含订阅 URL、访问
-//!   记录与认证信息。观察模式：不切节点、不重启内核、不写系统代理。
+//! macOS 系统代理故障现场：低频 HTTPS 金丝雀、单轮分层证据、观察模式（#488）。
+//! 不切节点、不重启内核、不修改系统代理。主探针及独立复核分别留存。
 
-use std::io::Write;
+#[cfg(any(target_os = "macos", test))]
+use std::io::{Read, Write};
+#[cfg(target_os = "macos")]
 use std::net::TcpStream;
-use std::path::PathBuf;
+#[cfg(any(target_os = "macos", test))]
+use std::path::Path;
+#[cfg(any(target_os = "macos", test))]
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+#[cfg(target_os = "macos")]
+use std::sync::{LazyLock, Mutex};
+#[cfg(any(target_os = "macos", test))]
+use std::time::{Duration, Instant};
 
+#[cfg(any(target_os = "macos", test))]
 use serde::{Deserialize, Serialize};
+#[cfg(target_os = "macos")]
+use sha2::{Digest, Sha256};
+#[cfg(target_os = "macos")]
 use tauri::{Emitter, Manager};
 
 use crate::AppState;
 
-/// 金丝雀周期：×WATCHDOG_TICK(5s) ≈ 2 分钟——故障发现延迟的上限。
+#[cfg(target_os = "macos")]
 pub const CANARY_INTERVAL_TICKS: u32 = 24;
-/// 单探测超时；整轮上限 ≈ 探测数 × 该值，仍在看门狗节奏之外异步执行。
+#[cfg(any(target_os = "macos", test))]
 const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
-
-/// 国内/国外基准与代理探针：主目标失败用独立端点复核（站点限制 vs 链路）。
-const DIRECT_CN: &[&str] = &[
+#[cfg(target_os = "macos")]
+const ROUND_TIMEOUT: Duration = Duration::from_secs(30);
+#[cfg(any(target_os = "macos", test))]
+const MAX_RECORD_BYTES: u64 = 16 * 1024;
+#[cfg(target_os = "macos")]
+const DIRECT_CN: [&str; 2] = [
     "http://connect.rom.miui.com/generate_204",
     "http://wifi.vivo.com.cn/generate_204",
 ];
-const DIRECT_GLOBAL: &[&str] = &[
-    "http://www.gstatic.com/generate_204",
-    "http://cp.cloudflare.com/generate_204",
+#[cfg(any(target_os = "macos", test))]
+const DIRECT_GLOBAL: [&str; 2] = [
+    "https://www.gstatic.com/generate_204",
+    "https://cp.cloudflare.com/generate_204",
 ];
-const PROXY_TARGETS: &[&str] = &[
-    "http://www.gstatic.com/generate_204",
-    "http://cp.cloudflare.com/generate_204",
-];
+#[cfg(any(target_os = "macos", test))]
+const PROXY_TARGETS: [&str; 2] = DIRECT_GLOBAL;
 
+#[cfg(target_os = "macos")]
 static ROUND_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "macos")]
+static OBSERVATION_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+// 发布与配置/接管入口共用此锁：关开或改回原值也会使旧结果失效（防 ABA）。
+#[cfg(target_os = "macos")]
+static REVISION: Mutex<u64> = Mutex::new(0);
+#[cfg(target_os = "macos")]
+static SESSION: LazyLock<String> = LazyLock::new(|| uuid::Uuid::new_v4().to_string());
 
-/// 单探针结果：类别 + HTTP 状态码（仅链路证据，不含 URL）。
+pub(crate) fn invalidate() {
+    #[cfg(target_os = "macos")]
+    {
+        let mut revision = REVISION.lock().unwrap_or_else(|e| e.into_inner());
+        *revision = revision.wrapping_add(1);
+    }
+}
+
+#[cfg(any(target_os = "macos", test))]
+struct Flight<'a>(&'a AtomicBool);
+#[cfg(any(target_os = "macos", test))]
+impl<'a> Flight<'a> {
+    fn enter(flag: &'a AtomicBool) -> Option<Self> {
+        flag.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .ok()
+            .map(|_| Self(flag))
+    }
+}
+#[cfg(any(target_os = "macos", test))]
+impl Drop for Flight<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
+#[cfg(any(target_os = "macos", test))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProbeOutcome {
-    /// ok / timeout / connect / tls / dns / http_status / unknown
     pub class: String,
     pub http_status: Option<u16>,
 }
-
+#[cfg(any(target_os = "macos", test))]
 impl ProbeOutcome {
-    pub(crate) fn is_ok(&self) -> bool {
+    fn unknown() -> Self {
+        Self {
+            class: "unknown".into(),
+            http_status: None,
+        }
+    }
+    fn is_ok(&self) -> bool {
         self.class == "ok"
     }
 }
 
-/// 一次故障的分层证据（有界：固定字段，单文件存储）。
+#[cfg(any(target_os = "macos", test))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProbeEvidence {
+    pub primary: ProbeOutcome,
+    pub review: Option<ProbeOutcome>,
+}
+#[cfg(any(target_os = "macos", test))]
+impl ProbeEvidence {
+    fn reachable(&self) -> bool {
+        self.primary.is_ok() || self.review.as_ref().is_some_and(ProbeOutcome::is_ok)
+    }
+}
+
+#[cfg(any(target_os = "macos", test))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Generation {
+    session: String,
+    revision: u64,
+    profile_id: Option<String>,
+    mixed_port: u16,
+    core_pid: Option<u32>,
+    tun_enabled: bool,
+    sysproxy_enabled: bool,
+    config_digest: String,
+    network_context: Option<String>,
+}
+
+#[cfg(any(target_os = "macos", test))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FaultEvidence {
     pub mode: String,
     pub started_at_ms: u64,
     pub resolved_at_ms: Option<u64>,
+    generation: Generation,
     pub profile_id: Option<String>,
     pub mixed_port: u16,
-    /// 各网络服务当前实际代理指向（脱敏：仅 服务名 → host:port）。
     pub sysproxy_observed: Vec<String>,
     pub mixed_port_ok: bool,
     pub controller: ProbeOutcome,
-    pub direct_cn: ProbeOutcome,
-    pub direct_global: ProbeOutcome,
-    pub proxy_https: ProbeOutcome,
+    // 不经过显式代理不等于物理直连，其他隧道/路由未被证明排除。
+    pub direct_path: String,
+    pub direct_cn: ProbeEvidence,
+    pub direct_global: ProbeEvidence,
+    pub proxy_https: ProbeEvidence,
 }
 
-pub fn classify_status(status: u16) -> &'static str {
-    if (200..400).contains(&status) {
+#[cfg(any(target_os = "macos", test))]
+fn classify_status(status: u16, expected_status: u16) -> &'static str {
+    if status == expected_status {
         "ok"
     } else {
         "http_status"
     }
 }
 
-/// 传输层错误 → 类别；按错误文本判别（ureq 2.x 无结构化 kind 暴露）。
+#[cfg(any(target_os = "macos", test))]
 pub fn classify_transport(text: &str) -> &'static str {
     let low = text.to_lowercase();
-    if low.contains("timed out") || low.contains("deadline") {
+    if low.contains("timed out") || low.contains("deadline") || low.contains("timeout") {
         "timeout"
-    } else if low.contains("refused") {
-        "connect"
     } else if low.contains("certificate") || low.contains("tls") || low.contains("ssl") {
         "tls"
     } else if low.contains("dns") {
         "dns"
+    } else if low.contains("refused") || low.contains("connect") {
+        "connect"
     } else {
         "unknown"
     }
 }
 
-fn direct_agent() -> ureq::Agent {
-    // 不走系统代理/环境变量：直连基准必须反映物理链路。
-    ureq::AgentBuilder::new()
+#[cfg(any(target_os = "macos", test))]
+fn budget(deadline: Instant) -> Option<Duration> {
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|d| !d.is_zero())
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn probe_one(proxy: Option<u16>, url: &str, deadline: Instant) -> ProbeOutcome {
+    let Some(timeout) = budget(deadline) else {
+        return ProbeOutcome::unknown();
+    };
+    let mut builder = ureq::AgentBuilder::new()
         .try_proxy_from_env(false)
-        .timeout(PROBE_TIMEOUT)
-        .build()
+        .redirects(0)
+        .timeout(timeout.min(PROBE_TIMEOUT));
+    if let Some(port) = proxy {
+        let Ok(proxy) = ureq::Proxy::new(format!("http://127.0.0.1:{port}")) else {
+            return ProbeOutcome::unknown();
+        };
+        builder = builder.proxy(proxy);
+    }
+    request_outcome(builder.build().head(url), 204)
 }
 
-fn proxied_agent(mixed_port: u16) -> Result<ureq::Agent, String> {
-    let proxy = ureq::Proxy::new(format!("http://127.0.0.1:{mixed_port}"))
-        .map_err(|e| format!("proxy 配置错误：{e}"))?;
-    Ok(ureq::AgentBuilder::new()
-        .proxy(proxy)
-        .timeout(PROBE_TIMEOUT)
-        .build())
-}
-
-fn probe_one(agent: &ureq::Agent, url: &str) -> ProbeOutcome {
-    match agent.head(url).call() {
+#[cfg(any(target_os = "macos", test))]
+fn request_outcome(request: ureq::Request, expected_status: u16) -> ProbeOutcome {
+    match request.call() {
         Ok(resp) => ProbeOutcome {
-            class: classify_status(resp.status()).to_string(),
+            class: classify_status(resp.status(), expected_status).into(),
             http_status: Some(resp.status()),
         },
         Err(ureq::Error::Status(code, _)) => ProbeOutcome {
-            class: classify_status(code).to_string(),
+            class: classify_status(code, expected_status).into(),
             http_status: Some(code),
         },
         Err(error) => ProbeOutcome {
-            class: classify_transport(&error.to_string()).to_string(),
+            class: classify_transport(&error.to_string()).into(),
             http_status: None,
         },
     }
 }
 
-/// 主目标失败 → 独立端点复核；复核结果即记录（区分站点限制与链路故障）。
-fn probe_with_review(agent: &ureq::Agent, urls: &[&str]) -> ProbeOutcome {
-    let (first, rest) = urls.split_first().expect("probe targets are never empty");
-    let outcome = probe_one(agent, first);
-    if outcome.is_ok() || rest.is_empty() {
-        return outcome;
-    }
-    probe_one(agent, rest[0])
+#[cfg(any(target_os = "macos", test))]
+fn probe_with_review(proxy: Option<u16>, urls: &[&str; 2], deadline: Instant) -> ProbeEvidence {
+    let primary = probe_one(proxy, urls[0], deadline);
+    let review = (!primary.is_ok()).then(|| probe_one(proxy, urls[1], deadline));
+    ProbeEvidence { primary, review }
 }
 
-fn probe_mixed_port(mixed_port: u16) -> bool {
-    let address = format!("127.0.0.1:{mixed_port}");
-    match std::net::ToSocketAddrs::to_socket_addrs(&address) {
-        Ok(mut addrs) => addrs
-            .next()
-            .and_then(|addr| TcpStream::connect_timeout(&addr, PROBE_TIMEOUT).ok())
-            .is_some(),
-        Err(_) => false,
-    }
-}
-
-fn probe_controller(port: u16, secret: &str) -> ProbeOutcome {
-    match ureq::AgentBuilder::new()
-        .try_proxy_from_env(false)
-        .timeout(PROBE_TIMEOUT)
-        .build()
-        .get(&format!("http://127.0.0.1:{port}/version"))
-        .set("Authorization", &format!("Bearer {secret}"))
-        .call()
-    {
-        Ok(resp) => ProbeOutcome {
-            class: classify_status(resp.status()).to_string(),
-            http_status: Some(resp.status()),
-        },
-        Err(ureq::Error::Status(code, _)) => ProbeOutcome {
-            class: classify_status(code).to_string(),
-            http_status: Some(code),
-        },
-        Err(error) => ProbeOutcome {
-            class: classify_transport(&error.to_string()).to_string(),
-            http_status: None,
-        },
-    }
-}
-
+#[cfg(target_os = "macos")]
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -190,207 +231,340 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// 证据文件的代：同一配置/内核/接管状态下产生的一轮结果。
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Generation {
-    profile_id: Option<String>,
-    mixed_port: u16,
-    core_pid: Option<u32>,
-    tun_enabled: bool,
+// 用临时文件接收输出，避免子进程管道填满；超时 kill + wait，不遗留进程。
+#[cfg(target_os = "macos")]
+fn network_context(deadline: Instant) -> Option<String> {
+    let output = tempfile::tempfile().ok()?;
+    let mut reader = output.try_clone().ok()?;
+    let mut child = crate::process::command("/usr/sbin/scutil")
+        .arg("--nwi")
+        .stdout(output)
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok()?;
+    let local_deadline = deadline.min(Instant::now() + Duration::from_secs(1));
+    let success = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status.success(),
+            Err(_) => break false,
+            _ if Instant::now() >= local_deadline => break false,
+            _ => std::thread::sleep(Duration::from_millis(10)),
+        }
+    };
+    if !success {
+        let _ = child.kill();
+        let _ = child.wait();
+        return None;
+    }
+    use std::io::{Seek, SeekFrom};
+    reader.seek(SeekFrom::Start(0)).ok()?;
+    let mut bytes = Vec::new();
+    reader.take(MAX_RECORD_BYTES).read_to_end(&mut bytes).ok()?;
+    Some(format!("{:x}", Sha256::digest(bytes)))
 }
 
-fn generation(state: &AppState) -> Generation {
-    let guard = state.store.lock().unwrap_or_else(|e| e.into_inner());
-    let data = guard.data();
-    Generation {
+#[cfg(target_os = "macos")]
+fn generation(
+    state: &AppState,
+    revision: u64,
+    network_context: Option<String>,
+) -> Option<Generation> {
+    if state.exit.ensure_open().is_err()
+        || state.config_transition.load(Ordering::SeqCst)
+        || !state.sysproxy.observation_ready()
+    {
+        return None;
+    }
+    let core = state.core();
+    if core.status() != crate::engine::manager::CoreStatus::Running {
+        return None;
+    }
+    let proxy = state.sysproxy.status();
+    let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+    let data = store.data();
+    let profile = data
+        .active_profile
+        .as_deref()
+        .and_then(|id| data.profile(id));
+    let encoded = serde_json::to_vec(&(&data.engine, profile, &data.overrides)).ok()?;
+    Some(Generation {
+        session: SESSION.clone(),
+        revision,
         profile_id: data.active_profile.clone(),
         mixed_port: data.engine.mixed_port,
-        core_pid: state.core().pid(),
+        core_pid: core.pid(),
         tun_enabled: data.engine.tun_enable,
-    }
+        sysproxy_enabled: proxy.enabled,
+        config_digest: format!("{:x}", Sha256::digest(encoded)),
+        network_context,
+    })
 }
 
-fn record_path(state: &AppState) -> PathBuf {
-    state.data_dir.join("sysproxy-fault.json")
+#[cfg(target_os = "macos")]
+fn snapshot(state: &AppState, deadline: Instant) -> Option<Generation> {
+    let network = network_context(deadline);
+    let revision = *REVISION.lock().unwrap_or_else(|e| e.into_inner());
+    generation(state, revision, network)
 }
 
-/// 故障恢复确认：同代未恢复记录补记 resolved_at（恢复 = 首个成功的
-/// 经代理请求，#490 网络事件同样复用）。
-pub(crate) fn confirm_recovery(state: &AppState, evidence: &FaultEvidence) {
-    let gen = generation(state);
-    if evidence.profile_id == gen.profile_id && evidence.mixed_port == gen.mixed_port {
-        let mut resolved = evidence.clone();
-        resolved.resolved_at_ms = Some(now_ms());
-        let _ = save(state, &resolved);
-    }
+#[cfg(any(target_os = "macos", test))]
+fn active(gen: &Generation) -> bool {
+    !gen.tun_enabled && gen.sysproxy_enabled
 }
 
-/// 落盘一轮取证：仅在无未恢复记录时写入（开记录抑制，#488 语义）。
-pub(crate) fn record_round_if_needed(state: &AppState, evidence: FaultEvidence) -> bool {
-    if let Some(existing) = load(state) {
-        if existing.resolved_at_ms.is_none() {
-            return false;
-        }
-    }
-    save(state, &evidence).is_ok()
-}
-
-pub fn load(state: &AppState) -> Option<FaultEvidence> {
-    let bytes = std::fs::read(record_path(state)).ok()?;
-    // 有界防御：超过 16KB 的文件视为损坏证据，直接丢弃。
-    if bytes.len() > 16 * 1024 {
+#[cfg(any(target_os = "macos", test))]
+fn read_record(path: &Path) -> Option<FaultEvidence> {
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)
+        .ok()?
+        .take(MAX_RECORD_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.len() as u64 > MAX_RECORD_BYTES {
         return None;
     }
     serde_json::from_slice(&bytes).ok()
 }
 
-fn save(state: &AppState, evidence: &FaultEvidence) -> Result<(), String> {
+#[cfg(target_os = "macos")]
+pub fn load(state: &AppState) -> Option<FaultEvidence> {
+    let evidence = read_record(&state.data_dir.join("sysproxy-fault.json"))?;
+    if evidence.resolved_at_ms.is_none() {
+        let current = snapshot(state, Instant::now() + Duration::from_secs(1))?;
+        if !active(&current) || evidence.generation != current {
+            return None;
+        }
+    }
+    Some(evidence)
+}
+
+// 第一版只在 macOS 采集。其他平台保留 IPC 合约，不读取或生成证据。
+#[cfg(not(target_os = "macos"))]
+pub fn load(_: &AppState) -> Option<serde_json::Value> {
+    None
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn save(path: &Path, evidence: &FaultEvidence) -> Result<(), String> {
     let mut bytes = serde_json::to_vec(evidence).map_err(|e| e.to_string())?;
     bytes.push(b'\n');
-    let path = record_path(state);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > MAX_RECORD_BYTES {
+        return Err("fault evidence exceeds 16KB".into());
     }
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(&path)
-        .map_err(|e| e.to_string())?;
-    file.write_all(&bytes).map_err(|e| e.to_string())
+    let parent = path
+        .parent()
+        .ok_or("fault evidence has no parent directory")?;
+    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+    file.write_all(&bytes).map_err(|e| e.to_string())?;
+    file.persist(path).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
-fn remove(state: &AppState, handle: &tauri::AppHandle) {
-    let _ = std::fs::remove_file(record_path(state));
-    let _ = handle.emit("sysproxy://fault-updated", ());
+#[cfg(target_os = "macos")]
+fn publish(
+    handle: &tauri::AppHandle,
+    state: &AppState,
+    gen: &Generation,
+    evidence: Option<&FaultEvidence>,
+) {
+    // core_op 与公共配置事务串行，REVISION 与接管入口串行，检查和写入不可分开。
+    let Ok(_core) = state.core_op.try_lock() else {
+        return;
+    };
+    let revision = REVISION.lock().unwrap_or_else(|e| e.into_inner());
+    let current = generation(
+        state,
+        *revision,
+        network_context(Instant::now() + Duration::from_secs(1)),
+    );
+    if current.as_ref() != Some(gen) {
+        return;
+    }
+    let path = state.data_dir.join("sysproxy-fault.json");
+    let result = match evidence {
+        Some(evidence) => save(&path, evidence),
+        None => match std::fs::remove_file(path) {
+            Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.to_string()),
+            _ => Ok(()),
+        },
+    };
+    match result {
+        Ok(()) => {
+            let _ = handle.emit("sysproxy://fault-updated", ());
+        }
+        Err(_) => eprintln!("could not persist system proxy fault evidence"),
+    }
 }
 
-/// 一轮分层取证。代（配置/内核/接管状态）在完成后复核：不匹配即丢弃，
-/// 迟到的结果永远无法覆盖新状态（issue 验收第 3 条）。
-pub(crate) fn run_round(state: &AppState) -> Option<FaultEvidence> {
-    let gen = generation(state);
-    let mixed_port = gen.mixed_port;
-    let sysproxy_observed: Vec<String> = state
-        .sysproxy
-        .external_endpoints()
-        .into_iter()
-        .map(|(service, endpoint)| format!("{service} → {}:{}", endpoint.host, endpoint.port))
-        .collect();
+#[cfg(target_os = "macos")]
+fn observe_endpoints(handle: &tauri::AppHandle, deadline: Instant) -> Vec<String> {
+    let Some(flight) = Flight::enter(&OBSERVATION_IN_FLIGHT) else {
+        return vec![];
+    };
+    let (send, recv) = std::sync::mpsc::sync_channel(1);
+    let handle = handle.clone();
+    std::thread::spawn(move || {
+        let _flight = flight;
+        let Some(state) = handle.try_state::<AppState>() else {
+            return;
+        };
+        let observations: Vec<_> = state
+            .sysproxy
+            .external_endpoints()
+            .into_iter()
+            .take(12)
+            .map(|(service, endpoint)| {
+                format!(
+                    "{} → {}:{}",
+                    service.chars().take(40).collect::<String>(),
+                    if endpoint
+                        .host
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || ".:-_[]".contains(c))
+                    {
+                        endpoint.host.chars().take(80).collect::<String>()
+                    } else {
+                        "unknown".into()
+                    },
+                    endpoint.port
+                )
+            })
+            .collect();
+        let _ = send.send(observations);
+    });
+    budget(deadline)
+        .and_then(|timeout| recv.recv_timeout(timeout.min(PROBE_TIMEOUT)).ok())
+        .unwrap_or_default()
+}
 
-    let mixed_port_ok = probe_mixed_port(mixed_port);
+#[cfg(target_os = "macos")]
+fn run_round(
+    handle: &tauri::AppHandle,
+    state: &AppState,
+    gen: Generation,
+    proxy_https: ProbeEvidence,
+    started_at_ms: u64,
+    deadline: Instant,
+) -> FaultEvidence {
+    let sysproxy_observed = observe_endpoints(handle, deadline);
+    let mixed_port_ok = budget(deadline).is_some_and(|timeout| {
+        TcpStream::connect_timeout(
+            &([127, 0, 0, 1], gen.mixed_port).into(),
+            timeout.min(PROBE_TIMEOUT),
+        )
+        .is_ok()
+    });
     let controller = state
         .core()
         .controller()
-        .map(|(port, secret)| probe_controller(port, &secret))
-        .unwrap_or(ProbeOutcome {
-            class: "unknown".to_string(),
-            http_status: None,
-        });
-    let direct = direct_agent();
-    let direct_cn = probe_with_review(&direct, DIRECT_CN);
-    let direct_global = probe_with_review(&direct, DIRECT_GLOBAL);
-    let proxy_https = proxied_agent(mixed_port)
-        .map(|agent| probe_with_review(&agent, PROXY_TARGETS))
-        .unwrap_or(ProbeOutcome {
-            class: "unknown".to_string(),
-            http_status: None,
-        });
-
-    // 代复核：配置切换/内核替换/接管开关发生后，本轮结果作废。
-    if generation(state) != gen {
-        return None;
-    }
-    Some(FaultEvidence {
-        mode: "sysproxy".to_string(),
-        started_at_ms: now_ms(),
-        resolved_at_ms: None,
-        profile_id: gen.profile_id,
+        .and_then(|(port, secret)| {
+            let timeout = budget(deadline)?;
+            Some(request_outcome(
+                ureq::AgentBuilder::new()
+                    .try_proxy_from_env(false)
+                    .timeout(timeout.min(PROBE_TIMEOUT))
+                    .build()
+                    .get(&format!("http://127.0.0.1:{port}/version"))
+                    .set("Authorization", &format!("Bearer {secret}")),
+                200,
+            ))
+        })
+        .unwrap_or_else(ProbeOutcome::unknown);
+    let direct_cn = probe_with_review(None, &DIRECT_CN, deadline);
+    let direct_global = probe_with_review(None, &DIRECT_GLOBAL, deadline);
+    FaultEvidence {
+        mode: "sysproxy".into(),
+        started_at_ms,
+        resolved_at_ms: proxy_https.reachable().then(now_ms),
+        profile_id: gen.profile_id.clone(),
         mixed_port: gen.mixed_port,
+        generation: gen,
         sysproxy_observed,
         mixed_port_ok,
         controller,
+        direct_path: "unverified".into(),
         direct_cn,
         direct_global,
         proxy_https,
-    })
+    }
 }
 
-/// 看门狗 tick 入口（macOS、TUN 关闭、系统代理开启、内核运行中才有动作）。
+#[cfg(any(target_os = "macos", test))]
+#[derive(Debug, PartialEq, Eq)]
+enum Action {
+    Nothing,
+    Resolve,
+    Capture,
+}
+#[cfg(any(target_os = "macos", test))]
+fn decide(existing: Option<&FaultEvidence>, gen: &Generation, probe: &ProbeEvidence) -> Action {
+    let same = existing.filter(|e| &e.generation == gen);
+    if probe.reachable() {
+        if same.is_some_and(|e| e.resolved_at_ms.is_none()) {
+            Action::Resolve
+        } else if same.is_none() && !probe.primary.is_ok() {
+            Action::Capture
+        } else {
+            Action::Nothing
+        }
+    } else if same.is_some_and(|e| e.resolved_at_ms.is_none()) {
+        Action::Nothing
+    } else {
+        Action::Capture
+    }
+}
+
+#[cfg(target_os = "macos")]
 pub fn tick(handle: &tauri::AppHandle, ticks: u32) {
     if !ticks.is_multiple_of(CANARY_INTERVAL_TICKS) {
         return;
     }
-    let h = handle.clone();
+    let Some(flight) = Flight::enter(&ROUND_IN_FLIGHT) else {
+        return;
+    };
+    let handle = handle.clone();
     std::thread::spawn(move || {
-        let Some(state) = h.try_state::<AppState>() else {
+        let _flight = flight;
+        let Some(state) = handle.try_state::<AppState>() else {
             return;
         };
-        if state.exit.ensure_open().is_err() {
+        let deadline = Instant::now() + ROUND_TIMEOUT;
+        let Some(gen) = snapshot(&state, deadline) else {
+            return;
+        };
+        let mut existing = read_record(&state.data_dir.join("sysproxy-fault.json"));
+        if existing
+            .as_ref()
+            .is_some_and(|e| e.resolved_at_ms.is_none() && e.generation != gen)
+        {
+            publish(&handle, &state, &gen, None);
+            existing = None;
+        }
+        if !active(&gen) {
+            if existing
+                .as_ref()
+                .is_some_and(|e| e.resolved_at_ms.is_none())
+            {
+                publish(&handle, &state, &gen, None);
+            }
             return;
         }
-        let tun_on = state
-            .store
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .data()
-            .engine
-            .tun_enable;
-        let sysproxy_on = state.sysproxy.status().enabled;
-        let running = matches!(
-            state.core().status(),
-            crate::engine::manager::CoreStatus::Running
-        );
-        if tun_on || !sysproxy_on {
-            // 接管状态变化：旧上下文的未恢复记录按代丢弃。
-            if let Some(existing) = load(&state) {
-                if existing.resolved_at_ms.is_none() {
-                    remove(&state, &h);
+        let started = now_ms();
+        let probe = probe_with_review(Some(gen.mixed_port), &PROXY_TARGETS, deadline);
+        match decide(existing.as_ref(), &gen, &probe) {
+            Action::Nothing => {}
+            Action::Resolve => {
+                if let Some(mut evidence) = existing {
+                    evidence.resolved_at_ms = Some(now_ms());
+                    evidence.proxy_https = probe;
+                    publish(&handle, &state, &gen, Some(&evidence));
                 }
             }
-            return;
-        }
-        let port = state
-            .store
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .data()
-            .engine
-            .mixed_port;
-        if !running {
-            // 内核停止/崩溃由既有 sysproxy 兜底负责；这里不做金丝雀。
-            return;
-        }
-
-        // 金丝雀：经混合端口的一次 204 请求。
-        let canary = proxied_agent(port)
-            .map(|agent| probe_one(&agent, PROXY_TARGETS[0]))
-            .map(|outcome| outcome.is_ok())
-            .unwrap_or(false);
-        let existing = load(&state);
-        if canary {
-            if let Some(evidence) = existing.filter(|e| e.resolved_at_ms.is_none()) {
-                // 故障恢复确认：补记 resolved_at（同代才有效）。
-                confirm_recovery(&state, &evidence);
+            Action::Capture => {
+                let evidence = run_round(&handle, &state, gen.clone(), probe, started, deadline);
+                publish(&handle, &state, &gen, Some(&evidence));
             }
-            return;
-        }
-        // 金丝雀失败：未恢复的记录已存在 → 证据已在手，不重复取证。
-        if let Some(evidence) = existing {
-            if evidence.resolved_at_ms.is_none() {
-                return;
-            }
-        }
-        if ROUND_IN_FLIGHT.swap(true, Ordering::SeqCst) {
-            return;
-        }
-        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let state = h.state::<AppState>();
-            run_round(&state)
-        }));
-        ROUND_IN_FLIGHT.store(false, Ordering::SeqCst);
-        if let Ok(Some(evidence)) = outcome {
-            let _ = save(&state, &evidence);
-            let _ = h.emit("sysproxy://fault-updated", ());
         }
     });
 }
@@ -398,85 +572,244 @@ pub fn tick(handle: &tauri::AppHandle, ticks: u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::TcpListener;
 
-    #[test]
-    fn status_classification_separates_ok_from_site_limit() {
-        assert_eq!(classify_status(204), "ok");
-        assert_eq!(classify_status(200), "ok");
-        assert_eq!(classify_status(302), "ok");
-        assert_eq!(classify_status(403), "http_status");
-        assert_eq!(classify_status(429), "http_status");
-        assert_eq!(classify_status(502), "http_status");
+    fn outcome(class: &str, http_status: Option<u16>) -> ProbeOutcome {
+        ProbeOutcome {
+            class: class.into(),
+            http_status,
+        }
     }
-
-    #[test]
-    fn transport_classification_covers_the_evidence_categories() {
-        assert_eq!(classify_transport("Network timed out"), "timeout");
-        assert_eq!(
-            classify_transport("Connection refused (os error 111)"),
-            "connect"
-        );
-        assert_eq!(classify_transport("invalid peer certificate"), "tls");
-        assert_eq!(classify_transport("Dns Failed"), "dns");
-        assert_eq!(classify_transport("weird"), "unknown");
+    fn healthy() -> ProbeEvidence {
+        ProbeEvidence {
+            primary: outcome("ok", Some(204)),
+            review: None,
+        }
     }
-
-    #[test]
-    fn review_probe_takes_the_independent_endpoint_when_the_first_fails() {
-        // 无法在单测里真的发请求：直接验证结构与序列化有界性。
-        let outcome = ProbeOutcome {
-            class: "timeout".into(),
-            http_status: None,
-        };
-        assert!(!outcome.is_ok());
-        let evidence = FaultEvidence {
-            mode: "sysproxy".into(),
-            started_at_ms: 1_700_000_000_000,
-            resolved_at_ms: None,
-            profile_id: Some("demo".into()),
-            mixed_port: 7898,
-            sysproxy_observed: vec!["Wi-Fi → 127.0.0.1:7898".into()],
-            mixed_port_ok: true,
-            controller: ProbeOutcome {
-                class: "ok".into(),
-                http_status: Some(200),
-            },
-            direct_cn: outcome.clone(),
-            direct_global: ProbeOutcome {
-                class: "ok".into(),
-                http_status: None,
-            },
-            proxy_https: ProbeOutcome {
-                class: "timeout".into(),
-                http_status: None,
-            },
-        };
-        let bytes = serde_json::to_vec(&evidence).unwrap();
-        assert!(bytes.len() < 16 * 1024);
-        let back: FaultEvidence = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(back, evidence);
-        assert_eq!(back.proxy_https.class, "timeout");
-        assert!(serde_json::to_value(&back).unwrap()["startedAtMs"]
-            .as_u64()
-            .is_some());
+    fn failed() -> ProbeEvidence {
+        ProbeEvidence {
+            primary: outcome("timeout", None),
+            review: Some(outcome("timeout", None)),
+        }
     }
-
-    #[test]
-    fn generation_recheck_is_the_only_write_path() {
-        // 代不一致时 run_round 返回 None 的逻辑依赖 Generation 的完整比较；
-        // 这里锁住字段集，防止将来新增字段忘记纳入比较。
-        let gen = Generation {
-            profile_id: Some("p".into()),
+    fn gen() -> Generation {
+        Generation {
+            session: "test-session".into(),
+            revision: 1,
+            profile_id: Some("A".into()),
             mixed_port: 7898,
             core_pid: Some(1),
             tun_enabled: false,
-        };
-        let same = gen.clone();
-        let different = Generation {
-            core_pid: Some(2),
-            ..gen.clone()
-        };
-        assert_eq!(gen, same);
-        assert_ne!(gen, different);
+            sysproxy_enabled: true,
+            config_digest: "config-a".into(),
+            network_context: Some("network-a".into()),
+        }
+    }
+    fn evidence() -> FaultEvidence {
+        FaultEvidence {
+            mode: "sysproxy".into(),
+            started_at_ms: 1,
+            resolved_at_ms: None,
+            generation: gen(),
+            profile_id: Some("A".into()),
+            mixed_port: 7898,
+            sysproxy_observed: vec![],
+            mixed_port_ok: true,
+            controller: outcome("ok", Some(200)),
+            direct_path: "unverified".into(),
+            direct_cn: healthy(),
+            direct_global: healthy(),
+            proxy_https: failed(),
+        }
+    }
+    fn server(statuses: Vec<u16>) -> (u16, std::thread::JoinHandle<Vec<String>>) {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let worker = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let mut requests = Vec::new();
+            for status in statuses {
+                let mut conn = loop {
+                    match listener.accept() {
+                        Ok((conn, _)) => break conn,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(Instant::now() < deadline, "missing probe request");
+                            std::thread::sleep(Duration::from_millis(2));
+                        }
+                        Err(error) => panic!("accept: {error}"),
+                    }
+                };
+                conn.set_nonblocking(false).unwrap();
+                conn.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+                let mut request = Vec::new();
+                let mut byte = [0u8];
+                while !request.ends_with(b"\r\n\r\n") {
+                    if conn.read(&mut byte).unwrap() == 0 {
+                        break;
+                    }
+                    request.push(byte[0]);
+                }
+                requests.push(
+                    String::from_utf8(request)
+                        .unwrap()
+                        .lines()
+                        .next()
+                        .unwrap()
+                        .to_owned(),
+                );
+                write!(
+                    conn,
+                    "HTTP/1.1 {status} Test\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                )
+                .unwrap();
+            }
+            requests
+        });
+        (port, worker)
+    }
+
+    #[test]
+    fn https_probe_exposes_connect_failure_even_when_http_works() {
+        assert!(PROXY_TARGETS.iter().all(|url| url.starts_with("https://")));
+        let (port, worker) = server(vec![204, 502, 502]);
+        let deadline = Instant::now() + Duration::from_secs(4);
+        assert!(probe_one(Some(port), "http://example.invalid/generate_204", deadline).is_ok());
+        let probe = probe_with_review(Some(port), &PROXY_TARGETS, deadline);
+        assert!(!probe.reachable());
+        assert_eq!(decide(None, &gen(), &probe), Action::Capture);
+        let requests = worker.join().unwrap();
+        assert!(requests[0].starts_with("HEAD http://"));
+        assert!(requests[1..]
+            .iter()
+            .all(|line| line.starts_with("CONNECT ")));
+    }
+
+    #[test]
+    fn site_limits_survive_successful_review_and_use_the_same_recovery_rule() {
+        for status in [403, 429] {
+            let (port, worker) = server(vec![status, 204]);
+            let first = format!("http://127.0.0.1:{port}/first");
+            let second = format!("http://127.0.0.1:{port}/second");
+            let probe = probe_with_review(
+                None,
+                &[&first, &second],
+                Instant::now() + Duration::from_secs(3),
+            );
+            assert_eq!(probe.primary, outcome("http_status", Some(status)));
+            assert_eq!(probe.review, Some(outcome("ok", Some(204))));
+            assert!(probe.reachable());
+            assert_eq!(decide(None, &gen(), &probe), Action::Capture);
+            let mut old = evidence();
+            assert_eq!(decide(Some(&old), &gen(), &probe), Action::Resolve);
+            old.resolved_at_ms = Some(2);
+            assert_eq!(decide(Some(&old), &gen(), &probe), Action::Nothing);
+            worker.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn old_generation_cannot_block_new_faults_or_be_resolved_by_them() {
+        let old = evidence();
+        let original = gen();
+        let mut variants = Vec::new();
+        let mut next = original.clone();
+        next.profile_id = Some("B".into());
+        variants.push(next);
+        let mut next = original.clone();
+        next.core_pid = Some(2);
+        variants.push(next);
+        let mut next = original.clone();
+        next.config_digest = "updated-same-profile".into();
+        variants.push(next);
+        let mut next = original.clone();
+        next.network_context = Some("network-b".into());
+        variants.push(next);
+        let mut next = original.clone();
+        next.revision += 2;
+        variants.push(next); // off -> on / A -> B -> A
+        let mut next = original.clone();
+        next.session = "new-app-session".into();
+        variants.push(next);
+        for new in variants {
+            assert_eq!(decide(Some(&old), &new, &failed()), Action::Capture);
+            assert_eq!(decide(Some(&old), &new, &healthy()), Action::Nothing);
+            assert_ne!(old.generation, new); // 实际发布前也使用完整比较
+        }
+        let mut disabled = original;
+        disabled.sysproxy_enabled = false;
+        assert!(!active(&disabled));
+        assert_ne!(old.generation, disabled);
+    }
+
+    #[test]
+    fn same_fault_is_deduplicated_and_recovery_stays_available() {
+        let old = evidence();
+        assert_eq!(decide(Some(&old), &gen(), &failed()), Action::Nothing);
+        assert_eq!(decide(Some(&old), &gen(), &healthy()), Action::Resolve);
+        let flag = AtomicBool::new(false);
+        let flight = Flight::enter(&flag).unwrap();
+        assert!(Flight::enter(&flag).is_none());
+        drop(flight);
+        assert!(Flight::enter(&flag).is_some());
+    }
+
+    #[test]
+    fn evidence_is_atomic_private_and_bounded() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("fault.json");
+        let old = evidence();
+        save(&path, &old).unwrap();
+        assert_eq!(read_record(&path), Some(old.clone()));
+        let mut too_large = old.clone();
+        too_large.sysproxy_observed = vec!["x".repeat(MAX_RECORD_BYTES as usize)];
+        assert!(save(&path, &too_large).is_err());
+        assert_eq!(read_record(&path), Some(old));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        std::fs::write(&path, vec![b'x'; MAX_RECORD_BYTES as usize + 1]).unwrap();
+        assert!(read_record(&path).is_none());
+        std::fs::write(&path, br#"{"mode":"sysproxy","startedAtMs":1}"#).unwrap();
+        assert!(read_record(&path).is_none()); // 旧格式没有完整代，不能继续抑制取证
+    }
+
+    #[test]
+    fn deadline_prevents_extra_network_work_and_redirects_are_not_recovery() {
+        assert!(budget(Instant::now() - Duration::from_secs(1)).is_none());
+        let probe = probe_with_review(
+            Some(1),
+            &PROXY_TARGETS,
+            Instant::now() - Duration::from_secs(1),
+        );
+        assert!(!probe.reachable());
+        for status in [200, 302, 403, 429, 502] {
+            assert_eq!(classify_status(status, 204), "http_status");
+        }
+        assert_eq!(classify_status(204, 204), "ok");
+        assert_eq!(
+            classify_transport("Connection failed: invalid peer certificate"),
+            "tls"
+        );
+        assert_eq!(classify_transport("Network timeout"), "timeout");
+        assert_eq!(classify_transport("Dns failed"), "dns");
+    }
+
+    #[test]
+    fn controller_200_is_healthy_but_not_a_successful_204_canary() {
+        let (port, worker) = server(vec![200, 200]);
+        let url = format!("http://127.0.0.1:{port}/version");
+        let agent = ureq::AgentBuilder::new()
+            .try_proxy_from_env(false)
+            .timeout(Duration::from_secs(1))
+            .build();
+        assert!(request_outcome(agent.get(&url), 200).is_ok());
+        assert!(!probe_one(None, &url, Instant::now() + Duration::from_secs(1)).is_ok());
+        worker.join().unwrap();
     }
 }
