@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import ssl
 import sys
 import tempfile
 import threading
@@ -77,6 +78,20 @@ class BenchmarkTests(unittest.TestCase):
             result = b.proxied_fetch(port, 'https://unresolvable.invalid/204')
         self.assertFalse(result['ok'])
         self.assertEqual(proxy.paths, ['CONNECT unresolvable.invalid:443'])
+
+    def test_certificate_failure_is_recorded_without_disabling_tls_verification(self):
+        error = ssl.SSLCertVerificationError('certificate verification failed')
+        error.verify_code = 20
+        with patch.object(b.http.client, 'HTTPSConnection') as connection:
+            connection.return_value.request.side_effect = error
+            result = b.proxied_fetch(12345, 'https://unresolvable.invalid/204')
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['error_class'], 'tls')
+        self.assertEqual(result['tls_reason'], 'certificate_verify_failed')
+        self.assertEqual(result['tls_verify_code'], 20)
+        context = connection.call_args.kwargs['context']
+        self.assertTrue(context.check_hostname)
+        self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
 
     def test_redirect_and_other_success_status_are_not_204_samples(self):
         for status in [200, 302, 403]:

@@ -158,8 +158,11 @@ def proxied_fetch(mixed_port, url, timeout=5, expected_status=204, expected_byte
                 result["error_class"] = "proxy_peer"
             else:
                 result["ok"] = True
-    except ssl.SSLError:
-        result["error_class"] = "tls"
+    except ssl.SSLCertVerificationError as error:
+        result.update(error_class="tls", tls_reason="certificate_verify_failed",
+                      tls_verify_code=getattr(error, 'verify_code', None))
+    except ssl.SSLError as error:
+        result.update(error_class="tls", tls_reason=getattr(error, 'reason', None))
     except (TimeoutError, socket.timeout):
         result["error_class"] = "timeout"
     except http.client.IncompleteRead as error:
@@ -390,6 +393,18 @@ def dns_baseline(count, timeout):
             "worker_startup_excluded": True, **summarize(samples)}
 
 
+def tls_metadata():
+    paths = ssl.get_default_verify_paths()
+    info = {"trust_model": "Python default context; certificate verification required",
+            "default_ca_file_available": bool(paths.cafile),
+            "default_ca_directory_available": bool(paths.capath)}
+    try:
+        info["loaded_ca_certificates_at_start"] = len(ssl.create_default_context().get_ca_certs())
+    except ssl.SSLError:
+        info["context_error"] = "tls_context_initialization_failed"
+    return info
+
+
 def hardware_metadata():
     info = {"logical_cpus": os.cpu_count(), "cpu_model": platform.processor() or None,
             "python_version": platform.python_version(), "memory_bytes": None}
@@ -436,7 +451,7 @@ def run(core_bin, output, samples=30, size_mib=8, rounds=2, public_samples=0,
     result = {"schema_version": 2, "status": "failed", "mode": "explicit-proxy",
               "core_outbound_intent": "DIRECT", "physical_egress": "unverified",
               "source": source_metadata(), "env": {"os": platform.platform(), "arch": platform.machine(),
-              "hardware": hardware_metadata(),
+              "hardware": hardware_metadata(), "client_tls": tls_metadata(),
               "recorded_at": datetime.now(timezone.utc).isoformat()},
               "params": {"latency_samples_per_round": samples, "size_mib": size_mib, "rounds": rounds,
               "public_samples_per_target_per_round": public_samples, "dns_samples": dns_samples,
