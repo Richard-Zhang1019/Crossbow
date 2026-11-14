@@ -85,9 +85,9 @@ struct ClashGroup {
     url: Option<String>,
     #[serde(default)]
     interval: Option<u64>,
-    /// url-test 容差（毫秒）；仅校验后透传，未配置交给内核默认（#489）。
+    /// 保留原值，在 url-test 转换时连同组名校验类型、范围和零值语义（#489）。
     #[serde(default)]
-    tolerance: Option<u64>,
+    tolerance: Option<Value>,
 }
 
 /// Clash YAML → sing-box JSON（pretty）。
@@ -387,17 +387,14 @@ fn convert_group(
             "default": members[0]
         })),
         "url-test" => {
-            let mut out = json!({
+            let tolerance = convert_urltest_tolerance(g)?;
+            Ok(json!({
                 "type": "urltest", "tag": g.name,
                 "outbounds": members,
                 "url": g.url.clone().unwrap_or_else(|| "http://www.gstatic.com/generate_204".into()),
-                "interval": format!("{}s", g.interval.unwrap_or(300).max(60))
-            });
-            // 容差（毫秒）逐项映射；未配置则交给内核默认值。
-            if let Some(tolerance) = g.tolerance {
-                out["tolerance"] = json!(tolerance);
-            }
-            Ok(out)
+                "interval": format!("{}s", g.interval.unwrap_or(300).max(60)),
+                "tolerance": tolerance
+            }))
         }
         // fallback / load-balance 在 sing-box 无等价类型：降级 selector 会
         // 静默失去故障转移/负载分配语义（#489）。宁可拒绝转换——用户可以
@@ -408,6 +405,35 @@ fn convert_group(
         ))),
         other => Err(ConvertError::UnsupportedProxy(format!("组类型 {other}"))),
     }
+}
+
+fn convert_urltest_tolerance(g: &ClashGroup) -> Result<u16, ConvertError> {
+    // mihomo 缺省值为 0；sing-box 1.14.2 会把 0/缺省改成 50ms，不能
+    // 通过透传或省略保留零容差。按不支持等价转换处理，禁止静默改选路。
+    let tolerance = match &g.tolerance {
+        None => 0,
+        Some(raw) => raw
+            .as_u64()
+            .and_then(|value| u16::try_from(value).ok())
+            .ok_or_else(|| {
+                ConvertError::InvalidGroup(format!(
+                    "策略组「{}」的 tolerance={raw} 非法：必须是 0..65535 的整数（毫秒）",
+                    g.name
+                ))
+            })?,
+    };
+    if tolerance == 0 {
+        let source = if g.tolerance.is_some() {
+            "tolerance=0"
+        } else {
+            "tolerance 未配置（mihomo 默认 0ms）"
+        };
+        return Err(ConvertError::UnsupportedGroup(format!(
+            "策略组「{}」的 {source}：sing-box {SINGBOX_VERSION} 会改用 50ms，无法等价保留零容差；请继续使用 mihomo，或在源配置中显式设置 1..65535ms 的正 tolerance",
+            g.name
+        )));
+    }
+    Ok(tolerance)
 }
 
 /// 单条 Clash 规则（`TYPE,payload,target` 字符串）→ sing-box route rule；
@@ -601,21 +627,64 @@ rules:
     }
     // ===== #489：策略组成员与选路语义 =====
 
-    // url-test 自动组不得被追加直连候选；未配置 tolerance 时不出现在产物里。
+    fn url_test_config(tolerance: &str) -> String {
+        format!(
+            "proxies:\n  - name: a\n    type: ss\n    server: s\n    port: 1\n    cipher: aes-128-gcm\n    password: p\nproxy-groups:\n  - name: auto\n    type: url-test\n    proxies: [a]\n{tolerance}rules:\n  - MATCH,auto\n"
+        )
+    }
+
+    // 合法边界按值透传，自动组不得被追加直连候选。
     #[test]
-    fn url_test_group_keeps_proxy_only_members_and_omits_tolerance() {
-        let yaml = "proxies:\n  - name: a\n    type: ss\n    server: s\n    port: 1\n    cipher: aes-128-gcm\n    password: p\nproxy-groups:\n  - name: auto\n    type: url-test\n    proxies: [a]\nrules:\n  - MATCH,auto\n";
-        let out = convert_to_singbox(yaml, 7897, false).unwrap();
-        let v: Value = serde_json::from_str(&out).unwrap();
-        let auto = v["outbounds"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|o| o["tag"] == "auto")
-            .unwrap();
-        assert_eq!(auto["type"], "urltest");
-        assert_eq!(auto["outbounds"], json!(["a"]));
-        assert!(auto.get("tolerance").is_none());
+    fn url_test_keeps_proxy_only_members_and_valid_tolerance() {
+        for tolerance in [1, 120, 65535] {
+            let yaml = url_test_config(&format!("    tolerance: {tolerance}\n"));
+            let out = convert_to_singbox(&yaml, 7897, false).unwrap();
+            let v: Value = serde_json::from_str(&out).unwrap();
+            let auto = v["outbounds"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|o| o["tag"] == "auto")
+                .unwrap();
+            assert_eq!(auto["type"], "urltest");
+            assert_eq!(auto["outbounds"], json!(["a"]));
+            assert_eq!(auto["tolerance"], tolerance);
+        }
+    }
+
+    #[test]
+    fn zero_and_default_tolerance_reject_semantic_change() {
+        for tolerance in ["", "    tolerance: 0\n", "    tolerance: null\n"] {
+            let err = convert_to_singbox(&url_test_config(tolerance), 7897, false).unwrap_err();
+            assert!(
+                matches!(err, ConvertError::UnsupportedGroup(ref m)
+                    if m.contains("auto") && m.contains("tolerance")
+                        && m.contains("0") && m.contains("50ms")
+                        && m.contains("mihomo") && m.contains("1..65535")),
+                "unexpected: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_tolerance_reports_group_field_and_value() {
+        for tolerance in [
+            "-1",
+            "65536",
+            "18446744073709551615",
+            "1.5",
+            "\"50\"",
+            "true",
+        ] {
+            let yaml = url_test_config(&format!("    tolerance: {tolerance}\n"));
+            let err = convert_to_singbox(&yaml, 7897, false).unwrap_err();
+            assert!(
+                matches!(err, ConvertError::InvalidGroup(ref m)
+                    if m.contains("auto") && m.contains("tolerance")
+                        && m.contains(tolerance) && m.contains("0..65535")),
+                "unexpected: {err}"
+            );
+        }
     }
 
     // 显式引用 DIRECT 的组保留直连成员；规则里的 DIRECT 不受影响。
@@ -671,7 +740,7 @@ rules:
     // 整段 proxy-groups 解析失败必须报错，不得静默丢组（旧 unwrap_or_default）。
     #[test]
     fn malformed_proxy_groups_fail_loudly() {
-        let yaml = "proxies:\n  - name: a\n    type: ss\n    server: s\n    port: 1\n    cipher: aes-128-gcm\n    password: p\nproxy-groups:\n  - name: 组\n    type: select\n    proxies: [a]\n    tolerance: -50\nrules:\n  - MATCH,组\n";
+        let yaml = "proxies:\n  - name: a\n    type: ss\n    server: s\n    port: 1\n    cipher: aes-128-gcm\n    password: p\nproxy-groups:\n  - name: 组\n    type: select\n    proxies: invalid\nrules:\n  - MATCH,组\n";
         let err = convert_to_singbox(yaml, 7897, false).unwrap_err();
         assert!(
             matches!(err, ConvertError::Parse(ref m) if m.contains("proxy-groups")),
