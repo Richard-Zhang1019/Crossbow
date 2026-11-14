@@ -18,6 +18,10 @@ use serde_json::{json, Value};
 pub enum ConvertError {
     #[error("不支持的代理类型：{0}")]
     UnsupportedProxy(String),
+    #[error("{0}")]
+    InvalidGroup(String),
+    #[error("{0}")]
+    UnsupportedGroup(String),
     #[error("不支持的规则类型：{0}")]
     UnsupportedRule(String),
     #[error("配置缺少 proxies 段")]
@@ -81,6 +85,9 @@ struct ClashGroup {
     url: Option<String>,
     #[serde(default)]
     interval: Option<u64>,
+    /// url-test 容差（毫秒）；仅校验后透传，未配置交给内核默认（#489）。
+    #[serde(default)]
+    tolerance: Option<u64>,
 }
 
 /// Clash YAML → sing-box JSON（pretty）。
@@ -96,10 +103,28 @@ pub fn convert_to_singbox(
         serde_json::from_value(doc.get("proxies").cloned().ok_or(ConvertError::NoProxies)?)
             .map_err(|e| ConvertError::Parse(format!("proxies: {e}")))?;
 
+    // 组解析必须严格：过去 unwrap_or_default 会把整段解析失败静默成
+    // 「没有组」，生成丢组的配置（#489 同源的静默降级问题）。
     let groups: Vec<ClashGroup> = match doc.get("proxy-groups") {
-        Some(v) => serde_json::from_value(v.clone()).unwrap_or_default(),
+        Some(v) => serde_json::from_value(v.clone())
+            .map_err(|e| ConvertError::Parse(format!("proxy-groups: {e}")))?,
         None => vec![],
     };
+
+    // 已声明的出站 tag = 节点 + 组 + 内建 DIRECT。组成员引用一律按此校验，
+    // 不再用「并入 DIRECT」掩盖无效引用（#489：自动组被并入直连候选后，
+    // 条件合适时实际流量会从直连出站）。
+    let mut declared: std::collections::BTreeSet<String> =
+        proxies.iter().map(|p| p.name.clone()).collect();
+    for g in &groups {
+        if !declared.insert(g.name.clone()) {
+            return Err(ConvertError::InvalidGroup(format!(
+                "重复的策略组名「{}」",
+                g.name
+            )));
+        }
+    }
+    declared.insert("DIRECT".into());
 
     let rules: Vec<String> = match doc.get("rules") {
         Some(v) => serde_json::from_value(v.clone()).unwrap_or_default(),
@@ -112,7 +137,7 @@ pub fn convert_to_singbox(
         outbounds.push(convert_proxy(p)?);
     }
     for g in &groups {
-        outbounds.push(convert_group(g)?);
+        outbounds.push(convert_group(g, &declared)?);
     }
     outbounds.push(json!({
         "type": "direct", "tag": "DIRECT"
@@ -333,31 +358,54 @@ fn convert_proxy(p: &ClashProxy) -> Result<Value, ConvertError> {
     Ok(out)
 }
 
-fn convert_group(g: &ClashGroup) -> Result<Value, ConvertError> {
-    // DIRECT 兜底并入组（sing-box 不支持引用不存在的 outbound）
-    let mut members = g.proxies.clone();
-    if !members.iter().any(|m| m == "DIRECT") {
-        members.push("DIRECT".into());
+fn convert_group(
+    g: &ClashGroup,
+    declared: &std::collections::BTreeSet<String>,
+) -> Result<Value, ConvertError> {
+    // #489：保留原组成员与顺序。DIRECT 仅在原组显式引用时保留——
+    // 自动选路组（url-test）被并入直连候选后，测速合适时实际流量会
+    // 从直连出站，属于未经用户同意的出口变更。
+    if g.proxies.is_empty() {
+        return Err(ConvertError::InvalidGroup(format!(
+            "策略组「{}」没有成员",
+            g.name
+        )));
     }
+    for member in &g.proxies {
+        if !declared.contains(member) {
+            return Err(ConvertError::InvalidGroup(format!(
+                "策略组「{}」引用了不存在的成员「{}」",
+                g.name, member
+            )));
+        }
+    }
+    let members = g.proxies.clone();
     match g.kind.as_str() {
         "select" => Ok(json!({
             "type": "selector", "tag": g.name,
             "outbounds": members,
-            "default": members.first().cloned().unwrap_or_else(|| "DIRECT".into())
+            "default": members[0]
         })),
-        "url-test" => Ok(json!({
-            "type": "urltest", "tag": g.name,
-            "outbounds": members,
-            "url": g.url.clone().unwrap_or_else(|| "http://www.gstatic.com/generate_204".into()),
-            "interval": format!("{}s", g.interval.unwrap_or(300).max(60))
-        })),
-        "fallback" | "load-balance" => {
-            // 降级为 selector：语义最近似且安全
-            Ok(json!({
-                "type": "selector", "tag": g.name,
-                "outbounds": members
-            }))
+        "url-test" => {
+            let mut out = json!({
+                "type": "urltest", "tag": g.name,
+                "outbounds": members,
+                "url": g.url.clone().unwrap_or_else(|| "http://www.gstatic.com/generate_204".into()),
+                "interval": format!("{}s", g.interval.unwrap_or(300).max(60))
+            });
+            // 容差（毫秒）逐项映射；未配置则交给内核默认值。
+            if let Some(tolerance) = g.tolerance {
+                out["tolerance"] = json!(tolerance);
+            }
+            Ok(out)
         }
+        // fallback / load-balance 在 sing-box 无等价类型：降级 selector 会
+        // 静默失去故障转移/负载分配语义（#489）。宁可拒绝转换——用户可以
+        // 继续使用 mihomo 或修改源配置，而不是在切换内核时丢语义。
+        "fallback" | "load-balance" => Err(ConvertError::UnsupportedGroup(format!(
+            "策略组「{}」类型 {}：sing-box 无等价转换，降级会失去自动选路语义；请继续使用 mihomo 或修改源配置",
+            g.name, g.kind
+        ))),
         other => Err(ConvertError::UnsupportedProxy(format!("组类型 {other}"))),
     }
 }
@@ -418,12 +466,13 @@ proxies:
 proxy-groups:
   - name: 节点选择
     type: select
-    proxies: [HK-01, JP-Trojan]
+    proxies: [HK-01, JP-Trojan, DIRECT]
   - name: 自动
     type: url-test
     proxies: [HK-01]
     url: http://www.gstatic.com/generate_204
     interval: 300
+    tolerance: 120
 rules:
   - DOMAIN-SUFFIX,twitter.com,节点选择
   - GEOIP,CN,DIRECT
@@ -457,9 +506,13 @@ rules:
             .any(|o| o["type"] == "urltest" && o["tag"] == "自动"));
         assert!(obs.iter().any(|o| o["type"] == "direct"));
 
-        // 组引用
+        // 组引用：显式 DIRECT 保留为成员，顺序与源一致
         let sel = obs.iter().find(|o| o["tag"] == "节点选择").unwrap();
-        assert_eq!(sel["outbounds"].as_array().unwrap().len(), 3); // 2 节点 + DIRECT
+        assert_eq!(sel["outbounds"], json!(["HK-01", "JP-Trojan", "DIRECT"]));
+        // 自动组：纯代理成员，转换不得追加直连候选（#489）
+        let auto = obs.iter().find(|o| o["tag"] == "自动").unwrap();
+        assert_eq!(auto["outbounds"], json!(["HK-01"]));
+        assert_eq!(auto["tolerance"], 120);
 
         // route
         let rules = v["route"]["rules"].as_array().unwrap();
@@ -545,5 +598,84 @@ rules:
         let v: Value = serde_json::from_str(&out).unwrap();
         assert!(v["dns"]["servers"][0].get("detour").is_none());
         assert!(v["route"]["rule_set"][0].get("download_detour").is_none());
+    }
+    // ===== #489：策略组成员与选路语义 =====
+
+    // url-test 自动组不得被追加直连候选；未配置 tolerance 时不出现在产物里。
+    #[test]
+    fn url_test_group_keeps_proxy_only_members_and_omits_tolerance() {
+        let yaml = "proxies:\n  - name: a\n    type: ss\n    server: s\n    port: 1\n    cipher: aes-128-gcm\n    password: p\nproxy-groups:\n  - name: auto\n    type: url-test\n    proxies: [a]\nrules:\n  - MATCH,auto\n";
+        let out = convert_to_singbox(yaml, 7897, false).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        let auto = v["outbounds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|o| o["tag"] == "auto")
+            .unwrap();
+        assert_eq!(auto["type"], "urltest");
+        assert_eq!(auto["outbounds"], json!(["a"]));
+        assert!(auto.get("tolerance").is_none());
+    }
+
+    // 显式引用 DIRECT 的组保留直连成员；规则里的 DIRECT 不受影响。
+    #[test]
+    fn explicit_direct_member_survives() {
+        let yaml = "proxies:\n  - name: a\n    type: ss\n    server: s\n    port: 1\n    cipher: aes-128-gcm\n    password: p\nproxy-groups:\n  - name: manual\n    type: select\n    proxies: [a, DIRECT]\nrules:\n  - MATCH,manual\n";
+        let out = convert_to_singbox(yaml, 7897, false).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        let manual = v["outbounds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|o| o["tag"] == "manual")
+            .unwrap();
+        assert_eq!(manual["outbounds"], json!(["a", "DIRECT"]));
+        assert_eq!(v["route"]["final"], "manual");
+    }
+
+    // fallback / load-balance 无 sing-box 等价类型：拒绝转换并点名策略组，
+    // 不再静默降级成 selector 丢失自动选路语义。
+    #[test]
+    fn fallback_and_load_balance_fail_with_group_name() {
+        for kind in ["fallback", "load-balance"] {
+            let yaml = format!(
+                "proxies:\n  - name: a\n    type: ss\n    server: s\n    port: 1\n    cipher: aes-128-gcm\n    password: p\nproxy-groups:\n  - name: 分流组\n    type: {kind}\n    proxies: [a]\nrules:\n  - MATCH,分流组\n"
+            );
+            let err = convert_to_singbox(&yaml, 7897, false).unwrap_err();
+            assert!(
+                matches!(err, ConvertError::UnsupportedGroup(ref m) if m.contains("分流组") && m.contains(kind)),
+                "unexpected: {err}"
+            );
+        }
+    }
+
+    // 空组与未知成员引用：可定位到策略组名，而不是静默并入 DIRECT 兜底。
+    #[test]
+    fn empty_group_and_unknown_member_fail_locatably() {
+        let empty = "proxies:\n  - name: a\n    type: ss\n    server: s\n    port: 1\n    cipher: aes-128-gcm\n    password: p\nproxy-groups:\n  - name: 空组\n    type: select\n    proxies: []\nrules:\n  - MATCH,空组\n";
+        let err = convert_to_singbox(empty, 7897, false).unwrap_err();
+        assert!(
+            matches!(err, ConvertError::InvalidGroup(ref m) if m.contains("空组") && m.contains("没有成员")),
+            "unexpected: {err}"
+        );
+
+        let unknown = "proxies:\n  - name: a\n    type: ss\n    server: s\n    port: 1\n    cipher: aes-128-gcm\n    password: p\nproxy-groups:\n  - name: 组\n    type: select\n    proxies: [ghost]\nrules:\n  - MATCH,组\n";
+        let err = convert_to_singbox(unknown, 7897, false).unwrap_err();
+        assert!(
+            matches!(err, ConvertError::InvalidGroup(ref m) if m.contains("组」") && m.contains("ghost")),
+            "unexpected: {err}"
+        );
+    }
+
+    // 整段 proxy-groups 解析失败必须报错，不得静默丢组（旧 unwrap_or_default）。
+    #[test]
+    fn malformed_proxy_groups_fail_loudly() {
+        let yaml = "proxies:\n  - name: a\n    type: ss\n    server: s\n    port: 1\n    cipher: aes-128-gcm\n    password: p\nproxy-groups:\n  - name: 组\n    type: select\n    proxies: [a]\n    tolerance: -50\nrules:\n  - MATCH,组\n";
+        let err = convert_to_singbox(yaml, 7897, false).unwrap_err();
+        assert!(
+            matches!(err, ConvertError::Parse(ref m) if m.contains("proxy-groups")),
+            "unexpected: {err}"
+        );
     }
 }
