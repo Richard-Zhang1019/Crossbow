@@ -196,4 +196,47 @@ mod tests {
             Err(RenderError::NoActiveProfile)
         ));
     }
+
+    fn singbox_fixture(tolerance: &str) -> StoreSchema {
+        let mut s = fixture();
+        s.engine.engine = crate::model::Engine::SingBox;
+        s.profiles[0].content = format!(
+            "proxies:\n  - name: node\n    type: http\n    server: 127.0.0.1\n    port: 8080\nproxy-groups:\n  - name: auto\n    type: url-test\n    proxies: [node]\n{tolerance}rules:\n  - MATCH,auto\n"
+        );
+        s
+    }
+
+    #[test]
+    fn singbox_tolerance_errors_reach_render_preflight() {
+        for tolerance in ["", "    tolerance: 0\n", "    tolerance: 65536\n"] {
+            let s = singbox_fixture(tolerance);
+            for use_overrides in [true, false] {
+                assert!(matches!(
+                    render_config_with(&s, use_overrides),
+                    Err(RenderError::InvalidYaml(m))
+                        if m.contains("auto") && m.contains("tolerance")
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn singbox_tolerance_validation_uses_final_override_result() {
+        let mut s = singbox_fixture("    tolerance: 0\n");
+        s.overrides[0].content = "proxy-groups:\n  - name: auto\n    type: url-test\n    proxies: [node]\n    tolerance: 120\n".into();
+        let rendered = render_config(&s).unwrap();
+        let config: serde_json::Value = serde_json::from_str(&rendered.config).unwrap();
+        let group = config["outbounds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|outbound| outbound["tag"] == "auto")
+            .unwrap();
+        assert_eq!(group["tolerance"], 120);
+        // 安全模式跳过覆写后，原配置的零容差仍须拒绝，不能使用内核默认值。
+        assert!(matches!(
+            render_config_with(&s, false),
+            Err(RenderError::InvalidYaml(m)) if m.contains("50ms")
+        ));
+    }
 }

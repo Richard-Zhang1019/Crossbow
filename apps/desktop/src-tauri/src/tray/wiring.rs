@@ -543,6 +543,7 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
         let mut wedge_cooldown_until = std::time::Instant::now();
         let mut sysproxy_dead_ticks = 0u8;
         let mut last_probe_pid = None;
+        let mut evidence_ticks: u32 = 0;
         loop {
             let cycle_started = std::time::Instant::now();
             if let Some(state) = handle.try_state::<AppState>() {
@@ -852,6 +853,10 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                     }
                 }
             }
+            evidence_ticks = evidence_ticks.saturating_add(1);
+            // #488：系统代理模式（TUN 关闭）的故障取证金丝雀，macOS 第一版。
+            #[cfg(target_os = "macos")]
+            crate::diagnostics::fault_evidence::tick(&handle, evidence_ticks);
             std::thread::sleep(timing::WATCHDOG_TICK.saturating_sub(cycle_started.elapsed()));
         }
     });

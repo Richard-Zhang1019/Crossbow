@@ -1,4 +1,29 @@
-import type { CheckResult, DiagnosticReport } from "@/services/ipc";
+import type { CheckResult, DiagnosticReport, FaultEvidence, FaultEvidenceProbe } from "@/services/ipc";
+
+export function faultProbeText(probe: FaultEvidenceProbe, text: (key: string) => string) {
+  const known = ["ok", "timeout", "connect", "tls", "dns", "http_status", "unknown"];
+  const kind = known.includes(probe.class) ? probe.class : "unknown";
+  return text(`fault.class.${kind}`) + (kind === "http_status" && probe.httpStatus != null ? ` ${probe.httpStatus}` : "");
+}
+
+/** 白名单摘要：不导出 profile、网络指纹、服务名称、代理地址或任意原始错误。 */
+export function faultEvidenceText(fault: FaultEvidence) {
+  const text = (key: string) => key.replace("fault.class.", "");
+  const layer = (value: FaultEvidence["proxyHttps"]) =>
+    `primary=${faultProbeText(value.primary, text)}` +
+    (value.review ? `; review=${faultProbeText(value.review, text)}` : "");
+  return [
+    "System proxy fault evidence (explicit mixed-port HTTPS; node unknown)",
+    `Started: ${new Date(fault.startedAtMs).toISOString()}`,
+    `Recovery: ${fault.resolvedAtMs == null ? "unconfirmed" : new Date(fault.resolvedAtMs).toISOString()}`,
+    `Mixed port: ${fault.mixedPort}; TCP=${fault.mixedPortOk ? "ok" : "connect"}`,
+    `Controller: ${faultProbeText(fault.controller, text)}`,
+    "Direct baseline: bypassed explicit proxy; physical path unverified",
+    `Direct CN: ${layer(fault.directCn)}`,
+    `Direct global: ${layer(fault.directGlobal)}`,
+    `Proxy HTTPS: ${layer(fault.proxyHttps)}`,
+  ].join("\n");
+}
 
 const MAX_AGE_MS = 60_000;
 

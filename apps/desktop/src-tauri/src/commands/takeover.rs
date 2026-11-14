@@ -280,3 +280,21 @@ pub(crate) async fn set_tun(
         result
     }
 }
+
+/// #488：最近一次系统代理模式故障的分层取证（观察模式，可能为空）。
+#[tauri::command]
+pub(crate) async fn sysproxy_fault_evidence(
+    app: AppHandle,
+) -> Result<Option<serde_json::Value>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        match crate::diagnostics::fault_evidence::load(&state) {
+            Some(evidence) => serde_json::to_value(evidence)
+                .map(Some)
+                .map_err(|e| e.to_string()),
+            None => Ok(None),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}

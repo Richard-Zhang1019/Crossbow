@@ -49,6 +49,12 @@ UNIT = 'crossbow-tun.service'
 SECRET = 'crossbow-vm-e2e-0123456789abcdef'
 INSTALL_SCRIPT = HERE.parent / 'linux' / 'install-service.sh'
 
+# 与生产连通性探针一致：独立提供方的 HTTPS 204，不依赖共享 runner 的 GitHub API 配额。
+HTTPS_PROBES = (
+    ('https://www.gstatic.com/generate_204', 'www.gstatic.com'),
+    ('https://cp.cloudflare.com/generate_204', 'cp.cloudflare.com'),
+)
+
 CHECKS = []
 
 
@@ -237,11 +243,31 @@ def verify_session_resources(stream, result, uid):
           'and the core runs with CAP_NET_ADMIN only')
 
 
-def verify_data_plane(core_log, original_private_route):
-    for url, host in [('http://1.1.1.1', '1.1.1.1'), ('https://api.github.com/zen', 'api.github.com')]:
-        code, source, destination, port = fetch(url)
-        assert 200 <= code < 400, (url, code)
+def verify_https_probe(core_log):
+    failures = []
+    for url, host in HTTPS_PROBES:
+        try:
+            code, source, destination, port = fetch(url)
+        except AssertionError as error:
+            failures.append(f'{url}: {error}')
+            print(f'[probe] {failures[-1]}', flush=True)
+            continue
+        if code != 204:
+            failures.append(f'{url}: expected 204, received {code}')
+            print(f'[probe] {failures[-1]}', flush=True)
+            continue
+        # 成功响应仍须证明经过本次 TUN 连接。缺少日志不能靠切换站点掩盖。
         wait(lambda: saw_direct(core_log.read_text(), source, (host, destination), port), timeout=5)
+        check(f'HTTPS 204 from {host} matched a DIRECT connection in the TUN core log')
+        return
+    raise AssertionError('no HTTPS 204 endpoint succeeded: ' + '; '.join(failures))
+
+
+def verify_data_plane(core_log, original_private_route):
+    code, source, destination, port = fetch('http://1.1.1.1')
+    assert 200 <= code < 400, ('http://1.1.1.1', code)
+    wait(lambda: saw_direct(core_log.read_text(), source, ('1.1.1.1', destination), port), timeout=5)
+    verify_https_probe(core_log)
     check('public IPv4 HTTP and HTTPS probes each matched a DIRECT connection in the TUN core log')
     assert private_route() == original_private_route, 'private destination route changed'
     public = run('ip', 'route', 'get', '8.8.8.8')
