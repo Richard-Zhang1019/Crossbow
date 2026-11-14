@@ -847,6 +847,7 @@ pub fn run() {
             reset_proxy_selection,
             test_group_delay,
             test_node_delay,
+            test_node_delay_structured,
         ])
         .build(tauri::generate_context!())
         .unwrap_or_else(|e| {

@@ -143,6 +143,9 @@ const dict: Record<Lang, Record<string, string>> = {
     "proxies.startCore": "启动内核",
     "proxies.resetFilters": "重置筛选",
     "proxies.timeout": "超时",
+    "proxies.cancelTest": "取消测速",
+    "proxies.testControllerError": "部分节点测速未完成：控制器或本地链路异常",
+    "proxies.reviewed": "复核",
     "conn.rowCount": "{n} 条",
     "conn.rowCountTruncated": "{n} 条（显示前 {shown}）",
 
@@ -657,6 +660,9 @@ const dict: Record<Lang, Record<string, string>> = {
     "proxies.startCore": "Start core",
     "proxies.resetFilters": "Reset filters",
     "proxies.timeout": "Timed out",
+    "proxies.cancelTest": "Cancel test",
+    "proxies.testControllerError": "Some node tests did not finish: controller or local link issue",
+    "proxies.reviewed": "reviewed",
     "conn.rowCount": "{n} connections",
     "conn.rowCountTruncated": "{n} connections (showing {shown})",
 

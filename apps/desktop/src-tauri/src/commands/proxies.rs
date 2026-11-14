@@ -9,6 +9,105 @@ pub(crate) async fn test_node_delay(
 ) -> Result<u64, String> {
     controller_client(&state)?.test_node_delay(&node)
 }
+
+/// #501：结构化单节点测速结果——错误按类别返回（含取消/跳过），复核
+/// 样本带目标、时间与样本数；不把控制器故障混成节点超时。
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct NodeDelayOutcome {
+    /// "ok" | "timeout" | "controller" | "failed" | "cancelled" | "skipped"
+    pub class: String,
+    pub delay_ms: Option<u64>,
+    pub reviewed: bool,
+    pub target: String,
+    pub tested_at_ms: u64,
+    pub sample_count: u8,
+    pub detail: String,
+}
+
+#[tauri::command]
+pub(crate) async fn test_node_delay_structured(
+    app: AppHandle,
+    node: String,
+) -> Result<NodeDelayOutcome, String> {
+    let controller = controller_client(&app.state::<AppState>())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        // 复用托盘同款的会话/配置守卫与引擎感知目标策略（mihomo 复核，
+        // sing-box 固定 HTTPS 主目标）。
+        let pid = state.core().pid();
+        let url_scoped_history = {
+            let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+            store.data().engine.engine == crossbow_core::Engine::Mihomo
+        };
+        let current = || crate::tray::wiring::delay_test_current_without_tray(&state, pid);
+        // 主目标 5s + 复核 5s + 余量。
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(12);
+        match controller.measure_node_delay_with_review(
+            &node,
+            &current,
+            deadline,
+            url_scoped_history,
+        ) {
+            Ok(sample) => Ok(NodeDelayOutcome {
+                class: "ok".into(),
+                delay_ms: Some(sample.delay_ms),
+                reviewed: sample.reviewed,
+                target: sample.target,
+                tested_at_ms: sample.tested_at_ms,
+                sample_count: sample.sample_count,
+                detail: String::new(),
+            }),
+            Err(crate::engine::api::NodeDelayError::Timeout(detail)) => Ok(NodeDelayOutcome {
+                class: "timeout".into(),
+                delay_ms: None,
+                reviewed: false,
+                target: String::new(),
+                tested_at_ms: 0,
+                sample_count: 0,
+                detail,
+            }),
+            Err(crate::engine::api::NodeDelayError::Controller(detail)) => Ok(NodeDelayOutcome {
+                class: "controller".into(),
+                delay_ms: None,
+                reviewed: false,
+                target: String::new(),
+                tested_at_ms: 0,
+                sample_count: 0,
+                detail,
+            }),
+            Err(crate::engine::api::NodeDelayError::Failed(detail)) => Ok(NodeDelayOutcome {
+                class: "failed".into(),
+                delay_ms: None,
+                reviewed: false,
+                target: String::new(),
+                tested_at_ms: 0,
+                sample_count: 0,
+                detail,
+            }),
+            Err(crate::engine::api::NodeDelayError::Cancelled(detail)) => Ok(NodeDelayOutcome {
+                class: "cancelled".into(),
+                delay_ms: None,
+                reviewed: false,
+                target: String::new(),
+                tested_at_ms: 0,
+                sample_count: 0,
+                detail,
+            }),
+            Err(crate::engine::api::NodeDelayError::Skipped(detail)) => Ok(NodeDelayOutcome {
+                class: "skipped".into(),
+                delay_ms: None,
+                reviewed: false,
+                target: String::new(),
+                tested_at_ms: 0,
+                sample_count: 0,
+                detail,
+            }),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
 #[tauri::command]
 pub(crate) async fn test_group_delay(
     state: State<'_, AppState>,

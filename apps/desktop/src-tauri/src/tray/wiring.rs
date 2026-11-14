@@ -29,7 +29,7 @@ fn speed_test_timeout(total: usize) -> Duration {
 }
 
 #[cfg(target_os = "macos")]
-fn delay_test_current_without_tray(state: &AppState, pid: Option<u32>) -> bool {
+pub(crate) fn delay_test_current_without_tray(state: &AppState, pid: Option<u32>) -> bool {
     state.exit.ensure_open().is_ok()
         && !state
             .config_transition

@@ -183,11 +183,24 @@ export function displayNodeName(name: string): string {
   return stripped || name;
 }
 
+export interface NodeDelayOutcome {
+  class: "ok" | "timeout" | "controller" | "failed" | "cancelled" | "skipped";
+  delayMs: number | null;
+  reviewed: boolean;
+  target: string;
+  testedAtMs: number;
+  sampleCount: number;
+  detail: string;
+}
+
 export interface NodeView {
   name: string;
   kind: string;
   alive: boolean;
   delay_ms: number | null;
+
+  /** #501：复核目标成功的延迟，批次内标记 */
+  reviewed?: boolean;
 }
 
 export interface GroupView {
@@ -373,6 +386,8 @@ export const ipc = {
   testGroupDelay: (group: string) =>
     invoke<Record<string, number>>("test_group_delay", { group }),
   testNodeDelay: (node: string) => invoke<number>("test_node_delay", { node }),
+  testNodeDelayStructured: (node: string) =>
+    invoke<NodeDelayOutcome>("test_node_delay_structured", { node }),
   runDiagnosis: (runId: string) => invoke<DiagnosticReport>("run_diagnosis", { runId }),
   openDiagnosisGuide: (url: string) => invoke<void>("open_diagnosis_guide", { url }),
   diagnosisEnableSysproxy: () => invoke<void>("diagnosis_enable_sysproxy"),
