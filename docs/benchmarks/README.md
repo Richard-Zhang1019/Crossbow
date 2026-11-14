@@ -1,100 +1,88 @@
-# 网络性能基线（#492）
+# 网络性能基线（Refs #492）
 
-目的：为 DNS、协议与 TUN 的默认值讨论提供**可复现证据**。每轮实验只变一个
-变量；默认值变更以收益、回归结果和适用范围为依据，按证据单独提项。
+本目录先提供 **mihomo 显式 HTTP 代理**的隔离基线。使用 DIRECT-only 脱敏夹具、
+私有运行目录、随机端口和一次性控制器密钥，不读取用户订阅，不修改系统代理、
+DNS、TUN 或路由。它尚不是系统代理接管或 TUN 的性能验收，#492 保持开放。
 
-## 运行
+## 复跑
 
 ```sh
-# 系统代理模式（显式经混合端口，不改系统设置；本机可跑）
-python3 scripts/benchmark/bench_network.py --core <mihomo 二进制> --mode sysproxy
+# 默认仅访问回环上游：两轮，每轮 30 个延迟样本及至少 1 秒吞吐负载。
+python3 scripts/benchmark/bench_network.py \
+  --core apps/desktop/src-tauri/binaries/mihomo-aarch64-apple-darwin \
+  --mode explicit-proxy --output target/network-benchmark
 
-# TUN 模式：生成对齐 runtime.rs 注入形状的夹具并打印受控环境命令；
-# 会建 utun/改路由，默认拒绝在本机执行（--i-know-this-touches-my-network 放行）
-python3 scripts/benchmark/bench_network.py --core <mihomo 二进制> --mode tun \
-  --i-know-this-touches-my-network
+# 可选的公网 HTTPS 与系统解析器观测；按目标分别统计，失败也保留。
+python3 scripts/benchmark/bench_network.py --core <mihomo-binary> \
+  --public-samples 1 --dns-samples 3 --timeout 5 \
+  --output target/network-benchmark
 ```
 
-输出 `<output>/<mode>-results.json`。夹具内嵌在脚本中（DIRECT-only、无节点
-无订阅），端口随机、密钥固定为 benchmark 专用串。
+`--mode sysproxy` 仅是旧命令的兼容别名，结果仍标为 `explicit-proxy`。
+`--mode tun` 一律拒绝，包括携带旧的放行参数时；混合端口请求不能证明 TUN
+转发，回环流量也不适合作为 TUN 路径证据。真实系统代理、TUN、sing-box 和
+Windows 基线待对应实现与受控环境验证。Windows 未提供 `ps` 时资源指标不可用。
 
-## 指标定义
+每次输出独立 JSON 文件，默认写到 `target/network-benchmark`，不覆盖已归档结果。
+密钥仅用于临时夹具，归档中脱敏。记录代码提交、脚本/内核 SHA-256、版本、
+环境、参数和夹具；`worktree_dirty` 为真时必须结合脚本哈希解释可复现范围。
 
-| 指标 | 定义 |
+## 路径证据与失败处理
+
+- HTTP 用 absolute-form 连接 `127.0.0.1:<mixed-port>`；HTTPS 用 CONNECT 和
+  Python 默认信任库验证证书。绕过 `NO_PROXY`、环境代理和 macOS 代理豁免，
+  不自动跟随重定向。负对照要求关闭的代理端口访问回环失败。
+- 每个有效样本还需匹配本次所拥有内核日志里的源地址/端口与 DIRECT 连接，
+  保存内核报告的目的端。收到响应而缺少证据仍算失败。
+- `core_outbound_intent: DIRECT` 是夹具意图，日志只验证内核出口。物理出口
+  始终标为未验证：其他 VPN、宿主路由或 NAT 可能影响公网路径。
+- 延迟请求必须返回 204，吞吐必须返回 200 且实收字节数完全匹配；错误状态、
+  重定向、TLS/连接/超时、短正文和缺失路径证据分别记录。
+- 启动就绪失败、测量异常和重启异常均回收本脚本创建的子进程，超时升级 kill
+  并 wait；失败也输出结果及清理状态。不会根据端口查找并终止其他进程。
+
+## schema 2 指标
+
+| 字段 | 定义与限制 |
 | --- | --- |
-| `cold_first_request_ms` | 进程拉起 → 控制器就绪（`controller_ready_ms`）→ 首个经代理 204 成功（`first_proxied_ok_ms`），单次 |
-| `rounds[].p50/p95_ms` | 回环上游 204 的延迟样本（默认 30 个）百分位 |
-| `rounds[].latency_ok` | 成功样本数 / 总数（成功率） |
-| `rounds[].public_p50_ms` | 经内核 DIRECT 访问公网 204 的真实路径样本（10 个） |
-| `rounds[].throughput_mb_s` | 回环 8MB 体经内核下载——隔离 WAN 抖动，度量内核转发开销 |
-| `cpu_*` / `rss_peak_kb` | 吞吐阶段内核进程 CPU（均值/峰值）与内存峰值 |
-| `dns_direct.p50/p95_ms` | 系统解析器解析基准域名（10 个）——物理 DNS 基线 |
-| `recovery_ms` | 杀内核 → 重启 → 首个经代理 204 成功（含拉起，对齐 #490 恢复语义） |
+| `cold_start` | 独立内核 spawn 前到控制器就绪、首个成功代理 204 的时间；不含应用启动。20ms 就绪轮询会影响分辨率。响应计时不含后续日志核验等待。 |
+| `rounds[].local_http_204` | 已启动内核的回环 HTTP 延迟；每次新建连接，不等于 DNS/TLS 热缓存。保留每个成功/失败样本。 |
+| `p50_ms` / `p95_ms` | 仅成功样本的 nearest-rank 百分位；浮点毫秒，不截断为整数。空成功集合为 null。 |
+| `public_https` | 按 URL 分开统计的公网 HTTPS 204。含连接、TLS 和请求开销，不混排不同目标；默认未运行。 |
+| `throughput` | 回环 HTTP 经内核的端到端有效吞吐，MiB/s；按实收完整字节/实际耗时计算，包含客户端/上游/连接与路径核验开销，不能单独解释为内核性能或公网速度。 |
+| `throughput.resources` | 仅吞吐阶段采样窗口；由子进程累计 CPU 时间差计算单核百分比，可能超过 100%。峰值是采样间隔平均峰值，RSS 是采样最大值，不是全程绝对峰值。记录窗口与点数，受 `ps TIME` 平台精度及采样开销影响。 |
+| `system_resolver` | 独立 worker 内 `getaddrinfo` 耗时，排除 worker 启动开销。缓存、物理出口未控制，不能称为直连物理 DNS 或内核 DNS；默认未运行，失败/超时分别保留。 |
+| `controlled_process_restart` | terminate 旧进程到新进程首个代理 204，含停止等待、spawn 和就绪；另列停止耗时。不是断网、睡眠唤醒或 Crossbow 自动恢复时间。 |
+| `cleanup` | 所有本脚本拥有的内核子进程是否已回收。 |
 
-出口与目的端全程记录在结果的 `targets`/`egress` 字段；回环与公网样本分开，
-不混排。错误分类沿用 #488（ok/timeout/connect/…）。
+`status: completed` 表示测量流程和必需的本地路径验证完成；不代表可选公网/DNS
+样本全部成功。查看 `probe_failures`、各组成功率与错误分类。不能从一个 DIRECT
+回环基线推导节点协议、TUN 或弱网下的默认值。
 
-## 已记录基线
+## 旧数据
 
-### 2026-11-14 · macOS 系统代理 · mihomo · DIRECT 出口
+[`2026-11-14-sysproxy-baseline.json`](2026-11-14-sysproxy-baseline.json) 保留原始数值，
+但已标记无效：原方法在 `NO_PROXY=*` 且代理端口关闭时仍能把回环请求计为成功，
+缺少内核路径证据；CPU/恢复时间等口径也不符合当前定义。不能用它证明内核转发
+性能，也不能与 schema 2 数值作优化前后对比。
 
-环境：`macOS 27.2 arm64`，mihomo v1.19.32，夹具 DIRECT-only，回环上游 +
-公网 204；数据 [`2026-11-14-sysproxy-baseline.json`](2026-11-14-sysproxy-baseline.json)。
+## 静态审计与待验证边界
 
-| 指标 | 值 |
-| --- | --- |
-| 冷启动首请求 | **122 ms**（控制器就绪 118.5 + 首请求 3.5） |
-| 延迟 P50 / P95（回环，warm 轮） | 2 ms / 25 ms（30/30 成功） |
-| 公网 204 P50（经内核 DIRECT） | 135 ms（10/10） |
-| 回环吞吐 | 1116–1384 MB/s |
-| 内核 CPU / 内存峰值 | 0.4%（峰 0.8%）/ ~30 MB |
-| 系统解析器 DNS P50 / P95 | 1 ms / 26 ms |
-| 重启恢复（杀→重启→首个 204） | **109 ms** |
+以下仅审阅当前源代码，未证明实际 DNS/路由路径：
 
-### 待补矩阵
+- [GUI mihomo 运行注入](../../crates/crossbow-core/src/runtime.rs) 在 TUN 开启时
+  写入 gVisor、自动路由/网卡检测、native DNS、fake-ip 和嗅探配置；IPv6 注入
+  受原生 IPv6 状态门控，私网/CGNAT 及 IPv6 本地范围有排除规则。
+  Linux 服务接管另见 [Linux 网络说明](../LINUX-NETWORK.md)，不能从 GUI 注入
+  推广到全部平台。
+- 运行注入没有强制写入 fake-ip-filter。最终行为还受订阅、合并和内核默认值
+  影响，不能假定企业内网后缀必然被过滤；需检查最终配置并实际验证。
+- [sing-box 转换](../../crates/crossbow-core/src/singbox_convert.rs) 将节点域名
+  引导解析指向 local-dns，proxy-dns 使用 IP 形式 DoH 并按最终出口设置 detour。
+  该默认依赖图中没有明显的域名自举环，但这不保证 UDP 上游、宿主路由、
+  其他 VPN 或自定义订阅环境中的可用性。规则集下载路径同样依赖最终出口。
 
-| 维度 | 状态 |
-| --- | --- |
-| TUN 模式（gvisor/native DNS/fake-ip） | 夹具与命令已备，**待受控设备/虚拟机**（需 sudo 建 utun 改路由） |
-| sing-box | 转换夹具待补（DNS 形状见下审计），装核后复跑 |
-| Windows | 待补 |
-| 弱网/丢包/受限 UDP/IPv6 异常/门户 | harness 可在对应网络环境复跑并记录实际出口；待实机 |
-| 其他 VPN 共存 | 见 #490 的归属跳过逻辑；基线层面记录实际出口即可 |
-
-## DNS / 协议 / TUN 路径静态审计（#492 第 2 条）
-
-### mihomo 运行时注入（runtime.rs）
-
-- **TUN**：gvisor + auto-route + auto-redirect + auto-detect-interface；
-  双栈仅在物理网络有原生 v6 时注入（#136），v6 侧排除链路本地/ULA/组播；
-  私网全段 route-exclude（#145，含 CGNAT/Tailscale 100.64/10）。
-- **DNS**：TUN 开启时 native 模式 + `dns-hijack any:53`（含 TCP 53）；
-  fake-ip + `ipv6` 与 inet6 同门控。**fake-ip-filter 未显式配置**——依赖
-  mihomo 默认列表（`*.lan`/`*.local` 等）；企业自定义内网命名（如 `.corp`）
-  会得到 fake-ip，域名层是否落到私网 DIRECT 取决于订阅规则——**待动态验证**
-  （基线夹具为 DIRECT-only，不暴露此差异）。
-- **嗅探**：TLS 443/8443 + HTTP 80/8080-8880，override-destination（#331
-  污染 IP 无害化）。
-- **私网 DIRECT 规则**前置注入（no-resolve），先于订阅兜底规则。
-
-### sing-box 转换（singbox_convert.rs）
-
-- `proxy-dns`（DoH 8.8.8.8，detour = 最终出口）与 `local-dns`（223.5.5.5，
-  直连）分离；`route.default_domain_resolver = local-dns` → **节点域名引导
-  解析走直连，无依赖环**。
-- DoH server 为 IP 直写，无 DoH 引导解析需求。
-- 规则集下载 detour = 最终出口（订阅端语义决定走代理与否）；应用侧 geo
-  文件预下载走 gh-proxy 镜像。
-
-### 待动态验证
-
-- 内核自身 DNS 上游查询在 TUN 场景的出口（mihomo 内部排除，静态判断无环；
-  需抓包确认）。
-- fake-ip 默认过滤列表对自定义内网命名的覆盖（上节）。
-- IPv6 异常/UDP 受限环境下的双栈回退行为（#136 门控的边界）。
-
-## 实验纪律
-
-每轮只变一个变量；同一夹具与端点跨轮复用；涉及节点/协议切换时在结果中
-注明服务端与线路差异。默认值变更（如 gvisor→system、fake-ip 范围、DNS
-上游）必须引用本目录的对照数据并单独提项。
+仍待覆盖：真实系统代理/TUN、DNS 上游抓包、IPv4-only/双栈/IPv6 异常、受限
+UDP、弱网/丢包/MTU、门户、局域网域名/设备、其他 VPN、真实节点/协议和
+Windows/sing-box。每轮只变一个变量；同设备、线路、目标和负载才可比较。
+默认值修改须引用可复现的对照与回归证据，另提 issue/PR。
