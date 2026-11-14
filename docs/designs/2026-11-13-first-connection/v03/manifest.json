@@ -1,0 +1,17 @@
+{
+  "date": "2026-11-14",
+  "version": "v03",
+  "status": "implemented",
+  "issue": 484,
+  "pr": 485,
+  "base": "69c82065384b65cee22c54def8f889af2f3b51e4",
+  "reference": "PR #485 的 v02 验收反馈，连通性按钮过大且与状态卡布局不协调",
+  "data": "桌面生产组件与脱敏 IPC 模拟，Demo · Tokyo",
+  "files": ["SPEC.md", "index.html", "preview.ts", "vite.config.mts"],
+  "previews": [
+    {"file": "previews/verify-light.png", "width": 1120, "height": 730, "theme": "light", "language": "zh"},
+    {"file": "previews/verified-light.png", "width": 1120, "height": 730, "theme": "light", "language": "zh"},
+    {"file": "previews/verify-dark.png", "width": 880, "height": 560, "theme": "dark", "language": "en"},
+    {"file": "previews/retry-dark.png", "width": 880, "height": 560, "theme": "dark", "language": "en"}
+  ]
+}

@@ -1,7 +1,7 @@
 import SegmentedControl from "@/components/SegmentedControl";
 import { Switch } from "@/components/Controls";
 import { HelpPopover } from "@/components/PopoverPanel";
-import { Button } from "@/components/Button";
+import { Button, ButtonBase } from "@/components/Button";
 import NodeName from "@/components/NodeName";
 import { nodeNameText } from "@/components/NodeName/nodeFlags";
 import { notify, notificationText } from "@/notifications/service";
@@ -58,6 +58,9 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
   const [setupOperation, setSetupOperation] = useState<"download" | "start" | "verify" | null>(null);
   const [portConflict, setPortConflict] = useState(false);
   const [verification, setVerification] = useState<{ revision: number; profileId: string | null; reachable: boolean } | null>(null);
+  const verifyAction = useRef<HTMLButtonElement>(null);
+  const verifyStatus = useRef<HTMLSpanElement>(null);
+  const focusVerifyStatus = useRef(false);
   const installNotice = useOperationNotice("core-download");
   const [rates, setRates] = useState<{ up: number; down: number }[]>([]);
   const [lastTrafficAt, setLastTrafficAt] = useState(0);
@@ -343,10 +346,31 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
   const currentVerification = verification?.revision === connectionRevision.current &&
     verification.profileId === activeId && canControl && core.state === "Running" ? verification : null;
   const downloadRunning = installNotice?.kind === "progress";
+  const downloadFailed = setupStep === "download" && installNotice?.kind === "error";
+  const portBlocked = setupStep === "start" && portConflict;
+  const verificationFailed = setupStep === "verify" && currentVerification?.reachable === false;
+  const verifying = setupOperation === "verify";
+  const showVerifyAction = setupStep === "verify";
+  const verifyDisabled = busy || !listeners || verifying;
+  const networkStatus = currentVerification?.reachable ? "setup.verified"
+    : setupStep !== "verify" ? "home.networkDiagnosis"
+    : verifying ? "setup.verifying"
+    : verificationFailed ? "setup.verifyFailed"
+    : "setup.verifyPending";
+  useEffect(() => {
+    if (showVerifyAction || !focusVerifyStatus.current) return;
+    focusVerifyStatus.current = false;
+    if (currentVerification?.reachable) verifyStatus.current?.focus({ preventScroll: true });
+  }, [showVerifyAction, currentVerification]);
+  const setupNote = downloadFailed ? t("setup.downloadFailed")
+    : portBlocked ? t("setup.portConflict")
+    : setupStep === "download" && downloadRunning
+      ? notificationText(`stage.${installNotice.description || "preparing"}`)
+      : "";
   const runSetup = async (operation: "download" | "start" | "verify") => {
     if (setupOperation || busy || !engine || (operation === "verify" && !listeners)) return;
     setSetupOperation(operation);
-    setBusy(true);
+    if (operation !== "verify") setBusy(true);
     try {
       if (operation === "download") {
         try {
@@ -373,6 +397,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
           undefined, { feedback: "error-only", titleKey: "setup.verifyAction" });
         if (!mounted.current || revision !== connectionRevision.current) return;
         const reachable = outcome.ok && outcome.value.status === "ok";
+        focusVerifyStatus.current = reachable && document.activeElement === verifyAction.current;
         setVerification({ revision, profileId: activeId, reachable });
         if (reachable) setProgress("complete");
       }
@@ -382,7 +407,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
       if (mounted.current) {
         if (operation !== "verify") await refresh();
         setSetupOperation(null);
-        setBusy(false);
+        if (operation !== "verify") setBusy(false);
       }
     }
   };
@@ -447,43 +472,36 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
             {(readErrors.size > 0 || !setupStep && (!canControl || !active || !running || !routingEnabled || explicitOnly)) &&
               <p role={readErrors.size ? "status" : undefined}>{statusHint}</p>}
             {readErrors.size > 0 && <Button size="small" onClick={() => void refresh()}>{t("home.retryState")}</Button>}
-            {setupStep && <section className="cb-first-connection" aria-label={t("setup.label")}>
-              <div>
-                <h3>{t(`setup.${setupStep}Title`)}</h3>
-                <p role="status">{setupStep === "download" && downloadRunning
-                  ? notificationText(`stage.${installNotice.description || "preparing"}`)
-                  : setupStep === "download" && installNotice?.kind === "error" ? t("setup.downloadFailed")
-                  : setupStep === "verify" && currentVerification ? t("setup.verifyFailed")
-                  : setupStep === "start" && portConflict ? t("setup.portConflict")
-                  : setupStep === "takeover" && !capabilities?.system_proxy ? t("setup.tunHint")
-                  : t(`setup.${setupStep}Hint`)}</p>
-              </div>
-              <div className="cb-first-connection-actions">
-                {setupStep === "start" && portConflict && <Button size="small" onClick={() => navigateTo({
-                  page: "settings", settingSection: "network", control: "cb-port-setting",
-                })}>{t("setup.editPort")}</Button>}
-                {setupStep === "verify" && currentVerification && <Button size="small" onClick={() => go("diagnostics")}>{t("nav.diagnostics")}</Button>}
-                <Button variant="primary" size="small" loading={setupOperation === setupStep || (setupStep === "download" && downloadRunning) ||
-                    (setupStep === "start" && core.state === "Starting")}
-                  disabled={busy || (setupStep === "verify" && !listeners)}
-                  onClick={() => {
-                    if (setupStep === "import") navigateTo({ page: "profiles", control: "cb-import-profile" });
-                    else if (setupStep === "takeover") {
-                      document.getElementById(capabilities?.system_proxy ? "cb-setup-system-proxy" : "cb-setup-tun")?.focus();
-                    }
-                    else void runSetup(setupStep);
-                  }}>
-                  {t(setupStep === "download" && installNotice?.kind === "error" ? "setup.retryDownload" : `setup.${setupStep}Action`)}
-                </Button>
-              </div>
-            </section>}
+            {setupStep === "import" && <div className="cb-home-import">
+              <Button variant="primary" size="small" onClick={() => navigateTo({ page: "profiles", control: "cb-import-profile" })}>
+                <Icon name="download" size={13} />
+                {t("setup.importAction")}
+              </Button>
+              <p>{t("setup.importHint")}</p>
+            </div>}
           </div>
           <section className="cb-home-path" aria-label={t("studio.path")}>
             <div className="cb-path-heading">
               <h3>{t("studio.path")}</h3>
-              <span title={outbound?.chain.map(nodeNameText).join(" → ")}>
+              {(!outbound?.node || outbound.chain[0] !== outbound.node) && <span
+                className="cb-path-outbound"
+                title={outbound?.chain.map(nodeNameText).join(" → ")}
+              >
                 <NodeName name={outbound?.chain[0] ?? t(`mode.${mode}`)} />
-              </span>
+              </span>}
+              {showVerifyAction && <ButtonBase
+                ref={verifyAction}
+                className="cb-path-test"
+                title={t("setup.verifyHint")}
+                aria-describedby="cb-verify-scope"
+                aria-disabled={verifyDisabled || undefined}
+                aria-busy={verifying || undefined}
+                onClick={() => { if (!verifyDisabled) void runSetup("verify"); }}
+              >
+                <Icon name={verificationFailed ? "refresh" : "activity"} size={13} />
+                <span>{t(verificationFailed ? "setup.retryVerify" : "setup.verifyAction")}</span>
+              </ButtonBase>}
+              {showVerifyAction && <span id="cb-verify-scope" hidden>{t("setup.verifyHint")}</span>}
             </div>
             <ConnectionFlow
               enabled={
@@ -544,7 +562,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
           </section>
           <div className="cb-home-bottom">
             <div className="cb-home-actions">
-              <Button variant={setupStep ? "secondary" : "primary"} onClick={() => go("proxies")}>
+              <Button variant={setupStep === "import" ? "secondary" : "primary"} onClick={() => go("proxies")}>
                 <Icon name="bolt" />
                 {t("studio.chooseNode")}
               </Button>
@@ -614,18 +632,49 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
 
               </div>
             </section>
-            <section className="cb-connection-state" aria-label={t("home.healthSummary")}>
+            <section className="cb-connection-state" data-setup={!!setupStep || undefined} aria-label={t("home.healthSummary")}>
               <div className="cb-home-card-title"><h3>{t("home.healthSummary")}</h3></div>
-            <dl className="cb-health-summary" aria-label={t("home.healthSummary")}>
-              <div><dt>{t("home.healthCore")}</dt><dd>{known.has("core") && !readErrors.has("core") ? coreText(t, core) : t("home.statePending")}</dd></div>
-              <div><dt>{t("home.healthTakeover")}</dt><dd>{!canControl ? t("home.statePending") : routingEnabled ? t("home.takeoverConfigured") : t(explicitProxy ? "home.manualTakeover" : "home.takeoverOff")}</dd></div>
-              <div title={t(currentVerification?.reachable ? "setup.verifyHint" : "home.networkScope")}>
-                <dt>{t("home.healthNetwork")}</dt>
-                <dd className={currentVerification?.reachable ? undefined : "cb-health-unverified"}>
-                  {t(currentVerification?.reachable ? "setup.verified" : "home.networkDiagnosis")}
-                </dd>
-              </div>
-            </dl>
+              <dl className="cb-health-summary">
+                <div>
+                  <dt>{t("home.healthCore")}</dt>
+                  <dd>
+                    <span>{known.has("core") && !readErrors.has("core") ? coreText(t, core) : t("home.statePending")}</span>
+                    {(setupStep === "download" || setupStep === "start") && <Button size="small"
+                      loading={setupOperation === setupStep || (setupStep === "download" ? downloadRunning : core.state === "Starting")}
+                      disabled={busy}
+                      onClick={() => void runSetup(setupStep)}>
+                      {t(downloadFailed ? "setup.retryDownload" : `setup.${setupStep}Action`)}
+                    </Button>}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t("home.healthTakeover")}</dt>
+                  <dd>
+                    <span>{!canControl ? t("home.statePending") : routingEnabled ? t("home.takeoverConfigured") : t(explicitProxy ? "home.manualTakeover" : "home.takeoverOff")}</span>
+                    {setupStep === "takeover" && <Button size="small" disabled={busy} onClick={() => {
+                      document.getElementById(capabilities?.system_proxy ? "cb-setup-system-proxy" : "cb-setup-tun")?.focus();
+                    }}>{t("setup.takeoverAction")}</Button>}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t("home.healthNetwork")}</dt>
+                  <dd>
+                    <span ref={verifyStatus} role="status" tabIndex={-1}
+                      className={currentVerification?.reachable ? "cb-health-verified"
+                        : verificationFailed && !verifying ? "cb-health-failed" : "cb-health-unverified"}
+                      title={t(setupStep === "verify" || currentVerification ? "setup.verifyHint" : "home.networkScope")}>
+                      {currentVerification?.reachable && <Icon name="check" size={13} />}
+                      {t(networkStatus)}
+                    </span>
+                  </dd>
+                </div>
+              </dl>
+              {setupNote && <div className="cb-health-note" data-attention={downloadFailed || portBlocked || undefined}>
+                <p role="status">{setupNote}</p>
+                {portBlocked && <Button size="small" onClick={() => navigateTo({
+                  page: "settings", settingSection: "network", control: "cb-port-setting",
+                })}>{t("setup.editPort")}</Button>}
+              </div>}
             </section>
             <section className="cb-rate-card" aria-label={t("home.rate")}>
               <div className="cb-home-card-title">

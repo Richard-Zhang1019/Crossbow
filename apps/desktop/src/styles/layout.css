@@ -351,31 +351,12 @@ summary:focus-visible {
   color: var(--cb-text-dim);
   margin: 0;
 }
-.cb-first-connection {
+.cb-home-import {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  column-gap: 12px;
-  row-gap: 8px;
+  gap: 8px 12px;
   margin-top: 10px;
-  padding: 8px 12px;
-  border-radius: 10px;
-  background: var(--cb-surface-2);
-}
-.cb-first-connection > div:first-child {
-  flex: 1 1 170px;
-  min-width: 0;
-}
-.cb-first-connection h3 {
-  margin: 0 0 2px;
-  font-size: var(--font-sm);
-  font-weight: 600;
-}
-.cb-first-connection-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
 }
 .cb-home-path {
   display: flex;
@@ -386,22 +367,48 @@ summary:focus-visible {
 .cb-path-heading {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  min-height: 24px;
+  gap: 10px;
 }
 .cb-path-heading h3 {
+  flex: none;
   font-size: var(--font-sm);
   font-weight: 500;
   color: var(--cb-text-dim);
 }
-.cb-path-heading > span {
+.cb-path-outbound {
   max-width: 50%;
+  min-width: 0;
+  margin-inline-start: auto;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
   font-size: var(--font-xs);
   color: var(--cb-text-dim);
 }
+.cb-path-test {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  gap: 5px;
+  min-height: 24px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--cb-accent);
+  font: inherit;
+  font-size: var(--font-xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.cb-path-heading h3 + .cb-path-test { margin-inline-start: auto; }
+.cb-path-test:hover:not([aria-disabled="true"]) span {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.cb-path-test[aria-disabled="true"] { color: var(--cb-text-dim); }
+.cb-path-test[aria-busy="true"] { cursor: wait; }
 .cb-route-flow {
   position: relative;
   display: grid;
@@ -2212,10 +2219,29 @@ textarea:focus-visible,
 /* Health dimensions describe different facts: core, configured takeover and a scoped probe. */
 .cb-connection-state { display:flex; flex-direction:column; justify-content:space-between; gap:10px; padding:16px 20px; max-height:148px; }
 .cb-health-summary { display:grid; gap:7px; margin:0; font-size: var(--font-sm); line-height:18px; }
-.cb-health-summary > div { display:flex; align-items:baseline; justify-content:space-between; gap:12px; min-width:0; }
+.cb-health-summary > div { display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:0; }
 .cb-health-summary dt { color:var(--cb-text-dim); flex:none; font-size: var(--font-xs); }
-.cb-health-summary dd { margin:0; color:var(--cb-text); font-weight:500; min-width:0; text-align:right; }
-.cb-health-summary dd.cb-health-unverified { color:var(--cb-text-dim); font-weight:400; }
+.cb-health-summary dd { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:4px 8px; margin:0; color:var(--cb-text); font-weight:500; min-width:0; text-align:right; }
+.cb-health-unverified { color:var(--cb-text-dim); font-weight:400; }
+.cb-health-verified { display:inline-flex; align-items:center; gap:4px; color:var(--cb-ok); }
+.cb-health-failed { color:var(--cb-warn); }
+.cb-connection-state[data-setup] { max-height:none; }
+.cb-health-note {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  padding-top:8px;
+  border-top:1px solid var(--cb-line);
+  color:var(--cb-text-dim);
+  font-size:var(--font-xs);
+  line-height:16px;
+}
+.cb-health-note p { margin:0; }
+.cb-health-note[data-attention] p { color:var(--cb-warn); }
+@container home-controls (max-height:479px) {
+  .cb-health-note { padding-top:5px; }
+}
 @container home-controls (max-height:579px) { .cb-connection-state { padding:12px 16px; gap:8px; } .cb-health-summary { gap:5px; font-size: var(--font-xs); line-height:16px; } }
 @container home-controls (max-height:479px) { .cb-connection-state { padding:10px 16px; gap:6px; } .cb-health-summary { gap:3px; } .cb-health-summary dt { font-size: var(--font-xs); } }
 

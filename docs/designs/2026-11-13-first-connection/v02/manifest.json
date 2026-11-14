@@ -1,0 +1,17 @@
+{
+  "date": "2026-11-14",
+  "version": "v02",
+  "status": "implemented",
+  "issue": 484,
+  "base": "2e864d843069034b9d1d86bfd89550dd030d2e2b",
+  "reference": "PR #483 首次连接横幅的用户验收截图",
+  "data": "桌面生产组件与脱敏 IPC 模拟，Demo · Tokyo",
+  "files": ["SPEC.md", "index.html", "preview.ts", "vite.config.mts"],
+  "previews": [
+    {"file": "previews/verify-light.png", "width": 1120, "height": 730, "theme": "light", "language": "zh"},
+    {"file": "previews/verified-light.png", "width": 1120, "height": 730, "theme": "light", "language": "zh"},
+    {"file": "previews/verify-dark.png", "width": 880, "height": 560, "theme": "dark", "language": "en"},
+    {"file": "previews/retry-dark.png", "width": 880, "height": 560, "theme": "dark", "language": "en"},
+    {"file": "previews/import-light.png", "width": 1120, "height": 730, "theme": "light", "language": "zh"}
+  ]
+}
