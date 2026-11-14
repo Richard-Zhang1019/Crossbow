@@ -1,0 +1,3310 @@
+{
+  "schema_version": 2,
+  "status": "completed",
+  "mode": "explicit-proxy",
+  "core_outbound_intent": "DIRECT",
+  "physical_egress": "unverified",
+  "source": {
+    "git_commit": "5c1488e0d2a3bcb52576a7dc040d9b755f2637ab",
+    "worktree_dirty": false,
+    "script_sha256": "5a4c5af8935209eab098954e7774f7e25d009165db96b8e391f1577bd34fc725"
+  },
+  "env": {
+    "os": "macOS-27.2-arm64-arm-64bit-Mach-O",
+    "arch": "arm64",
+    "hardware": {
+      "logical_cpus": 8,
+      "cpu_model": "Apple M2",
+      "python_version": "3.14.7",
+      "memory_bytes": 17179869184
+    },
+    "client_tls": {
+      "trust_model": "Python default context; certificate verification required",
+      "default_ca_file_available": false,
+      "default_ca_directory_available": false,
+      "loaded_ca_certificates_at_start": 0
+    },
+    "recorded_at": "2026-11-14T13:35:04.888296+00:00"
+  },
+  "params": {
+    "latency_samples_per_round": 30,
+    "size_mib": 64,
+    "rounds": 2,
+    "public_samples_per_target_per_round": 1,
+    "dns_samples": 3,
+    "load_seconds": 1.0,
+    "request_timeout_seconds": 5.0
+  },
+  "rounds": [
+    {
+      "local_http_204": {
+        "count": 30,
+        "ok_count": 30,
+        "percentile_method": "nearest_rank_successes_only",
+        "success_rate": 1.0,
+        "p50_ms": 0.553,
+        "p95_ms": 0.651,
+        "failures": {},
+        "samples": [
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58546",
+            "elapsed_ms": 0.651,
+            "since_core_start_ms": 26.151,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58548",
+            "elapsed_ms": 0.633,
+            "since_core_start_ms": 27.089,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58550",
+            "elapsed_ms": 0.537,
+            "since_core_start_ms": 27.772,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58552",
+            "elapsed_ms": 0.531,
+            "since_core_start_ms": 28.475,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58554",
+            "elapsed_ms": 0.553,
+            "since_core_start_ms": 29.155,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58556",
+            "elapsed_ms": 0.553,
+            "since_core_start_ms": 29.872,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58558",
+            "elapsed_ms": 0.554,
+            "since_core_start_ms": 30.602,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58560",
+            "elapsed_ms": 0.592,
+            "since_core_start_ms": 31.43,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58562",
+            "elapsed_ms": 0.639,
+            "since_core_start_ms": 32.204,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58564",
+            "elapsed_ms": 0.541,
+            "since_core_start_ms": 32.912,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58566",
+            "elapsed_ms": 0.681,
+            "since_core_start_ms": 33.811,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58568",
+            "elapsed_ms": 0.471,
+            "since_core_start_ms": 34.396,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58570",
+            "elapsed_ms": 0.598,
+            "since_core_start_ms": 35.186,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58572",
+            "elapsed_ms": 0.602,
+            "since_core_start_ms": 35.916,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58574",
+            "elapsed_ms": 0.595,
+            "since_core_start_ms": 36.615,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58576",
+            "elapsed_ms": 0.549,
+            "since_core_start_ms": 37.273,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58578",
+            "elapsed_ms": 0.54,
+            "since_core_start_ms": 37.957,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58580",
+            "elapsed_ms": 0.509,
+            "since_core_start_ms": 38.585,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58582",
+            "elapsed_ms": 0.537,
+            "since_core_start_ms": 39.238,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58584",
+            "elapsed_ms": 0.595,
+            "since_core_start_ms": 39.965,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58586",
+            "elapsed_ms": 0.462,
+            "since_core_start_ms": 40.543,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58588",
+            "elapsed_ms": 0.48,
+            "since_core_start_ms": 41.141,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58590",
+            "elapsed_ms": 0.483,
+            "since_core_start_ms": 41.732,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58592",
+            "elapsed_ms": 0.551,
+            "since_core_start_ms": 42.396,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58594",
+            "elapsed_ms": 0.572,
+            "since_core_start_ms": 43.085,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58596",
+            "elapsed_ms": 0.581,
+            "since_core_start_ms": 43.817,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58598",
+            "elapsed_ms": 0.472,
+            "since_core_start_ms": 44.48,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58600",
+            "elapsed_ms": 0.584,
+            "since_core_start_ms": 45.179,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58602",
+            "elapsed_ms": 0.549,
+            "since_core_start_ms": 45.842,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58604",
+            "elapsed_ms": 0.649,
+            "since_core_start_ms": 46.607,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          }
+        ]
+      },
+      "public_https": {
+        "https://www.gstatic.com/generate_204": {
+          "count": 1,
+          "ok_count": 0,
+          "percentile_method": "nearest_rank_successes_only",
+          "success_rate": 0.0,
+          "p50_ms": null,
+          "p95_ms": null,
+          "failures": {
+            "tls": 1
+          },
+          "samples": [
+            {
+              "url": "https://www.gstatic.com/generate_204",
+              "ok": false,
+              "http_status": null,
+              "bytes_read": 0,
+              "error_class": "tls",
+              "proxy_peer": null,
+              "source": null,
+              "tls_reason": "certificate_verify_failed",
+              "tls_verify_code": 20,
+              "elapsed_ms": 175.101,
+              "since_core_start_ms": 221.949,
+              "core_evidence": null
+            }
+          ]
+        },
+        "https://cp.cloudflare.com/generate_204": {
+          "count": 1,
+          "ok_count": 0,
+          "percentile_method": "nearest_rank_successes_only",
+          "success_rate": 0.0,
+          "p50_ms": null,
+          "p95_ms": null,
+          "failures": {
+            "tls": 1
+          },
+          "samples": [
+            {
+              "url": "https://cp.cloudflare.com/generate_204",
+              "ok": false,
+              "http_status": null,
+              "bytes_read": 0,
+              "error_class": "tls",
+              "proxy_peer": null,
+              "source": null,
+              "tls_reason": "certificate_verify_failed",
+              "tls_verify_code": 20,
+              "elapsed_ms": 707.416,
+              "since_core_start_ms": 929.453,
+              "core_evidence": null
+            }
+          ]
+        }
+      },
+      "throughput": {
+        "ok": true,
+        "payload_mib_per_request": 64,
+        "minimum_load_seconds": 1.0,
+        "bytes_verified": 3221225472,
+        "elapsed_ms": 1004.385,
+        "mib_per_second": 3058.589,
+        "transfers": [
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58616",
+            "elapsed_ms": 39.837,
+            "since_core_start_ms": 982.315,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58618",
+            "elapsed_ms": 23.214,
+            "since_core_start_ms": 1005.928,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58620",
+            "elapsed_ms": 20.613,
+            "since_core_start_ms": 1026.779,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58622",
+            "elapsed_ms": 22.009,
+            "since_core_start_ms": 1049.014,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58624",
+            "elapsed_ms": 19.968,
+            "since_core_start_ms": 1069.224,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58626",
+            "elapsed_ms": 20.255,
+            "since_core_start_ms": 1089.669,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58628",
+            "elapsed_ms": 19.494,
+            "since_core_start_ms": 1109.353,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58630",
+            "elapsed_ms": 19.268,
+            "since_core_start_ms": 1128.812,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58632",
+            "elapsed_ms": 21.891,
+            "since_core_start_ms": 1150.903,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58634",
+            "elapsed_ms": 20.035,
+            "since_core_start_ms": 1171.201,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58636",
+            "elapsed_ms": 19.454,
+            "since_core_start_ms": 1190.838,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58638",
+            "elapsed_ms": 19.63,
+            "since_core_start_ms": 1210.654,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58640",
+            "elapsed_ms": 20.135,
+            "since_core_start_ms": 1230.981,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58642",
+            "elapsed_ms": 20.385,
+            "since_core_start_ms": 1251.575,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58644",
+            "elapsed_ms": 21.46,
+            "since_core_start_ms": 1273.243,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58646",
+            "elapsed_ms": 20.499,
+            "since_core_start_ms": 1293.993,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58648",
+            "elapsed_ms": 19.47,
+            "since_core_start_ms": 1313.669,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58650",
+            "elapsed_ms": 19.352,
+            "since_core_start_ms": 1333.216,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58652",
+            "elapsed_ms": 19.91,
+            "since_core_start_ms": 1353.316,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58654",
+            "elapsed_ms": 22.316,
+            "since_core_start_ms": 1375.821,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58656",
+            "elapsed_ms": 20.021,
+            "since_core_start_ms": 1396.155,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58658",
+            "elapsed_ms": 20.07,
+            "since_core_start_ms": 1416.411,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58660",
+            "elapsed_ms": 19.936,
+            "since_core_start_ms": 1436.552,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58662",
+            "elapsed_ms": 19.405,
+            "since_core_start_ms": 1456.126,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58664",
+            "elapsed_ms": 21.744,
+            "since_core_start_ms": 1478.063,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58666",
+            "elapsed_ms": 19.671,
+            "since_core_start_ms": 1498.011,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58668",
+            "elapsed_ms": 19.548,
+            "since_core_start_ms": 1517.748,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58670",
+            "elapsed_ms": 19.622,
+            "since_core_start_ms": 1537.546,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58672",
+            "elapsed_ms": 19.848,
+            "since_core_start_ms": 1557.596,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58674",
+            "elapsed_ms": 22.031,
+            "since_core_start_ms": 1579.834,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58676",
+            "elapsed_ms": 20.615,
+            "since_core_start_ms": 1600.711,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58678",
+            "elapsed_ms": 19.745,
+            "since_core_start_ms": 1620.668,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58680",
+            "elapsed_ms": 19.62,
+            "since_core_start_ms": 1640.469,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58682",
+            "elapsed_ms": 19.696,
+            "since_core_start_ms": 1660.359,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58684",
+            "elapsed_ms": 21.967,
+            "since_core_start_ms": 1682.535,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58686",
+            "elapsed_ms": 20.478,
+            "since_core_start_ms": 1703.28,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58688",
+            "elapsed_ms": 19.428,
+            "since_core_start_ms": 1722.901,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58690",
+            "elapsed_ms": 19.653,
+            "since_core_start_ms": 1742.752,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58692",
+            "elapsed_ms": 19.836,
+            "since_core_start_ms": 1762.838,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58694",
+            "elapsed_ms": 21.852,
+            "since_core_start_ms": 1784.912,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58696",
+            "elapsed_ms": 20.24,
+            "since_core_start_ms": 1805.413,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58698",
+            "elapsed_ms": 18.981,
+            "since_core_start_ms": 1824.591,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58700",
+            "elapsed_ms": 19.632,
+            "since_core_start_ms": 1844.391,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58702",
+            "elapsed_ms": 20.523,
+            "since_core_start_ms": 1865.104,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58704",
+            "elapsed_ms": 21.374,
+            "since_core_start_ms": 1886.692,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58706",
+            "elapsed_ms": 20.17,
+            "since_core_start_ms": 1907.089,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58708",
+            "elapsed_ms": 19.799,
+            "since_core_start_ms": 1927.096,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58710",
+            "elapsed_ms": 19.348,
+            "since_core_start_ms": 1946.65,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          }
+        ],
+        "resources": {
+          "sampling_points": 11,
+          "window_ms": 1008.574,
+          "cpu_avg_percent_one_core": 167.563,
+          "cpu_peak_interval_percent_one_core": 172.793,
+          "rss_peak_observed_kib": 38432,
+          "errors": [],
+          "scope": "throughput sampling window; child CPU only; sampled RSS",
+          "cpu_clock_precision": "ps TIME platform precision"
+        }
+      }
+    },
+    {
+      "local_http_204": {
+        "count": 30,
+        "ok_count": 30,
+        "percentile_method": "nearest_rank_successes_only",
+        "success_rate": 1.0,
+        "p50_ms": 0.348,
+        "p95_ms": 0.548,
+        "failures": {},
+        "samples": [
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58712",
+            "elapsed_ms": 0.69,
+            "since_core_start_ms": 1951.356,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58714",
+            "elapsed_ms": 0.431,
+            "since_core_start_ms": 1951.965,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58716",
+            "elapsed_ms": 0.36,
+            "since_core_start_ms": 1952.439,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58718",
+            "elapsed_ms": 0.358,
+            "since_core_start_ms": 1952.912,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58720",
+            "elapsed_ms": 0.405,
+            "since_core_start_ms": 1953.494,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58722",
+            "elapsed_ms": 0.415,
+            "since_core_start_ms": 1954.05,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58724",
+            "elapsed_ms": 0.359,
+            "since_core_start_ms": 1954.54,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58726",
+            "elapsed_ms": 0.34,
+            "since_core_start_ms": 1955.016,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58728",
+            "elapsed_ms": 0.36,
+            "since_core_start_ms": 1955.491,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58730",
+            "elapsed_ms": 0.362,
+            "since_core_start_ms": 1955.977,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58732",
+            "elapsed_ms": 0.344,
+            "since_core_start_ms": 1956.443,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58734",
+            "elapsed_ms": 0.336,
+            "since_core_start_ms": 1956.892,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58736",
+            "elapsed_ms": 0.298,
+            "since_core_start_ms": 1957.309,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58738",
+            "elapsed_ms": 0.317,
+            "since_core_start_ms": 1957.73,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58740",
+            "elapsed_ms": 0.344,
+            "since_core_start_ms": 1958.202,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58742",
+            "elapsed_ms": 0.34,
+            "since_core_start_ms": 1958.653,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58744",
+            "elapsed_ms": 0.548,
+            "since_core_start_ms": 1959.334,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58746",
+            "elapsed_ms": 0.367,
+            "since_core_start_ms": 1959.808,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58748",
+            "elapsed_ms": 0.362,
+            "since_core_start_ms": 1960.285,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58750",
+            "elapsed_ms": 0.345,
+            "since_core_start_ms": 1960.735,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58752",
+            "elapsed_ms": 0.348,
+            "since_core_start_ms": 1961.202,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58754",
+            "elapsed_ms": 0.401,
+            "since_core_start_ms": 1961.72,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58756",
+            "elapsed_ms": 0.322,
+            "since_core_start_ms": 1962.158,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58758",
+            "elapsed_ms": 0.342,
+            "since_core_start_ms": 1962.617,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58760",
+            "elapsed_ms": 0.304,
+            "since_core_start_ms": 1963.04,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58762",
+            "elapsed_ms": 0.342,
+            "since_core_start_ms": 1963.492,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58764",
+            "elapsed_ms": 0.43,
+            "since_core_start_ms": 1964.033,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58766",
+            "elapsed_ms": 0.423,
+            "since_core_start_ms": 1964.568,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58768",
+            "elapsed_ms": 0.327,
+            "since_core_start_ms": 1965.026,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/204",
+            "ok": true,
+            "http_status": 204,
+            "bytes_read": 0,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58770",
+            "elapsed_ms": 0.327,
+            "since_core_start_ms": 1965.48,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          }
+        ]
+      },
+      "public_https": {
+        "https://www.gstatic.com/generate_204": {
+          "count": 1,
+          "ok_count": 0,
+          "percentile_method": "nearest_rank_successes_only",
+          "success_rate": 0.0,
+          "p50_ms": null,
+          "p95_ms": null,
+          "failures": {
+            "tls": 1
+          },
+          "samples": [
+            {
+              "url": "https://www.gstatic.com/generate_204",
+              "ok": false,
+              "http_status": null,
+              "bytes_read": 0,
+              "error_class": "tls",
+              "proxy_peer": null,
+              "source": null,
+              "tls_reason": "certificate_verify_failed",
+              "tls_verify_code": 20,
+              "elapsed_ms": 3370.964,
+              "since_core_start_ms": 5336.63,
+              "core_evidence": null
+            }
+          ]
+        },
+        "https://cp.cloudflare.com/generate_204": {
+          "count": 1,
+          "ok_count": 0,
+          "percentile_method": "nearest_rank_successes_only",
+          "success_rate": 0.0,
+          "p50_ms": null,
+          "p95_ms": null,
+          "failures": {
+            "tls": 1
+          },
+          "samples": [
+            {
+              "url": "https://cp.cloudflare.com/generate_204",
+              "ok": false,
+              "http_status": null,
+              "bytes_read": 0,
+              "error_class": "tls",
+              "proxy_peer": null,
+              "source": null,
+              "tls_reason": "certificate_verify_failed",
+              "tls_verify_code": 20,
+              "elapsed_ms": 485.376,
+              "since_core_start_ms": 5822.131,
+              "core_evidence": null
+            }
+          ]
+        }
+      },
+      "throughput": {
+        "ok": true,
+        "payload_mib_per_request": 64,
+        "minimum_load_seconds": 1.0,
+        "bytes_verified": 3154116608,
+        "elapsed_ms": 1002.478,
+        "mib_per_second": 3000.564,
+        "transfers": [
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58784",
+            "elapsed_ms": 43.958,
+            "since_core_start_ms": 5873.351,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58786",
+            "elapsed_ms": 22.589,
+            "since_core_start_ms": 5896.341,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58788",
+            "elapsed_ms": 25.118,
+            "since_core_start_ms": 5921.702,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58790",
+            "elapsed_ms": 22.623,
+            "since_core_start_ms": 5944.594,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58792",
+            "elapsed_ms": 20.774,
+            "since_core_start_ms": 5965.633,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58794",
+            "elapsed_ms": 20.025,
+            "since_core_start_ms": 5985.868,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58796",
+            "elapsed_ms": 19.399,
+            "since_core_start_ms": 6005.458,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58798",
+            "elapsed_ms": 19.932,
+            "since_core_start_ms": 6025.571,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58800",
+            "elapsed_ms": 23.108,
+            "since_core_start_ms": 6048.942,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58802",
+            "elapsed_ms": 20.558,
+            "since_core_start_ms": 6069.797,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58804",
+            "elapsed_ms": 20.326,
+            "since_core_start_ms": 6090.379,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58806",
+            "elapsed_ms": 20.75,
+            "since_core_start_ms": 6111.322,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58808",
+            "elapsed_ms": 20.587,
+            "since_core_start_ms": 6132.125,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58810",
+            "elapsed_ms": 22.933,
+            "since_core_start_ms": 6155.293,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58812",
+            "elapsed_ms": 20.335,
+            "since_core_start_ms": 6175.903,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58814",
+            "elapsed_ms": 21.014,
+            "since_core_start_ms": 6197.125,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58816",
+            "elapsed_ms": 20.977,
+            "since_core_start_ms": 6218.3,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58818",
+            "elapsed_ms": 20.256,
+            "since_core_start_ms": 6238.782,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58820",
+            "elapsed_ms": 22.321,
+            "since_core_start_ms": 6261.332,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58822",
+            "elapsed_ms": 20.065,
+            "since_core_start_ms": 6281.669,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58824",
+            "elapsed_ms": 19.589,
+            "since_core_start_ms": 6301.468,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58826",
+            "elapsed_ms": 19.609,
+            "since_core_start_ms": 6321.275,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58828",
+            "elapsed_ms": 19.271,
+            "since_core_start_ms": 6340.725,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58830",
+            "elapsed_ms": 21.806,
+            "since_core_start_ms": 6362.711,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58832",
+            "elapsed_ms": 20.988,
+            "since_core_start_ms": 6383.962,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58834",
+            "elapsed_ms": 20.249,
+            "since_core_start_ms": 6404.42,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58836",
+            "elapsed_ms": 19.771,
+            "since_core_start_ms": 6424.388,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58838",
+            "elapsed_ms": 19.232,
+            "since_core_start_ms": 6443.796,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58840",
+            "elapsed_ms": 21.791,
+            "since_core_start_ms": 6465.772,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58842",
+            "elapsed_ms": 20.183,
+            "since_core_start_ms": 6486.212,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58844",
+            "elapsed_ms": 19.535,
+            "since_core_start_ms": 6505.952,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58846",
+            "elapsed_ms": 19.392,
+            "since_core_start_ms": 6525.528,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58848",
+            "elapsed_ms": 20.085,
+            "since_core_start_ms": 6545.819,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58852",
+            "elapsed_ms": 22.207,
+            "since_core_start_ms": 6568.263,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58854",
+            "elapsed_ms": 19.505,
+            "since_core_start_ms": 6588.038,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58856",
+            "elapsed_ms": 19.386,
+            "since_core_start_ms": 6607.607,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58858",
+            "elapsed_ms": 19.478,
+            "since_core_start_ms": 6627.276,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58861",
+            "elapsed_ms": 19.888,
+            "since_core_start_ms": 6647.375,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58864",
+            "elapsed_ms": 22.51,
+            "since_core_start_ms": 6670.145,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58866",
+            "elapsed_ms": 19.988,
+            "since_core_start_ms": 6690.38,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58868",
+            "elapsed_ms": 19.36,
+            "since_core_start_ms": 6709.927,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58870",
+            "elapsed_ms": 19.743,
+            "since_core_start_ms": 6729.926,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58872",
+            "elapsed_ms": 19.405,
+            "since_core_start_ms": 6749.555,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58874",
+            "elapsed_ms": 21.324,
+            "since_core_start_ms": 6771.1,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58876",
+            "elapsed_ms": 20.017,
+            "since_core_start_ms": 6791.39,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58878",
+            "elapsed_ms": 19.965,
+            "since_core_start_ms": 6811.55,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          },
+          {
+            "url": "http://127.0.0.1:58537/body?mib=64",
+            "ok": true,
+            "http_status": 200,
+            "bytes_read": 67108864,
+            "error_class": null,
+            "proxy_peer": [
+              "127.0.0.1",
+              58538
+            ],
+            "source": "127.0.0.1:58880",
+            "elapsed_ms": 19.888,
+            "since_core_start_ms": 6831.647,
+            "core_evidence": {
+              "core_outbound": "DIRECT",
+              "core_reported_destination": "127.0.0.1:58537",
+              "owned_core_pid": 41568
+            }
+          }
+        ],
+        "resources": {
+          "sampling_points": 11,
+          "window_ms": 1006.463,
+          "cpu_avg_percent_one_core": 167.915,
+          "cpu_peak_interval_percent_one_core": 174.897,
+          "rss_peak_observed_kib": 39168,
+          "errors": [],
+          "scope": "throughput sampling window; child CPU only; sampled RSS",
+          "cpu_clock_precision": "ps TIME platform precision"
+        }
+      }
+    }
+  ],
+  "core": {
+    "version": "Mihomo Meta v1.19.32 darwin arm64 with go1.26.8 Wed Sep 30 17:00:14 UTC 2026\nUse tags: with_gvisor",
+    "sha256": "94a386ec0149080deadd86b1f667363bde3c70f7489dba3258e52c56fc9a6d66"
+  },
+  "fixture": {
+    "mixed-port": 58538,
+    "allow-lan": false,
+    "bind-address": "127.0.0.1",
+    "external-controller": "127.0.0.1:58539",
+    "secret": "<ephemeral redacted>",
+    "log-level": "info",
+    "ipv6": false,
+    "tun": {
+      "enable": false
+    },
+    "dns": {
+      "enable": false
+    },
+    "profile": {
+      "store-selected": false
+    },
+    "rules": [
+      "MATCH,DIRECT"
+    ]
+  },
+  "targets": {
+    "local_204": "http://127.0.0.1:58537/204",
+    "public_https": [
+      "https://www.gstatic.com/generate_204",
+      "https://cp.cloudflare.com/generate_204"
+    ]
+  },
+  "negative_control": {
+    "url": "http://127.0.0.1:58537/204",
+    "ok": false,
+    "http_status": null,
+    "bytes_read": 0,
+    "error_class": "connect",
+    "proxy_peer": null,
+    "source": null,
+    "elapsed_ms": 0.304
+  },
+  "cold_start": {
+    "controller_ready_ms": 23.781,
+    "first_proxy_204_ms": 25.169,
+    "attempts": [
+      {
+        "url": "http://127.0.0.1:58537/204",
+        "ok": true,
+        "http_status": 204,
+        "bytes_read": 0,
+        "error_class": null,
+        "proxy_peer": [
+          "127.0.0.1",
+          58538
+        ],
+        "source": "127.0.0.1:58544",
+        "elapsed_ms": 1.365,
+        "since_core_start_ms": 25.169,
+        "core_evidence": {
+          "core_outbound": "DIRECT",
+          "core_reported_destination": "127.0.0.1:58537",
+          "owned_core_pid": 41568
+        }
+      }
+    ]
+  },
+  "system_resolver": {
+    "target": "www.gstatic.com",
+    "path": "system getaddrinfo; cache and physical egress unverified",
+    "worker_startup_excluded": true,
+    "count": 3,
+    "ok_count": 3,
+    "percentile_method": "nearest_rank_successes_only",
+    "success_rate": 1.0,
+    "p50_ms": 4.184665973298252,
+    "p95_ms": 9.30216710548848,
+    "failures": {},
+    "samples": [
+      {
+        "ok": true,
+        "families": [
+          2
+        ],
+        "error_class": null,
+        "elapsed_ms": 9.30216710548848
+      },
+      {
+        "ok": true,
+        "families": [
+          2
+        ],
+        "error_class": null,
+        "elapsed_ms": 3.5527090076357126
+      },
+      {
+        "ok": true,
+        "families": [
+          2
+        ],
+        "error_class": null,
+        "elapsed_ms": 4.184665973298252
+      }
+    ]
+  },
+  "controlled_process_restart": {
+    "stop_method": "terminate",
+    "stop_ms": 1.615,
+    "startup": {
+      "controller_ready_ms": 27.672,
+      "first_proxy_204_ms": 28.405,
+      "attempts": [
+        {
+          "url": "http://127.0.0.1:58537/204",
+          "ok": true,
+          "http_status": 204,
+          "bytes_read": 0,
+          "error_class": null,
+          "proxy_peer": [
+            "127.0.0.1",
+            58538
+          ],
+          "source": "127.0.0.1:58885",
+          "elapsed_ms": 0.711,
+          "since_core_start_ms": 28.405,
+          "core_evidence": {
+            "core_outbound": "DIRECT",
+            "core_reported_destination": "127.0.0.1:58537",
+            "owned_core_pid": 41707
+          }
+        }
+      ]
+    },
+    "total_stop_start_proxy_204_ms": 30.158,
+    "scope": "standalone core restart, not network outage or Crossbow application recovery"
+  },
+  "cleanup": {
+    "owned_core_pids": [
+      41568,
+      41707
+    ],
+    "all_owned_cores_reaped": true
+  },
+  "probe_failures": {
+    "public_https": 4,
+    "system_resolver": 0
+  }
+}
