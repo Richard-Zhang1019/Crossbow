@@ -241,6 +241,23 @@ mod tests {
     }
 
     #[test]
+    fn singbox_preflight_rejects_rules_broken_by_an_override() {
+        let mut s = singbox_fixture("    tolerance: 120\n");
+        s.overrides[0].kind = OverrideKind::Script;
+        s.overrides[0].content = "function main(c) { c.rules.push(false); return c; }".into();
+
+        assert!(matches!(
+            render_config(&s),
+            Err(RenderError::InvalidYaml(message))
+                if message.contains("rules 第 2 条") && message.contains("bool")
+        ));
+        assert!(render_config_with(&s, false).is_ok());
+
+        s.overrides[0].content = "function main(c) { return c; }".into();
+        assert!(render_config(&s).is_ok());
+    }
+
+    #[test]
     fn singbox_group_fields_follow_overrides_and_node_renames() {
         let mut s = fixture();
         s.engine.engine = crate::model::Engine::SingBox;
