@@ -74,6 +74,33 @@ struct ClashProxy {
     server_name: Option<String>,
     #[serde(default, rename = "skip-cert-verify")]
     skip_cert_verify: Option<bool>,
+    /// #509：ws-opts（path/headers.host）——VLESS/VMESS WebSocket 传输。
+    #[serde(default, rename = "ws-opts")]
+    ws_opts: Option<WsOpts>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct WsOpts {
+    #[serde(default)]
+    path: Option<String>,
+    /// Clash 侧写法是 headers: { Host: value }；只取 Host（其余头按
+    /// sing-box 无等价来源处理，不猜）。
+    #[serde(default, rename = "headers")]
+    headers: Option<std::collections::BTreeMap<String, String>>,
+}
+
+impl WsOpts {
+    /// ws Host 头：headers.Host 优先，其次显式 server_name，最后回落 server。
+    fn host_header(&self, fallback: &str) -> Option<String> {
+        self.headers
+            .as_ref()
+            .and_then(|h| {
+                h.iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case("host"))
+                    .map(|(_, v)| v.clone())
+            })
+            .or(Some(fallback.to_string()))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -309,7 +336,39 @@ fn srs_def(tag: &str, detour: &str) -> Value {
     def
 }
 
+/// #509：Clash `network: ws` → sing-box transport（ws）。path/Host 头/
+/// TLS（early-data 不在此范围）。
+fn ws_transport(p: &ClashProxy) -> Result<Value, ConvertError> {
+    let Some(opts) = &p.ws_opts else {
+        return Err(ConvertError::Parse(format!(
+            "节点「{}」声明 network: ws 但缺少 ws-opts（path 必填）",
+            p.name
+        )));
+    };
+    let Some(path) = opts.path.as_deref().filter(|s| !s.is_empty()) else {
+        return Err(ConvertError::Parse(format!(
+            "节点「{}」ws-opts 缺少 path",
+            p.name
+        )));
+    };
+    let mut transport = json!({ "type": "ws", "path": path });
+    if let Some(host) = opts.host_header(&p.server) {
+        transport["headers"] = json!({ "Host": host });
+    }
+    Ok(transport)
+}
+
 fn convert_proxy(p: &ClashProxy) -> Result<Value, ConvertError> {
+    // #509：声明了传输层（network）但协议不在支持映射内的节点，预检即拒
+    // （报节点名/协议/字段），不再静默丢传输后生成“看似可用”的出站。
+    if let Some(network) = &p.network {
+        if !network.is_empty() && network != "ws" {
+            return Err(ConvertError::UnsupportedProxy(format!(
+                "{} (network: {network} 传输暂不支持转换，请使用 mihomo 内核)",
+                p.name
+            )));
+        }
+    }
     let tls_on = p.tls.unwrap_or(false)
         || matches!(p.kind.as_str(), "trojan" | "hysteria2")
         || p.port == 443;
@@ -353,6 +412,9 @@ fn convert_proxy(p: &ClashProxy) -> Result<Value, ConvertError> {
                 "security": p.cipher.clone().unwrap_or_else(|| "auto".into()),
                 "alter_id": p.alter_id.unwrap_or(0)
             });
+            if p.network.as_deref() == Some("ws") {
+                o["transport"] = ws_transport(p)?;
+            }
             if tls_on {
                 o["tls"] = common_tls;
             }
@@ -372,6 +434,10 @@ fn convert_proxy(p: &ClashProxy) -> Result<Value, ConvertError> {
                 "server": p.server, "server_port": p.port,
                 "uuid": p.uuid.clone().unwrap_or_default()
             });
+            if p.network.as_deref() == Some("ws") {
+                // #509：WebSocket 传输等价转换（path + Host 头）
+                o["transport"] = ws_transport(p)?;
+            }
             if tls_on {
                 o["tls"] = common_tls;
             }
@@ -1155,15 +1221,103 @@ rules:
     fn legal_rules_forms_still_convert() {
         // 缺省
         let no_rules = "proxies:\n  - {name: n, type: http, server: 127.0.0.1, port: 1}\n";
-        let out: serde_json::Value = serde_json::from_str(&convert_to_singbox(no_rules, 7897, false).unwrap()).unwrap();
+        let out: serde_json::Value =
+            serde_json::from_str(&convert_to_singbox(no_rules, 7897, false).unwrap()).unwrap();
         assert_eq!(out["route"]["final"], "DIRECT");
         // 空列表
         let empty = "rules: []\nproxies:\n  - {name: n, type: http, server: 127.0.0.1, port: 1}\n";
-        let out: serde_json::Value = serde_json::from_str(&convert_to_singbox(empty, 7897, false).unwrap()).unwrap();
+        let out: serde_json::Value =
+            serde_json::from_str(&convert_to_singbox(empty, 7897, false).unwrap()).unwrap();
         assert_eq!(out["route"]["final"], "DIRECT");
         // 显式 MATCH,DIRECT
         let explicit = "rules:\n  - MATCH,DIRECT\nproxies:\n  - {name: n, type: http, server: 127.0.0.1, port: 1}\n";
-        let out: serde_json::Value = serde_json::from_str(&convert_to_singbox(explicit, 7897, false).unwrap()).unwrap();
+        let out: serde_json::Value =
+            serde_json::from_str(&convert_to_singbox(explicit, 7897, false).unwrap()).unwrap();
         assert_eq!(out["route"]["final"], "DIRECT");
+    }
+
+    /// #509：VLESS + network: ws → transport 等价转换（path + Host 头）。
+    #[test]
+    fn vless_ws_transport_is_converted() {
+        let base = r#"
+proxies:
+  - name: node
+    type: vless
+    server: 127.0.0.1
+    port: 9001
+    uuid: b06ca1c3-3493-4f4d-a011-1198d90f10f5
+    network: ws
+    ws-opts:
+      path: /proxy
+      headers:
+        Host: example.test
+rules: ['MATCH,node']
+"#;
+        let out: serde_json::Value =
+            serde_json::from_str(&convert_to_singbox(base, 7897, false).unwrap()).unwrap();
+        let proxy = &out["outbounds"][0];
+        assert_eq!(proxy["type"], "vless");
+        assert_eq!(proxy["transport"]["type"], "ws");
+        assert_eq!(proxy["transport"]["path"], "/proxy");
+        assert_eq!(proxy["transport"]["headers"]["Host"], "example.test");
+    }
+
+    /// #509：network: ws 缺 ws-opts.path → 预检拒绝（报节点名，不静默丢传输）。
+    #[test]
+    fn ws_without_path_is_rejected() {
+        let base = r#"
+proxies:
+  - name: node
+    type: vless
+    server: 127.0.0.1
+    port: 9001
+    uuid: b06ca1c3-3493-4f4d-a011-1198d90f10f5
+    network: ws
+rules: ['MATCH,node']
+"#;
+        let err = convert_to_singbox(base, 7897, false).unwrap_err();
+        assert!(
+            err.to_string().contains("node") && err.to_string().contains("path"),
+            "{err}"
+        );
+    }
+
+    /// #509：不支持的传输（grpc 等）预检拒绝并报协议与字段。
+    #[test]
+    fn unsupported_network_is_rejected() {
+        let base = r#"
+proxies:
+  - name: node
+    type: vless
+    server: 127.0.0.1
+    port: 9001
+    uuid: b06ca1c3-3493-4f4d-a011-1198d90f10f5
+    network: grpc
+    grpc-opts:
+      grpc-service-name: x
+rules: ['MATCH,node']
+"#;
+        let err = convert_to_singbox(base, 7897, false).unwrap_err();
+        assert!(
+            err.to_string().contains("grpc") && err.to_string().contains("node"),
+            "{err}"
+        );
+    }
+
+    /// #509：普通 TCP VLESS（无 network）不产生 transport——零回归。
+    #[test]
+    fn plain_vless_has_no_transport() {
+        let base = r#"
+proxies:
+  - name: node
+    type: vless
+    server: 127.0.0.1
+    port: 9001
+    uuid: b06ca1c3-3493-4f4d-a011-1198d90f10f5
+rules: ['MATCH,node']
+"#;
+        let out: serde_json::Value =
+            serde_json::from_str(&convert_to_singbox(base, 7897, false).unwrap()).unwrap();
+        assert!(out["outbounds"][0].get("transport").is_none());
     }
 }
