@@ -57,6 +57,7 @@ jobs:
               - 'apps/desktop/package.json'
               - 'apps/desktop/vite.config.ts'
               - 'apps/desktop/tsconfig.json'
+              - 'scripts/dev/**'
               - 'pnpm-lock.yaml'
       - id: final
         env:
@@ -108,6 +109,9 @@ jobs:
             apps/desktop/src/pages/Home/firstConnection.test.mjs \
             apps/desktop/src/pages/Diagnostics/report.test.mjs \
             apps/desktop/src/pages/Proxies/nodeDelay.test.mjs
+      # #511：可复跑桌面场景（生产组件 + IPC 桩；runner 预装 Chrome，不下载浏览器）
+      - name: Reproducible desktop scenarios
+        run: node scripts/dev/verify-scenarios.mjs
 
   linux-foundation:
     name: Linux foundation (build and tests)

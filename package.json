@@ -5,7 +5,11 @@
   "scripts": {
     "dev": "pnpm --filter @crossbow/desktop dev",
     "build": "pnpm --filter @crossbow/desktop build",
-    "tauri": "pnpm --filter @crossbow/desktop tauri"
+    "tauri": "pnpm --filter @crossbow/desktop tauri",
+    "verify:desktop": "node scripts/dev/verify-scenarios.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.49.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
