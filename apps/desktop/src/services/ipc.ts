@@ -98,14 +98,15 @@ export interface SysProxyStatus {
   port: number;
 }
 
-export interface ConfigImportReport {
-  package_version: number;
-  added_profiles: number;
-  replaced_profiles: number;
-  added_overrides: number;
-  replaced_overrides: number;
-  active_profile: string | null;
-  warnings: string[];
+export interface PackagePreview {
+  id: string;
+  report: {
+    added_profiles: number;
+    replaced_profiles: number;
+    added_overrides: number;
+    replaced_overrides: number;
+    selects_profile: boolean;
+  };
 }
 
 export interface UiSettings {
@@ -375,11 +376,9 @@ export const ipc = {
   coreStop: () => invoke<void>("core_stop"),
   appVersion: () => getVersion(),
   exportConfigPackage: () => invoke<boolean>("export_config_package"),
-  pickConfigPackage: () => invoke<string | null>("pick_config_package"),
-  previewConfigPackage: (text: string) =>
-    invoke<ConfigImportReport>("preview_config_package", { text }),
-  importConfigPackage: (text: string) =>
-    invoke<ConfigImportReport>("import_config_package", { text }),
+  previewConfigPackage: () => invoke<PackagePreview | null>("preview_config_package"),
+  cancelConfigPackage: (id: string) => invoke<void>("cancel_config_package", { id }),
+  importConfigPackage: (id: string) => invoke<void>("import_config_package", { id }),
   testSite: (id: string) => invoke<SiteResult>("test_site", { id }),
   coreStatus: () => invoke<CoreStatus>("core_status"),
   sysproxyStatus: () => invoke<SysProxyStatus>("sysproxy_status"),

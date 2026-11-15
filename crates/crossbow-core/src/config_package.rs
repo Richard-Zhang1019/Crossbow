@@ -1,22 +1,15 @@
-//! #510：带版本号的本地配置包——导出、校验、预览与导入报告。
-//!
-//! 包内容只覆盖可迁移面：订阅来源、当前配置内容、覆写链与当前激活项。
-//! 机器相关选项（引擎/端口/UI/日志/更新设置）与运行时状态（系统代理、
-//! TUN、系统授权）不随包迁移——导入方保留自己的这些字段。
-//! 敏感边界：profiles 内含订阅 URL 与节点凭据，导出前由前端提示；
-//! 报告与错误不包含凭据字段。
+//! Versioned local migration of profiles, overrides and the active selection.
+//! Package contents can contain credentials. Errors and previews use fixed
+//! categories and counts only.
 
-use crate::model::{StoreSchema, SCHEMA_VERSION};
+use crate::model::{OverrideDef, OverrideKind, Profile, StoreSchema, SCHEMA_VERSION};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-/// 配置包格式版本。解析时严格等于 1——未来版本由导入方明确拒绝。
 pub const PACKAGE_VERSION: u32 = 1;
-
-/// 单文件读取上限：配置包是结构化 JSON，超限多半是误选文件。
 pub const MAX_PACKAGE_BYTES: usize = 8 * 1024 * 1024;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 struct ConfigPackage {
     package_version: u32,
     #[serde(default)]
@@ -25,320 +18,438 @@ struct ConfigPackage {
     payload: ConfigPayload,
 }
 
-/// 可迁移面：订阅 + 覆写链 + 当前激活项。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct ConfigPayload {
-    pub profiles: Vec<crate::model::Profile>,
-    pub overrides: Vec<crate::model::OverrideDef>,
+    profiles: Vec<Profile>,
+    overrides: Vec<OverrideDef>,
     #[serde(default)]
-    pub active_profile: Option<String>,
+    active_profile: Option<String>,
 }
 
-/// 导入预览/结果报告（脱敏：只有计数与 id，不含 URL 与内容）。
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct ConfigImportReport {
-    pub package_version: u32,
-    pub added_profiles: u32,
-    pub replaced_profiles: u32,
-    pub added_overrides: u32,
-    pub replaced_overrides: u32,
-    pub active_profile: Option<String>,
-    /// 不可静默处理的警告（如激活项在包内不存在——将回落无激活）。
-    pub warnings: Vec<String>,
+    pub added_profiles: usize,
+    pub replaced_profiles: usize,
+    pub added_overrides: usize,
+    pub replaced_overrides: usize,
+    pub selects_profile: bool,
 }
 
-/// 从当前数据构造配置包 JSON（pretty）。只取可迁移字段。
-pub fn export_package(data: &StoreSchema) -> String {
+#[derive(Debug, thiserror::Error)]
+pub enum PackageError {
+    #[error("pkg.errorSize")]
+    Size,
+    #[error("pkg.errorFormat")]
+    Format,
+    #[error("pkg.errorVersion")]
+    Version,
+    #[error("pkg.errorSchema")]
+    Schema,
+    #[error("pkg.errorEmpty")]
+    Empty,
+    #[error("pkg.errorProfiles")]
+    Profiles,
+    #[error("pkg.errorOverrides")]
+    Overrides,
+    #[error("pkg.errorSelection")]
+    Selection,
+    #[error("pkg.errorBindings")]
+    Bindings,
+    #[error("pkg.errorSharedOverride")]
+    SharedOverride,
+}
+
+pub fn export_package(data: &StoreSchema) -> Result<String, PackageError> {
+    let mut payload = ConfigPayload {
+        profiles: data.profiles.clone(),
+        overrides: data.overrides.clone(),
+        active_profile: data.active_profile.clone(),
+    };
+    payload.clear_diagnostics();
+    payload.validate()?;
     let package = ConfigPackage {
         package_version: PACKAGE_VERSION,
-        created_at: now_secs(),
+        created_at: crate::subscription::now_secs(),
         schema_version: data.schema_version,
-        payload: ConfigPayload {
-            profiles: data.profiles.clone(),
-            overrides: data.overrides.clone(),
-            active_profile: data.active_profile.clone(),
-        },
+        payload,
     };
-    serde_json::to_string_pretty(&package).unwrap_or_else(|_| "{}".into())
-}
-
-/// 解析并校验包文本，产出导入预览报告（不写库）。`current` 为导入方
-/// 现有数据，用于计算新增/替换计数。
-pub fn preview_package(text: &str, current: &StoreSchema) -> Result<ConfigImportReport, String> {
+    let text = serde_json::to_string_pretty(&package).map_err(|_| PackageError::Format)?;
     if text.len() > MAX_PACKAGE_BYTES {
-        return Err(format!(
-            "配置包超过读取上限（{} 字节 > {}）",
-            text.len(),
-            MAX_PACKAGE_BYTES
-        ));
+        return Err(PackageError::Size);
     }
-    let package: ConfigPackage = serde_json::from_str(text)
-        .map_err(|e| format!("配置包无法解析（JSON 损坏或格式不符）：{e}"))?;
-    if package.package_version != PACKAGE_VERSION {
-        return Err(format!(
-            "配置包版本不符：需要 {PACKAGE_VERSION}，实际 {}（可能来自更新或更旧的应用）",
-            package.package_version
-        ));
-    }
-    if package.schema_version > SCHEMA_VERSION {
-        return Err(format!(
-            "配置包 schema v{} 高于当前支持的 v{SCHEMA_VERSION}——请先升级应用",
-            package.schema_version
-        ));
-    }
-    validate_payload(&package.payload)?;
-
-    // 冲突/新增计数（按 profile id）
-    let existing_ids: BTreeSet<&str> = current.profiles.iter().map(|p| p.id.as_str()).collect();
-    let package_ids: BTreeSet<&str> = package
-        .payload
-        .profiles
-        .iter()
-        .map(|p| p.id.as_str())
-        .collect();
-    let replaced_profiles = existing_ids.intersection(&package_ids).count() as u32;
-    let added_profiles =
-        (package_ids.len() - existing_ids.intersection(&package_ids).count()) as u32;
-
-    let existing_overrides: BTreeSet<&str> =
-        current.overrides.iter().map(|o| o.id.as_str()).collect();
-    let package_overrides: BTreeSet<&str> = package
-        .payload
-        .overrides
-        .iter()
-        .map(|o| o.id.as_str())
-        .collect();
-    let replaced_overrides = existing_overrides.intersection(&package_overrides).count() as u32;
-    let added_overrides = (package_overrides.len()
-        - existing_overrides.intersection(&package_overrides).count())
-        as u32;
-
-    let mut warnings = Vec::new();
-    if let Some(active) = &package.payload.active_profile {
-        if !package_ids.contains(active.as_str()) {
-            warnings.push(format!(
-                "包内激活项 {active} 不在包内订阅列表中，导入后不设置激活"
-            ));
-        }
-    }
-    if !current.profiles.is_empty() && replaced_profiles > 0 {
-        warnings.push(format!(
-            "将替换现有 {replaced_profiles} 个同 id 订阅（导入前会自动生成恢复快照）"
-        ));
-    }
-
-    Ok(ConfigImportReport {
-        package_version: package.package_version,
-        added_profiles,
-        replaced_profiles,
-        added_overrides,
-        replaced_overrides,
-        active_profile: package.payload.active_profile.clone(),
-        warnings,
-    })
+    Ok(text)
 }
 
-/// 校验包内容：订阅/覆写条目完整性与 id 唯一性。任何一项失败都拒绝写入。
-fn validate_payload(payload: &ConfigPayload) -> Result<(), String> {
-    if payload.profiles.is_empty() {
-        return Err("配置包内没有任何订阅配置".into());
+impl ConfigPayload {
+    pub fn parse(text: &[u8]) -> Result<Self, PackageError> {
+        if text.len() > MAX_PACKAGE_BYTES {
+            return Err(PackageError::Size);
+        }
+        let package: ConfigPackage =
+            serde_json::from_slice(text).map_err(|_| PackageError::Format)?;
+        if package.package_version != PACKAGE_VERSION {
+            return Err(PackageError::Version);
+        }
+        if package.schema_version > SCHEMA_VERSION {
+            return Err(PackageError::Schema);
+        }
+        // Older supported schemas share these portable fields. Serde fills in
+        // optional fields before we validate references and drop diagnostics.
+        let mut payload = package.payload;
+        payload.clear_diagnostics();
+        payload.validate()?;
+        Ok(payload)
     }
-    let mut seen_profile = BTreeSet::new();
-    for profile in &payload.profiles {
-        if profile.id.trim().is_empty() || profile.name.trim().is_empty() {
-            return Err("配置包含未命名或空 id 的订阅条目".into());
-        }
-        if !seen_profile.insert(profile.id.as_str()) {
-            return Err(format!("配置包内订阅 id 重复：{}", profile.id));
-        }
-    }
-    let mut seen_override = BTreeSet::new();
-    for override_def in &payload.overrides {
-        if override_def.id.trim().is_empty() || override_def.name.trim().is_empty() {
-            return Err("配置包含未命名或空 id 的覆写条目".into());
-        }
-        if !seen_override.insert(override_def.id.as_str()) {
-            return Err(format!("配置包内覆写 id 重复：{}", override_def.id));
-        }
-    }
-    Ok(())
-}
 
-/// 把预览通过的包内容应用到数据（仅供导入命令的事务回调使用）。
-/// 机器相关字段（engine/ui/logs/update/接管状态）不动。
-pub fn apply_package(data: &mut StoreSchema, payload: &ConfigPayload) {
-    data.profiles = payload.profiles.clone();
-    data.overrides = payload.overrides.clone();
-    data.active_profile = payload.active_profile.clone();
-}
+    fn clear_diagnostics(&mut self) {
+        for profile in &mut self.profiles {
+            profile.last_update = None;
+        }
+        for override_def in &mut self.overrides {
+            override_def.last_error = None;
+        }
+    }
 
-pub fn parse_package(text: &str) -> Result<ConfigPayload, String> {
-    if text.len() > MAX_PACKAGE_BYTES {
-        return Err(format!(
-            "配置包超过读取上限（{} 字节 > {}）",
-            text.len(),
-            MAX_PACKAGE_BYTES
-        ));
+    fn validate(&self) -> Result<(), PackageError> {
+        if self.profiles.is_empty() && self.overrides.is_empty() {
+            return Err(PackageError::Empty);
+        }
+        let mut override_ids = BTreeSet::new();
+        for item in &self.overrides {
+            if item.id.trim().is_empty()
+                || item.name.trim().is_empty()
+                || !override_ids.insert(item.id.as_str())
+            {
+                return Err(PackageError::Overrides);
+            }
+            if item.enabled
+                && item.kind == OverrideKind::Merge
+                && !serde_yaml::from_str::<serde_yaml::Value>(&item.content)
+                    .is_ok_and(|value| value.is_mapping())
+            {
+                return Err(PackageError::Overrides);
+            }
+        }
+        let mut profile_ids = BTreeSet::new();
+        for profile in &self.profiles {
+            if profile.id.trim().is_empty()
+                || profile.name.trim().is_empty()
+                || !profile_ids.insert(profile.id.as_str())
+                || crate::subscription::validate_profile_content(&profile.content).is_err()
+            {
+                return Err(PackageError::Profiles);
+            }
+            let mut bindings = BTreeSet::new();
+            if profile
+                .override_ids
+                .iter()
+                .any(|id| !override_ids.contains(id.as_str()) || !bindings.insert(id.as_str()))
+            {
+                return Err(PackageError::Bindings);
+            }
+        }
+        if self
+            .active_profile
+            .as_deref()
+            .is_some_and(|id| !profile_ids.contains(id))
+        {
+            return Err(PackageError::Selection);
+        }
+        Ok(())
     }
-    let package: ConfigPackage = serde_json::from_str(text)
-        .map_err(|e| format!("配置包无法解析（JSON 损坏或格式不符）：{e}"))?;
-    if package.package_version != PACKAGE_VERSION {
-        return Err(format!(
-            "配置包版本不符：需要 {PACKAGE_VERSION}，实际 {}",
-            package.package_version
-        ));
-    }
-    if package.schema_version > SCHEMA_VERSION {
-        return Err(format!(
-            "配置包 schema v{} 高于当前支持的 v{SCHEMA_VERSION}——请先升级应用",
-            package.schema_version
-        ));
-    }
-    validate_payload(&package.payload)?;
-    Ok(package.payload)
-}
 
-pub(crate) fn now_secs() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+    pub fn preview(&self, current: &StoreSchema) -> Result<ConfigImportReport, PackageError> {
+        let profile_ids: BTreeSet<_> = self.profiles.iter().map(|p| p.id.as_str()).collect();
+        let override_ids: BTreeSet<_> = self.overrides.iter().map(|o| o.id.as_str()).collect();
+        // The order in StoreSchema.overrides is the execution order. Replacing
+        // or moving a shared override could change a profile outside the package.
+        if current.profiles.iter().any(|p| {
+            !profile_ids.contains(p.id.as_str())
+                && p.override_ids
+                    .iter()
+                    .any(|id| override_ids.contains(id.as_str()))
+        }) {
+            return Err(PackageError::SharedOverride);
+        }
+        let replaced_profiles = current
+            .profiles
+            .iter()
+            .filter(|p| profile_ids.contains(p.id.as_str()))
+            .count();
+        let replaced_overrides = current
+            .overrides
+            .iter()
+            .filter(|o| override_ids.contains(o.id.as_str()))
+            .count();
+        Ok(ConfigImportReport {
+            added_profiles: self.profiles.len().saturating_sub(replaced_profiles),
+            replaced_profiles,
+            added_overrides: self.overrides.len().saturating_sub(replaced_overrides),
+            replaced_overrides,
+            selects_profile: self.active_profile.is_some(),
+        })
+    }
+
+    pub fn changes_active_profile(&self, current: &StoreSchema) -> bool {
+        self.active_profile.is_some()
+            || current
+                .active_profile
+                .as_deref()
+                .is_some_and(|id| self.profiles.iter().any(|profile| profile.id == id))
+    }
+
+    pub fn merge_into(self, current: &mut StoreSchema) -> Result<ConfigImportReport, PackageError> {
+        let report = self.preview(current)?;
+        let profile_ids: BTreeSet<_> = self.profiles.iter().map(|p| p.id.as_str()).collect();
+        let override_ids: BTreeSet<_> = self.overrides.iter().map(|o| o.id.as_str()).collect();
+        current
+            .profiles
+            .retain(|p| !profile_ids.contains(p.id.as_str()));
+        current
+            .overrides
+            .retain(|o| !override_ids.contains(o.id.as_str()));
+        current.profiles.extend(self.profiles);
+        current.overrides.extend(self.overrides);
+        if self.active_profile.is_some() {
+            current.active_profile = self.active_profile;
+        }
+        Ok(report)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Profile, ProfileKind};
+    use crate::model::{ProfileKind, UpdateOutcome};
+    use crate::Store;
 
-    fn sample_profile(id: &str, name: &str) -> Profile {
+    fn profile(id: &str, bindings: &[&str]) -> Profile {
         Profile {
             id: id.into(),
-            name: name.into(),
-            kind: ProfileKind::Remote,
+            name: id.into(),
+            kind: ProfileKind::Local,
             url: None,
-            content: "proxies: []".into(),
+            content: "proxies: []\nrules: ['MATCH,DIRECT']".into(),
             update_interval_min: 0,
-            override_ids: vec![],
+            override_ids: bindings.iter().map(ToString::to_string).collect(),
             last_updated: None,
             traffic: None,
             last_update: None,
         }
     }
 
-    fn base_store() -> StoreSchema {
-        StoreSchema::default()
-    }
-
-    fn package_text(profiles: &[Profile], overrides_json: &str) -> String {
-        format!(
-            r#"{{"package_version":1,"created_at":1,"schema_version":{SCHEMA_VERSION},
-                "payload":{{"profiles":{},"overrides":{overrides_json},"active_profile":null}}}}"#,
-            serde_json::to_string(profiles).unwrap()
-        )
-    }
-
-    #[test]
-    fn export_round_trips_through_preview() {
-        let mut data = base_store();
-        data.profiles.push(sample_profile("p1", "主订阅"));
-        data.overrides.push(crate::model::OverrideDef {
-            id: "o1".into(),
-            name: "覆写A".into(),
-            kind: crate::model::OverrideKind::Merge,
-            enabled: true,
-            content: "rules-prepend: []".into(),
+    fn patch(id: &str, port: u16, enabled: bool) -> OverrideDef {
+        OverrideDef {
+            id: id.into(),
+            name: id.into(),
+            kind: OverrideKind::Merge,
+            enabled,
+            content: format!("mixed-port: {port}"),
             last_error: None,
+        }
+    }
+
+    fn fixture() -> StoreSchema {
+        StoreSchema {
+            profiles: vec![
+                profile("primary", &["a", "b", "off"]),
+                profile("secondary", &[]),
+            ],
+            overrides: vec![
+                patch("a", 1001, true),
+                patch("b", 1002, true),
+                patch("off", 1003, false),
+            ],
+            active_profile: Some("primary".into()),
+            ..StoreSchema::default()
+        }
+    }
+
+    #[test]
+    fn restores_into_clean_store_and_reopens_with_binding_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path()).unwrap();
+        let exported = export_package(&fixture()).unwrap();
+        let payload = ConfigPayload::parse(exported.as_bytes()).unwrap();
+        let report = payload.merge_into(store.data_mut()).unwrap();
+        assert_eq!((report.added_profiles, report.added_overrides), (2, 3));
+        store.save().unwrap();
+
+        let reopened = Store::open(dir.path()).unwrap();
+        let data = reopened.data();
+        assert_eq!(data.active_profile.as_deref(), Some("primary"));
+        assert_eq!(data.profiles[0].override_ids, ["a", "b", "off"]);
+        assert!(!data.overrides[2].enabled);
+        assert!(crate::render_config(data)
+            .unwrap()
+            .config
+            .contains("mixed-port: 1002"));
+    }
+
+    #[test]
+    fn preserves_unrelated_entries_and_machine_settings_with_recoverable_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path()).unwrap();
+        let data = store.data_mut();
+        data.engine.mixed_port = 9876;
+        data.engine.tun_enable = true;
+        data.ui.lang = "en".into();
+        data.profiles = vec![
+            profile("local-only", &["local-patch"]),
+            profile("primary", &[]),
+        ];
+        data.overrides = vec![
+            patch("b", 1002, true),
+            patch("a", 1001, true),
+            patch("local-patch", 1004, true),
+        ];
+        data.active_profile = Some("local-only".into());
+        store.save().unwrap();
+
+        let mut source = fixture();
+        source.active_profile = None;
+        let text = export_package(&source).unwrap();
+        let payload = ConfigPayload::parse(text.as_bytes()).unwrap();
+        let report = payload.merge_into(store.data_mut()).unwrap();
+        assert_eq!((report.added_profiles, report.replaced_profiles), (1, 1));
+        assert_eq!((report.added_overrides, report.replaced_overrides), (1, 2));
+        store.save().unwrap();
+
+        let store = Store::open(dir.path()).unwrap();
+        let data = store.data();
+        assert_eq!(data.profiles.len(), 3);
+        assert_eq!(data.profiles[0].override_ids, ["local-patch"]);
+        assert_eq!(
+            data.overrides
+                .iter()
+                .map(|o| o.id.as_str())
+                .collect::<Vec<_>>(),
+            ["local-patch", "a", "b", "off"]
+        );
+        assert_eq!(data.active_profile.as_deref(), Some("local-only"));
+        assert_eq!(data.engine.mixed_port, 9876);
+        assert!(data.engine.tun_enable);
+        assert_eq!(data.ui.lang, "en");
+
+        let snapshots = store.snapshots().unwrap();
+        let id = snapshots[0].file_name().and_then(|n| n.to_str()).unwrap();
+        let before = store.snapshot_data(id).unwrap();
+        assert_eq!(before.profiles.len(), 2);
+        assert_eq!(before.overrides[0].id, "b");
+    }
+
+    #[test]
+    fn shared_override_conflict_does_not_mutate_store() {
+        let mut target = StoreSchema {
+            profiles: vec![profile("keep", &["a"])],
+            overrides: vec![patch("a", 9999, true)],
+            ..StoreSchema::default()
+        };
+        let text = export_package(&fixture()).unwrap();
+        let payload = ConfigPayload::parse(text.as_bytes()).unwrap();
+        let before = serde_json::to_vec(&target).unwrap();
+        assert!(matches!(
+            payload.merge_into(&mut target),
+            Err(PackageError::SharedOverride)
+        ));
+        assert_eq!(serde_json::to_vec(&target).unwrap(), before);
+    }
+
+    #[test]
+    fn validates_versions_references_duplicates_and_size() {
+        let text = export_package(&fixture()).unwrap();
+        let valid: serde_json::Value = serde_json::from_str(&text).unwrap();
+        for (path, value, check) in [
+            (
+                "/package_version",
+                serde_json::json!(99),
+                "pkg.errorVersion",
+            ),
+            ("/schema_version", serde_json::json!(99), "pkg.errorSchema"),
+            (
+                "/payload/active_profile",
+                serde_json::json!("secret-marker"),
+                "pkg.errorSelection",
+            ),
+            (
+                "/payload/profiles/0/override_ids",
+                serde_json::json!(["foreign"]),
+                "pkg.errorBindings",
+            ),
+            (
+                "/payload/profiles/1/id",
+                serde_json::json!("primary"),
+                "pkg.errorProfiles",
+            ),
+            (
+                "/payload/overrides/1/id",
+                serde_json::json!("a"),
+                "pkg.errorOverrides",
+            ),
+            (
+                "/payload/profiles/1/content",
+                serde_json::json!("invalid-secret: ["),
+                "pkg.errorProfiles",
+            ),
+        ] {
+            let mut changed = valid.clone();
+            *changed.pointer_mut(path).unwrap() = value;
+            let outcome = ConfigPayload::parse(&serde_json::to_vec(&changed).unwrap());
+            assert!(matches!(outcome, Err(error) if error.to_string() == check));
+        }
+        let mut legacy = valid;
+        legacy["schema_version"] = serde_json::json!(0);
+        assert!(ConfigPayload::parse(&serde_json::to_vec(&legacy).unwrap()).is_ok());
+        assert!(matches!(
+            ConfigPayload::parse(b"{"),
+            Err(PackageError::Format)
+        ));
+        assert!(matches!(
+            ConfigPayload::parse(&vec![b'a'; MAX_PACKAGE_BYTES + 1]),
+            Err(PackageError::Size)
+        ));
+    }
+
+    #[test]
+    fn sample_package_keeps_original_store_on_write_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path()).unwrap();
+        store.data_mut().profiles.push(profile("previous", &[]));
+        store.data_mut().active_profile = Some("previous".into());
+        store.save().unwrap();
+        let payload =
+            ConfigPayload::parse(include_bytes!("../../../docs/config-package/example.json"))
+                .unwrap();
+        let report = payload.merge_into(store.data_mut()).unwrap();
+        assert_eq!((report.added_profiles, report.added_overrides), (2, 2));
+        assert_eq!(store.data().active_profile.as_deref(), Some("sample-local"));
+        std::fs::create_dir(dir.path().join("store.json.tmp")).unwrap();
+        assert!(store.save().is_err());
+
+        let reopened = Store::open(dir.path()).unwrap();
+        assert_eq!(reopened.data().active_profile.as_deref(), Some("previous"));
+        assert_eq!(reopened.data().profiles.len(), 1);
+        assert_eq!(reopened.snapshots().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn drops_runtime_diagnostics_but_preserves_portable_content() {
+        let mut store = fixture();
+        store.profiles[0].last_update = Some(UpdateOutcome {
+            ok: false,
+            changes: None,
+            at: 1,
+            detail: Some("private-diagnostic".into()),
         });
-        data.active_profile = Some("p1".into());
-
-        let text = export_package(&data);
-        let report = preview_package(&text, &base_store()).unwrap();
-        assert_eq!(report.added_profiles, 1);
-        assert_eq!(report.added_overrides, 1);
-        assert_eq!(report.active_profile.as_deref(), Some("p1"));
-    }
-
-    #[test]
-    fn future_package_version_is_rejected() {
-        let text = format!(
-            r#"{{"package_version":99,"schema_version":{SCHEMA_VERSION},"payload":{{"profiles":[],"overrides":[]}}}}"#
-        );
-        let err = preview_package(&text, &base_store()).unwrap_err();
-        assert!(err.contains("版本不符"), "{err}");
-    }
-
-    #[test]
-    fn future_schema_is_rejected() {
-        let text = format!(
-            r#"{{"package_version":1,"schema_version":{},"payload":{{"profiles":[],"overrides":[]}}}}"#,
-            SCHEMA_VERSION + 1
-        );
-        let err = preview_package(&text, &base_store()).unwrap_err();
-        assert!(err.contains("高于当前支持"), "{err}");
-    }
-
-    #[test]
-    fn corrupted_json_is_rejected() {
-        let err = preview_package("{ not json", &base_store()).unwrap_err();
-        assert!(err.contains("无法解析"), "{err}");
-    }
-
-    #[test]
-    fn non_string_rule_like_garbage_profiles_rejected() {
-        let text = format!(
-            r#"{{"package_version":1,"schema_version":{SCHEMA_VERSION},"payload":{{"profiles":[],"overrides":[]}}}}"#
-        );
-        let err = preview_package(&text, &base_store()).unwrap_err();
-        assert!(err.contains("没有任何订阅"), "{err}");
-    }
-
-    #[test]
-    fn duplicate_profile_ids_rejected() {
-        let profiles = vec![sample_profile("p1", "A"), sample_profile("p1", "B")];
-        let text = package_text(&profiles, "[]");
-        let err = preview_package(&text, &base_store()).unwrap_err();
-        assert!(err.contains("id 重复"), "{err}");
-    }
-
-    #[test]
-    fn replace_counts_by_id() {
-        let mut current = base_store();
-        current.profiles.push(sample_profile("p1", "旧A"));
-        let text = package_text(
-            &[sample_profile("p1", "新A"), sample_profile("p2", "B")],
-            "[]",
-        );
-        let report = preview_package(&text, &current).unwrap();
-        assert_eq!(report.replaced_profiles, 1);
-        assert_eq!(report.added_profiles, 1);
-        assert!(report.warnings.iter().any(|w| w.contains("替换现有 1 个")));
-    }
-
-    #[test]
-    fn active_profile_missing_from_package_warns() {
-        let text = format!(
-            r#"{{"package_version":1,"schema_version":{SCHEMA_VERSION},"payload":{{
-            "profiles":[{{"id":"p1","name":"A","kind":"remote","url":null}}],
-            "overrides":[],"active_profile":"ghost"}}}}"#
-        );
-        let report = preview_package(&text, &base_store()).unwrap();
-        assert!(report.warnings.iter().any(|w| w.contains("ghost")));
-    }
-
-    #[test]
-    fn apply_package_leaves_machine_fields_untouched() {
-        let mut data = base_store();
-        let original_port = data.engine.mixed_port;
-        apply_package(
-            &mut data,
-            &ConfigPayload {
-                profiles: vec![sample_profile("p1", "A")],
-                overrides: vec![],
-                active_profile: Some("p1".into()),
-            },
-        );
-        assert_eq!(data.engine.mixed_port, original_port);
-        assert_eq!(data.profiles.len(), 1);
-        assert_eq!(data.active_profile.as_deref(), Some("p1"));
+        store.profiles[0].url = Some("https://example.invalid/sub?token=portable-secret".into());
+        store.overrides[0].last_error = Some("private-diagnostic".into());
+        let text = export_package(&store).unwrap();
+        assert!(text.contains("portable-secret"));
+        assert!(!text.contains("private-diagnostic"));
+        let payload = ConfigPayload::parse(text.as_bytes()).unwrap();
+        let report = payload.preview(&StoreSchema::default()).unwrap();
+        assert!(!serde_json::to_string(&report)
+            .unwrap()
+            .contains("portable-secret"));
     }
 }
