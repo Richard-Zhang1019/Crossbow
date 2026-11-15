@@ -251,8 +251,7 @@ pub(crate) fn commit_config_change_inner(
     let _op = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
     state.exit.ensure_open()?;
     crate::diagnostics::fault_evidence::invalidate();
-    let _recovery =
-        crate::engine::config_transition::RecoveryOwner::enter(&state.config_transition);
+    let _recovery = state.begin_config_transition();
     let before = state
         .store
         .lock()

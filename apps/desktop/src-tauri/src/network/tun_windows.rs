@@ -16,8 +16,7 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
     // 失败的停止前面。
     let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
     state.exit.ensure_open()?;
-    let _recovery =
-        crate::engine::config_transition::RecoveryOwner::enter(&state.config_transition);
+    let _recovery = state.begin_config_transition();
     let result = toggle_tun_locked(state, enable, true);
     publish_terminal_core_error(state);
     result
@@ -45,8 +44,7 @@ pub(crate) fn recover_for_health(
     {
         return Ok(HealthRecovery::Superseded);
     }
-    let _recovery =
-        crate::engine::config_transition::RecoveryOwner::enter(&state.config_transition);
+    let _recovery = state.begin_config_transition();
     if may_restart && *expected_status == crate::CoreStatus::Running {
         let restart = if state.core().stop() {
             start_and_wait(state, true).and_then(|()| crate::tray::wiring::probe_tun_network())

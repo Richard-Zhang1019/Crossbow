@@ -13,6 +13,9 @@ pub struct AppState {
     /// 安全模式：坏覆写导致内核启动失败后，跳过覆写链启动一次。
     pub(crate) safe_mode: std::sync::atomic::AtomicBool,
     pub(crate) config_transition: std::sync::atomic::AtomicBool,
+    pub(crate) node_delay_revision: std::sync::atomic::AtomicU64,
+    pub(crate) node_delay_task: Mutex<Option<NodeDelayTask>>,
+    pub(crate) node_delay_slots: tokio::sync::Semaphore,
     pub store: Mutex<Store>,
     /// 当前内核管理器；内核安装后整体替换（core_slot）。
     pub(crate) core_slot: Mutex<CoreManager>,
@@ -54,6 +57,15 @@ pub struct TrafficSample {
 const TRAFFIC_HISTORY_LEN: usize = 120;
 
 impl AppState {
+    pub(crate) fn begin_config_transition(
+        &self,
+    ) -> crate::engine::config_transition::RecoveryOwner<'_> {
+        let owner = crate::engine::config_transition::RecoveryOwner::enter(&self.config_transition);
+        self.node_delay_revision
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        owner
+    }
+
     /// 当前内核管理器快照（clone 便宜：内部是 Arc）。
     pub fn core(&self) -> CoreManager {
         self.core_slot

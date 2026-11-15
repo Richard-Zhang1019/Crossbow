@@ -10,13 +10,14 @@ import { nodeNameText } from "@/components/NodeName/nodeFlags";
 import { notify } from "@/notifications/service";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonBase } from "@/components/Button";
-import { ipc, type NodeDelayOutcome, type GroupView, type NodeView } from "@/services/ipc";
+import { ipc, type NodeDelayOutcome, type NodeDelayContext, type GroupView, type NodeView } from "@/services/ipc";
 import { useT } from "@/i18n/i18n";
 import { PageHead } from "@/pages/Home";
 import SiteConnectivity from "@/components/SiteConnectivity";
 import FitItems from "@/components/FitItems";
 import { Icon } from "@/components/Icon";
 import { navigateTo } from "@/lib/workflow";
+import { comparableNodeDelay, nodeDelayValue, runNodeDelayQueue, type NodeDelayDisplay } from "./nodeDelay";
 
 /** 地区聚类（#141）：旗标优先，名称关键词兜底；顺序即 chips 顺序。 */
 const REGIONS: { key: string; flags: string[]; words: string[] }[] = [
@@ -90,6 +91,17 @@ function regionOf(node: NodeView): string {
   return OTHER_REGION;
 }
 
+type NodeTest = {
+  id: string | null;
+  cancelled: boolean;
+  pending: Set<string>;
+  previous: Map<string, number | null>;
+};
+
+function testOutcome(kind: NodeDelayOutcome["class"]): NodeDelayDisplay {
+  return { class: kind, delayMs: null, reviewed: false, target: "", testedAtMs: 0, sampleCount: 0, detail: "" };
+}
+
 /** 代理组页（v3，#141）：地区聚类 + 过滤工具栏 + 悬停单节点测速。 */
 export default function ProxiesPage() {
   const t = useT();
@@ -100,189 +112,164 @@ export default function ProxiesPage() {
   const [starting, setStarting] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
   const [testingNodes, setTestingNodes] = useState<Set<string>>(new Set());
-  const batchInFlight = useRef(false);
-  const singleInFlight = useRef(new Set<string>());
-  // #501：测速任务与取消——结果只在任务未取消且配置代未变时写回。
-  const testCancelled = useRef(false);
+  const [results, setResults] = useState<Map<string, NodeDelayDisplay>>(new Map());
+  const [cancelling, setCancelling] = useState(false);
+  const activeTest = useRef<NodeTest | null>(null);
+  const testContext = useRef<NodeDelayContext | null>(null);
+  const currentGroups = useRef<GroupView[]>([]);
   const [selecting, setSelecting] = useState<string | null>(null);
   const selectionInFlight = useRef(false);
   const snapshotRevision = useRef(0);
 
+  const stopTest = useCallback(() => {
+    const task = activeTest.current;
+    if (!task || task.cancelled) return;
+    task.cancelled = true;
+    if (task.id) void ipc.endNodeDelayTest(task.id).catch(() => {});
+  }, []);
+
+  const updateSnapshot = useCallback((context: NodeDelayContext | null, snapshot: GroupView[]) => {
+    const previous = testContext.current;
+    if (context?.revision !== previous?.revision || context?.pid !== previous?.pid) {
+      stopTest();
+      setResults(new Map());
+    } else {
+      const members = new Set(snapshot.flatMap(g => g.nodes.map(n => nodeTestKey(g.name, n.name))));
+      setResults(old => new Map([...old].filter(([key]) => members.has(key))));
+    }
+    testContext.current = context;
+    currentGroups.current = snapshot;
+    setGroups(snapshot);
+  }, [stopTest]);
+
   const load = useCallback(async (silent = false) => {
     const revision = ++snapshotRevision.current;
-    if (!silent) setPhase("loading");
+    if (!silent && currentGroups.current.length === 0) setPhase("loading");
     try {
       const [profile, core] = await Promise.all([ipc.activeProfileId(), ipc.coreStatus()]);
       if (revision !== snapshotRevision.current) return;
       if (!profile || core.state !== "Running") {
         const missing = profile && core.state !== "Starting" && !(await ipc.getEngineConfig()).core_installed;
         if (revision !== snapshotRevision.current) return;
-        setGroups([]);
+        updateSnapshot(null, []);
         setPhase(!profile ? "noConfig" : missing ? "missingCore" : "stopped");
         return;
       }
-      const snapshot = await ipc.proxiesSnapshot();
-      if (revision === snapshotRevision.current) { setGroups(snapshot); setPhase("ready"); }
+      const snapshot = await ipc.proxiesTestSnapshot();
+      if (revision === snapshotRevision.current && snapshot) {
+        updateSnapshot(snapshot.context, snapshot.groups);
+        setPhase("ready");
+      }
     } catch (e) {
       if (revision === snapshotRevision.current) {
         setPhase("error");
         if (!silent) notify.error(e, "proxies-load");
       }
     }
-  }, []);
+  }, [updateSnapshot]);
 
   useEffect(() => {
-    load();
+    void load();
     const un = ipc.onCoreStatus((s) => {
+      if (s.state !== "Running") updateSnapshot(null, []);
       if (!selectionInFlight.current) void load(s.state !== "Running");
     });
-    // 自动组切换与托盘操作发生在页面外，展示状态以最新内核快照为准。
-    const switched = () => void load();
+    const switched = () => {
+      updateSnapshot(null, []);
+      void load();
+    };
     window.addEventListener("cb:profile-switched", switched);
-    return () => { window.removeEventListener("cb:profile-switched", switched); ++snapshotRevision.current; void un.then((f) => f()); };
-  }, [load]);
+    return () => {
+      window.removeEventListener("cb:profile-switched", switched);
+      ++snapshotRevision.current;
+      stopTest();
+      void un.then(f => f());
+    };
+  }, [load, stopTest, updateSnapshot]);
 
   useInterval(() => {
     if (!document.hidden && !selectionInFlight.current) void load(true);
   }, 5000);
 
-  const testGroup = async (name: string) => {
-    if (batchInFlight.current || singleInFlight.current.size > 0) return;
-    const group = groups.find((g) => g.name === name);
-    if (!group) return;
-
-    batchInFlight.current = true;
-    const revision = snapshotRevision.current;
-    testCancelled.current = false;
+  const testNodes = async (name: string, nodeNames: string[]) => {
+    const context = testContext.current;
+    if (!context || activeTest.current || nodeNames.length === 0) return;
+    const previous = new Map(currentGroups.current.find(group => group.name === name)?.nodes
+      .map(node => [node.name, node.delay_ms] as const));
+    const task: NodeTest = { id: null, cancelled: false, pending: new Set(nodeNames), previous };
+    activeTest.current = task;
     setTesting(name);
-    setTestingNodes(
-      (current) =>
-        new Set([
-          ...current,
-          ...group.nodes.map((node) => nodeTestKey(name, node.name)),
-        ]),
-    );
-
-    let nextIndex = 0;
-    const apply = (node: string, patch: (n: GroupView["nodes"][number]) => GroupView["nodes"][number]) => {
-      // 代守卫：配置切换后旧结果不得覆盖新配置的同名节点（#501）。
-      if (testCancelled.current || snapshotRevision.current !== revision) return;
-      setGroups((current) =>
-        current.map((g) =>
-          g.name !== name
-            ? g
-            : { ...g, nodes: g.nodes.map((n) => (n.name === node ? patch(n) : n)) },
-        ),
-      );
-    };
-    const errors: string[] = [];
-    const worker = async () => {
-      while (nextIndex < group.nodes.length) {
-        // 取消或配置切换：停止派发新请求（在途结果按守卫丢弃）。
-        if (testCancelled.current || snapshotRevision.current !== revision) return;
-        const node = group.nodes[nextIndex++];
-        const outcome: NodeDelayOutcome = await ipc
-          .testNodeDelayStructured(node.name)
-          .catch((error: unknown) => ({
-            class: "controller" as const,
-            delayMs: null,
-            reviewed: false,
-            target: "",
-            testedAtMs: 0,
-            sampleCount: 0,
-            detail: String(error).slice(0, 160),
-          }));
-        if (testCancelled.current || snapshotRevision.current !== revision) return;
-        if (outcome.class === "ok") {
-          apply(node.name, (n) => ({
-            ...n,
-            delay_ms: outcome.delayMs,
-            alive: (outcome.delayMs ?? 0) > 0,
-            reviewed: outcome.reviewed,
-          }));
-        } else if (outcome.class === "timeout") {
-          apply(node.name, (n) => ({ ...n, delay_ms: 0, alive: false, reviewed: false }));
-        } else if (outcome.class === "controller" || outcome.class === "failed") {
-          // 控制器/协议异常不是节点故障：不写节点状态，汇总后一次性提示。
-          errors.push(`${node.name}: ${outcome.detail}`);
-        }
-        setTestingNodes((current) => {
-          const next = new Set(current);
-          next.delete(nodeTestKey(name, node.name));
-          return next;
-        });
-      }
-    };
-
-    try {
-      await Promise.all(
-        Array.from({ length: Math.min(10, group.nodes.length) }, () =>
-          worker(),
-        ),
-      );
-      // 控制器/协议异常汇总为单次通知（不逐节点刷屏，#501）。
-      if (errors.length > 0 && !testCancelled.current) {
-        notify.error(
-          `${t("proxies.testControllerError")}（${errors.length}）`,
-          "proxies-test-controller",
-        );
-      }
-    } finally {
-      // 完成不发任何通知（#140）：延迟值原位刷新即反馈
-      batchInFlight.current = false;
-      setTesting(null);
-      // 取消/配置切换后清理未处理节点的测速中标记
-      setTestingNodes((current) => {
-        const next = new Set(current);
-        for (const key of [...next]) {
-          if (key.startsWith(`${name}\u0000`)) next.delete(key);
-        }
-        return next;
-      });
-    }
-  };
-
-  const testNode = async (group: string, node: string) => {
-    const key = nodeTestKey(group, node);
-    if (testingNodes.has(key) || testing) return;
-    const revision = snapshotRevision.current;
-    singleInFlight.current.add(node);
-    setTestingNodes((current) => new Set([...current, key]));
-    const apply = (patch: (n: GroupView["nodes"][number]) => GroupView["nodes"][number]) => {
-      if (testCancelled.current || snapshotRevision.current !== revision) return;
-      setGroups((current) =>
-        current.map((g) =>
-          g.name !== group
-            ? g
-            : { ...g, nodes: g.nodes.map((n) => (n.name === node ? patch(n) : n)) },
-        ),
-      );
-    };
-    try {
-      const outcome = await ipc.testNodeDelayStructured(node);
-      if (outcome.class === "ok") {
-        apply((n) => ({
-          ...n,
-          delay_ms: outcome.delayMs,
-          alive: (outcome.delayMs ?? 0) > 0,
-          reviewed: outcome.reviewed,
-        }));
-      } else if (outcome.class === "timeout") {
-        apply((n) => ({ ...n, delay_ms: 0, alive: false, reviewed: false }));
-      } else {
-        // 控制器/协议异常不是节点故障：不动节点状态，单独提示。
-        notify.error(`${node}: ${outcome.detail}`, "proxies-test-node");
-      }
-    } catch (error) {
-      notify.error(error, "proxies-test-node");
-    } finally {
-      singleInFlight.current.delete(node);
-      setTestingNodes((current) => {
-        const next = new Set(current);
+    setTestingNodes(new Set(nodeNames.map(node => nodeTestKey(name, node))));
+    const contextMatches = () => testContext.current?.revision === context.revision
+      && testContext.current?.pid === context.pid;
+    const current = () => activeTest.current === task && !task.cancelled && contextMatches();
+    const isMember = (node: string) => currentGroups.current.some(g =>
+      g.name === name && g.nodes.some(n => n.name === node));
+    let errors = 0;
+    const apply = (node: string, result: NodeDelayOutcome) => {
+      task.pending.delete(node);
+      const key = nodeTestKey(name, node);
+      setTestingNodes(old => {
+        const next = new Set(old);
         next.delete(key);
         return next;
       });
+      if (!isMember(node)) return;
+      if (result.class === "controller" || result.class === "failed") errors++;
+      setResults(old => !task.cancelled && contextMatches() && isMember(node)
+        ? new Map(old).set(key, { ...result, previousMs: task.previous.get(node) })
+        : old);
+    };
+
+    try {
+      const ticket = await ipc.beginNodeDelayTest(context, nodeNames.length);
+      if (!ticket) {
+        if (current()) {
+          for (const node of task.pending) apply(node, testOutcome("skipped"));
+        }
+        return;
+      }
+      task.id = ticket.id;
+      const invalidated = await runNodeDelayQueue(nodeNames, performance.now() + ticket.budgetMs, current,
+        async node => {
+          if (!isMember(node)) return undefined;
+          return ipc.testNodeDelayStructured(ticket.id, node).catch(() => testOutcome("controller"));
+        }, apply);
+      if (invalidated && current()) {
+        stopTest();
+        void load(true);
+      } else if (current()) {
+        for (const node of task.pending) apply(node, testOutcome("skipped"));
+        if (errors) notify.error(t("proxies.testIncomplete", { n: errors }), "proxies-test");
+      }
+    } catch (error) {
+      if (current()) notify.error(error, "proxies-test");
+    } finally {
+      if (task.id) await ipc.endNodeDelayTest(task.id).catch(() => {});
+      if (activeTest.current === task) {
+        activeTest.current = null;
+        setTesting(null);
+        setCancelling(false);
+        setTestingNodes(new Set());
+      }
     }
+  };
+
+  const cancelTest = (group: string) => {
+    const task = activeTest.current;
+    if (!task || task.cancelled) return;
+    stopTest();
+    setCancelling(true);
+    setTestingNodes(new Set());
+    const context = testContext.current;
+    setResults(old => {
+      if (context?.revision !== testContext.current?.revision || context?.pid !== testContext.current?.pid) return old;
+      const next = new Map(old);
+      for (const node of task.pending) {
+        next.set(nodeTestKey(group, node), { ...testOutcome("cancelled"), previousMs: task.previous.get(node) });
+      }
+      return next;
+    });
   };
 
   const select = async (group: string, node: string) => {
@@ -373,17 +360,16 @@ export default function ProxiesPage() {
                 key={selectedGroup.name}
                 group={selectedGroup}
                 automaticGroup={automaticGroup}
-                testing={testing === selectedGroup.name}
                 busy={testing !== null}
                 testingNodes={testingNodes}
+                results={results}
+                cancelling={cancelling}
                 selecting={selecting}
                 onRefresh={() => void load()}
                 onRestoreAutomatic={() => automaticGroup && restoreAutomatic(automaticGroup.name)}
-                onTest={() => testGroup(selectedGroup.name)}
-                onCancelTest={() => {
-                  testCancelled.current = true;
-                }}
-                onTestNode={(node) => testNode(selectedGroup.name, node)}
+                onTest={() => testNodes(selectedGroup.name, selectedGroup.nodes.filter(n => !INFO_NAME.test(n.name)).map(n => n.name))}
+                onCancelTest={() => { if (testing) cancelTest(testing); }}
+                onTestNode={(node) => testNodes(selectedGroup.name, [node])}
                 onSelect={(node) => select(selectedGroup.name, node)}
               />
             )}
@@ -402,9 +388,10 @@ export default function ProxiesPage() {
 function GroupCard({
   group,
   automaticGroup,
-  testing,
   busy,
   testingNodes,
+  results,
+  cancelling,
   selecting,
   onTest,
   onCancelTest,
@@ -415,9 +402,10 @@ function GroupCard({
 }: {
   group: GroupView;
   automaticGroup?: GroupView;
-  testing: boolean;
   busy: boolean;
   testingNodes: Set<string>;
+  results: Map<string, NodeDelayDisplay>;
+  cancelling: boolean;
   selecting: string | null;
   onTest: () => void;
   onCancelTest: () => void;
@@ -459,24 +447,17 @@ function GroupCard({
     let list = realNodes.filter((n) => {
       if (region !== "all" && regionOf(n) !== region) return false;
       if (q && !`${n.name} ${n.kind}`.toLowerCase().includes(q)) return false;
-      if (onlyAlive && !(n.alive && (n.delay_ms ?? 0) > 0)) return false;
+      const result = results.get(nodeTestKey(group.name, n.name));
+      if (onlyAlive && !(result?.class === "ok" || (n.alive && (nodeDelayValue(n, result) ?? 0) > 0))) return false;
       return true;
     });
     if (sortByLatency) {
-      list = [...list].sort((a, b) => {
-        const da =
-          a.alive && (a.delay_ms ?? 0) > 0
-            ? a.delay_ms!
-            : Number.MAX_SAFE_INTEGER;
-        const db =
-          b.alive && (b.delay_ms ?? 0) > 0
-            ? b.delay_ms!
-            : Number.MAX_SAFE_INTEGER;
-        return da - db;
-      });
+      list = [...list].sort((a, b) =>
+        comparableNodeDelay(a, results.get(nodeTestKey(group.name, a.name))) -
+        comparableNodeDelay(b, results.get(nodeTestKey(group.name, b.name))));
     }
     return list;
-  }, [realNodes, region, query, onlyAlive, sortByLatency]);
+  }, [realNodes, region, query, onlyAlive, sortByLatency, results, group.name]);
 
   const regionLabel = (key: string) =>
     key === OTHER_REGION
@@ -492,9 +473,9 @@ function GroupCard({
         <div className="cb-node-heading-actions">
           {infoNodes.length > 0 && <PopoverPanel label={t("proxies.subscriptionInfo")} trigger={<Button size="small">{t("proxies.subscriptionInfo")}</Button>}>{()=> <div className="cb-help-copy">{infoNodes.map(n=><p key={n.name}><NodeName name={n.name}/></p>)}</div>}</PopoverPanel>}
           <Button iconOnly className="cb-node-refresh" title={t("proxies.refresh")} aria-label={t("proxies.refresh")} onClick={onRefresh} disabled={busy || selecting !== null}><Icon name="refresh" /></Button>
-          {testing ? (
-            <Button className="cb-node-test-all" onClick={onCancelTest}>
-              {t("proxies.cancelTest")}
+          {busy ? (
+            <Button className="cb-node-test-all" onClick={onCancelTest} disabled={cancelling}>
+              {t(cancelling ? "proxies.cancelling" : "proxies.cancelTest")}
             </Button>
           ) : (
             <Button variant="primary" className="cb-node-test-all" onClick={onTest} disabled={busy}>
@@ -538,8 +519,19 @@ function GroupCard({
         label={nodeNameText(group.name)}
         render={(n) => {
           const sel = group.now === n.name;
-          const cls = delayClass(n.delay_ms);
-          const nodeTesting = testingNodes.has(nodeTestKey(group.name, n.name));
+          const key = nodeTestKey(group.name, n.name);
+          const result = results.get(key);
+          const delay = nodeDelayValue(n, result);
+          const cls = delayClass(delay);
+          const nodeTesting = testingNodes.has(key);
+          const testLabel = result?.class === "ok"
+            ? `${delayText(delay, t)}${result.reviewed ? ` · ${t("proxies.reviewed")}` : ""}`
+            : result ? t(`proxies.testState.${result.class}`) : delayText(delay, t);
+          const testDetails = result?.class === "ok"
+            ? `${testLabel} · ${result.target} · ${new Date(result.testedAtMs).toLocaleString()} · ${t("proxies.testSamples", { n: result.sampleCount })}`
+            : result?.previousMs != null && result.previousMs > 0
+              ? `${testLabel} · ${t("proxies.previousDelay", { ms: result.previousMs })}`
+              : testLabel;
           return (
             <div
               key={n.name}
@@ -565,7 +557,7 @@ function GroupCard({
                   ? "var(--cb-accent-soft)"
                   : "var(--cb-node-surface)",
               }}
-              title={group.kind === "URLTest" ? t("proxies.pinHint") : n.kind}
+              title={[group.kind === "URLTest" ? t("proxies.pinHint") : n.kind, testDetails].join("\n")}
             >
               {sel && !nodeTesting && (
                 <span className="cb-node-selected">
@@ -597,7 +589,7 @@ function GroupCard({
                   className="h-[5px] w-[5px] flex-none rounded-full"
                   style={{
                     background:
-                      n.delay_ms == null
+                      delay == null
                         ? "var(--cb-faint)"
                         : cls === "g"
                           ? "var(--cb-ok)"
@@ -614,11 +606,7 @@ function GroupCard({
                       : "var(--cb-text-dim)",
                   }}
                 >
-                  {nodeTesting
-                    ? t("proxies.testing")
-                    : n.reviewed && (n.delay_ms ?? 0) > 0
-                      ? `${delayText(n.delay_ms, t)}·${t("proxies.reviewed")}`
-                      : delayText(n.delay_ms, t)}
+                  {nodeTesting ? t("proxies.testing") : testLabel}
                 </span>
               </div>
             </div>

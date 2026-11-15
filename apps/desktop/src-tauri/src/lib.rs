@@ -601,6 +601,9 @@ pub fn run() {
                 update_handoff: std::sync::atomic::AtomicBool::new(false),
                 safe_mode: std::sync::atomic::AtomicBool::new(false),
                 config_transition: std::sync::atomic::AtomicBool::new(false),
+                node_delay_revision: std::sync::atomic::AtomicU64::new(0),
+                node_delay_task: std::sync::Mutex::new(None),
+                node_delay_slots: tokio::sync::Semaphore::new(NODE_DELAY_CONCURRENCY),
                 store: Mutex::new(store),
                 core_slot: Mutex::new(core),
                 core_op: Mutex::new(()),
@@ -848,6 +851,9 @@ pub fn run() {
             test_group_delay,
             test_node_delay,
             test_node_delay_structured,
+            begin_node_delay_test,
+            end_node_delay_test,
+            proxies_test_snapshot,
         ])
         .build(tauri::generate_context!())
         .unwrap_or_else(|e| {

@@ -1,5 +1,8 @@
 // 自动生成自 lib.rs 的 command 分域提取（#423）。use crate::* 引入根模块项。
+use crate::engine::api::{Controller, GroupView, NodeDelayError, NODE_DELAY_REQUEST_BUDGET};
 use crate::*;
+use std::sync::atomic::Ordering;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 #[tauri::command]
@@ -25,91 +28,181 @@ pub(crate) struct NodeDelayOutcome {
     pub detail: String,
 }
 
+pub(crate) const NODE_DELAY_CONCURRENCY: usize = 10;
+
+#[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct NodeDelayContext {
+    revision: u64,
+    pid: u32,
+}
+
+fn node_delay_context(state: &AppState) -> Option<NodeDelayContext> {
+    let revision = state.node_delay_revision.load(Ordering::SeqCst);
+    let pid = state.core().pid()?;
+    (state.node_delay_session_current(Some(pid))
+        && revision == state.node_delay_revision.load(Ordering::SeqCst))
+    .then_some(NodeDelayContext { revision, pid })
+}
+
+#[derive(Clone)]
+pub(crate) struct NodeDelayTask {
+    id: String,
+    context: NodeDelayContext,
+    deadline: Instant,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct NodeDelayTicket {
+    id: String,
+    budget_ms: u64,
+}
+
+fn node_delay_budget(node_count: usize) -> Duration {
+    let batches = node_count.max(1).div_ceil(NODE_DELAY_CONCURRENCY) as u64;
+    Duration::from_secs(
+        batches
+            .saturating_mul(NODE_DELAY_REQUEST_BUDGET.as_secs() * 2)
+            .min(120),
+    )
+}
+
+#[tauri::command]
+pub(crate) fn begin_node_delay_test(
+    state: State<AppState>,
+    context: NodeDelayContext,
+    node_count: usize,
+) -> Option<NodeDelayTicket> {
+    let _operation = state.core_op.try_lock().ok()?;
+    if node_delay_context(&state) != Some(context) {
+        return None;
+    }
+    let mut task = state
+        .node_delay_task
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if task
+        .as_ref()
+        .is_some_and(|task| task.context == context && Instant::now() < task.deadline)
+    {
+        return None;
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    let budget = node_delay_budget(node_count);
+    *task = Some(NodeDelayTask {
+        id: id.clone(),
+        context,
+        deadline: Instant::now() + budget,
+    });
+    Some(NodeDelayTicket {
+        id,
+        budget_ms: budget.as_millis() as u64,
+    })
+}
+
+#[tauri::command]
+pub(crate) fn end_node_delay_test(state: State<AppState>, task_id: String) {
+    let mut task = state
+        .node_delay_task
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if task.as_ref().is_some_and(|task| task.id == task_id) {
+        *task = None;
+    }
+}
+
+impl From<NodeDelayError> for NodeDelayOutcome {
+    fn from(error: NodeDelayError) -> Self {
+        let (class, detail) = match error {
+            NodeDelayError::Timeout(detail) => ("timeout", detail),
+            NodeDelayError::Controller(detail) => ("controller", detail),
+            NodeDelayError::Failed(detail) => ("failed", detail),
+            NodeDelayError::Cancelled(detail) => ("cancelled", detail),
+            NodeDelayError::Skipped(detail) => ("skipped", detail),
+        };
+        Self {
+            class: class.into(),
+            delay_ms: None,
+            reviewed: false,
+            target: String::new(),
+            tested_at_ms: 0,
+            sample_count: 0,
+            detail,
+        }
+    }
+}
+
 #[tauri::command]
 pub(crate) async fn test_node_delay_structured(
     app: AppHandle,
+    task_id: String,
     node: String,
 ) -> Result<NodeDelayOutcome, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        // 复用托盘同款的会话/配置守卫与引擎感知目标策略（mihomo 复核，
-        // sing-box 固定 HTTPS 主目标）。
-        let core = state.core();
-        let pid = core.pid();
-        let (port, secret) = core.controller().ok_or_else(|| "内核未运行".to_string())?;
-        let controller = crate::engine::api::Controller { port, secret };
-        let url_scoped_history = {
-            let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-            store.data().engine.engine == crossbow_core::Engine::Mihomo
+        let task = state
+            .node_delay_task
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .filter(|task| task.id == task_id)
+            .cloned();
+        let cancelled = || NodeDelayError::Cancelled("测速已取消或配置已变化".into()).into();
+        let Some(task) = task else {
+            return Ok(cancelled());
         };
-        let current = || state.node_delay_session_current(pid);
-        // 主目标 5s + 复核 5s + 余量。
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(12);
-        match controller.measure_node_delay_with_review(
-            &node,
-            &current,
-            deadline,
-            url_scoped_history,
-        ) {
-            Ok(sample) => Ok(NodeDelayOutcome {
-                class: "ok".into(),
-                delay_ms: Some(sample.delay_ms),
-                reviewed: sample.reviewed,
-                target: sample.target,
-                tested_at_ms: sample.tested_at_ms,
-                sample_count: sample.sample_count,
-                detail: String::new(),
-            }),
-            Err(crate::engine::api::NodeDelayError::Timeout(detail)) => Ok(NodeDelayOutcome {
-                class: "timeout".into(),
-                delay_ms: None,
-                reviewed: false,
-                target: String::new(),
-                tested_at_ms: 0,
-                sample_count: 0,
-                detail,
-            }),
-            Err(crate::engine::api::NodeDelayError::Controller(detail)) => Ok(NodeDelayOutcome {
-                class: "controller".into(),
-                delay_ms: None,
-                reviewed: false,
-                target: String::new(),
-                tested_at_ms: 0,
-                sample_count: 0,
-                detail,
-            }),
-            Err(crate::engine::api::NodeDelayError::Failed(detail)) => Ok(NodeDelayOutcome {
-                class: "failed".into(),
-                delay_ms: None,
-                reviewed: false,
-                target: String::new(),
-                tested_at_ms: 0,
-                sample_count: 0,
-                detail,
-            }),
-            Err(crate::engine::api::NodeDelayError::Cancelled(detail)) => Ok(NodeDelayOutcome {
-                class: "cancelled".into(),
-                delay_ms: None,
-                reviewed: false,
-                target: String::new(),
-                tested_at_ms: 0,
-                sample_count: 0,
-                detail,
-            }),
-            Err(crate::engine::api::NodeDelayError::Skipped(detail)) => Ok(NodeDelayOutcome {
-                class: "skipped".into(),
-                delay_ms: None,
-                reviewed: false,
-                target: String::new(),
-                tested_at_ms: 0,
-                sample_count: 0,
-                detail,
-            }),
+        let current = || {
+            node_delay_context(&state) == Some(task.context)
+                && state
+                    .node_delay_task
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .as_ref()
+                    .is_some_and(|active| active.id == task.id)
+        };
+        let core = state.core();
+        let Some((port, secret)) = core.controller() else {
+            return Ok(cancelled());
+        };
+        let controller = Controller { port, secret };
+        let url_scoped_history = state
+            .store
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .data()
+            .engine
+            .engine
+            == crossbow_core::Engine::Mihomo;
+        if !current() {
+            return Ok(cancelled());
         }
+        let Ok(_slot) = state.node_delay_slots.try_acquire() else {
+            return Ok(NodeDelayError::Skipped("已有测速请求正在结束".into()).into());
+        };
+        Ok(
+            match controller.measure_node_delay_with_review(
+                &node,
+                &current,
+                task.deadline,
+                url_scoped_history,
+            ) {
+                Ok(sample) => NodeDelayOutcome {
+                    class: "ok".into(),
+                    delay_ms: Some(sample.delay_ms),
+                    reviewed: sample.reviewed,
+                    target: sample.target,
+                    tested_at_ms: sample.tested_at_ms,
+                    sample_count: sample.sample_count,
+                    detail: String::new(),
+                },
+                Err(error) => error.into(),
+            },
+        )
     })
     .await
     .map_err(|e| e.to_string())?
 }
+
 #[tauri::command]
 pub(crate) async fn test_group_delay(
     state: State<'_, AppState>,
@@ -145,7 +238,39 @@ pub(crate) async fn select_proxy(
 pub(crate) fn proxies_snapshot(
     state: State<AppState>,
 ) -> Result<Vec<crate::engine::api::GroupView>, String> {
-    let mut groups = controller_client(&state)?.groups()?;
+    read_proxies_snapshot(&state)
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct ProxiesTestSnapshot {
+    context: NodeDelayContext,
+    groups: Vec<GroupView>,
+}
+
+#[tauri::command]
+pub(crate) async fn proxies_test_snapshot(
+    app: AppHandle,
+) -> Result<Option<ProxiesTestSnapshot>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let Some(context) = node_delay_context(&state) else {
+            return Ok(None);
+        };
+        let groups = read_proxies_snapshot(&state);
+        if node_delay_context(&state) != Some(context) {
+            return Ok(None);
+        }
+        Ok(Some(ProxiesTestSnapshot {
+            context,
+            groups: groups?,
+        }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn read_proxies_snapshot(state: &AppState) -> Result<Vec<GroupView>, String> {
+    let mut groups = controller_client(state)?.groups()?;
     // 按订阅声明顺序展示（与 ClashX 一致，主选择组在前）；GLOBAL 恒最后
     let order = {
         let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
@@ -175,4 +300,17 @@ pub(crate) fn proxies_snapshot(
         ga.cmp(&gb).then(pa.cmp(&pb))
     });
     Ok(groups)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn node_delay_batch_budget_accounts_for_both_probes_and_is_capped() {
+        assert_eq!(node_delay_budget(1), 2 * NODE_DELAY_REQUEST_BUDGET);
+        assert_eq!(node_delay_budget(10), node_delay_budget(1));
+        assert_eq!(node_delay_budget(11), 2 * node_delay_budget(10));
+        assert_eq!(node_delay_budget(usize::MAX), Duration::from_secs(120));
+    }
 }
