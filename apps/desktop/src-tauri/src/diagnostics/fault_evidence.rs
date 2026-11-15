@@ -31,6 +31,8 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 const ROUND_TIMEOUT: Duration = Duration::from_secs(30);
 #[cfg(any(target_os = "macos", test))]
 const MAX_RECORD_BYTES: u64 = 16 * 1024;
+#[cfg(any(target_os = "macos", test))]
+const MAX_HISTORY_BYTES: u64 = 2 * MAX_RECORD_BYTES + 128;
 #[cfg(target_os = "macos")]
 const DIRECT_CN: [&str; 2] = [
     "http://connect.rom.miui.com/generate_204",
@@ -161,11 +163,19 @@ pub struct FaultEvidence {
 }
 
 /// 恢复确认时的探针结果（独立于故障时样本）。
+#[cfg(any(target_os = "macos", test))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecoveryProbe {
     pub at_ms: u64,
     pub proxy_https: ProbeEvidence,
+}
+
+#[cfg(any(target_os = "macos", test))]
+#[derive(Debug, Serialize)]
+pub struct FaultHistory {
+    latest: FaultEvidence,
+    previous: Option<FaultEvidence>,
 }
 
 /// #499：恢复确认 = 记录恢复时间与恢复探针，故障时样本保持原样。
@@ -180,10 +190,20 @@ fn apply_resolution(evidence: &mut FaultEvidence, probe: ProbeEvidence, at_ms: u
 
 /// #499：上下文已变化且恢复未确认 → 标记退出实时判定（保留可回查）。
 #[cfg(any(target_os = "macos", test))]
-fn mark_superseded(evidence: &mut FaultEvidence) {
-    if evidence.resolved_at_ms.is_none() {
+fn mark_superseded(evidence: &mut FaultEvidence) -> bool {
+    if evidence.resolved_at_ms.is_none() && !evidence.superseded {
         evidence.superseded = true;
+        return true;
     }
+    false
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn reconcile_context(evidence: &mut FaultEvidence, current: Option<&Generation>) -> bool {
+    if current.is_some_and(|gen| active(gen) && *gen == evidence.generation) {
+        return false;
+    }
+    mark_superseded(evidence)
 }
 
 #[cfg(any(target_os = "macos", test))]
@@ -377,24 +397,14 @@ pub(crate) fn inspect_network_change(
     let started = now_ms();
     let probe = probe_with_review(Some(gen.mixed_port), &PROXY_TARGETS, deadline);
     let observed_at = now_ms();
-    let mut existing = read_record(&state.data_dir.join("sysproxy-fault.json"));
-    if existing.as_ref().is_some_and(|e| e.generation != *gen) {
-        // #499：换代 = 上下文已变化，恢复未确认——保留可回查。
-        mark_superseded(existing.as_mut().unwrap());
-        let superseded = existing.as_ref().unwrap().clone();
-        publish(handle, state, gen, Some(&superseded));
-    }
-    let mut evidence = run_round(handle, state, gen.clone(), probe.clone(), started, deadline);
-    evidence.resolved_at_ms = probe.reachable().then_some(observed_at);
-    match decide(existing.as_ref(), gen, &probe) {
-        Action::Capture => publish(handle, state, gen, Some(&evidence)),
-        Action::Resolve => {
-            if let Some(mut old) = existing {
-                apply_resolution(&mut old, probe, observed_at);
-                publish(handle, state, gen, Some(&old));
-            }
+    let mut history = read_history(&state.data_dir.join("sysproxy-fault.json"));
+    let evidence = run_round(handle, state, gen.clone(), probe.clone(), started, deadline);
+    if update_history(&mut history, gen, Some((&probe, observed_at)), |_| {
+        evidence.clone()
+    }) {
+        if let Some(history) = history {
+            publish(handle, state, gen, &history);
         }
-        Action::Nothing => {}
     }
     Some(evidence)
 }
@@ -405,32 +415,56 @@ fn active(gen: &Generation) -> bool {
 }
 
 #[cfg(any(target_os = "macos", test))]
-fn read_record(path: &Path) -> Option<FaultEvidence> {
+fn read_history(path: &Path) -> Option<FaultHistory> {
     let mut bytes = Vec::new();
     std::fs::File::open(path)
         .ok()?
-        .take(MAX_RECORD_BYTES + 1)
+        .take(MAX_HISTORY_BYTES + 1)
         .read_to_end(&mut bytes)
         .ok()?;
-    if bytes.len() as u64 > MAX_RECORD_BYTES {
+    if bytes.len() as u64 > MAX_HISTORY_BYTES {
         return None;
     }
-    let mut evidence: FaultEvidence = serde_json::from_slice(&bytes).ok()?;
-    // #499：旧格式（#494 时代）没有独立恢复探针字段——故障时的出口层
-    // 样本可能已被恢复探针覆盖，标注证据受限供界面提示。缺 generation
-    // 的更早格式无法反序列化，保持既有的拒绝行为。
-    let raw: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
-    if raw.get("recovery").is_none() {
-        evidence.legacy = true;
-    }
+    let mut raw: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    let Some(latest) = raw
+        .as_object_mut()
+        .and_then(|object| object.remove("latest"))
+    else {
+        if bytes.len() as u64 > MAX_RECORD_BYTES {
+            return None;
+        }
+        return Some(FaultHistory {
+            latest: decode_record(raw)?,
+            previous: None,
+        });
+    };
+    let previous = raw
+        .as_object_mut()
+        .and_then(|object| object.remove("previous"));
+    Some(FaultHistory {
+        latest: decode_record(latest)?,
+        previous: previous.and_then(decode_record),
+    })
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn decode_record(raw: serde_json::Value) -> Option<FaultEvidence> {
+    let legacy = raw.get("recovery").is_none();
+    let mut evidence: FaultEvidence = serde_json::from_value(raw).ok()?;
+    evidence.legacy |= legacy;
     Some(evidence)
 }
 
 #[cfg(target_os = "macos")]
-pub fn load(state: &AppState) -> Option<FaultEvidence> {
-    // #499：记录（含换代未确认恢复的历史）始终可回查；实时判定与去重
-    // 由 tick/decide 的代比较负责，界面按 recovery/superseded 推导状态。
-    read_record(&state.data_dir.join("sysproxy-fault.json"))
+pub fn load(state: &AppState) -> Option<FaultHistory> {
+    let mut history = read_history(&state.data_dir.join("sysproxy-fault.json"))?;
+    if history.latest.resolved_at_ms.is_none() && !history.latest.superseded {
+        // A new session or a stopped core may have no periodic observation yet.
+        // Classify the returned record immediately. Only the observer writes to disk.
+        let current = snapshot(state, Instant::now() + Duration::from_secs(1));
+        reconcile_context(&mut history.latest, current.as_ref());
+    }
+    Some(history)
 }
 
 // 第一版只在 macOS 采集。其他平台保留 IPC 合约，不读取或生成证据。
@@ -440,12 +474,14 @@ pub fn load(_: &AppState) -> Option<serde_json::Value> {
 }
 
 #[cfg(any(target_os = "macos", test))]
-fn save(path: &Path, evidence: &FaultEvidence) -> Result<(), String> {
-    let mut bytes = serde_json::to_vec(evidence).map_err(|e| e.to_string())?;
-    bytes.push(b'\n');
-    if bytes.len() as u64 > MAX_RECORD_BYTES {
-        return Err("fault evidence exceeds 16KB".into());
+fn save(path: &Path, history: &FaultHistory) -> Result<(), String> {
+    for record in std::iter::once(&history.latest).chain(history.previous.as_ref()) {
+        if serde_json::to_vec(record).map_err(|e| e.to_string())?.len() as u64 > MAX_RECORD_BYTES {
+            return Err("fault evidence exceeds 16KB".into());
+        }
     }
+    let mut bytes = serde_json::to_vec(history).map_err(|e| e.to_string())?;
+    bytes.push(b'\n');
     let parent = path
         .parent()
         .ok_or("fault evidence has no parent directory")?;
@@ -457,12 +493,7 @@ fn save(path: &Path, evidence: &FaultEvidence) -> Result<(), String> {
 }
 
 #[cfg(target_os = "macos")]
-fn publish(
-    handle: &tauri::AppHandle,
-    state: &AppState,
-    gen: &Generation,
-    evidence: Option<&FaultEvidence>,
-) {
+fn publish(handle: &tauri::AppHandle, state: &AppState, gen: &Generation, history: &FaultHistory) {
     // core_op 与公共配置事务串行，REVISION 与接管入口串行，检查和写入不可分开。
     let Ok(_core) = state.core_op.try_lock() else {
         return;
@@ -477,14 +508,7 @@ fn publish(
         return;
     }
     let path = state.data_dir.join("sysproxy-fault.json");
-    let result = match evidence {
-        Some(evidence) => save(&path, evidence),
-        None => match std::fs::remove_file(path) {
-            Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.to_string()),
-            _ => Ok(()),
-        },
-    };
-    match result {
+    match save(&path, history) {
         Ok(()) => {
             let _ = handle.emit("sysproxy://fault-updated", ());
         }
@@ -571,7 +595,7 @@ fn run_round(
     FaultEvidence {
         mode: "sysproxy".into(),
         started_at_ms,
-        resolved_at_ms: proxy_https.reachable().then(now_ms),
+        resolved_at_ms: None,
         recovery: None,
         superseded: false,
         legacy: false,
@@ -597,7 +621,7 @@ enum Action {
 }
 #[cfg(any(target_os = "macos", test))]
 fn decide(existing: Option<&FaultEvidence>, gen: &Generation, probe: &ProbeEvidence) -> Action {
-    let same = existing.filter(|e| &e.generation == gen);
+    let same = existing.filter(|e| !e.superseded && &e.generation == gen);
     if probe.reachable() {
         if same.is_some_and(|e| e.resolved_at_ms.is_none()) {
             Action::Resolve
@@ -610,6 +634,40 @@ fn decide(existing: Option<&FaultEvidence>, gen: &Generation, probe: &ProbeEvide
         Action::Nothing
     } else {
         Action::Capture
+    }
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn update_history(
+    history: &mut Option<FaultHistory>,
+    gen: &Generation,
+    observation: Option<(&ProbeEvidence, u64)>,
+    capture: impl FnOnce(&ProbeEvidence) -> FaultEvidence,
+) -> bool {
+    let changed = history
+        .as_mut()
+        .is_some_and(|history| reconcile_context(&mut history.latest, Some(gen)));
+    let Some((probe, at_ms)) = observation.filter(|_| active(gen)) else {
+        return changed;
+    };
+    match decide(history.as_ref().map(|history| &history.latest), gen, probe) {
+        Action::Nothing => changed,
+        Action::Resolve => {
+            if let Some(history) = history {
+                apply_resolution(&mut history.latest, probe.clone(), at_ms);
+            }
+            true
+        }
+        Action::Capture => {
+            let mut latest = capture(probe);
+            // A site-limited primary plus a successful review is reachable at capture.
+            latest.resolved_at_ms = probe.reachable().then_some(at_ms);
+            *history = Some(FaultHistory {
+                latest,
+                previous: history.take().map(|history| history.latest),
+            });
+            true
+        }
     }
 }
 
@@ -631,40 +689,30 @@ pub fn tick(handle: &tauri::AppHandle, ticks: u32) {
         let Some(gen) = snapshot(&state, deadline) else {
             return;
         };
-        let mut existing = read_record(&state.data_dir.join("sysproxy-fault.json"));
-        if existing
-            .as_ref()
-            .is_some_and(|e| e.resolved_at_ms.is_none() && e.generation != gen)
-        {
-            // #499：换代 = 上下文已变化，恢复未确认——保留可回查，
-            // 退出实时判定与去重（不再删除）。
-            mark_superseded(existing.as_mut().unwrap());
-            let superseded = existing.as_ref().unwrap().clone();
-            publish(&handle, &state, &gen, Some(&superseded));
-        }
-        if !active(&gen) {
-            if let Some(evidence) = existing.as_mut() {
-                if evidence.resolved_at_ms.is_none() && !evidence.superseded {
-                    mark_superseded(evidence);
-                    let superseded = evidence.clone();
-                    publish(&handle, &state, &gen, Some(&superseded));
-                }
-            }
+        if active(&gen) && gen.network_context.is_none() {
             return;
         }
+        let mut history = read_history(&state.data_dir.join("sysproxy-fault.json"));
         let started = now_ms();
-        let probe = probe_with_review(Some(gen.mixed_port), &PROXY_TARGETS, deadline);
-        match decide(existing.as_ref(), &gen, &probe) {
-            Action::Nothing => {}
-            Action::Resolve => {
-                if let Some(mut evidence) = existing {
-                    apply_resolution(&mut evidence, probe, now_ms());
-                    publish(&handle, &state, &gen, Some(&evidence));
-                }
-            }
-            Action::Capture => {
-                let evidence = run_round(&handle, &state, gen.clone(), probe, started, deadline);
-                publish(&handle, &state, &gen, Some(&evidence));
+        let probe =
+            active(&gen).then(|| probe_with_review(Some(gen.mixed_port), &PROXY_TARGETS, deadline));
+        if update_history(
+            &mut history,
+            &gen,
+            probe.as_ref().map(|probe| (probe, now_ms())),
+            |probe| {
+                run_round(
+                    &handle,
+                    &state,
+                    gen.clone(),
+                    probe.clone(),
+                    started,
+                    deadline,
+                )
+            },
+        ) {
+            if let Some(history) = history {
+                publish(&handle, &state, &gen, &history);
             }
         }
     });
@@ -889,13 +937,23 @@ mod tests {
     fn evidence_is_atomic_private_and_bounded() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("fault.json");
-        let old = evidence();
+        let old = FaultHistory {
+            latest: evidence(),
+            previous: None,
+        };
         save(&path, &old).unwrap();
-        assert_eq!(read_record(&path), Some(old.clone()));
-        let mut too_large = old.clone();
+        assert_eq!(read_history(&path).unwrap().latest, old.latest);
+        let mut too_large = evidence();
         too_large.sysproxy_observed = vec!["x".repeat(MAX_RECORD_BYTES as usize)];
-        assert!(save(&path, &too_large).is_err());
-        assert_eq!(read_record(&path), Some(old));
+        assert!(save(
+            &path,
+            &FaultHistory {
+                latest: old.latest.clone(),
+                previous: Some(too_large)
+            }
+        )
+        .is_err());
+        assert_eq!(read_history(&path).unwrap().latest, old.latest);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -904,10 +962,10 @@ mod tests {
                 0o600
             );
         }
-        std::fs::write(&path, vec![b'x'; MAX_RECORD_BYTES as usize + 1]).unwrap();
-        assert!(read_record(&path).is_none());
+        std::fs::write(&path, vec![b'x'; MAX_HISTORY_BYTES as usize + 1]).unwrap();
+        assert!(read_history(&path).is_none());
         std::fs::write(&path, br#"{"mode":"sysproxy","startedAtMs":1}"#).unwrap();
-        assert!(read_record(&path).is_none()); // 旧格式没有完整代，不能继续抑制取证
+        assert!(read_history(&path).is_none()); // 旧格式没有完整代，不能继续抑制取证
     }
 
     #[test]
@@ -981,37 +1039,114 @@ mod tests {
     fn pre_499_files_are_flagged_as_limited_evidence() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("fault.json");
-        let mut old = evidence();
-        old.recovery = None;
-        save(&path, &old).unwrap();
         // 手工去掉新字段（模拟 #494 时代文件）。
-        let raw: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let raw = serde_json::to_value(evidence()).unwrap();
         let stripped = json_strip_keys(&raw, &["recovery", "superseded", "legacy"]);
         std::fs::write(&path, serde_json::to_vec(&stripped).unwrap()).unwrap();
-        let record = read_record(&path).unwrap();
-        assert!(record.legacy, "旧格式必须标注证据受限");
+        let history = read_history(&path).unwrap();
+        assert!(history.latest.legacy, "旧格式必须标注证据受限");
+        assert!(history.previous.is_none());
         // 新格式文件不标注。
         let mut current = evidence();
         current.recovery = Some(RecoveryProbe {
             at_ms: 9,
             proxy_https: healthy(),
         });
-        save(&path, &current).unwrap();
-        assert!(!read_record(&path).unwrap().legacy);
+        save(
+            &path,
+            &FaultHistory {
+                latest: current,
+                previous: Some(history.latest),
+            },
+        )
+        .unwrap();
+        let history = read_history(&path).unwrap();
+        assert!(!history.latest.legacy);
+        assert!(history.previous.unwrap().legacy);
     }
 
-    /// 换代未确认的记录可被读回（load 不再按代过滤），迟到结果无法把它
-    /// 标为恢复（decide 的代比较不变）。
     #[test]
     fn superseded_records_stay_queryable_and_refuse_late_resolution() {
-        let mut old = evidence();
-        mark_superseded(&mut old);
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("fault.json");
+        let mut history = Some(FaultHistory {
+            latest: evidence(),
+            previous: None,
+        });
+        let mut stopped = evidence();
+        assert!(reconcile_context(&mut stopped, None));
+        assert!(stopped.superseded);
+
         let new = Generation {
             session: "new-session".into(),
             ..gen()
         };
-        assert_eq!(decide(Some(&old), &new, &failed()), Action::Capture);
-        assert_eq!(decide(Some(&old), &new, &healthy()), Action::Nothing);
+        assert!(update_history(
+            &mut history,
+            &new,
+            Some((&healthy(), 23)),
+            |_| unreachable!()
+        ));
+        assert!(!update_history(
+            &mut history,
+            &gen(),
+            Some((&healthy(), 24)),
+            |_| unreachable!()
+        ));
+        assert!(update_history(
+            &mut history,
+            &new,
+            Some((&failed(), 25)),
+            |probe| FaultEvidence {
+                started_at_ms: 25,
+                generation: new.clone(),
+                proxy_https: probe.clone(),
+                ..evidence()
+            }
+        ));
+        assert!(update_history(
+            &mut history,
+            &new,
+            Some((&healthy(), 42)),
+            |_| unreachable!()
+        ));
+        save(&path, &history.unwrap()).unwrap();
+        let stored = read_history(&path).unwrap();
+        assert_eq!(stored.latest.proxy_https, failed());
+        assert_eq!(stored.latest.recovery.unwrap().at_ms, 42);
+        let previous = stored.previous.unwrap();
+        assert!(previous.superseded);
+        assert_eq!(previous.proxy_https, failed());
+        assert!(previous.recovery.is_none());
+    }
+
+    #[test]
+    fn independent_success_at_capture_does_not_invent_a_recovery_probe() {
+        for status in [403, 429] {
+            let limited = ProbeEvidence {
+                primary: outcome("http_status", Some(status)),
+                review: Some(outcome("ok", Some(204))),
+            };
+            let mut history = None;
+            assert!(update_history(
+                &mut history,
+                &gen(),
+                Some((&limited, 42)),
+                |probe| FaultEvidence {
+                    proxy_https: probe.clone(),
+                    ..evidence()
+                }
+            ));
+            assert!(!update_history(
+                &mut history,
+                &gen(),
+                Some((&limited, 43)),
+                |_| unreachable!()
+            ));
+            let latest = history.unwrap().latest;
+            assert_eq!(latest.proxy_https, limited);
+            assert_eq!(latest.resolved_at_ms, Some(42));
+            assert!(latest.recovery.is_none());
+        }
     }
 }

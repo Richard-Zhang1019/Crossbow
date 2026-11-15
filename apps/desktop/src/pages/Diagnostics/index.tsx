@@ -5,14 +5,54 @@ import { Button } from "@/components/Button";
 import { notify, notificationText } from "@/notifications/service";
 import { useOperationNotice } from "@/notifications/NotificationProvider";
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
-import { ipc, type CheckResult, type FaultEvidence, type FaultEvidenceLayer } from "@/services/ipc";
+import { ipc, type CheckResult, type FaultEvidence, type FaultEvidenceHistory, type FaultEvidenceLayer } from "@/services/ipc";
 import { currentLang, useT } from "@/i18n/i18n";
 import { PageHead } from "@/pages/Home";
 import { ProgressRing } from "@/components/ProgressRing";
 import { DIAG_STEPS, navigateTo } from "@/lib/workflow";
-import { failedChecks, faultEvidenceText, faultProbeText, guideUrl, isStale, remainingAge, shareText, type DiagnosisSnapshot } from "./report";
+import { failedChecks, faultEvidenceState, faultEvidenceText, faultProbeText, guideUrl, isStale, remainingAge, shareText, type DiagnosisSnapshot } from "./report";
 
 let previousReport: DiagnosisSnapshot | null = null;
+
+function faultTime(atMs: number) {
+  return new Date(atMs).toLocaleString(currentLang() === "en" ? "en-US" : "zh-CN");
+}
+
+function FaultState({ fault }: { fault: FaultEvidence }) {
+  const t = useT();
+  const state = faultEvidenceState(fault);
+  return <span className={state === "ongoing" ? "cb-fault-state ongoing" : "cb-fault-state"} role="status">
+    {t(`fault.${state}`)}
+  </span>;
+}
+
+function FaultSamples({ fault }: { fault: FaultEvidence }) {
+  const t = useT();
+  const layerText = (layer: FaultEvidenceLayer) =>
+    `${t("fault.primary")} ${faultProbeText(layer.primary, t)}` +
+    (layer.review ? ` · ${t("fault.review")} ${faultProbeText(layer.review, t)}` : "");
+  return <>
+    <p className="cb-fault-time">{t("fault.startedAt")}：{faultTime(fault.startedAtMs)}</p>
+    <dl className="cb-fault-layers">
+      <div><dt>{t("fault.mixedPort")}</dt><dd>{fault.mixedPortOk ? t("fault.class.ok") : t("fault.class.connect")}</dd></div>
+      <div><dt>{t("fault.controller")}</dt><dd>{faultProbeText(fault.controller, t)}</dd></div>
+      <div><dt>{t("fault.directCn")}</dt><dd>{layerText(fault.directCn)}</dd></div>
+      <div><dt>{t("fault.directGlobal")}</dt><dd>{layerText(fault.directGlobal)}</dd></div>
+      <div><dt>{t("fault.proxyHttps")}</dt><dd>{layerText(fault.proxyHttps)}</dd></div>
+    </dl>
+    {fault.recovery && <p className="cb-fault-time">
+      {t("fault.recoveryProbe")}：{layerText(fault.recovery.proxyHttps)} · {faultTime(fault.recovery.atMs)}
+    </p>}
+    {fault.legacy && <p className="cb-fault-time">
+      {fault.resolvedAtMs != null && !fault.recovery && <>{t("fault.resolvedAt")}：{faultTime(fault.resolvedAtMs)} · </>}
+      {t("fault.legacyNote")}
+    </p>}
+    <p className="cb-fault-time">{t("fault.pathUnverified")}</p>
+    {fault.sysproxyObserved.length > 0 && <p className="cb-fault-observed cb-selectable">
+      {t("fault.observed")}：{fault.sysproxyObserved.join("；")}
+    </p>}
+  </>;
+}
 
 export default function DiagnosticsPage({
   revision, listeners, appVersion,
@@ -30,7 +70,7 @@ export default function DiagnosticsPage({
   const [checking, setChecking] = useState<string | null>(null);
   const [fixing, setFixing] = useState<CheckResult | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
-  const [fault, setFault] = useState<FaultEvidence | null>(null);
+  const [faultHistory, setFaultHistory] = useState<FaultEvidenceHistory | null>(null);
   const { copied, copy, clear } = useClipboardFeedback<string>("diagnostics-summary-copy");
   const restartRunning = useOperationNotice("core-restart")?.kind === "progress";
   const repairRunning = !!fixing || restartRunning;
@@ -59,13 +99,13 @@ export default function DiagnosticsPage({
       ipc.sysproxyFaultEvidence()
         .then(evidence => {
           if (!cancelled && id === request) {
-            setFault(evidence);
+            setFaultHistory(evidence);
             void notify.resolve("diagnostics-fault");
           }
         })
         .catch(error => {
           if (!cancelled && id === request) {
-            setFault(null);
+            setFaultHistory(null);
             notify.error(error, "diagnostics-fault");
           }
         });
@@ -180,13 +220,13 @@ export default function DiagnosticsPage({
   const first = failed[0];
   const applicable = results?.some(row => !row.skipped);
   const canRepair = !running && !runFailed && !stale;
+  const fault = faultHistory?.latest;
+  const previousFault = faultHistory?.previous;
   const summaryText = summaryOpen ? [
     report ? shareText(report, appVersion, stale || runFailed) : null,
     fault ? faultEvidenceText(fault) : null,
+    previousFault ? `Previous fault record\n${faultEvidenceText(previousFault)}` : null,
   ].filter(Boolean).join("\n\n") : null;
-  const layerText = (layer: FaultEvidenceLayer) =>
-    `${t("fault.primary")} ${faultProbeText(layer.primary, t)}` +
-    (layer.review ? ` · ${t("fault.review")} ${faultProbeText(layer.review, t)}` : "");
   const resultTitle = running
     ? t("diag.progress", { done: progress.length, total: DIAG_STEPS.length })
     : runFailed ? t("diag.incomplete")
@@ -209,33 +249,14 @@ export default function DiagnosticsPage({
       {fault && <section className="cb-card cb-fault-evidence" aria-label={t("fault.title")}>
         <div className="cb-fault-evidence-head">
           <h2>{t("fault.title")}</h2>
-          <span className={fault.recovery ? "cb-fault-state" : "cb-fault-state ongoing"} role="status">
-            {t(fault.recovery ? "fault.resolved" : fault.superseded ? "fault.superseded" : "fault.ongoing")}
-          </span>
+          <FaultState fault={fault} />
         </div>
-        <p className="cb-fault-time">
-          {t("fault.startedAt")}：{new Date(fault.startedAtMs).toLocaleString(currentLang() === "en" ? "en-US" : "zh-CN")}
-          {fault.resolvedAtMs != null && <> · {t("fault.resolvedAt")}：{new Date(fault.resolvedAtMs).toLocaleString(currentLang() === "en" ? "en-US" : "zh-CN")}</>}
-        </p>
-        <dl className="cb-fault-layers">
-          <div><dt>{t("fault.mixedPort")}</dt><dd>{fault.mixedPortOk ? t("fault.class.ok") : t("fault.class.connect")}</dd></div>
-          <div><dt>{t("fault.controller")}</dt><dd>{faultProbeText(fault.controller, t)}</dd></div>
-          <div><dt>{t("fault.directCn")}</dt><dd>{layerText(fault.directCn)}</dd></div>
-          <div><dt>{t("fault.directGlobal")}</dt><dd>{layerText(fault.directGlobal)}</dd></div>
-          <div><dt>{t("fault.proxyHttps")}</dt><dd>{layerText(fault.proxyHttps)}</dd></div>
-        </dl>
-        <p className="cb-fault-time">
-          {fault.recovery
-            ? `${t("fault.recoveryProbe")}：${layerText(fault.recovery.proxyHttps)} · ${new Date(fault.recovery.atMs).toLocaleString(currentLang() === "en" ? "en-US" : "zh-CN")}`
-            : t("fault.noRecoveryProbe")}
-        </p>
-        {fault.legacy && <p className="cb-fault-time">{t("fault.legacyNote")}</p>}
-        <p className="cb-fault-time">{t("fault.pathUnverified")}</p>
-        {fault.sysproxyObserved.length > 0 && (
-          <p className="cb-fault-observed cb-selectable">
-            {t("fault.observed")}：{fault.sysproxyObserved.join("；")}
-          </p>
-        )}
+        <FaultSamples fault={fault} />
+        {previousFault && <details className="cb-fault-time">
+          <summary>{t("fault.previous")} · {faultTime(previousFault.startedAtMs)}</summary>
+          <FaultState fault={previousFault} />
+          <FaultSamples fault={previousFault} />
+        </details>}
       </section>}
       {!results && !runFailed ? (
         <div className="cb-empty">
