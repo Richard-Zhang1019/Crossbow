@@ -74,33 +74,14 @@ struct ClashProxy {
     server_name: Option<String>,
     #[serde(default, rename = "skip-cert-verify")]
     skip_cert_verify: Option<bool>,
-    /// #509：ws-opts（path/headers.host）——VLESS/VMESS WebSocket 传输。
     #[serde(default, rename = "ws-opts")]
-    ws_opts: Option<WsOpts>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-struct WsOpts {
-    #[serde(default)]
-    path: Option<String>,
-    /// Clash 侧写法是 headers: { Host: value }；只取 Host（其余头按
-    /// sing-box 无等价来源处理，不猜）。
-    #[serde(default, rename = "headers")]
-    headers: Option<std::collections::BTreeMap<String, String>>,
-}
-
-impl WsOpts {
-    /// ws Host 头：headers.Host 优先，其次显式 server_name，最后回落 server。
-    fn host_header(&self, fallback: &str) -> Option<String> {
-        self.headers
-            .as_ref()
-            .and_then(|h| {
-                h.iter()
-                    .find(|(k, _)| k.eq_ignore_ascii_case("host"))
-                    .map(|(_, v)| v.clone())
-            })
-            .or(Some(fallback.to_string()))
-    }
+    ws_opts: Option<Value>,
+    #[serde(default, rename = "servername")]
+    ws_server_name: Option<String>,
+    #[serde(default, rename = "alterId")]
+    clash_alter_id: Option<i64>,
+    #[serde(flatten)]
+    extra: BTreeMap<String, Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -175,47 +156,17 @@ pub fn convert_to_singbox(
     }
     declared.insert("DIRECT".into());
 
-    // #508：区分「规则段缺省」「合法空列表」「段类型错误」——后者必须明确
-    // 失败（报序号与类型），而不是静默清空整段规则后回退 DIRECT 直连。
-    let rules: Vec<String> = match doc.get("rules") {
-        None | Some(Value::Null) => vec![],
-        Some(Value::Array(items)) => {
-            let mut parsed = Vec::with_capacity(items.len());
-            for (index, item) in items.iter().enumerate() {
-                match item.as_str() {
-                    Some(rule) if !rule.trim().is_empty() => {
-                        parsed.push(rule.trim().to_string());
-                    }
-                    _ => {
-                        return Err(ConvertError::Parse(format!(
-                            "rules 第 {} 条不是字符串规则（实际类型 {}）",
-                            index + 1,
-                            match item {
-                                Value::Null => "null",
-                                Value::Bool(_) => "bool",
-                                Value::Number(_) => "number",
-                                Value::Object(_) => "object",
-                                _ => "非字符串值",
-                            }
-                        )));
-                    }
-                }
-            }
-            parsed
-        }
+    let rules = match doc.get("rules") {
+        None | Some(Value::Null) => &[][..],
+        Some(Value::Array(items)) => items.as_slice(),
         Some(other) => {
             return Err(ConvertError::Parse(format!(
                 "rules 段类型错误：期望列表，实际 {}",
-                match other {
-                    Value::Bool(_) => "bool",
-                    Value::Number(_) => "number",
-                    Value::String(_) => "string",
-                    Value::Object(_) => "object",
-                    _ => "未知结构",
-                }
+                value_type(other)
             )));
         }
     };
+    let (route_rules, final_out) = convert_rules(rules, &declared)?;
 
     // ---- outbounds ----
     let mut outbounds: Vec<Value> = Vec::new();
@@ -231,22 +182,6 @@ pub fn convert_to_singbox(
     outbounds.push(json!({
         "type": "direct", "tag": "DIRECT"
     }));
-
-    // ---- route ----
-    let mut route_rules: Vec<Value> = Vec::new();
-    for r in &rules {
-        if let Some(rule) = convert_rule(r)? {
-            route_rules.push(rule);
-        }
-    }
-    // MATCH 规则只有两段（MATCH,策略），取 nth(1)；无 MATCH 回退 DIRECT。
-    let final_out = rules
-        .iter()
-        .rev()
-        .find(|r| r.to_lowercase().starts_with("match,"))
-        .and_then(|r| r.split(',').nth(1).map(|s| s.trim().to_string()))
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "DIRECT".into());
 
     // 引用到的规则集 → remote 定义：sing-box 自行下载、缓存进 cache.db 并周期更新。
     // URL 走 gh-proxy 镜像（CN 直连 raw.githubusercontent 不可达）；下载绕行
@@ -336,46 +271,150 @@ fn srs_def(tag: &str, detour: &str) -> Value {
     def
 }
 
-/// #509：Clash `network: ws` → sing-box transport（ws）。path/Host 头/
-/// TLS（early-data 不在此范围）。
+fn proxy_option_error(p: &ClashProxy, field: &str) -> ConvertError {
+    ConvertError::Parse(format!(
+        "节点「{}」（{}）的 {field} 无法等价转换，请使用 mihomo 内核",
+        p.name, p.kind
+    ))
+}
+
+/// VLESS/VMess 的 WS 采用 mihomo 的默认路径和显式请求头。无法保留的扩展选项
+/// 必须在生成配置前拒绝；错误只包含已知字段名，不包含路径及请求头值。
 fn ws_transport(p: &ClashProxy) -> Result<Value, ConvertError> {
-    let Some(opts) = &p.ws_opts else {
-        return Err(ConvertError::Parse(format!(
-            "节点「{}」声明 network: ws 但缺少 ws-opts（path 必填）",
-            p.name
-        )));
+    let mut transport = json!({ "type": "ws", "path": "/" });
+    if let Some(opts) = &p.ws_opts {
+        let opts = opts
+            .as_object()
+            .ok_or_else(|| proxy_option_error(p, "ws-opts"))?;
+        for (key, value) in opts {
+            match key.as_str() {
+                "path" => {
+                    let path = value
+                        .as_str()
+                        .ok_or_else(|| proxy_option_error(p, "ws-opts.path"))?;
+                    // mihomo separates URL queries (including early data), but
+                    // sing-box 1.14.2 escapes '?' into the WebSocket request path.
+                    if path.contains(['?', '#', '%'])
+                        || path.starts_with("//")
+                        || path
+                            .split('/')
+                            .next()
+                            .is_some_and(|part| part.contains(':'))
+                        || path.chars().any(char::is_control)
+                    {
+                        return Err(proxy_option_error(p, "ws-opts.path"));
+                    }
+                    if !path.is_empty() {
+                        transport["path"] = json!(path);
+                    }
+                }
+                "headers" => transport["headers"] = ws_headers(p, value)?,
+                "max-early-data" if value.as_i64() == Some(0) => {}
+                "v2ray-http-upgrade" | "v2ray-http-upgrade-fast-open" if value == false => {}
+                "early-data-header-name" if value.as_str() == Some("") => {}
+                "max-early-data"
+                | "early-data-header-name"
+                | "v2ray-http-upgrade"
+                | "v2ray-http-upgrade-fast-open" => {
+                    return Err(proxy_option_error(p, &format!("ws-opts.{key}")));
+                }
+                _ => return Err(proxy_option_error(p, "ws-opts（未知字段）")),
+            }
+        }
+    }
+    // Set Host explicitly to preserve mihomo's omission of the dial port.
+    if transport["headers"].get("Host").is_none() {
+        transport["headers"]["Host"] = json!(p.server);
+    }
+    let protocol_fields: &[&str] = if p.kind == "vless" {
+        &["flow", "encryption"]
+    } else {
+        &["global-padding", "authenticated-length"]
     };
-    let Some(path) = opts.path.as_deref().filter(|s| !s.is_empty()) else {
-        return Err(ConvertError::Parse(format!(
-            "节点「{}」ws-opts 缺少 path",
-            p.name
-        )));
+    let tls_fields: &[&str] = if p.tls == Some(true) {
+        &[
+            "name-cert-verify",
+            "fingerprint",
+            "certificate",
+            "private-key",
+            "client-fingerprint",
+            "ech-opts",
+            "shadow-tls-opts",
+            "restls-opts",
+            "jls-opts",
+            "tlsmirror-opts",
+            "reality-opts",
+        ]
+    } else {
+        &[]
     };
-    let mut transport = json!({ "type": "ws", "path": path });
-    if let Some(host) = opts.host_header(&p.server) {
-        transport["headers"] = json!({ "Host": host });
+    for &field in protocol_fields.iter().chain(tls_fields) {
+        if p.extra.get(field).is_some_and(|value| match value {
+            Value::Null | Value::Bool(false) => false,
+            Value::String(s) => !s.is_empty() && !(field == "encryption" && s == "none"),
+            Value::Object(fields) => !fields.is_empty(),
+            _ => true,
+        }) {
+            return Err(proxy_option_error(p, field));
+        }
     }
     Ok(transport)
 }
 
-fn convert_proxy(p: &ClashProxy) -> Result<Value, ConvertError> {
-    // #509：声明了传输层（network）但协议不在支持映射内的节点，预检即拒
-    // （报节点名/协议/字段），不再静默丢传输后生成“看似可用”的出站。
-    if let Some(network) = &p.network {
-        if !network.is_empty() && network != "ws" {
-            return Err(ConvertError::UnsupportedProxy(format!(
-                "{} (network: {network} 传输暂不支持转换，请使用 mihomo 内核)",
-                p.name
-            )));
+fn ws_headers(p: &ClashProxy, value: &Value) -> Result<Value, ConvertError> {
+    let error = || proxy_option_error(p, "ws-opts.headers");
+    let entries = value.as_object().ok_or_else(error)?;
+    let mut headers = BTreeMap::new();
+    for (name, value) in entries {
+        let name = if name.eq_ignore_ascii_case("host") {
+            "Host".into()
+        } else {
+            name.to_ascii_lowercase()
+        };
+        let text = value.as_str().ok_or_else(error)?;
+        if name.is_empty()
+            || !name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte))
+            || text
+                .bytes()
+                .any(|byte| byte == 127 || byte < 32 && byte != b'\t')
+            || matches!(name.as_str(), "connection" | "upgrade")
+            || name.starts_with("sec-websocket-")
+            || headers.insert(name, text).is_some()
+        {
+            return Err(error());
         }
     }
-    let tls_on = p.tls.unwrap_or(false)
-        || matches!(p.kind.as_str(), "trojan" | "hysteria2")
-        || p.port == 443;
+    if headers.get("Host") == Some(&"") {
+        headers.remove("Host");
+    }
+    Ok(json!(headers))
+}
+
+fn convert_proxy(p: &ClashProxy) -> Result<Value, ConvertError> {
+    let transport = match p.network.as_deref() {
+        None | Some("" | "tcp") => None,
+        Some("ws") if matches!(p.kind.as_str(), "vless" | "vmess") => Some(ws_transport(p)?),
+        Some(_) => return Err(proxy_option_error(p, "network")),
+    };
+    let tls_on = if transport.is_some() {
+        p.tls.unwrap_or(false)
+    } else {
+        p.tls.unwrap_or(false) || matches!(p.kind.as_str(), "trojan" | "hysteria2") || p.port == 443
+    };
     let common_tls = if tls_on {
+        let server_name = if let Some(transport) = &transport {
+            p.ws_server_name
+                .as_deref()
+                .filter(|name| !name.is_empty())
+                .or_else(|| transport["headers"]["Host"].as_str())
+        } else {
+            p.server_name.as_deref()
+        };
         json!({
             "enabled": true,
-            "server_name": p.server_name.clone().unwrap_or_else(|| p.server.clone()),
+            "server_name": server_name.unwrap_or(&p.server),
             "insecure": p.skip_cert_verify.unwrap_or(false)
         })
     } else {
@@ -410,10 +449,10 @@ fn convert_proxy(p: &ClashProxy) -> Result<Value, ConvertError> {
                 "server": p.server, "server_port": p.port,
                 "uuid": p.uuid.clone().unwrap_or_default(),
                 "security": p.cipher.clone().unwrap_or_else(|| "auto".into()),
-                "alter_id": p.alter_id.unwrap_or(0)
+                "alter_id": p.clash_alter_id.or(p.alter_id).unwrap_or(0)
             });
-            if p.network.as_deref() == Some("ws") {
-                o["transport"] = ws_transport(p)?;
+            if let Some(transport) = transport {
+                o["transport"] = transport;
             }
             if tls_on {
                 o["tls"] = common_tls;
@@ -434,9 +473,8 @@ fn convert_proxy(p: &ClashProxy) -> Result<Value, ConvertError> {
                 "server": p.server, "server_port": p.port,
                 "uuid": p.uuid.clone().unwrap_or_default()
             });
-            if p.network.as_deref() == Some("ws") {
-                // #509：WebSocket 传输等价转换（path + Host 头）
-                o["transport"] = ws_transport(p)?;
+            if let Some(transport) = transport {
+                o["transport"] = transport;
             }
             if tls_on {
                 o["tls"] = common_tls;
@@ -723,17 +761,86 @@ fn convert_urltest_tolerance(g: &ClashGroup) -> Result<u16, ConvertError> {
     Ok(tolerance)
 }
 
-/// 单条 Clash 规则（`TYPE,payload,target` 字符串）→ sing-box route rule；
-/// MATCH 返回 None（用 final 承接）。
-fn convert_rule(rule: &str) -> Result<Option<Value>, ConvertError> {
-    let mut parts = rule.split(',');
-    let kind = parts.next().unwrap_or("").trim().to_string();
-    // 目标是最后一段（payload 内可能含逗号的类型极少，S2 覆盖集内不存在）
-    let target = parts.next_back().unwrap_or("").trim().to_string();
-    let payload = parts.collect::<Vec<_>>().join(",").trim().to_string();
-    let outbound = json!(target);
+fn value_type(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "bool",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
+}
 
-    let rule = match kind.as_str() {
+fn convert_rules(
+    items: &[Value],
+    declared: &std::collections::BTreeSet<String>,
+) -> Result<(Vec<Value>, String), ConvertError> {
+    let rules: Vec<&str> = items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            item.as_str().ok_or_else(|| {
+                ConvertError::Parse(format!(
+                    "rules 第 {} 条：期望字符串规则，实际 {}",
+                    index + 1,
+                    value_type(item)
+                ))
+            })
+        })
+        .collect::<Result<_, _>>()?;
+    let mut route = Vec::new();
+    let mut final_out = "DIRECT";
+    for (index, text) in rules.into_iter().enumerate() {
+        let error =
+            |detail: &str| ConvertError::Parse(format!("rules 第 {} 条：{detail}", index + 1));
+        let mut parts = text.split(',').map(str::trim);
+        let kind = parts.next().unwrap_or_default();
+        if kind.is_empty() {
+            return Err(error("缺少规则类型"));
+        }
+        let (payload, target) = if kind == "MATCH" {
+            ("", parts.next().unwrap_or_default())
+        } else {
+            (
+                parts.next().unwrap_or_default(),
+                parts.next().unwrap_or_default(),
+            )
+        };
+        if target.is_empty() {
+            return Err(error("缺少目标出站"));
+        }
+        if !declared.contains(target) {
+            return Err(error("目标出站未定义"));
+        }
+        if parts.next().is_some() {
+            return Err(error("包含当前无法等价转换的额外参数（例如 no-resolve）"));
+        }
+        if kind == "MATCH" {
+            // mihomo 按顺序匹配且可能因出站不支持 UDP 继续匹配。将提前出现的
+            // MATCH 移到 sing-box final 会改变优先级，因此这里明确拒绝。
+            if index + 1 != items.len() {
+                return Err(error("MATCH 必须位于最后，且只能出现一次"));
+            }
+            final_out = target;
+        } else {
+            if payload.is_empty() {
+                return Err(error("缺少匹配参数"));
+            }
+            route.push(convert_rule(kind, payload, target, index + 1)?);
+        }
+    }
+    Ok((route, final_out.to_string()))
+}
+
+fn convert_rule(
+    kind: &str,
+    payload: &str,
+    target: &str,
+    line: usize,
+) -> Result<Value, ConvertError> {
+    let outbound = json!(target);
+    let rule = match kind {
         "DOMAIN-SUFFIX" => json!({ "domain_suffix": [payload], "outbound": outbound }),
         "DOMAIN" => json!({ "domain": [payload], "outbound": outbound }),
         "DOMAIN-KEYWORD" => json!({ "domain_keyword": [payload], "outbound": outbound }),
@@ -745,16 +852,15 @@ fn convert_rule(rule: &str) -> Result<Option<Value>, ConvertError> {
             json!({ "rule_set": [format!("geosite-{}", payload.to_lowercase())], "outbound": outbound })
         }
         "DST-PORT" => {
-            let port: u16 = payload
-                .parse()
-                .map_err(|_| ConvertError::Parse(format!("DST-PORT 非法端口：{payload}")))?;
+            let port: u16 = payload.parse().map_err(|_| {
+                ConvertError::Parse(format!("rules 第 {line} 条：DST-PORT 端口无效"))
+            })?;
             json!({ "port": [port], "outbound": outbound })
         }
         "PROCESS-NAME" => json!({ "process_name": [payload], "outbound": outbound }),
-        "MATCH" => return Ok(None),
-        other => return Err(ConvertError::UnsupportedRule(other.to_string())),
+        _ => return Err(ConvertError::UnsupportedRule(format!("rules 第 {line} 条"))),
     };
-    Ok(Some(rule))
+    Ok(rule)
 }
 
 #[cfg(test)]
@@ -1236,6 +1342,31 @@ rules:
         assert_eq!(out["route"]["final"], "DIRECT");
     }
 
+    #[test]
+    fn invalid_rule_syntax_never_falls_back_to_direct() {
+        for (rules, expected) in [
+            ("[MATCH]", "缺少目标出站"),
+            ("['MATCH,']", "缺少目标出站"),
+            ("['MATCH,unknown']", "目标出站未定义"),
+            ("['DOMAIN,example.test,unknown']", "目标出站未定义"),
+            ("['MATCH,node', 'MATCH,DIRECT']", "MATCH 必须位于最后"),
+            (
+                "['MATCH,node', 'DOMAIN,example.test,DIRECT']",
+                "MATCH 必须位于最后",
+            ),
+            ("['IP-CIDR,127.0.0.0/8,node,no-resolve']", "额外参数"),
+            ("['MATCH,node,DIRECT']", "额外参数"),
+        ] {
+            let yaml = format!(
+                "proxies: [{{name: node, type: http, server: 127.0.0.1, port: 9001}}]\nrules: {rules}"
+            );
+            let err = convert_to_singbox(&yaml, 7897, false)
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("第 1 条") && err.contains(expected), "{err}");
+        }
+    }
+
     /// #509：VLESS + network: ws → transport 等价转换（path + Host 头）。
     #[test]
     fn vless_ws_transport_is_converted() {
@@ -1262,9 +1393,9 @@ rules: ['MATCH,node']
         assert_eq!(proxy["transport"]["headers"]["Host"], "example.test");
     }
 
-    /// #509：network: ws 缺 ws-opts.path → 预检拒绝（报节点名，不静默丢传输）。
+    /// mihomo 允许省略 ws-opts，默认 WebSocket 路径为 /。
     #[test]
-    fn ws_without_path_is_rejected() {
+    fn ws_without_path_uses_root() {
         let base = r#"
 proxies:
   - name: node
@@ -1275,11 +1406,9 @@ proxies:
     network: ws
 rules: ['MATCH,node']
 "#;
-        let err = convert_to_singbox(base, 7897, false).unwrap_err();
-        assert!(
-            err.to_string().contains("node") && err.to_string().contains("path"),
-            "{err}"
-        );
+        let config: Value =
+            serde_json::from_str(&convert_to_singbox(base, 7897, false).unwrap()).unwrap();
+        assert_eq!(config["outbounds"][0]["transport"]["path"], "/");
     }
 
     /// #509：不支持的传输（grpc 等）预检拒绝并报协议与字段。
@@ -1299,9 +1428,97 @@ rules: ['MATCH,node']
 "#;
         let err = convert_to_singbox(base, 7897, false).unwrap_err();
         assert!(
-            err.to_string().contains("grpc") && err.to_string().contains("node"),
+            err.to_string().contains("network")
+                && err.to_string().contains("vless")
+                && err.to_string().contains("node"),
             "{err}"
         );
+    }
+
+    #[test]
+    fn websocket_preserves_headers_and_tls_name_precedence() {
+        let yaml = r#"
+proxies:
+  - name: node
+    type: vmess
+    server: 127.0.0.1
+    port: 443
+    uuid: b06ca1c3-3493-4f4d-a011-1198d90f10f5
+    alterId: 4
+    network: ws
+    tls: true
+    servername: sni.example.test
+    ws-opts:
+      path: /proxy
+      headers: {hOsT: ws.example.test, X-Route: blue}
+rules: ['MATCH,node']
+"#;
+        for (input, expected_sni) in [
+            (yaml.to_string(), "sni.example.test"),
+            (
+                yaml.replace("    servername: sni.example.test\n", ""),
+                "ws.example.test",
+            ),
+        ] {
+            let config: Value =
+                serde_json::from_str(&convert_to_singbox(&input, 7897, false).unwrap()).unwrap();
+            let node = &config["outbounds"][0];
+            assert_eq!(node["alter_id"], 4);
+            assert_eq!(node["transport"]["headers"]["Host"], "ws.example.test");
+            assert_eq!(node["transport"]["headers"]["x-route"], "blue");
+            assert_eq!(node["transport"]["path"], "/proxy");
+            assert_eq!(node["tls"]["server_name"], expected_sni);
+        }
+
+        let cleartext = yaml.replace("tls: true", "tls: false");
+        let config: Value =
+            serde_json::from_str(&convert_to_singbox(&cleartext, 7897, false).unwrap()).unwrap();
+        assert!(config["outbounds"][0].get("tls").is_none());
+    }
+
+    #[test]
+    fn websocket_rejects_unsupported_options_without_echoing_values() {
+        for (fields, expected) in [
+            ("type: trojan, network: ws", "network"),
+            ("type: vless, network: ws, flow: xtls-rprx-vision", "flow"),
+            (
+                "type: vmess, network: ws, global-padding: true",
+                "global-padding",
+            ),
+            (
+                "type: vless, network: ws, ws-opts: {path: '/proxy?ed=123&key=secret-marker'}",
+                "ws-opts.path",
+            ),
+            (
+                "type: vless, network: ws, ws-opts: {path: '/proxy?token=secret-marker'}",
+                "ws-opts.path",
+            ),
+            (
+                "type: vless, network: ws, ws-opts: {max-early-data: 128}",
+                "ws-opts.max-early-data",
+            ),
+            (
+                "type: vless, network: ws, ws-opts: {v2ray-http-upgrade: true}",
+                "ws-opts.v2ray-http-upgrade",
+            ),
+            (
+                "type: vless, network: ws, ws-opts: {headers: {Authorization: [secret-marker]}}",
+                "ws-opts.headers",
+            ),
+            (
+                "type: vless, network: ws, tls: true, name-cert-verify: secret-marker",
+                "name-cert-verify",
+            ),
+        ] {
+            let yaml = format!(
+                "proxies: [{{name: node, server: 127.0.0.1, port: 9001, {fields}}}]\nrules: ['MATCH,node']"
+            );
+            let err = convert_to_singbox(&yaml, 7897, false)
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("node") && err.contains(expected), "{err}");
+            assert!(!err.contains("secret-marker"), "{err}");
+        }
     }
 
     /// #509：普通 TCP VLESS（无 network）不产生 transport——零回归。
@@ -1316,8 +1533,13 @@ proxies:
     uuid: b06ca1c3-3493-4f4d-a011-1198d90f10f5
 rules: ['MATCH,node']
 "#;
-        let out: serde_json::Value =
-            serde_json::from_str(&convert_to_singbox(base, 7897, false).unwrap()).unwrap();
-        assert!(out["outbounds"][0].get("transport").is_none());
+        for input in [
+            base.to_string(),
+            base.replace("    type: vless", "    type: vless\n    network: tcp"),
+        ] {
+            let out: Value =
+                serde_json::from_str(&convert_to_singbox(&input, 7897, false).unwrap()).unwrap();
+            assert!(out["outbounds"][0].get("transport").is_none());
+        }
     }
 }
