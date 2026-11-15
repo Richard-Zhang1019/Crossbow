@@ -148,9 +148,46 @@ pub fn convert_to_singbox(
     }
     declared.insert("DIRECT".into());
 
+    // #508：区分「规则段缺省」「合法空列表」「段类型错误」——后者必须明确
+    // 失败（报序号与类型），而不是静默清空整段规则后回退 DIRECT 直连。
     let rules: Vec<String> = match doc.get("rules") {
-        Some(v) => serde_json::from_value(v.clone()).unwrap_or_default(),
-        None => vec![],
+        None | Some(Value::Null) => vec![],
+        Some(Value::Array(items)) => {
+            let mut parsed = Vec::with_capacity(items.len());
+            for (index, item) in items.iter().enumerate() {
+                match item.as_str() {
+                    Some(rule) if !rule.trim().is_empty() => {
+                        parsed.push(rule.trim().to_string());
+                    }
+                    _ => {
+                        return Err(ConvertError::Parse(format!(
+                            "rules 第 {} 条不是字符串规则（实际类型 {}）",
+                            index + 1,
+                            match item {
+                                Value::Null => "null",
+                                Value::Bool(_) => "bool",
+                                Value::Number(_) => "number",
+                                Value::Object(_) => "object",
+                                _ => "非字符串值",
+                            }
+                        )));
+                    }
+                }
+            }
+            parsed
+        }
+        Some(other) => {
+            return Err(ConvertError::Parse(format!(
+                "rules 段类型错误：期望列表，实际 {}",
+                match other {
+                    Value::Bool(_) => "bool",
+                    Value::Number(_) => "number",
+                    Value::String(_) => "string",
+                    Value::Object(_) => "object",
+                    _ => "未知结构",
+                }
+            )));
+        }
     };
 
     // ---- outbounds ----
@@ -1085,5 +1122,48 @@ rules: ['MATCH,all']
                 "{field}: unexpected: {err}"
             );
         }
+    }
+
+    /// #508：规则段混入非字符串（如覆写脚本误写 false）必须报错并给出
+    /// 序号——不得静默清空规则后回退 DIRECT 直连。
+    #[test]
+    fn non_string_rule_fails_with_index() {
+        let base = r#"
+proxies:
+  - {name: node, type: http, server: 127.0.0.1, port: 9001}
+rules:
+  - MATCH,node
+  - false
+"#;
+        let err = convert_to_singbox(base, 7897, false).unwrap_err();
+        assert!(
+            err.to_string().contains("第 2 条") && err.to_string().contains("bool"),
+            "错误应指明第 2 条规则与实际类型：{err}"
+        );
+    }
+
+    /// #508：规则段整体类型错误（字符串而非列表）也明确报错。
+    #[test]
+    fn rules_section_wrong_type_fails() {
+        let base = "rules: MATCH,node\nproxies: []\n";
+        let err = convert_to_singbox(base, 7897, false).unwrap_err();
+        assert!(err.to_string().contains("rules 段类型错误"), "{err}");
+    }
+
+    /// #508：合法形态不回归——缺省、空列表、显式 MATCH,DIRECT 都正常。
+    #[test]
+    fn legal_rules_forms_still_convert() {
+        // 缺省
+        let no_rules = "proxies:\n  - {name: n, type: http, server: 127.0.0.1, port: 1}\n";
+        let out: serde_json::Value = serde_json::from_str(&convert_to_singbox(no_rules, 7897, false).unwrap()).unwrap();
+        assert_eq!(out["route"]["final"], "DIRECT");
+        // 空列表
+        let empty = "rules: []\nproxies:\n  - {name: n, type: http, server: 127.0.0.1, port: 1}\n";
+        let out: serde_json::Value = serde_json::from_str(&convert_to_singbox(empty, 7897, false).unwrap()).unwrap();
+        assert_eq!(out["route"]["final"], "DIRECT");
+        // 显式 MATCH,DIRECT
+        let explicit = "rules:\n  - MATCH,DIRECT\nproxies:\n  - {name: n, type: http, server: 127.0.0.1, port: 1}\n";
+        let out: serde_json::Value = serde_json::from_str(&convert_to_singbox(explicit, 7897, false).unwrap()).unwrap();
+        assert_eq!(out["route"]["final"], "DIRECT");
     }
 }
