@@ -4,8 +4,7 @@ use crate::{AppState, CoreStatus};
 pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
     let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
     state.exit.ensure_open()?;
-    let _recovery =
-        crate::engine::config_transition::RecoveryOwner::enter(&state.config_transition);
+    let _recovery = state.begin_config_transition();
     let was_running = matches!(
         state.core().status(),
         CoreStatus::Running | CoreStatus::Starting

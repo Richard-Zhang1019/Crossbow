@@ -196,11 +196,27 @@ export function displayNodeName(name: string): string {
   return stripped || name;
 }
 
+export interface NodeDelayOutcome {
+  class: "ok" | "timeout" | "controller" | "failed" | "cancelled" | "skipped";
+  delayMs: number | null;
+  reviewed: boolean;
+  target: string;
+  testedAtMs: number;
+  sampleCount: number;
+  detail: string;
+}
+
+export interface NodeDelayContext {
+  revision: number;
+  pid: number;
+}
+
 export interface NodeView {
   name: string;
   kind: string;
   alive: boolean;
   delay_ms: number | null;
+
 }
 
 export interface GroupView {
@@ -386,6 +402,12 @@ export const ipc = {
   testGroupDelay: (group: string) =>
     invoke<Record<string, number>>("test_group_delay", { group }),
   testNodeDelay: (node: string) => invoke<number>("test_node_delay", { node }),
+  proxiesTestSnapshot: () => invoke<{ context: NodeDelayContext; groups: GroupView[] } | null>("proxies_test_snapshot"),
+  beginNodeDelayTest: (context: NodeDelayContext, nodeCount: number) =>
+    invoke<{ id: string; budgetMs: number } | null>("begin_node_delay_test", { context, nodeCount }),
+  testNodeDelayStructured: (taskId: string, node: string) =>
+    invoke<NodeDelayOutcome>("test_node_delay_structured", { taskId, node }),
+  endNodeDelayTest: (taskId: string) => invoke<void>("end_node_delay_test", { taskId }),
   runDiagnosis: (runId: string) => invoke<DiagnosticReport>("run_diagnosis", { runId }),
   openDiagnosisGuide: (url: string) => invoke<void>("open_diagnosis_guide", { url }),
   diagnosisEnableSysproxy: () => invoke<void>("diagnosis_enable_sysproxy"),

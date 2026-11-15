@@ -14,9 +14,7 @@ const BENCHMARK_URL: &str = "http://www.gstatic.com/generate_204";
 /// #491：主目标超时后的复核目标——与主目标不同运营方（Google vs Cloudflare），
 /// 保留独立目标结果，避免把单目标异常泛化为节点故障。
 const BENCHMARK_URL_REVIEW: &str = "https://cp.cloudflare.com/generate_204";
-#[cfg(any(target_os = "macos", test))]
 const BENCHMARK_URL_HTTPS: &str = "https://www.gstatic.com/generate_204";
-#[cfg(any(target_os = "macos", test))]
 pub(crate) const NODE_DELAY_REQUEST_BUDGET: Duration = Duration::from_secs(7);
 
 #[derive(Debug, Clone, Serialize)]
@@ -63,7 +61,6 @@ pub(crate) enum NodeDelayError {
     /// 控制器传输失败（连不上内核 API）——不是节点故障，徽标需与
     /// 节点超时区分（#491）。
     Controller(String),
-    #[cfg(any(target_os = "macos", test))]
     Cancelled(String),
     Skipped(String),
 }
@@ -89,9 +86,8 @@ impl std::fmt::Display for NodeDelayError {
             Self::Timeout(details)
             | Self::Failed(details)
             | Self::Controller(details)
+            | Self::Cancelled(details)
             | Self::Skipped(details) => f.write_str(details),
-            #[cfg(any(target_os = "macos", test))]
-            Self::Cancelled(details) => f.write_str(details),
         }
     }
 }
@@ -627,7 +623,6 @@ impl Controller {
     }
 
     /// 主目标固定；仅节点超时复核 HTTPS。每次新请求前及发布结果前均检查取消。
-    #[cfg(any(target_os = "macos", test))]
     pub(crate) fn measure_node_delay_with_review(
         &self,
         node: &str,
