@@ -98,6 +98,16 @@ export interface SysProxyStatus {
   port: number;
 }
 
+export interface ConfigImportReport {
+  package_version: number;
+  added_profiles: number;
+  replaced_profiles: number;
+  added_overrides: number;
+  replaced_overrides: number;
+  active_profile: string | null;
+  warnings: string[];
+}
+
 export interface UiSettings {
   theme: "system" | "light" | "dark";
   lang: string;
@@ -364,6 +374,12 @@ export const ipc = {
   openLogsDir: () => invoke<void>("open_logs_dir"),
   coreStop: () => invoke<void>("core_stop"),
   appVersion: () => getVersion(),
+  exportConfigPackage: () => invoke<boolean>("export_config_package"),
+  pickConfigPackage: () => invoke<string | null>("pick_config_package"),
+  previewConfigPackage: (text: string) =>
+    invoke<ConfigImportReport>("preview_config_package", { text }),
+  importConfigPackage: (text: string) =>
+    invoke<ConfigImportReport>("import_config_package", { text }),
   testSite: (id: string) => invoke<SiteResult>("test_site", { id }),
   coreStatus: () => invoke<CoreStatus>("core_status"),
   sysproxyStatus: () => invoke<SysProxyStatus>("sysproxy_status"),

@@ -131,6 +131,90 @@ fn recover_configuration(data: &mut crossbow_core::StoreSchema, saved: crossbow_
     data.overrides = saved.overrides;
     data.active_profile = saved.active_profile;
 }
+/// #510：导出配置包 JSON（订阅 + 覆写链 + 激活项；不含引擎/端口/UI/状态）。
+/// 前端负责落盘与敏感提示（订阅 URL 与节点凭据包含在包内）。
+#[tauri::command]
+pub async fn export_config_package(state: State<'_, AppState>) -> Result<bool, String> {
+    let data = state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .clone();
+    let text = crossbow_core::config_package::export_package(&data);
+    let Some(file) = rfd::AsyncFileDialog::new()
+        .set_file_name("crossbow-config-package.json")
+        .add_filter("JSON", &["json"])
+        .save_file()
+        .await
+    else {
+        return Ok(false);
+    };
+    file.write(text.as_bytes())
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+/// #510：系统打开对话框选择配置包文件并读取文本（预览/导入共用）。
+#[tauri::command]
+pub async fn pick_config_package() -> Result<Option<String>, String> {
+    let Some(file) = rfd::AsyncFileDialog::new()
+        .set_file_name("crossbow-config-package.json")
+        .add_filter("JSON", &["json"])
+        .pick_file()
+        .await
+    else {
+        return Ok(None);
+    };
+    let bytes = file.read().await;
+    let text = String::from_utf8(bytes).map_err(|e| e.to_string())?;
+    Ok(Some(text))
+}
+
+/// #510：导入预览——校验包文本并返回新增/替换计数，不写库。
+#[tauri::command]
+pub fn preview_config_package(
+    state: State<AppState>,
+    text: String,
+) -> Result<crossbow_core::config_package::ConfigImportReport, String> {
+    let current = state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .clone();
+    crossbow_core::config_package::preview_package(&text, &current)
+}
+
+/// #510：应用配置包。预览校验 → 自动快照（commit 内 save 触发 rotate）
+/// → 事务提交（校验/渲染失败自动回滚）→ 通知前端刷新。
+#[tauri::command]
+pub async fn import_config_package(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    text: String,
+) -> Result<crossbow_core::config_package::ConfigImportReport, String> {
+    let current = state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .clone();
+    // #510：预览校验（失败即报错，不动库）
+    let report = crossbow_core::config_package::preview_package(&text, &current)?;
+    let payload = crossbow_core::config_package::parse_package(&text)?;
+    // 应用：commit 内 save 会自动 rotate 快照（导入前可恢复）
+    crate::commit_config_change(&state, move |data| {
+        crossbow_core::config_package::apply_package(data, &payload);
+        Ok(())
+    })?;
+    crate::scheduler::clear_all_retries();
+    let _ = app.emit("profile://updated", "");
+    crate::refresh_tray(&app);
+    Ok(report)
+}
+
 #[tauri::command]
 pub async fn restore_config_snapshot(app: AppHandle, id: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {

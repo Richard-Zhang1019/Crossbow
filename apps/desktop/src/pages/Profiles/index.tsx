@@ -5,7 +5,7 @@ import { Button, ButtonBase } from "@/components/Button";
 import { notify, notificationText } from "@/notifications/service";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { ipc, type Profile, type ProfileStatus } from "@/services/ipc";
+import { ipc, type ConfigImportReport, type Profile, type ProfileStatus } from "@/services/ipc";
 import Select from "@/components/Select";
 import OverridePanel from "@/pages/OverridePanel";
 import { useT } from "@/i18n/i18n";
@@ -61,6 +61,11 @@ export default function ProfilesPage({
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  // #510：配置包导出/导入
+  const [pkgBusy, setPkgBusy] = useState(false);
+  const [pkgPreview, setPkgPreview] = useState<
+    { text: string; report: ConfigImportReport } | null
+  >(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importingFiles = useRef(false);
   useEffect(() => {
@@ -161,6 +166,56 @@ export default function ProfilesPage({
       setBusy(null);
     }
   };
+
+  // #510：配置包导出/导入
+  const exportPackage = async () => {
+    if (pkgBusy) return;
+    setPkgBusy(true);
+    try {
+      const saved = await ipc.exportConfigPackage();
+      if (saved) notify.success(t("pkg.exported"), "pkg-export");
+    } catch (e) {
+      notify.error(e, "pkg-export");
+    } finally {
+      setPkgBusy(false);
+    }
+  };
+  const importPackage = async () => {
+    if (pkgBusy) return;
+    setPkgBusy(true);
+    try {
+      const text = await ipc.pickConfigPackage();
+      if (text === null) return;
+      const report = await ipc.previewConfigPackage(text);
+      setPkgPreview({ text, report });
+    } catch (e) {
+      notify.error(e, "pkg-import-preview");
+    } finally {
+      setPkgBusy(false);
+    }
+  };
+  const confirmImport = async () => {
+    if (!pkgPreview) return;
+    setPkgBusy(true);
+    try {
+      const report = await ipc.importConfigPackage(pkgPreview.text);
+      notify.success(
+        t("pkg.report", {
+          added: report.added_profiles,
+          replaced: report.replaced_profiles,
+          addedOv: report.added_overrides,
+          replacedOv: report.replaced_overrides,
+        }),
+        "pkg-import",
+      );
+      setPkgPreview(null);
+      void refresh();
+    } catch (e) {
+      notify.error(e, "pkg-import");
+    } finally {
+      setPkgBusy(false);
+    }
+  };
   const chosenFiles = (files: FileList | null) => {
     if (!files?.length) return;
     void importProfiles(Array.from(files, file => async () =>
@@ -187,13 +242,50 @@ export default function ProfilesPage({
         {tab === "overrides" && <Button variant="primary" onClick={()=>setCreatingOverride(true)}>{t("ov.create")}</Button>}
         <Button onClick={()=>setRecovering(true)}>{t("backup.title")}</Button>
         {tab === "sources" && (
-          <Button onClick={() => setImporting(true)}>
-            <Icon name="download" />
-            {t("studio.importSource")}
-          </Button>
+          <>
+            <Button onClick={() => void exportPackage()} loading={pkgBusy}>
+              <Icon name="download" />
+              {t("pkg.export")}
+            </Button>
+            <Button onClick={() => void importPackage()} loading={pkgBusy}>
+              <Icon name="upload" />
+              {t("pkg.import")}
+            </Button>
+            <Button onClick={() => setImporting(true)}>
+              <Icon name="download" />
+              {t("studio.importSource")}
+            </Button>
+          </>
         )}
       </PageHead>
       {recovering&&<ConfigRecovery onClose={()=>setRecovering(false)} onRestored={()=>void refresh()}/>}
+      {pkgPreview && (
+        <Dialog
+          title={t("pkg.import")}
+          onClose={() => setPkgPreview(null)}
+        >
+          <p className="cb-control-note">{t("pkg.importHint")}</p>
+          <p className="cb-control-note">
+            {t("pkg.report", {
+              added: pkgPreview.report.added_profiles,
+              replaced: pkgPreview.report.replaced_profiles,
+              addedOv: pkgPreview.report.added_overrides,
+              replacedOv: pkgPreview.report.replaced_overrides,
+            })}
+          </p>
+          {pkgPreview.report.warnings.map((w) => (
+            <p key={w} className="cb-control-note" style={{ color: "var(--cb-warn)" }}>
+              {w}
+            </p>
+          ))}
+          <div className="actions">
+            <Button onClick={() => setPkgPreview(null)}>{t("ov.cancel")}</Button>
+            <Button variant="primary" loading={pkgBusy} onClick={() => void confirmImport()}>
+              {t("pkg.import")}
+            </Button>
+          </div>
+        </Dialog>
+      )}
       <input
         ref={fileInputRef}
         type="file"
