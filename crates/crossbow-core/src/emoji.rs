@@ -95,21 +95,24 @@ pub fn enrich_flags(config_yaml: &str) -> Result<String, serde_yaml::Error> {
         return serde_yaml::to_string(&doc);
     }
 
-    // 同步 proxy-groups 的成员引用
+    // 同步 proxy-groups 的成员列表和默认节点引用。
+    let rename_reference = |value: &mut Value| {
+        if let Some(name) = value.as_str() {
+            if let Some((_, new)) = renames.iter().find(|(old, _)| old == name) {
+                *value = Value::from(new.clone());
+            }
+        }
+    };
     if let Some(groups) = doc
         .get_mut("proxy-groups")
         .and_then(|g| g.as_sequence_mut())
     {
         for g in groups.iter_mut() {
-            let Some(members) = g.get_mut("proxies").and_then(|m| m.as_sequence_mut()) else {
-                continue;
-            };
-            for m in members.iter_mut() {
-                if let Some(s) = m.as_str() {
-                    if let Some((_, new)) = renames.iter().find(|(old, _)| old == s) {
-                        *m = Value::from(new.clone());
-                    }
-                }
+            if let Some(members) = g.get_mut("proxies").and_then(Value::as_sequence_mut) {
+                members.iter_mut().for_each(&rename_reference);
+            }
+            if let Some(default) = g.get_mut("default-selected") {
+                rename_reference(default);
             }
         }
     }
