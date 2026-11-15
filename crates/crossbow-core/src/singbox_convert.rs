@@ -3,7 +3,7 @@
 //! 覆盖日常订阅的核心子集：
 //! - inbound：mixed 监听（127.0.0.1:port / 0.0.0.0:port）
 //! - outbound：ss / vmess / trojan / vless / hysteria2 / http / socks
-//! - outbound group：selector / urltest（urltest 的 interval 统一 300s）
+//! - outbound group：selector / urltest，保留成员、默认选择和测速间隔
 //! - route rules：DOMAIN/SUFFIX/KEYWORD、IP-CIDR(-6)、GEOIP、GEOSITE、
 //!   DST-PORT、PROCESS-NAME + MATCH → final
 //! - dns：国内域名走本地解析，其余经代理解析（防泄漏）
@@ -13,6 +13,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConvertError {
@@ -44,6 +45,7 @@ impl From<serde_json::Error> for ConvertError {
 
 /// sing-box 版本锁定（升级走 PR 审查）。
 pub const SINGBOX_VERSION: &str = "1.14.2";
+const MIHOMO_DEFAULT_TEST_URL: &str = "https://www.gstatic.com/generate_204";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ClashProxy {
@@ -84,10 +86,30 @@ struct ClashGroup {
     #[serde(default)]
     url: Option<String>,
     #[serde(default)]
-    interval: Option<u64>,
+    interval: Option<Value>,
     /// 保留原值，在 url-test 转换时连同组名校验类型、范围和零值语义（#489）。
     #[serde(default)]
     tolerance: Option<Value>,
+    /// #500：以下行为字段必须等价映射或显式拒绝，禁止静默丢弃。
+    #[serde(default, rename = "include-all-proxies")]
+    include_all_proxies: bool,
+    /// include-all 含提供者节点，转换器无法等价展开成员集合。
+    #[serde(default, rename = "include-all")]
+    include_all: bool,
+    #[serde(default, rename = "use")]
+    use_providers: Vec<String>,
+    #[serde(default)]
+    filter: Option<String>,
+    #[serde(default, rename = "disable-udp")]
+    disable_udp: Option<bool>,
+    #[serde(default, rename = "expected-status")]
+    expected_status: Option<Value>,
+    #[serde(default)]
+    lazy: Option<bool>,
+    #[serde(default, rename = "default-selected")]
+    default_selected: Option<Value>,
+    #[serde(flatten)]
+    other_fields: BTreeMap<String, Value>,
 }
 
 /// Clash YAML → sing-box JSON（pretty）。
@@ -136,8 +158,11 @@ pub fn convert_to_singbox(
     for p in &proxies {
         outbounds.push(convert_proxy(p)?);
     }
+    // mihomo v1.19.32 sorts the declared proxy names before expanding group members.
+    let mut all_proxy_names: Vec<_> = proxies.iter().map(|p| p.name.clone()).collect();
+    all_proxy_names.sort_unstable();
     for g in &groups {
-        outbounds.push(convert_group(g, &declared)?);
+        outbounds.push(convert_group(g, &declared, &all_proxy_names)?);
     }
     outbounds.push(json!({
         "type": "direct", "tag": "DIRECT"
@@ -358,20 +383,126 @@ fn convert_proxy(p: &ClashProxy) -> Result<Value, ConvertError> {
     Ok(out)
 }
 
+/// #500：行为字段无法等价表达时的可定位拒绝（组名 + 字段 + 值 + 原因）。
+fn unsupported_field(g: &ClashGroup, field: &str, value: &str, why: &str) -> ConvertError {
+    ConvertError::UnsupportedGroup(format!(
+        "策略组「{}」字段 {field} = {value}：sing-box 无等价表达（{why}）；请继续使用 mihomo 或修改源配置",
+        g.name
+    ))
+}
+
 fn convert_group(
     g: &ClashGroup,
     declared: &std::collections::BTreeSet<String>,
+    all_proxy_names: &[String],
 ) -> Result<Value, ConvertError> {
+    // #500：成员来源与行为字段先行审计——无法等价表达即拒绝，禁止
+    // 静默丢弃后改变可选节点、UDP 策略或健康判定。
+    if !g.use_providers.is_empty() {
+        return Err(unsupported_field(
+            g,
+            "use",
+            &g.use_providers.join(","),
+            "节点提供者不在转换模型内，成员集合无法等价展开",
+        ));
+    }
+    if g.include_all {
+        return Err(unsupported_field(
+            g,
+            "include-all",
+            "true",
+            "成员来源含提供者节点，转换器无法等价展开",
+        ));
+    }
+    if let Some(filter) = g
+        .filter
+        .as_deref()
+        .filter(|filter| g.include_all_proxies && !filter.is_empty())
+    {
+        return Err(unsupported_field(
+            g,
+            "filter",
+            filter,
+            "成员过滤规则不在转换模型内",
+        ));
+    }
+    if g.disable_udp == Some(true) {
+        return Err(unsupported_field(
+            g,
+            "disable-udp",
+            "true",
+            "sing-box 策略组无逐组 UDP 开关",
+        ));
+    }
+    if let Some(expected) = g
+        .expected_status
+        .as_ref()
+        .filter(|value| !matches!(value.as_str().map(str::trim), Some("" | "*")))
+    {
+        return Err(unsupported_field(
+            g,
+            "expected-status",
+            &expected.to_string(),
+            "sing-box urltest 无健康状态码判定字段",
+        ));
+    }
+    if g.lazy == Some(false) {
+        return Err(unsupported_field(
+            g,
+            "lazy",
+            "false",
+            "sing-box urltest 无按需测速开关",
+        ));
+    }
+    // These fields affect provider membership, fallback or health checks in mihomo.
+    // Keep the original value for diagnostics and accept explicit no-op defaults.
+    for (field, value) in &g.other_fields {
+        if value.is_null() {
+            continue;
+        }
+        let reason = match field.as_str() {
+            "include-all-providers"
+                if value.as_bool() != Some(false) && value.as_u64() != Some(0) =>
+            {
+                "转换器无法展开节点提供者"
+            }
+            "exclude-filter" | "exclude-type" if value.as_str() != Some("") => {
+                "转换器无法保留成员排除规则"
+            }
+            "empty-fallback" if !matches!(value.as_str(), Some("" | "COMPATIBLE")) => {
+                "sing-box 策略组无空组回退字段"
+            }
+            "timeout" if value.as_u64() != Some(0) => "sing-box 策略组无逐组测速超时字段",
+            "max-failed-times" if value.as_u64() != Some(0) => {
+                "sing-box 策略组无失败次数触发重测字段"
+            }
+            _ => continue,
+        };
+        return Err(unsupported_field(g, field, &value.to_string(), reason));
+    }
     // #489：保留原组成员与顺序。DIRECT 仅在原组显式引用时保留——
     // 自动选路组（url-test）被并入直连候选后，测速合适时实际流量会
     // 从直连出站，属于未经用户同意的出口变更。
-    if g.proxies.is_empty() {
+    let mut members = g.proxies.clone();
+    if g.include_all_proxies {
+        // The mihomo parser appends the sorted list after explicit members, including repeats.
+        members.extend_from_slice(all_proxy_names);
+        if members.is_empty() {
+            return Err(unsupported_field(
+                g,
+                "include-all-proxies",
+                "true",
+                "没有已声明节点时 mihomo 使用空组回退",
+            ));
+        }
+    }
+    if members.is_empty() {
         return Err(ConvertError::InvalidGroup(format!(
             "策略组「{}」没有成员",
             g.name
         )));
     }
-    for member in &g.proxies {
+    for member in &members {
         if !declared.contains(member) {
             return Err(ConvertError::InvalidGroup(format!(
                 "策略组「{}」引用了不存在的成员「{}」",
@@ -379,22 +510,75 @@ fn convert_group(
             )));
         }
     }
-    let members = g.proxies.clone();
     match g.kind.as_str() {
-        "select" => Ok(json!({
-            "type": "selector", "tag": g.name,
-            "outbounds": members,
-            "default": members[0]
-        })),
+        "select" => {
+            // selector 无健康检查字段：显式 url/interval 会静默丢失。
+            if let Some(url) = g
+                .url
+                .as_deref()
+                .filter(|url| !url.is_empty() && *url != MIHOMO_DEFAULT_TEST_URL)
+            {
+                return Err(unsupported_field(
+                    g,
+                    "url",
+                    url,
+                    "sing-box selector 无健康检查字段",
+                ));
+            }
+            if let Some(interval) = g.interval.as_ref().filter(|interval| interval.as_u64() != Some(0)) {
+                return Err(unsupported_field(
+                    g,
+                    "interval",
+                    &interval.to_string(),
+                    "sing-box selector 无健康检查字段",
+                ));
+            }
+            let default = match &g.default_selected {
+                Some(raw) => raw.as_str().ok_or_else(|| {
+                    ConvertError::InvalidGroup(format!(
+                        "策略组「{}」的 default-selected={raw} 非法：必须是成员名称",
+                        g.name
+                    ))
+                })?,
+                None => "",
+            };
+            // Resolve stale defaults before handing the selector to sing-box.
+            let default = members.iter().find(|member| member.as_str() == default).unwrap_or(&members[0]);
+            Ok(json!({
+                "type": "selector", "tag": g.name,
+                "outbounds": members,
+                "default": default
+            }))
+        }
         "url-test" => {
             let tolerance = convert_urltest_tolerance(g)?;
-            Ok(json!({
+            const MAX_INTERVAL_SECONDS: u64 = i64::MAX as u64 / 1_000_000_000;
+            let seconds = match &g.interval {
+                None => 0,
+                Some(raw) => raw
+                    .as_u64()
+                    .filter(|seconds| *seconds <= MAX_INTERVAL_SECONDS)
+                    .ok_or_else(|| {
+                        ConvertError::InvalidGroup(format!(
+                            "策略组「{}」的 interval={raw} 非法：必须是 0..{MAX_INTERVAL_SECONDS} 的整数（秒）",
+                            g.name
+                        ))
+                    })?,
+            };
+            // mihomo uses 300s for a missing or zero interval on static URLTest groups.
+            let seconds = if seconds == 0 { 300 } else { seconds };
+            let mut outbound = json!({
                 "type": "urltest", "tag": g.name,
                 "outbounds": members,
-                "url": g.url.clone().unwrap_or_else(|| "http://www.gstatic.com/generate_204".into()),
-                "interval": format!("{}s", g.interval.unwrap_or(300).max(60)),
+                "url": g.url.as_deref().filter(|url| !url.is_empty()).unwrap_or(MIHOMO_DEFAULT_TEST_URL),
+                "interval": format!("{seconds}s"),
                 "tolerance": tolerance
-            }))
+            });
+            // sing-box requires idle_timeout >= interval and defaults it to 30 minutes.
+            if seconds > 30 * 60 {
+                outbound["idle_timeout"] = json!(format!("{seconds}s"));
+            }
+            Ok(outbound)
         }
         // fallback / load-balance 在 sing-box 无等价类型：降级 selector 会
         // 静默失去故障转移/负载分配语义（#489）。宁可拒绝转换——用户可以
@@ -746,5 +930,160 @@ rules:
             matches!(err, ConvertError::Parse(ref m) if m.contains("proxy-groups")),
             "unexpected: {err}"
         );
+    }
+
+    // ===== #500：策略组行为字段等价映射或可定位拒绝 =====
+
+    /// issue 夹具：include-all-proxies 可展开，disable-udp 必须拒绝。
+    #[test]
+    fn issue_fixture_disable_udp_fails_locatably() {
+        let yaml = "proxies:\n  - name: node-a\n    type: ss\n    server: s\n    port: 1\n    cipher: aes-128-gcm\n    password: p\n  - name: node-b\n    type: ss\n    server: s\n    port: 2\n    cipher: aes-128-gcm\n    password: p\nproxy-groups:\n  - {name: selected, type: select, proxies: [node-a], include-all-proxies: true, disable-udp: true}\n  - {name: auto, type: url-test, proxies: [node-a, node-b], tolerance: 120, interval: 10, expected-status: 204}\nrules:\n  - MATCH,selected\n";
+        let err = convert_to_singbox(yaml, 7897, false).unwrap_err();
+        assert!(
+            matches!(err, ConvertError::UnsupportedGroup(ref m)
+                if m.contains("selected") && m.contains("disable-udp")
+                    && m.contains("true") && m.contains("UDP")),
+            "unexpected: {err}"
+        );
+    }
+
+    #[test]
+    fn selectors_keep_mihomo_membership_order_and_default() {
+        let yaml = r#"
+proxies:
+  - {name: z, type: http, server: 127.0.0.1, port: 8001}
+  - {name: a, type: http, server: 127.0.0.1, port: 8002}
+proxy-groups:
+  - {name: all, type: select, include-all-proxies: true}
+  - {name: explicit, type: select, proxies: [z, DIRECT], include-all-proxies: true, default-selected: a}
+  - {name: stale, type: select, proxies: [z, a], default-selected: missing}
+rules: ['MATCH,all']
+"#;
+        let out = convert_to_singbox(yaml, 7897, false).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        for (tag, members, default) in [
+            ("all", json!(["a", "z"]), "a"),
+            ("explicit", json!(["z", "DIRECT", "a", "z"]), "a"),
+            ("stale", json!(["z", "a"]), "z"),
+        ] {
+            let group = v["outbounds"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|o| o["tag"] == tag)
+                .unwrap();
+            assert_eq!(group["outbounds"], members, "{tag}");
+            assert_eq!(group["default"], default, "{tag}");
+        }
+    }
+
+    #[test]
+    fn include_all_without_nodes_rejects_implicit_fallback() {
+        let yaml = "proxies: []\nproxy-groups:\n  - {name: all, type: select, include-all-proxies: true}\nrules: ['MATCH,all']\n";
+        let err = convert_to_singbox(yaml, 7897, false).unwrap_err();
+        assert!(
+            matches!(err, ConvertError::UnsupportedGroup(ref m)
+            if m.contains("all」") && m.contains("include-all-proxies = true")),
+            "{err}"
+        );
+    }
+
+    /// 成员来源与过滤字段：提供者不在转换模型内，一律可定位拒绝。
+    #[test]
+    fn membership_source_fields_fail_locatably() {
+        let base = "proxies:\n  - name: a\n    type: ss\n    server: s\n    port: 1\n    cipher: aes-128-gcm\n    password: p\nproxy-groups:\n  - name: 组\n    type: select\n    proxies: [a]\n{extra}rules:\n  - MATCH,组\n";
+        for (extra, field, value) in [
+            ("    include-all: true\n", "include-all", "true"),
+            (
+                "    include-all-providers: true\n",
+                "include-all-providers",
+                "true",
+            ),
+            ("    use: [provider-a]\n", "use", "provider-a"),
+            (
+                "    include-all-proxies: true\n    filter: \".*HK\"\n",
+                "filter",
+                ".*HK",
+            ),
+            ("    exclude-filter: HK\n", "exclude-filter", "HK"),
+            ("    exclude-type: ss\n", "exclude-type", "ss"),
+            ("    empty-fallback: DIRECT\n", "empty-fallback", "DIRECT"),
+        ] {
+            let yaml = base.replace("{extra}", extra);
+            let err = convert_to_singbox(&yaml, 7897, false).unwrap_err();
+            assert!(
+                matches!(err, ConvertError::UnsupportedGroup(ref m)
+                    if m.contains("组」") && m.contains(field) && m.contains(value)),
+                "{field}: unexpected: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn health_and_udp_fields_fail_with_value() {
+        let base = "proxies:\n  - name: a\n    type: ss\n    server: s\n    port: 1\n    cipher: aes-128-gcm\n    password: p\nproxy-groups:\n  - name: auto\n    type: url-test\n    proxies: [a]\n{extra}rules:\n  - MATCH,auto\n";
+        for (extra, field, value) in [
+            ("    expected-status: 204\n", "expected-status", "204"),
+            ("    disable-udp: true\n", "disable-udp", "true"),
+            ("    lazy: false\n", "lazy", "false"),
+            ("    timeout: 6000\n", "timeout", "6000"),
+            ("    max-failed-times: 1\n", "max-failed-times", "1"),
+        ] {
+            let yaml = base.replace("{extra}", extra);
+            let err = convert_to_singbox(&yaml, 7897, false).unwrap_err();
+            assert!(
+                matches!(err, ConvertError::UnsupportedGroup(ref m)
+                    if m.contains("auto」") && m.contains(field) && m.contains(value)),
+                "{field}: unexpected: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn urltest_interval_passthrough_and_mihomo_defaults() {
+        let base = "proxies:\n  - name: a\n    type: ss\n    server: s\n    port: 1\n    cipher: aes-128-gcm\n    password: p\nproxy-groups:\n  - name: auto\n    type: url-test\n    proxies: [a]\n    tolerance: 120\n{extra}rules:\n  - MATCH,auto\n";
+
+        for (extra, interval, idle_timeout) in [
+            ("    interval: 10\n", "10s", Value::Null),
+            ("", "300s", Value::Null),
+            ("    interval: 0\n    url: ''\n    expected-status: '*'\n    disable-udp: false\n    lazy: true\n    filter: ''\n    include-all-providers: false\n    exclude-type: ''\n    timeout: 0\n", "300s", Value::Null),
+            ("    interval: 3600\n", "3600s", json!("3600s")),
+        ] {
+            let yaml = base.replace("{extra}", extra);
+            let out = convert_to_singbox(&yaml, 7897, false).unwrap();
+            let v: Value = serde_json::from_str(&out).unwrap();
+            let auto = v["outbounds"].as_array().unwrap().iter().find(|o| o["tag"] == "auto").unwrap();
+            assert_eq!(auto["interval"], interval);
+            assert_eq!(auto["idle_timeout"], idle_timeout);
+            assert_eq!(auto["url"], "https://www.gstatic.com/generate_204");
+        }
+
+        for bad_interval in ["-1", "1.5", "9223372037"] {
+            let yaml = base.replace("{extra}", &format!("    interval: {bad_interval}\n"));
+            let err = convert_to_singbox(&yaml, 7897, false).unwrap_err();
+            assert!(
+                matches!(err, ConvertError::InvalidGroup(ref m)
+                if m.contains("auto」") && m.contains(&format!("interval={bad_interval}"))),
+                "{err}"
+            );
+        }
+    }
+
+    /// select 上的 url/interval（健康检查配置）：selector 无对应字段，拒绝。
+    #[test]
+    fn select_health_fields_fail_locatably() {
+        let base = "proxies:\n  - name: a\n    type: ss\n    server: s\n    port: 1\n    cipher: aes-128-gcm\n    password: p\nproxy-groups:\n  - name: manual\n    type: select\n    proxies: [a]\n{extra}rules:\n  - MATCH,manual\n";
+        for (extra, field) in [
+            ("    url: http://www.gstatic.com/generate_204\n", "url"),
+            ("    interval: 300\n", "interval"),
+        ] {
+            let yaml = base.replace("{extra}", extra);
+            let err = convert_to_singbox(&yaml, 7897, false).unwrap_err();
+            assert!(
+                matches!(err, ConvertError::UnsupportedGroup(ref m)
+                    if m.contains("manual」") && m.contains(field)),
+                "{field}: unexpected: {err}"
+            );
+        }
     }
 }

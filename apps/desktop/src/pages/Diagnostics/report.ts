@@ -3,8 +3,26 @@ import type { CheckResult, DiagnosticReport, FaultEvidence, FaultEvidenceProbe }
 export function faultProbeText(probe: FaultEvidenceProbe, text: (key: string) => string) {
   const known = ["ok", "timeout", "connect", "tls", "dns", "http_status", "unknown"];
   const kind = known.includes(probe.class) ? probe.class : "unknown";
-  return text(`fault.class.${kind}`) + (kind === "http_status" && probe.httpStatus != null ? ` ${probe.httpStatus}` : "");
+  const status = probe.httpStatus;
+  const showStatus = (kind === "ok" || kind === "http_status") && status != null
+    && Number.isInteger(status) && status >= 100 && status <= 599;
+  return text(`fault.class.${kind}`) + (showStatus ? ` ${status}` : "");
 }
+
+export function faultEvidenceState(fault: FaultEvidence) {
+  if (fault.recovery) return "resolved";
+  if (fault.superseded) return "superseded";
+  if (fault.resolvedAtMs != null) return fault.legacy ? "legacyResolved" : "reachable";
+  return "ongoing";
+}
+
+const faultStateText: Record<ReturnType<typeof faultEvidenceState>, string> = {
+  resolved: "recovered (verified)",
+  superseded: "context changed; recovery unconfirmed",
+  legacyResolved: "recovery recorded in legacy format",
+  reachable: "reachable during initial observation",
+  ongoing: "ongoing",
+};
 
 /** 白名单摘要：不导出 profile、网络指纹、服务名称、代理地址或任意原始错误。 */
 export function faultEvidenceText(fault: FaultEvidence) {
@@ -15,13 +33,21 @@ export function faultEvidenceText(fault: FaultEvidence) {
   return [
     "System proxy fault evidence (explicit mixed-port HTTPS; node unknown)",
     `Started: ${new Date(fault.startedAtMs).toISOString()}`,
-    `Recovery: ${fault.resolvedAtMs == null ? "unconfirmed" : new Date(fault.resolvedAtMs).toISOString()}`,
+    `State: ${faultStateText[faultEvidenceState(fault)]}`,
     `Mixed port: ${fault.mixedPort}; TCP=${fault.mixedPortOk ? "ok" : "connect"}`,
     `Controller: ${faultProbeText(fault.controller, text)}`,
     "Direct baseline: bypassed explicit proxy; physical path unverified",
     `Direct CN: ${layer(fault.directCn)}`,
     `Direct global: ${layer(fault.directGlobal)}`,
     `Proxy HTTPS: ${layer(fault.proxyHttps)}`,
+    ...(fault.recovery ? [
+      `Recovery: ${new Date(fault.recovery.atMs).toISOString()}`,
+      `Recovery probe: ${layer(fault.recovery.proxyHttps)}`,
+    ] : []),
+    ...(fault.legacy && fault.resolvedAtMs != null && !fault.recovery ? [
+      `Legacy recovery timestamp: ${new Date(fault.resolvedAtMs).toISOString()}`,
+    ] : []),
+    ...(fault.legacy ? ["Note: legacy fault-time proxy samples may have been overwritten"] : []),
   ].join("\n");
 }
 

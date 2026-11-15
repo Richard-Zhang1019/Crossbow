@@ -65,10 +65,18 @@ export interface FaultEvidenceLayer {
   review: FaultEvidenceProbe | null;
 }
 
+export interface FaultEvidenceRecovery {
+  atMs: number;
+  proxyHttps: FaultEvidenceLayer;
+}
+
 export interface FaultEvidence {
   mode: string;
   startedAtMs: number;
   resolvedAtMs: number | null;
+  recovery: FaultEvidenceRecovery | null;
+  superseded: boolean;
+  legacy: boolean;
   profileId: string | null;
   mixedPort: number;
   sysproxyObserved: string[];
@@ -78,6 +86,11 @@ export interface FaultEvidence {
   directCn: FaultEvidenceLayer;
   directGlobal: FaultEvidenceLayer;
   proxyHttps: FaultEvidenceLayer;
+}
+
+export interface FaultEvidenceHistory {
+  latest: FaultEvidence;
+  previous: FaultEvidence | null;
 }
 
 export interface SysProxyStatus {
@@ -351,7 +364,7 @@ export const ipc = {
   testSite: (id: string) => invoke<SiteResult>("test_site", { id }),
   coreStatus: () => invoke<CoreStatus>("core_status"),
   sysproxyStatus: () => invoke<SysProxyStatus>("sysproxy_status"),
-  sysproxyFaultEvidence: () => invoke<FaultEvidence | null>("sysproxy_fault_evidence"),
+  sysproxyFaultEvidence: () => invoke<FaultEvidenceHistory | null>("sysproxy_fault_evidence"),
   onFaultEvidenceUpdated: (cb: () => void) => listen("sysproxy://fault-updated", cb),
   sysproxyToggle: () => invoke<void>("sysproxy_toggle"),
   coreMode: () => invoke<CoreMode>("core_mode"),

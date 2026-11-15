@@ -239,4 +239,44 @@ mod tests {
             Err(RenderError::InvalidYaml(m)) if m.contains("50ms")
         ));
     }
+
+    #[test]
+    fn singbox_group_fields_follow_overrides_and_node_renames() {
+        let mut s = fixture();
+        s.engine.engine = crate::model::Engine::SingBox;
+        s.engine.flag_emoji = true;
+        s.profiles[0].content = r#"
+proxies:
+  - {name: '🇨🇦|local', type: http, server: 127.0.0.1, port: 8080}
+  - {name: 香港, type: http, server: 127.0.0.1, port: 8081}
+proxy-groups:
+  - {name: manual, type: select, include-all-proxies: true, exclude-filter: 香港}
+rules: ['MATCH,manual']
+"#
+        .into();
+        s.overrides[0].content = r#"
+proxy-groups:
+  - {name: manual, type: select, include-all-proxies: true, default-selected: 香港}
+"#
+        .into();
+
+        let rendered = render_config(&s).unwrap();
+        let config: serde_json::Value = serde_json::from_str(&rendered.config).unwrap();
+        let group = config["outbounds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|outbound| outbound["tag"] == "manual")
+            .unwrap();
+        assert_eq!(
+            group["outbounds"],
+            serde_json::json!(["🇨🇦|local", "🇭🇰|香港"])
+        );
+        assert_eq!(group["default"], "🇭🇰|香港");
+        assert!(matches!(
+            render_config_with(&s, false),
+            Err(RenderError::InvalidYaml(m))
+                if m.contains("manual") && m.contains("exclude-filter") && m.contains("香港")
+        ));
+    }
 }

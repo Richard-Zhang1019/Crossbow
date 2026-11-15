@@ -281,7 +281,7 @@ pub(crate) async fn set_tun(
     }
 }
 
-/// #488：最近一次系统代理模式故障的分层取证（观察模式，可能为空）。
+/// #488 / #499：最近两次系统代理模式故障的分层取证（观察模式，可能为空）。
 #[tauri::command]
 pub(crate) async fn sysproxy_fault_evidence(
     app: AppHandle,
