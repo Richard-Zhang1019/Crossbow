@@ -62,6 +62,18 @@ impl AppState {
             .clone()
     }
 
+    /// Shared by the desktop node page and the tray before and after a delay request.
+    pub(crate) fn node_delay_session_current(&self, pid: Option<u32>) -> bool {
+        let core = self.core();
+        self.exit.ensure_open().is_ok()
+            && !self
+                .config_transition
+                .load(std::sync::atomic::Ordering::SeqCst)
+            && pid.is_some()
+            && core.pid() == pid
+            && core.status() == CoreStatus::Running
+    }
+
     /// 追加一秒采样，超出窗口即淘汰最旧（#181）
     pub fn traffic_history_push(&self, up: u64, down: u64) {
         let mut ring = self

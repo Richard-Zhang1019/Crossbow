@@ -29,19 +29,8 @@ fn speed_test_timeout(total: usize) -> Duration {
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) fn delay_test_current_without_tray(state: &AppState, pid: Option<u32>) -> bool {
-    state.exit.ensure_open().is_ok()
-        && !state
-            .config_transition
-            .load(std::sync::atomic::Ordering::SeqCst)
-        && pid.is_some()
-        && state.core().pid() == pid
-        && state.core().status() == CoreStatus::Running
-}
-
-#[cfg(target_os = "macos")]
 fn delay_test_current(state: &AppState, generation: u64, pid: Option<u32>) -> bool {
-    delay_test_current_without_tray(state, pid)
+    state.node_delay_session_current(pid)
         && state
             .node_menu
             .lock()
@@ -1243,7 +1232,7 @@ pub(crate) fn run_tray_delay_test(handle: &AppHandle) {
         if tray.generation() != generation {
             return;
         }
-        tray.skip_pending(if delay_test_current_without_tray(&state, core_pid) {
+        tray.skip_pending(if state.node_delay_session_current(core_pid) {
             "skipped"
         } else {
             "cancelled"

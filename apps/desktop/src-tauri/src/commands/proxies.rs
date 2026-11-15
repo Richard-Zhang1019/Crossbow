@@ -30,17 +30,19 @@ pub(crate) async fn test_node_delay_structured(
     app: AppHandle,
     node: String,
 ) -> Result<NodeDelayOutcome, String> {
-    let controller = controller_client(&app.state::<AppState>())?;
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         // 复用托盘同款的会话/配置守卫与引擎感知目标策略（mihomo 复核，
         // sing-box 固定 HTTPS 主目标）。
-        let pid = state.core().pid();
+        let core = state.core();
+        let pid = core.pid();
+        let (port, secret) = core.controller().ok_or_else(|| "内核未运行".to_string())?;
+        let controller = crate::engine::api::Controller { port, secret };
         let url_scoped_history = {
             let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
             store.data().engine.engine == crossbow_core::Engine::Mihomo
         };
-        let current = || crate::tray::wiring::delay_test_current_without_tray(&state, pid);
+        let current = || state.node_delay_session_current(pid);
         // 主目标 5s + 复核 5s + 余量。
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(12);
         match controller.measure_node_delay_with_review(
