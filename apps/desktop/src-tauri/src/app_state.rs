@@ -17,6 +17,7 @@ pub struct AppState {
     pub(crate) node_delay_task: Mutex<Option<NodeDelayTask>>,
     pub(crate) node_delay_slots: tokio::sync::Semaphore,
     pub store: Mutex<Store>,
+    pub(crate) package_session: Mutex<crate::workflow::PackageSession>,
     /// 当前内核管理器；内核安装后整体替换（core_slot）。
     pub(crate) core_slot: Mutex<CoreManager>,
     /// 启动链操作锁：引擎换核(ensure)+渲染+启动必须整体串行，否则两个并发

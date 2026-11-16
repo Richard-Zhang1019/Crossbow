@@ -132,6 +132,7 @@ fn tick(app: &AppHandle) {
                 clear_retry(&id);
                 crate::notifications::resolve(app, &format!("profile-auto-update-{id}"));
             }
+            Err(e) if e == crate::commands::helpers::PROFILE_REFRESH_SUPERSEDED => continue,
             Err(e) => {
                 let mut retries = shared_retry().lock().unwrap_or_else(|e| e.into_inner());
                 let entry = retries.fails.entry(id.clone()).or_insert((0, 0));
