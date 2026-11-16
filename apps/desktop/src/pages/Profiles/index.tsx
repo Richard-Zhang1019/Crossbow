@@ -5,7 +5,7 @@ import { Button, ButtonBase } from "@/components/Button";
 import { notify, notificationText } from "@/notifications/service";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { ipc, type Profile, type ProfileStatus } from "@/services/ipc";
+import { ipc, type PackagePreview, type Profile, type ProfileStatus } from "@/services/ipc";
 import Select from "@/components/Select";
 import OverridePanel from "@/pages/OverridePanel";
 import { useT } from "@/i18n/i18n";
@@ -61,6 +61,19 @@ export default function ProfilesPage({
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [pkgBusy, setPkgBusy] = useState<"export" | "preview" | "import" | null>(null);
+  const [exportingPackage, setExportingPackage] = useState(false);
+  const [pkgPreview, setPkgPreview] = useState<PackagePreview | null>(null);
+  const packageOperation = useRef(false);
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const previewId = pkgPreview?.id;
+  useEffect(() => {
+    if (previewId) return () => { void ipc.cancelConfigPackage(previewId).catch(() => {}); };
+  }, [previewId]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importingFiles = useRef(false);
   useEffect(() => {
@@ -161,6 +174,55 @@ export default function ProfilesPage({
       setBusy(null);
     }
   };
+
+  const runPackageOperation = async (
+    operation: "export" | "preview" | "import",
+    run: () => Promise<void>,
+  ) => {
+    if (packageOperation.current) return;
+    packageOperation.current = true;
+    setPkgBusy(operation);
+    try {
+      await run();
+    } catch (error) {
+      const code = String(error);
+      notify.error(code.startsWith("pkg.error") ? t(code) : t("pkg.errorCommit"), `pkg-${operation}`);
+    } finally {
+      packageOperation.current = false;
+      setPkgBusy(null);
+    }
+  };
+  const exportPackage = () => runPackageOperation("export", async () => {
+    const saved = await ipc.exportConfigPackage();
+    setExportingPackage(false);
+    if (saved) notify.success(t("pkg.exported"), "pkg-export");
+  });
+  const importPackage = () => runPackageOperation("preview", async () => {
+    const preview = await ipc.previewConfigPackage();
+    if (!preview) return;
+    if (!mounted.current) {
+      await ipc.cancelConfigPackage(preview.id);
+      return;
+    }
+    setPkgPreview(preview);
+  });
+  const confirmImport = () => runPackageOperation("import", async () => {
+    if (!pkgPreview) return;
+    try {
+      await ipc.importConfigPackage(pkgPreview.id);
+      notify.success(t("pkg.imported"), "pkg-import");
+    } finally {
+      // The backend consumes the preview even if commit fails. Retry starts
+      // with a fresh preview and current conflict counts.
+      setPkgPreview(null);
+    }
+  });
+  const closeExportPackage = () => {
+    if (!packageOperation.current) setExportingPackage(false);
+  };
+  const closeImportPackage = () => {
+    if (!packageOperation.current) setPkgPreview(null);
+  };
   const chosenFiles = (files: FileList | null) => {
     if (!files?.length) return;
     void importProfiles(Array.from(files, file => async () =>
@@ -187,13 +249,56 @@ export default function ProfilesPage({
         {tab === "overrides" && <Button variant="primary" onClick={()=>setCreatingOverride(true)}>{t("ov.create")}</Button>}
         <Button onClick={()=>setRecovering(true)}>{t("backup.title")}</Button>
         {tab === "sources" && (
-          <Button onClick={() => setImporting(true)}>
-            <Icon name="download" />
-            {t("studio.importSource")}
-          </Button>
+          <>
+            <Button onClick={() => setExportingPackage(true)} disabled={pkgBusy !== null}>
+              <Icon name="download" />
+              {t("pkg.export")}
+            </Button>
+            <Button onClick={() => void importPackage()} loading={pkgBusy === "preview"} disabled={pkgBusy !== null}>
+              <Icon name="upload" />
+              {t("pkg.import")}
+            </Button>
+            <Button onClick={() => setImporting(true)}>
+              <Icon name="download" />
+              {t("studio.importSource")}
+            </Button>
+          </>
         )}
       </PageHead>
       {recovering&&<ConfigRecovery onClose={()=>setRecovering(false)} onRestored={()=>void refresh()}/>}
+      {exportingPackage && (
+        <Dialog title={t("pkg.export")} onClose={closeExportPackage}>
+          <p className="cb-control-note">{t("pkg.exportHint")}</p>
+          <div className="actions">
+            <Button onClick={closeExportPackage} disabled={pkgBusy !== null}>{t("ov.cancel")}</Button>
+            <Button variant="primary" loading={pkgBusy === "export"} onClick={() => void exportPackage()}>
+              {t("pkg.chooseSave")}
+            </Button>
+          </div>
+        </Dialog>
+      )}
+      {pkgPreview && (
+        <Dialog title={t("pkg.import")} onClose={closeImportPackage}>
+          <p className="cb-control-note">
+            {t("pkg.report", {
+              added: pkgPreview.report.added_profiles,
+              replaced: pkgPreview.report.replaced_profiles,
+              addedOv: pkgPreview.report.added_overrides,
+              replacedOv: pkgPreview.report.replaced_overrides,
+            })}
+          </p>
+          <p className="cb-control-note">{t("pkg.importHint")}</p>
+          <p className="cb-control-note">
+            {t(pkgPreview.report.selects_profile ? "pkg.selectsProfile" : "pkg.keepsProfile")}
+          </p>
+          <div className="actions">
+            <Button onClick={closeImportPackage} disabled={pkgBusy !== null}>{t("ov.cancel")}</Button>
+            <Button variant="primary" loading={pkgBusy === "import"} onClick={() => void confirmImport()}>
+              {t("pkg.import")}
+            </Button>
+          </div>
+        </Dialog>
+      )}
       <input
         ref={fileInputRef}
         type="file"

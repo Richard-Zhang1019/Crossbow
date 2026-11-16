@@ -54,6 +54,10 @@ pub(crate) fn import_url_blocking(
     profile.traffic = fetched.traffic;
     profile.last_updated = Some(now_secs());
 
+    let _session = state
+        .package_session
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
     store
         .data_mut()
@@ -83,6 +87,10 @@ pub(crate) fn import_content_blocking(
     profile.content = content;
     profile.last_updated = Some(now_secs());
 
+    let _session = state
+        .package_session
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
     store
         .data_mut()
@@ -92,21 +100,37 @@ pub(crate) fn import_content_blocking(
     Ok(profile)
 }
 
+pub(crate) const PROFILE_REFRESH_SUPERSEDED: &str =
+    "The configuration changed while the subscription was updating";
+
 /// 刷新一次订阅（命令与调度器共用）：拉取 → 校验 → 当前档案走配置切换
 /// （能热重载就热重载，失败退回旧内容）→ 记录结果。网络请求不持有 store 锁。
 pub(crate) fn refresh_profile_blocking(
     state: &State<AppState>,
     id: &str,
 ) -> Result<Profile, String> {
-    let url = {
+    let (generation, url) = {
+        let session = state
+            .package_session
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-        store
+        let url = store
             .data()
             .profile(id)
             .and_then(|p| p.url.clone())
-            .ok_or("profile not found or has no url")?
+            .ok_or("profile not found or has no url")?;
+        (session.generation, url)
     };
-    let fetched = match fetch_subscription(&url, 30) {
+    let fetched = fetch_subscription(&url, 30);
+    let session = state
+        .package_session
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if session.generation != generation {
+        return Err(PROFILE_REFRESH_SUPERSEDED.into());
+    }
+    let fetched = match fetched {
         Ok(f) => f,
         Err(e) => {
             let _ = state

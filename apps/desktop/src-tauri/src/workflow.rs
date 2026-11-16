@@ -1,10 +1,14 @@
 //! User-facing, credential-free maintenance metadata and bounded export commands.
 use crate::AppState;
+use crossbow_core::config_package::{
+    export_package, ConfigImportReport, ConfigPayload, MAX_PACKAGE_BYTES,
+};
 use crossbow_core::NodeChanges;
 #[cfg(test)]
 use crossbow_core::Store;
 use serde::Serialize;
 use std::collections::BTreeMap;
+use std::io::Read;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 pub fn node_changes(before: &str, after: &str) -> Option<NodeChanges> {
@@ -131,6 +135,197 @@ fn recover_configuration(data: &mut crossbow_core::StoreSchema, saved: crossbow_
     data.overrides = saved.overrides;
     data.active_profile = saved.active_profile;
 }
+#[derive(Default)]
+pub(crate) struct PackageSession {
+    pending: Option<PendingPackage>,
+    pub(crate) generation: u64,
+}
+
+struct PendingPackage {
+    id: String,
+    payload: ConfigPayload,
+    target: [u8; 32],
+}
+
+#[derive(Serialize)]
+pub struct PackagePreview {
+    id: String,
+    report: ConfigImportReport,
+}
+
+fn package_target(data: &crossbow_core::StoreSchema) -> Result<[u8; 32], String> {
+    use sha2::{Digest, Sha256};
+    let mut hash = Sha256::new();
+    serde_json::to_writer(
+        &mut hash,
+        &(
+            &data.profiles,
+            &data.overrides,
+            &data.active_profile,
+            &data.engine,
+        ),
+    )
+    .map_err(|_| "pkg.errorCommit".to_owned())?;
+    Ok(hash.finalize().into())
+}
+
+fn read_config_package(path: &std::path::Path) -> Result<Vec<u8>, String> {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NONBLOCK);
+    }
+    let file = options.open(path).map_err(|_| "pkg.errorRead")?;
+    let metadata = file.metadata().map_err(|_| "pkg.errorRead")?;
+    if !metadata.is_file() {
+        return Err("pkg.errorRead".into());
+    }
+    if metadata.len() > MAX_PACKAGE_BYTES as u64 {
+        return Err("pkg.errorSize".into());
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_PACKAGE_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "pkg.errorRead")?;
+    if bytes.len() > MAX_PACKAGE_BYTES {
+        return Err("pkg.errorSize".into());
+    }
+    Ok(bytes)
+}
+
+#[tauri::command]
+pub async fn export_config_package(app: AppHandle) -> Result<bool, String> {
+    let Some(file) = rfd::AsyncFileDialog::new()
+        .set_file_name("crossbow-config-package.json")
+        .add_filter("JSON", &["json"])
+        .save_file()
+        .await
+    else {
+        return Ok(false);
+    };
+    let path = file.path().to_owned();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let session = state
+            .package_session
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let data = state
+            .store
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .data()
+            .clone();
+        drop(session);
+        let text = export_package(&data).map_err(|e| e.to_string())?;
+        crate::platform::fs_perms::write_private(&path, text.as_bytes())
+            .map_err(|_| "pkg.errorWrite")?;
+        Ok(true)
+    })
+    .await
+    .map_err(|_| "pkg.errorWrite")?
+}
+
+#[tauri::command]
+pub async fn preview_config_package(app: AppHandle) -> Result<Option<PackagePreview>, String> {
+    let Some(file) = rfd::AsyncFileDialog::new()
+        .add_filter("JSON", &["json"])
+        .pick_file()
+        .await
+    else {
+        return Ok(None);
+    };
+    let path = file.path().to_owned();
+    tauri::async_runtime::spawn_blocking(move || {
+        let bytes = read_config_package(&path)?;
+        let payload = ConfigPayload::parse(&bytes).map_err(|e| e.to_string())?;
+        let state = app.state::<AppState>();
+        let mut session = state
+            .package_session
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+        let report = payload.preview(store.data()).map_err(|e| e.to_string())?;
+        let target = package_target(store.data())?;
+        let id = uuid::Uuid::new_v4().to_string();
+        session.pending = Some(PendingPackage {
+            id: id.clone(),
+            payload,
+            target,
+        });
+        Ok(Some(PackagePreview { id, report }))
+    })
+    .await
+    .map_err(|_| "pkg.errorRead")?
+}
+
+#[tauri::command]
+pub fn cancel_config_package(state: State<AppState>, id: String) {
+    let mut session = state
+        .package_session
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if session.pending.as_ref().is_some_and(|p| p.id == id) {
+        session.pending = None;
+    }
+}
+
+#[tauri::command]
+pub async fn import_config_package(app: AppHandle, id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let mut session = state
+            .package_session
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let pending = session
+            .pending
+            .take_if(|p| p.id == id)
+            .ok_or("pkg.errorStale")?;
+        let mut validation_error = None;
+        let mut active = None;
+        // This lock also guards subscription refresh writes and their outcome
+        // saves, so an old response cannot write over a just-restored profile.
+        let result = crate::commit_config_change(&state, |data| {
+            let changed = (|| -> Result<(), String> {
+                if package_target(data)? != pending.target {
+                    return Err("pkg.errorStale".into());
+                }
+                let changes_active = pending.payload.changes_active_profile(data);
+                pending
+                    .payload
+                    .merge_into(data)
+                    .map_err(|e| e.to_string())?;
+                if changes_active {
+                    // The normal transaction skips engine apply when stopped.
+                    // Validate the chosen profile and its enabled overrides anyway.
+                    let rendered =
+                        crossbow_core::render_config(data).map_err(|_| "pkg.errorActive")?;
+                    crate::platform::validate_config(data.engine.engine, &rendered.config)
+                        .map_err(|_| "pkg.errorActive")?;
+                }
+                active = data.active_profile.clone();
+                Ok(())
+            })();
+            validation_error = changed.as_ref().err().cloned();
+            changed
+        });
+        // Never forward runtime/YAML errors containing package contents to IPC.
+        result.map_err(|_| validation_error.unwrap_or_else(|| "pkg.errorCommit".into()))?;
+        session.generation = session.generation.wrapping_add(1);
+        crate::scheduler::clear_all_retries();
+        drop(session);
+        let _ = app.emit("profile://updated", "");
+        let _ = app.emit("profile://switched", active.as_deref().unwrap_or(""));
+        crate::refresh_tray(&app);
+        Ok(())
+    })
+    .await
+    .map_err(|_| "pkg.errorCommit")?
+}
+
 #[tauri::command]
 pub async fn restore_config_snapshot(app: AppHandle, id: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -307,6 +502,38 @@ mod tests {
         }
         assert!(clean_lines(vec![String::new(); 2001]).is_err());
     }
+    #[test]
+    fn package_preview_detects_changes_to_destination_configuration() {
+        let mut target = crossbow_core::StoreSchema::default();
+        let stamp = package_target(&target).unwrap();
+        target.ui.lang = "en".into();
+        assert_eq!(package_target(&target).unwrap(), stamp);
+        target.active_profile = Some("new-active".into());
+        assert_ne!(package_target(&target).unwrap(), stamp);
+        target.active_profile = None;
+        target.engine.mixed_port += 1;
+        assert_ne!(package_target(&target).unwrap(), stamp);
+    }
+
+    #[test]
+    fn package_reader_rejects_oversized_and_non_regular_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        std::fs::write(&path, b"{}").unwrap();
+        assert_eq!(read_config_package(&path).unwrap(), b"{}");
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(MAX_PACKAGE_BYTES as u64 + 1)
+            .unwrap();
+        assert_eq!(read_config_package(&path).unwrap_err(), "pkg.errorSize");
+        assert_eq!(
+            read_config_package(dir.path()).unwrap_err(),
+            "pkg.errorRead"
+        );
+    }
+
     #[test]
     fn snapshot_ids_cannot_escape_the_known_snapshot_list() {
         let dir = std::env::temp_dir().join(format!("crossbow-snapshot-{}", uuid::Uuid::new_v4()));
