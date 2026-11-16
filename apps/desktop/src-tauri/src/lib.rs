@@ -477,11 +477,25 @@ fn restart_adopted_core_death(handle: AppHandle) -> impl Fn() + Send + 'static {
             // 系统代理），再占用 core_op 重建内核。
             std::thread::sleep(std::time::Duration::from_millis(300));
             let state = handle.state::<AppState>();
-            let Ok(_core) = state.core_op.try_lock() else {
-                eprintln!("[518] core_op busy, skip rebuild");
-                return; // 已有内核操作在排队（如用户手动启动），交给它。
+            let _core = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
+            if state.exit.ensure_open().is_err()
+                || state
+                    .store
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .data()
+                    .engine
+                    .tun_enable
+            {
+                return;
+            }
+            let result = match state.core().status() {
+                CoreStatus::Running => Ok(()),
+                CoreStatus::Starting => crate::engine::flow::wait_core_running(&state),
+                _ => crate::engine::flow::start_core_locked(&state)
+                    .and_then(|()| crate::engine::flow::wait_core_running(&state)),
             };
-            match crate::engine::flow::start_core(&state) {
+            match result {
                 Ok(()) => eprintln!("[518] core rebuilt"),
                 Err(error) => eprintln!("[518] core rebuild failed: {error}"),
             }
