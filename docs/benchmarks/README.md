@@ -89,6 +89,30 @@ NO_PROXY='*' no_proxy='*' python3 scripts/benchmark/bench_network.py \
   --output target/network-benchmark
 ```
 
+## schema 2 公网样本记录（2026-11-16，Refs #503）
+
+[`2026-11-16-explicit-proxy-v2-public-https.json`](2026-11-16-explicit-proxy-v2-public-https.json)
+来自干净提交 `2590924`（worktree_dirty=false），macOS 27.2 / Apple M2（8 逻辑
+CPU、16 GiB）/ Python 3.14.7 / mihomo v1.19.32。与 2026-11-14 记录唯一的客户端
+差异：以 `SSL_CERT_FILE=/etc/ssl/cert.pem` 指定 macOS 系统 CA 包（启动加载
+128 个证书，`default_ca_file_available=true`），证书与主机名校验全程开启；
+2026-11-14 的四次错误码 20 样本仍按客户端信任配置缺失口径保留，不与本份数字
+互比线路质量。
+
+| 轮次 | 回环 204 | 回环 P50 / P95（ms） | 回环端到端吞吐（MiB/s） | gstatic 204 | cloudflare 204 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 30/30 | 0.531 / 1.831 | 1843.553 | 2/2，155.4 / 205.1 | 2/2，629.1 / 665.6 |
+| 2 | 30/30 | 0.378 / 0.672 | 1668.076 | 2/2，127.7 / 222.6 | 2/2，700.6 / 708.3 |
+
+- 复跑命令：同上块，改用 `--throughput-mib 8 --public-samples 2` 并前置
+  `SSL_CERT_FILE=/etc/ssl/cert.pem`。脚本哈希 `5a4c5af8…`，内核 SHA-256 记录
+  在 JSON 内；负对照（代理端口关闭访问回环）按预期连接失败。
+- 冷启动 30.5 ms、受控进程重启 33.7 ms（terminate→首个代理 204）；系统解析器
+  3/3 成功（P50 3.3 ms，缓存与物理出口未控制）；子进程全部回收。
+- 公网样本逐条通过内核日志 DIRECT 路径核验；物理出口仍标未验证（宿主 VPN/
+  路由可能影响公网路径）。数字仅代表本次 DIRECT 显式代理负载，不支持 TUN、
+  真实系统代理接管、弱网或默认值调参结论——见「静态审计与待验证边界」。
+
 ## 旧数据
 
 [`2026-11-14-sysproxy-baseline.json`](2026-11-14-sysproxy-baseline.json) 保留原始数值，
