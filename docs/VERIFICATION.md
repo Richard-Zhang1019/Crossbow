@@ -95,6 +95,24 @@ pnpm verify:desktop --headed       # 显示浏览器
   #519 退出恢复系统代理触发管理员授权弹窗并阻塞退出。恢复服务时确认：手动
   spawn 内核 + 写入描述符后应用可正常收养（收养装配路径可用）。
 
+### 2026-11-16 · IPv6-only 宿主实测（#502 主服务识别修复）
+
+- 提交/构建：`b940f17` + 宿主 ignored 测试（accept/502-ipv6-primary）。
+- 平台：macOS 27.2 arm64；网络：Wi-Fi 双栈（IPv4 192.168.2.x + 全局 IPv6
+  2408:8340::/64，两族默认路由均在 en0）→ 临时 `networksetup -setv4off Wi-Fi`
+  进入真 IPv6-only（IPv4 默认路由消失，IPv6 默认路由仍 en0）→ 自包含脚本
+  自动恢复 DHCP（一次授权，窗口约 15 秒）。
+- 操作：宿主 ignored 测试（`cargo test -- --ignored`，直接调用生产
+  `primary_service()`）分别在双栈基线与 IPv6-only 窗口内运行。
+- 预期出口：IPv6-only 下 `primary_service()` 经 IPv6 默认路由解析出主服务，
+  不得返回 None（修复前行为）。
+- 结果：通过。双栈基线 ok；IPv6-only 窗口内 ok（`primary_service_resolves_
+  the_host_default_service ... ok`）；窗口结束后 DHCP 自动恢复（新租约）、
+  代理 204、直连正常。用户侧 IPv4 流量中断约 15 秒（预期内，已事先确认）。
+- 剩余待验：IPv6-only 下**完整恢复链路**（断连事件 → 恢复任务不再退出 →
+  实际 Reapply 成功）需要更长时间窗口的切网场景；本次覆盖的是识别层在真实
+  IPv6-only 路由表下的行为（修复前该层直接返回空）。
+
 ### 原生环境验证（待验）
 
 | 平台 | 待验内容 | 触发条件 |

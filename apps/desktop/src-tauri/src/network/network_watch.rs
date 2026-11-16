@@ -230,6 +230,22 @@ mod runtime {
             .map(|(_, service)| service)
     }
 
+    // #502 宿主验证：依赖真实路由表与 networksetup 输出，CI 用 --ignored 跳过；
+    // IPv6-only 宿主实测时以 `cargo test -- --ignored` 在关 IPv4 窗口内运行。
+    #[cfg(test)]
+    mod host {
+        #[test]
+        #[ignore = "依赖宿主真实路由表（双栈/IPv6-only 均应解析出主服务）"]
+        fn primary_service_resolves_the_host_default_service() {
+            let service = super::primary_service();
+            assert!(
+                service.is_some(),
+                "宿主默认路由应能解析主服务，实际 {service:?}（IPv6-only 下不得为 None）"
+            );
+            println!("primary service: {service:?}");
+        }
+    }
+
     fn current(state: &AppState, gen: &Generation, event: u64, service: &str) -> bool {
         EVENTS.load(Ordering::SeqCst) == event
             && fault_evidence::recovery_current(state, gen)
