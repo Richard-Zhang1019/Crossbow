@@ -68,6 +68,28 @@ fn parse_service_order(text: &str) -> Vec<(String, String)> {
     result
 }
 
+/// #502：两协议族默认路由的主服务识别判定。IPv4-only、IPv6-only 与双栈一致
+/// 都能选出唯一主服务；双栈默认接口不一致属于主服务冲突，恢复按不可识别跳过
+/// （谨慎：冲突时无法确认恢复写入的是用户在用的服务）。
+#[derive(Debug, PartialEq, Eq)]
+enum PrimaryResolution {
+    Single(String),
+    /// 双栈默认接口不一致（如 Wi-Fi 与有线/隧道各持一族默认路由）。
+    Conflict,
+    /// 两族默认路由都不可用（完全离线或路由表异常）。
+    Unavailable,
+}
+
+fn resolve_primary(v4: Option<&str>, v6: Option<&str>) -> PrimaryResolution {
+    match (v4, v6) {
+        (Some(v4), Some(v6)) if v4 == v6 => PrimaryResolution::Single(v4.into()),
+        (Some(_), Some(_)) => PrimaryResolution::Conflict,
+        (Some(v4), None) => PrimaryResolution::Single(v4.into()),
+        (None, Some(v6)) => PrimaryResolution::Single(v6.into()),
+        (None, None) => PrimaryResolution::Unavailable,
+    }
+}
+
 #[cfg(target_os = "macos")]
 mod runtime {
     use super::*;
@@ -166,19 +188,35 @@ mod runtime {
         });
     }
 
-    fn primary_service() -> Option<String> {
-        let output = std::process::Command::new("/sbin/route")
-            .args(["-n", "get", "default"])
-            .output()
-            .ok()?;
+    /// 单协议族默认路由的出口设备；IPv6-only / IPv4-only 各自只判本族。
+    fn default_route_device(family: Option<&str>) -> Option<String> {
+        let mut command = std::process::Command::new("/sbin/route");
+        command.args(["-n", "get"]);
+        match family {
+            Some(family) => command.arg(family),
+            None => &mut command,
+        }
+        .arg("default");
+        let output = command.output().ok()?;
         if !output.status.success() {
             return None;
         }
         let text = String::from_utf8_lossy(&output.stdout);
-        let device = text.lines().find_map(|line| {
+        text.lines().find_map(|line| {
             let (key, value) = line.trim().split_once(':')?;
             (key.trim() == "interface").then(|| value.trim().to_string())
-        })?;
+        })
+    }
+
+    fn primary_service() -> Option<String> {
+        let resolution = resolve_primary(
+            default_route_device(None).as_deref(),
+            default_route_device(Some("-inet6")).as_deref(),
+        );
+        let PrimaryResolution::Single(device) = resolution else {
+            // Conflict/Unavailable：谨慎跳过，不猜测主服务。
+            return None;
+        };
         let order = std::process::Command::new("/usr/sbin/networksetup")
             .arg("-listnetworkserviceorder")
             .output()
@@ -397,5 +435,35 @@ mod tests {
                 ("en5".into(), "USB LAN".into())
             ]
         );
+    }
+    // #502 四夹具：IPv4-only / IPv6-only / 双栈一致 / 双栈冲突。
+    #[test]
+    fn ipv4_only_resolves_the_ipv4_device() {
+        assert_eq!(
+            resolve_primary(Some("en0"), None),
+            PrimaryResolution::Single("en0".into())
+        );
+    }
+    #[test]
+    fn ipv6_only_resolves_the_ipv6_device_without_ipv4_route() {
+        assert_eq!(
+            resolve_primary(None, Some("en0")),
+            PrimaryResolution::Single("en0".into())
+        );
+    }
+    #[test]
+    fn dual_stack_with_same_device_resolves_once() {
+        assert_eq!(
+            resolve_primary(Some("en0"), Some("en0")),
+            PrimaryResolution::Single("en0".into())
+        );
+    }
+    #[test]
+    fn dual_stack_conflict_is_not_guessable() {
+        assert_eq!(
+            resolve_primary(Some("en0"), Some("en5")),
+            PrimaryResolution::Conflict
+        );
+        assert_eq!(resolve_primary(None, None), PrimaryResolution::Unavailable);
     }
 }
