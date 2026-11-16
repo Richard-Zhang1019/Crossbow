@@ -796,7 +796,8 @@ impl CoreManager {
     }
 
     /// 启动时收养上一实例轻量交接的内核：探测通过则标记为运行中的外部实例。
-    pub fn adopt_external(&self) -> bool {
+    /// `on_death` 在被收养内核意外死亡时执行一次（#518 受控重建）。
+    pub fn adopt_external(&self, on_death: impl Fn() + Send + 'static) -> bool {
         let Some(d) = Shared::read_descriptor(&self.shared.work_dir) else {
             return false;
         };
@@ -850,7 +851,7 @@ impl CoreManager {
         // 系统代理守护也不会触发。起 pid 监视线程补上（身份比对防 pid 复用）。
         #[cfg(any(unix, windows))]
         if let Some(path) = d.binary_path.clone() {
-            watch_external(self.shared.clone(), d.pid, path);
+            watch_external(self.shared.clone(), d.pid, path, on_death);
         }
         true
     }
@@ -953,7 +954,9 @@ impl CoreManager {
         }
         self.shared.notify(CoreStatus::Running);
         #[cfg(any(unix, windows))]
-        watch_external(self.shared.clone(), pid, binary);
+        // TUN 提权内核的死亡重建涉及 osascript 授权，不在后台自动执行：
+        // 这里只上报 Crashed 与还原守护，恢复交给用户手动开关（#518）。
+        watch_external(self.shared.clone(), pid, binary, || {});
     }
 
     /// 优雅停止：标记后杀进程，watch 线程随之退出。
@@ -1849,12 +1852,19 @@ impl Shared {
 }
 
 /// 收养内核的 pid 监视：每 3 秒做一次二进制路径身份比对，进程消失且
-/// 收养角色未变时上报 Crashed（联动系统代理还原、托盘退订等守护）。
+/// 收养角色未变时上报 Crashed（联动系统代理还原、托盘退订等守护），
+/// 随后执行 `on_death` 重建内核（#518：收养死亡只报状态不自愈，代理会
+/// 停在死端口上，交接场景的内核意外死亡应按运行态自愈）。
 /// stop()/重新 start() 会先解除收养角色（external_pid 置空/换新），
 /// 监视线程据此静默退场，不会误报。身份查询失败时保留存活状态，
 /// 不把权限不足当作退出；Windows 使用原生进程存活查询。
 #[cfg(any(unix, windows))]
-fn watch_external(shared: Arc<Shared>, pid: u32, binary: PathBuf) {
+fn watch_external(
+    shared: Arc<Shared>,
+    pid: u32,
+    binary: PathBuf,
+    on_death: impl Fn() + Send + 'static,
+) {
     crate::lifecycle::authorization::spawn_background(move || loop {
         std::thread::sleep(Duration::from_secs(3));
         {
@@ -1874,13 +1884,18 @@ fn watch_external(shared: Arc<Shared>, pid: u32, binary: PathBuf) {
         inner.detached = false;
         inner.controller = None;
         drop(inner);
+        // #518：内核已死，描述符随之失效；及时清理避免下次启动按死 pid 收养。
+        let _ = std::fs::remove_file(Shared::descriptor_path(&shared.work_dir));
         append_decision(
             &shared.work_dir,
             &format!("adopted-watch: external pid {pid} gone → Crashed"),
         );
+        // 先通知（触发系统代理还原守护），再执行注入的重建回调（#518）：
+        // 回调内部记录代理原状态并等待守护完成，成功后恢复接管。
         shared.notify(CoreStatus::Crashed(
             "收养的内核进程已退出（可能是被外部终止或异常崩溃）".into(),
         ));
+        on_death();
         return;
     });
 }
@@ -2579,6 +2594,11 @@ pub(crate) mod tests {
     use super::*;
     use std::io::Write;
 
+    /// 收养死亡回调的测试桩：不做任何重建。
+    fn noop_death() -> impl Fn() + Send + 'static {
+        || {}
+    }
+
     #[test]
     fn startup_log_trim_skips_a_possible_writer() {
         let dir = tempfile::tempdir().unwrap();
@@ -2856,7 +2876,7 @@ pub(crate) mod tests {
             )
             .unwrap();
         let started = Instant::now();
-        assert!(!manager.adopt_external());
+        assert!(!manager.adopt_external(noop_death()));
         assert!(started.elapsed() < Duration::from_secs(1));
         assert!(!Shared::descriptor_path(dir.path()).exists());
     }
@@ -3035,7 +3055,7 @@ pub(crate) mod tests {
         let mut child = previous.shared.inner.lock().unwrap().child.take().unwrap();
         let reaper = std::thread::spawn(move || child.wait());
         let replacement = CoreManager::new(bin.into(), dir.path().to_path_buf());
-        assert!(replacement.adopt_external());
+        assert!(replacement.adopt_external(noop_death()));
         assert_eq!(replacement.current_config(), original);
         let config = original.unwrap().replace("mode: rule", "mode: direct");
         replacement.write_config_file(&config).unwrap();
@@ -3756,7 +3776,7 @@ pub(crate) mod tests {
         }
         assert_eq!(previous.prepare_handoff().unwrap(), Some(pid));
         let replacement = CoreManager::new(PathBuf::from("/bin/false"), dir.path().to_path_buf());
-        assert!(replacement.adopt_external());
+        assert!(replacement.adopt_external(noop_death()));
         server.join().unwrap();
         assert_eq!(replacement.current_config(), Some(snapshot));
         let reloaded = "mode: direct\n".to_string();

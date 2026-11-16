@@ -447,6 +447,63 @@ fn tr(lang: &str, zh: &str, en: &str) -> String {
     }
 }
 
+/// #518：被收养的交接内核意外死亡时，后台受控重建内核。收养态只存在于
+/// 「上一实例退出但内核继续服务」的交接场景，死亡意味着服务中断，与用户
+/// 手动停止不同，按运行态自愈。系统代理设置不会被后台守护改写（守护在
+/// 后台线程同样被 require_interactive 拒绝），指向 7898 的配置保持不变，
+/// 新内核监听同一混合端口后代理自动恢复，无需重新写入。注入为回调而非
+/// 走 core_status_callback，绕开其 config-transition 早退（交接场景不受
+/// 配置事务影响），也避免在状态回调栈内重入 core_op。TUN 交接态的死亡
+/// 重建涉及提权（osascript），按授权模型不在后台自动执行，仍走通知与
+/// 用户手动恢复。
+fn restart_adopted_core_death(handle: AppHandle) -> impl Fn() + Send + 'static {
+    move || {
+        eprintln!("[518] adopted core death callback fired");
+        let tun_enabled = handle
+            .state::<AppState>()
+            .store
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .data()
+            .engine
+            .tun_enable;
+        eprintln!("[518] tun_enabled={tun_enabled}");
+        if tun_enabled {
+            return;
+        }
+        let handle = handle.clone();
+        crate::lifecycle::authorization::spawn_background(move || {
+            // 等 Crashed 状态通知与其守护在后台线程走完（守护同样无法改写
+            // 系统代理），再占用 core_op 重建内核。
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            let state = handle.state::<AppState>();
+            let _core = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
+            if state.exit.ensure_open().is_err()
+                || state
+                    .store
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .data()
+                    .engine
+                    .tun_enable
+            {
+                return;
+            }
+            let result = match state.core().status() {
+                CoreStatus::Running => Ok(()),
+                CoreStatus::Starting => crate::engine::flow::wait_core_running(&state),
+                _ => crate::engine::flow::start_core_locked(&state)
+                    .and_then(|()| crate::engine::flow::wait_core_running(&state)),
+            };
+            match result {
+                Ok(()) => eprintln!("[518] core rebuilt"),
+                Err(error) => eprintln!("[518] core rebuild failed: {error}"),
+            }
+            let _ = handle.emit("sysproxy://status", state.sysproxy.status());
+        });
+    }
+}
+
 /// 同步托盘速率显示与内核状态：Running 订阅 /traffic 更新标题；
 /// 其他状态退订并清空标题。收养（adopt）路径在托盘创建后也要调一次。
 /// 内核状态回调：UI 事件、托盘速率联动、崩溃时系统代理一致性守护。
@@ -549,7 +606,7 @@ pub fn run() {
             #[cfg(not(any(target_os = "macos", windows)))]
             let backend = crate::network::sysproxy::UnsupportedBackend;
             let sysproxy = SysProxyManager::new(backend, data_dir.join("sysproxy-journal.json"));
-            let adopted = core.adopt_external();
+            let adopted = core.adopt_external(restart_adopted_core_death(app.handle().clone()));
             if !adopted {
                 core.trim_startup_log();
             }

@@ -13,6 +13,10 @@ use std::sync::{
 
 use serde::{Deserialize, Serialize};
 
+// 退出恢复（#519）校验快照端口存活用；exit_flow 反向依赖 sysproxy，
+// 同 crate 内循环 use 可编译。
+use crate::lifecycle::exit_flow::port_has_listener;
+
 /// 与 TUN 开关共用操作锁，排队后重新读取开关，再执行只读检测。
 #[cfg_attr(target_os = "linux", allow(dead_code))]
 pub(crate) fn check_external_proxy_for_tun(
@@ -78,9 +82,12 @@ pub trait SysProxyBackend: Send + Sync {
     fn enable_service_unattended(&self, _: &str, _: u16) -> Result<(), String> {
         Err("后台系统代理恢复需要手动授权".into())
     }
-    #[cfg(any(target_os = "macos", test))]
     fn restore_service_unattended(&self, _: &str, _: &ServiceSnapshot) -> Result<(), String> {
         Err("后台系统代理恢复需要手动授权".into())
+    }
+    #[cfg(any(target_os = "macos", test))]
+    fn disable_service_unattended(&self, _: &str) -> Result<(), String> {
+        Err("后台系统代理关闭需要手动授权".into())
     }
 
     /// 交互授权后端在后台变更前预检，其他平台无需管理员弹窗。
@@ -387,6 +394,13 @@ impl SysProxyBackend for NetworkSetup {
         }
         Self::run_unattended(&Self::restore_commands(service, snapshot), true)
     }
+    fn disable_service_unattended(&self, service: &str) -> Result<(), String> {
+        let enabled = Self::service_enabled(service)?;
+        if !enabled {
+            return Ok(());
+        }
+        Self::run_unattended(&Self::disable_commands(service), true)
+    }
     fn restoration_requires_authorization(
         &self,
         snapshots: &BTreeMap<String, ServiceSnapshot>,
@@ -682,6 +696,9 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             .operation
             .lock()
             .unwrap_or_else(|error| error.into_inner());
+        #[cfg(target_os = "macos")]
+        let result = self.prepare_exit_unattended_locked(tun_enabled);
+        #[cfg(not(target_os = "macos"))]
         let result = self.disable_locked().and_then(|()| {
             if tun_enabled {
                 self.recover_tun_without_core_locked()
@@ -693,6 +710,141 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             self.cancel_shutdown();
         }
         result
+    }
+
+    #[cfg(any(target_os = "macos", test))]
+    fn prepare_exit_unattended_locked(&self, tun_enabled: bool) -> Result<(), String> {
+        // #519：退出恢复无人值守化——不弹管理员授权窗；失败保留 journal
+        // 由下次启动的启动自愈兜底；恢复失败不能阻塞退出。
+        if let Err(error) = self.exit_restore_locked() {
+            eprintln!("unattended system proxy recovery deferred to next launch: {error}");
+        }
+        if tun_enabled {
+            if let Err(error) = self.recover_tun_without_core_unattended_locked() {
+                eprintln!("unattended TUN proxy recovery deferred to next launch: {error}");
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn prepare_exit_unattended_for_test(&self, tun_enabled: bool) -> Result<(), String> {
+        self.begin_shutdown();
+        let _operation = self
+            .operation
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        self.prepare_exit_unattended_locked(tun_enabled)
+    }
+
+    /// #519：快照写回前的死端口清理——127.0.0.1 目标端口已无监听时不写回
+    /// 死端口（改为清空该槽位）；非本机目标不判死，按原样写回。
+    fn exit_snapshot_target(snapshot: &ServiceSnapshot) -> ServiceSnapshot {
+        let alive = |ep: &Option<ProxyEndpoint>| -> Option<ProxyEndpoint> {
+            ep.as_ref()
+                .filter(|e| e.host != "127.0.0.1" || port_has_listener(e.port))
+                .cloned()
+        };
+        ServiceSnapshot {
+            windows: snapshot.windows.clone(),
+            web: alive(&snapshot.web),
+            secure: alive(&snapshot.secure),
+            socks: alive(&snapshot.socks),
+            bypass: snapshot.bypass.clone(),
+        }
+    }
+
+    /// 退出恢复的无人值守版本：复用后台恢复通道（restore/disable 的
+    /// unattended 变体），不弹授权窗；快照端口已无监听时不写回死端口，
+    /// 改为关闭接管；失败保留 journal，由下次启动的启动自愈兜底。
+    /// 归属核对与 `disable_locked` 同源（#458）：第三方接管的服务跳过。
+    #[cfg(any(target_os = "macos", test))]
+    fn exit_restore_locked(&self) -> Result<(), String> {
+        crate::diagnostics::fault_evidence::invalidate();
+        let journal = self.read_journal();
+        if self.journal_path.exists() && journal.is_none() {
+            // 恢复日志损坏：无人值守不能盲改，保留日志交给启动自愈。
+            eprintln!("system proxy recovery journal is unreadable; retaining it for next launch");
+            return Ok(());
+        }
+        if journal.is_none() && self.state.lock().unwrap().is_none() {
+            // Crossbow 不拥有当前代理（含 TUN 激活期间），退出不动别人的设置。
+            return Ok(());
+        }
+        let result = match journal {
+            Some(journal) if !journal.snapshot.is_empty() => {
+                let owned_port = if journal.port != 0 {
+                    journal.port
+                } else {
+                    self.state.lock().unwrap().unwrap_or(0)
+                };
+                let mut errors = Vec::new();
+                for (service, snapshot_before) in &journal.snapshot {
+                    let current = match self.backend.service_snapshot(service) {
+                        Ok(current) => current,
+                        Err(error) => {
+                            errors.push(format!("{service}: {error}"));
+                            continue;
+                        }
+                    };
+                    if !Self::service_owned_by_crossbow(&current, owned_port) {
+                        continue;
+                    }
+                    let snapshot = Self::exit_snapshot_target(snapshot_before);
+                    if let Err(error) = self.backend.restore_service_unattended(service, &snapshot)
+                    {
+                        errors.push(format!("{service}: {error}"));
+                    }
+                }
+                if errors.is_empty() {
+                    Ok(())
+                } else {
+                    Err(errors.join("；"))
+                }
+            }
+            other => {
+                let owned_port = other
+                    .and_then(|j| (j.port != 0).then_some(j.port))
+                    .or_else(|| *self.state.lock().unwrap());
+                let services = match self.backend.list_services() {
+                    Ok(services) => services,
+                    Err(error) => return Err(format!("列举网络服务失败：{error}")),
+                };
+                let mut errors = Vec::new();
+                for service in &services {
+                    let current = match self.backend.service_snapshot(service) {
+                        Ok(current) => current,
+                        Err(error) => {
+                            errors.push(format!("{service}: {error}"));
+                            continue;
+                        }
+                    };
+                    // 无从判定归属（无快照旧格式）保持 v1 兜底全量关闭；
+                    // 有归属端口时不碰第三方接管的服务（#458）。
+                    if owned_port
+                        .is_some_and(|port| !Self::service_owned_by_crossbow(&current, port))
+                    {
+                        continue;
+                    }
+                    if let Err(error) = self.backend.disable_service_unattended(service) {
+                        errors.push(format!("{service}: {error}"));
+                    }
+                }
+                if errors.is_empty() {
+                    Ok(())
+                } else {
+                    Err(errors.join("; "))
+                }
+            }
+        };
+        result.map_err(|error| format!("还原系统代理失败：{error}"))?;
+        if let Err(error) = std::fs::remove_file(&self.journal_path) {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                return Err(format!("清理系统代理恢复日志失败：{error}"));
+            }
+        }
+        *self.state.lock().unwrap() = None;
+        Ok(())
     }
 
     /// 读取退出状态，不在主事件循环上等待 core_op。
@@ -1290,7 +1442,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             .operation
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        self.restore_suspended_proxy_locked(suspended, false)
+        self.restore_suspended_proxy_locked(suspended, false, false)
     }
 
     /// 已持有代理操作锁的内部实现。
@@ -1298,6 +1450,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         &self,
         mut suspended: SuspendedSysProxy,
         core_down: bool,
+        unattended: bool,
     ) -> Result<(), String> {
         crate::diagnostics::fault_evidence::invalidate();
         // #458：逐服务归属核对——被其他客户端接管的服务跳过还原（其当前
@@ -1343,7 +1496,18 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             {
                 continue;
             }
-            if let Err(error) = self.backend.restore_service(service, snapshot_before) {
+            let restore_snapshot = if unattended {
+                Self::exit_snapshot_target(snapshot_before)
+            } else {
+                snapshot_before.clone()
+            };
+            let restored = if unattended {
+                self.backend
+                    .restore_service_unattended(service, &restore_snapshot)
+            } else {
+                self.backend.restore_service(service, snapshot_before)
+            };
+            if let Err(error) = restored {
                 errors.push(format!("{service}: {error}"));
             }
         }
@@ -1425,7 +1589,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         };
         let suspended = serde_json::from_slice(&saved)
             .map_err(|error| format!("read TUN proxy journal: {error}"))?;
-        self.restore_suspended_proxy_locked(suspended, false)
+        self.restore_suspended_proxy_locked(suspended, false, false)
     }
 
     /// A cold launch has no Crossbow listener yet. If Crossbow owned the
@@ -1449,7 +1613,20 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         };
         let suspended: SuspendedSysProxy = serde_json::from_slice(&saved)
             .map_err(|error| format!("read TUN proxy journal: {error}"))?;
-        self.restore_suspended_proxy_locked(suspended, true)
+        self.restore_suspended_proxy_locked(suspended, true, false)
+    }
+
+    #[cfg(any(target_os = "macos", test))]
+    fn recover_tun_without_core_unattended_locked(&self) -> Result<(), String> {
+        let path = self.tun_journal_path();
+        let saved = match std::fs::read(path) {
+            Ok(saved) => saved,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(format!("读取 TUN 代理恢复日志失败：{error}")),
+        };
+        let suspended: SuspendedSysProxy = serde_json::from_slice(&saved)
+            .map_err(|error| format!("read TUN proxy journal: {error}"))?;
+        self.restore_suspended_proxy_locked(suspended, true, true)
     }
 
     /// Diagnostic reads fail closed if any service cannot be inspected.
@@ -1826,6 +2003,7 @@ mod tests {
         fail_on: Mutex<Vec<String>>,
         restore_fail_on: Mutex<Vec<String>>,
         snapshot_fail_on: Mutex<Vec<String>>,
+        unattended_restore_on: Mutex<Vec<String>>,
         restore_needs_auth: AtomicBool,
         before_enable: Mutex<Option<std::sync::Arc<dyn Fn() + Send + Sync>>>,
         /// 各服务 enable 前的原设置（模拟第三方客户端已配置的场景）。
@@ -1846,6 +2024,7 @@ mod tests {
                     fail_on: Mutex::new(vec![]),
                     restore_fail_on: Mutex::new(vec![]),
                     snapshot_fail_on: Mutex::new(vec![]),
+                    unattended_restore_on: Mutex::new(vec![]),
                     restore_needs_auth: AtomicBool::new(false),
                     before_enable: Mutex::new(None),
                     presets: Mutex::new(BTreeMap::new()),
@@ -1874,7 +2053,15 @@ mod tests {
             service: &str,
             snap: &ServiceSnapshot,
         ) -> Result<(), String> {
+            self.inner
+                .unattended_restore_on
+                .lock()
+                .unwrap()
+                .push(service.to_string());
             self.restore_service(service, snap)
+        }
+        fn disable_service_unattended(&self, service: &str) -> Result<(), String> {
+            self.disable_service(service)
         }
         fn restoration_requires_authorization(
             &self,
@@ -2486,6 +2673,13 @@ mod tests {
             .lock()
             .unwrap()
             .push("Wi-Fi".into());
+        if cfg!(target_os = "macos") {
+            manager.prepare_exit(false).unwrap();
+            assert!(manager.status().enabled);
+            assert!(dir.path().join("journal.json").exists());
+            assert!(manager.shutting_down.load(Ordering::SeqCst));
+            return;
+        }
         assert!(manager.prepare_exit(false).is_err());
         assert!(manager.status().enabled);
         assert!(dir.path().join("journal.json").exists());
@@ -2827,11 +3021,14 @@ mod tests {
             }
         }
 
-        /// 正常退出：仍归 Crossbow → 按快照还原。
+        /// 正常退出：仍归 Crossbow → 按快照还原（快照端口存活时写回原端口）。
         #[test]
         fn exit_restores_owned_settings() {
+            let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let live_port = listener.local_addr().unwrap().port();
             let dir = tempfile::tempdir().unwrap();
-            let backend = FakeBackend::new(&["Wi-Fi"]).with_preset("Wi-Fi", owned_snapshot(7890));
+            let backend =
+                FakeBackend::new(&["Wi-Fi"]).with_preset("Wi-Fi", owned_snapshot(live_port));
             let mgr = manager_with(backend.clone(), &dir);
             mgr.enable(7898).unwrap();
             assert!(dir.path().join("journal.json").exists());
@@ -2840,9 +3037,108 @@ mod tests {
 
             let restored = backend.inner.restored.lock().unwrap();
             let snap = restored.get("Wi-Fi").unwrap();
-            assert_eq!(snap.web.as_ref().unwrap().port, 7890);
+            assert_eq!(snap.web.as_ref().unwrap().port, live_port);
             assert!(!dir.path().join("journal.json").exists());
             assert!(!mgr.status().enabled);
+        }
+
+        /// #519：快照端口已无监听 → 退出写回改为关闭接管，不写回死端口。
+        #[test]
+        fn exit_clears_dead_snapshot_ports() {
+            let dir = tempfile::tempdir().unwrap();
+            // 7890 在测试环境无监听：旧语义会把浏览器指回死端口造成断网。
+            let backend = FakeBackend::new(&["Wi-Fi"]).with_preset("Wi-Fi", owned_snapshot(7890));
+            let mgr = manager_with(backend.clone(), &dir);
+            mgr.enable(7898).unwrap();
+
+            mgr.prepare_exit_unattended_for_test(false).unwrap();
+
+            let restored = backend.inner.restored.lock().unwrap();
+            let snap = restored.get("Wi-Fi").unwrap();
+            assert!(
+                snap.web.is_none() && snap.secure.is_none() && snap.socks.is_none(),
+                "死端口快照应清空而非写回：{snap:?}"
+            );
+            assert!(!dir.path().join("journal.json").exists());
+        }
+
+        /// #519：无人值守恢复失败时保留 journal，且不阻塞本次退出。
+        #[test]
+        fn exit_restore_failure_keeps_journal_without_blocking_exit() {
+            let dir = tempfile::tempdir().unwrap();
+            let backend = FakeBackend::new(&["Wi-Fi"]).with_preset("Wi-Fi", owned_snapshot(7890));
+            backend
+                .inner
+                .restore_fail_on
+                .lock()
+                .unwrap()
+                .push("Wi-Fi".into());
+            let mgr = manager_with(backend.clone(), &dir);
+            mgr.enable(7898).unwrap();
+
+            mgr.prepare_exit_unattended_for_test(false).unwrap();
+
+            assert!(
+                dir.path().join("journal.json").exists(),
+                "失败时 journal 应保留"
+            );
+        }
+
+        #[test]
+        fn exit_snapshot_read_failure_keeps_journal_without_blocking_exit() {
+            let dir = tempfile::tempdir().unwrap();
+            let backend = FakeBackend::new(&["Wi-Fi"]).with_preset("Wi-Fi", owned_snapshot(7890));
+            let mgr = manager_with(backend.clone(), &dir);
+            mgr.enable(7898).unwrap();
+            backend
+                .inner
+                .snapshot_fail_on
+                .lock()
+                .unwrap()
+                .push("Wi-Fi".into());
+
+            mgr.prepare_exit_unattended_for_test(false).unwrap();
+
+            assert!(
+                dir.path().join("journal.json").exists(),
+                "读取服务状态失败时必须保留 journal 供下次恢复"
+            );
+        }
+
+        #[test]
+        fn exit_restores_tun_snapshot_without_interactive_authorization() {
+            let dir = tempfile::tempdir().unwrap();
+            let original = ServiceSnapshot {
+                web: Some(ProxyEndpoint {
+                    host: "proxy.example".into(),
+                    port: 8888,
+                }),
+                ..Default::default()
+            };
+            let backend = FakeBackend::new(&["Wi-Fi"]).with_preset("Wi-Fi", original.clone());
+            let mgr = manager_with(backend.clone(), &dir);
+            mgr.enable(7898).unwrap();
+            mgr.suspend_for_tun().unwrap();
+            backend
+                .inner
+                .current
+                .lock()
+                .unwrap()
+                .insert("Wi-Fi".into(), ServiceSnapshot::default());
+
+            mgr.prepare_exit_unattended_for_test(true).unwrap();
+
+            assert_eq!(
+                backend
+                    .inner
+                    .unattended_restore_on
+                    .lock()
+                    .unwrap()
+                    .as_slice(),
+                ["Wi-Fi"]
+            );
+            assert_eq!(backend.service_snapshot("Wi-Fi").unwrap(), original);
+            assert!(!mgr.tun_journal_path().exists());
         }
 
         /// 正常退出：其他客户端接管 → 不还原，保留其配置，journal 清理。
