@@ -12,6 +12,8 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 #[cfg(target_os = "linux")]
 #[path = "notifications_linux.rs"]
 mod linux;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+mod native_desktop;
 
 const EVENT: &str = "app://notifications";
 const OVERLAY: &str = "notifications";
@@ -606,15 +608,33 @@ fn route(app: &AppHandle, elapsed: u64) {
         .as_ref()
         .map(|w| w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false))
         .unwrap_or(false);
-    let has_notices = !service
-        .queue
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .active()
-        .is_empty();
+    let mut queue = service.queue.lock().unwrap_or_else(|e| e.into_inner());
+    let has_notices = !queue.active().is_empty();
+    // #528：快照前置——mac/win 托盘态走系统级通知中心（Error 类带提示音）；
+    // 全部投递成功则不再创建/显示浮窗（发送失败回退浮窗路径）。
+    let snapshot = queue.snapshot();
+    let english = app
+        .try_state::<crate::AppState>()
+        .map(|state| {
+            state
+                .store
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .data()
+                .ui
+                .lang
+                == "en"
+        })
+        .unwrap_or(false);
+    let native_delivered = if !native_background && !main_visible && has_notices {
+        native_desktop::update(&snapshot.active, english)
+    } else {
+        false
+    };
     if !main_visible
         && !native_background
         && has_notices
+        && !native_delivered
         && app.get_webview_window(OVERLAY).is_none()
         && now_ms() >= service.overlay_retry_after.load(Ordering::SeqCst)
         && !service.creating_overlay.swap(true, Ordering::SeqCst)
@@ -660,10 +680,14 @@ fn route(app: &AppHandle, elapsed: u64) {
                 .store(false, Ordering::SeqCst);
         });
     }
-    let mut queue = service.queue.lock().unwrap_or_else(|e| e.into_inner());
     let target = if main_visible && queue.ready.contains("main") {
         "main"
-    } else if !native_background && has_notices && !main_visible && queue.ready.contains(OVERLAY) {
+    } else if !native_background
+        && has_notices
+        && !main_visible
+        && !native_delivered
+        && queue.ready.contains(OVERLAY)
+    {
         OVERLAY
     } else {
         ""
@@ -679,7 +703,6 @@ fn route(app: &AppHandle, elapsed: u64) {
         queue.tick(elapsed);
     }
     let needs_delivery = queue.revision != queue.delivered_revision;
-    let snapshot = queue.snapshot();
     let target = queue.target.clone();
     if !target.is_empty() {
         queue.delivered_revision = queue.revision;
