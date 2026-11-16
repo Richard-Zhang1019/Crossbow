@@ -15,26 +15,31 @@
 // 失败时把截图、IPC 调用计数、控制台错误写入临时目录并打印路径。
 
 import {
-  VERIFY_URL,
+  DESKTOP_DIR,
   artifactsDir,
   launchBrowser,
   sleep,
+  revision,
   startVite,
-  stopVite,
   stubSource,
 } from "./verify-lib.mjs";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 
-const scenarioArg = (() => {
-  const i = process.argv.indexOf("--scenario");
-  return i > -1 ? Number(process.argv[i + 1]) : null;
-})();
-const headed = process.argv.includes("--headed");
-
-process.on("unhandledRejection", (e) => {
-  console.error("未捕获异常：", e);
-  process.exit(2);
-});
+function parseArgs(args) {
+  let scenario = null;
+  let headed = false;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--headed") {
+      headed = true;
+    } else if (args[i] === "--scenario" && scenario === null && /^[1-4]$/.test(args[i + 1] ?? "")) {
+      scenario = Number(args[++i]);
+    } else {
+      throw new Error("用法：pnpm verify:desktop [--scenario 1|2|3|4] [--headed]");
+    }
+  }
+  return { scenario, headed };
+}
 
 /** 轮询直到 fn(page) 为真；超时抛出带描述的失败。 */
 async function eventually(page, desc, fn, timeoutMs = 8000) {
@@ -67,8 +72,8 @@ async function assertNoUnknownCommands(page) {
 }
 
 /** 打开应用并等启动完成（页脚版本号是 boot 完成标记）。 */
-async function openApp(page) {
-  await page.goto(VERIFY_URL);
+async function openApp(page, url) {
+  await page.goto(url);
   await page.locator(".cb-system-foot", { hasText: "Crossbow v" }).waitFor({ state: "visible", timeout: 20_000 });
   await page.locator(".cb-primary-nav button").first().waitFor({ state: "visible", timeout: 10_000 });
   await assertNoUnknownCommands(page);
@@ -84,6 +89,29 @@ async function gotoNav(page, label, viewClass) {
 const nodeCard = (page, name) =>
   page.locator(".cb-node-card", { hasText: name }).first();
 
+// Hold individual IPC replies until a scenario has observed the state it
+// needs. A slow CI click can never let a held reply win the race.
+async function holdMeasurements(page, delayBase) {
+  await page.evaluate((base) => {
+    const pending = [];
+    let responded = 0;
+    window.__cb.setCommands({
+      test_node_delay_structured: (args) => new Promise((resolve) => {
+        pending.push(() => {
+          const number = Number(args.node.split("-").at(-1));
+          resolve({ class: "ok", delayMs: base + number, reviewed: false,
+            target: "https://stub.invalid/g", testedAtMs: Date.now(), sampleCount: 1, detail: "" });
+          responded += 1;
+        });
+      }),
+    });
+    window.__cb.releaseMeasurements = (limit = pending.length) => {
+      pending.splice(0, limit).forEach((reply) => reply());
+    };
+    window.__cb.measurementReplies = () => responded;
+  }, delayBase);
+}
+
 // ---------------------------------------------------------------- 场景 1
 async function scenarioProfileSwitch(page) {
   const mkNode = (name, delay_ms) => ({ name, kind: "ss", alive: delay_ms === null ? true : delay_ms > 0, delay_ms });
@@ -93,22 +121,21 @@ async function scenarioProfileSwitch(page) {
   ]) };
   const snapshotB = { context: { revision: 2, pid: 4242 }, groups: groupOf([
     mkNode("🇭🇰 出口-01", 88), mkNode("🇯🇵 出口-02", 90), mkNode("🇸🇬 出口-03", null),
+    mkNode("新配置节点", 92),
   ]) };
 
-  await page.evaluate((data) => {
+  await holdMeasurements(page, 776);
+  await page.evaluate(({ a, b }) => {
     let switched = false;
     window.__cb.setCommands({
-      proxies_test_snapshot: () => (switched ? data.b : data.a),
-      // 结果迟到 2.2s：制造「切配置后旧结果才回来」的窗口
-      test_node_delay_structured: async () => {
-        await new Promise((r) => setTimeout(r, 2200));
-        return { class: "ok", delayMs: 777, reviewed: false, target: "https://stub.invalid/g", testedAtMs: Date.now(), sampleCount: 1, detail: "" };
+      proxies_test_snapshot: () => switched ? b : a,
+      set_active_profile: ({ id }) => {
+        if (id !== "p-b") throw new Error("unexpected profile selection");
+        switched = true;
+        window.__cb.setCommands({ active_profile_id: id });
+        window.__cb.emit("profile://switched", id);
       },
     });
-    window.__cb.switchToB = () => {
-      switched = true;
-      window.__cb.setCommands({ active_profile_id: "p-b" });
-    };
   }, { a: snapshotA, b: snapshotB });
 
   await gotoNav(page, "节点", ".cb-view-proxies");
@@ -122,21 +149,23 @@ async function scenarioProfileSwitch(page) {
   await nodeCard(page, "出口-01").waitFor({ state: "visible" });
   assert((await nodeCard(page, "出口-01").textContent()).includes("测速中"), "测量进行中应显示「测速中…」");
 
-  // 切到订阅 B（同名节点、不同快照序号），旧结果 2.2s 后才回来
-  await page.evaluate(() => { window.__cb.switchToB(); window.__cb.emit("profile://switched", "p-b"); });
-
-  await eventually(page, "订阅 B 快照基线（88 ms）上屏",
-    async (p) => (await nodeCard(p, "出口-01").textContent()).includes("88 ms"), 6000);
-  await eventually(page, "页头配置名应切到 订阅B",
-    async (p) => (await p.evaluate(() => document.body.textContent)).includes("验证订阅B"));
-  const dispatched = await calls(page, "test_node_delay_structured");
-
-  await sleep(2600); // 越过 2.2s 迟到窗口
-  const pageText = await page.evaluate(() => document.body.textContent);
-  assert(!pageText.includes("777 ms"), "迟到的旧测速结果（777 ms）不得覆盖新配置快照");
-  assert(!pageText.includes("测速中"), "切配置后不应残留「测速中」状态");
-  assert((await calls(page, "test_node_delay_structured")) === dispatched, "切换后不应有新的测量派发");
-  assert((await calls(page, "end_node_delay_test")) >= 1, "切换后应通知后端结束旧测量任务");
+  await page.locator(".cb-source-pick").click();
+  await page.locator(".cb-profile-switch-option", { hasText: "验证订阅B" }).click();
+  // A newly added node proves snapshot B is rendered while shared cards
+  // still carry the previous task's in-flight indicator.
+  await nodeCard(page, "新配置节点").waitFor({ state: "visible" });
+  await eventually(page, "页头配置名应切到订阅 B",
+    async (p) => (await p.locator(".cb-source-pick").textContent()).includes("验证订阅B"));
+  assert((await calls(page, "set_active_profile")) === 1, "应从页头发起一次配置切换");
+  await eventually(page, "后端收到结束旧测速任务的请求",
+    async (p) => (await calls(p, "end_node_delay_test")) >= 1);
+  await page.evaluate(() => window.__cb.releaseMeasurements());
+  await eventually(page, "旧测量结果返回且测速按钮退出任务",
+    async (p) => (await p.evaluate(() => window.__cb.measurementReplies())) === 3
+      && (await p.locator(".cb-node-test-all").textContent()).includes("延迟测试"));
+  assert((await nodeCard(page, "出口-01").textContent()).includes("88 ms"),
+    "旧结果（777 ms）返回后，应保留订阅 B 的 88 ms");
+  assert((await calls(page, "test_node_delay_structured")) === 3, "切换后不应继续派发旧测量");
   await assertNoUnknownCommands(page);
 }
 
@@ -149,50 +178,43 @@ async function scenarioCancelStopsDispatch(page) {
     { name: "出口", kind: "Selector", now: "节点-01", nodes },
   ] };
 
+  await holdMeasurements(page, 100);
   await page.evaluate((data) => {
-    window.__cb.setCommands({
-      proxies_test_snapshot: () => data.snapshot,
-      // 前 6 次调用 300ms 返回（让队列继续派发），其余 1.6s（占住并发位）
-      test_node_delay_structured: async (args, _cmd, seq) => {
-        await new Promise((r) => setTimeout(r, seq <= 6 ? 300 : 1600));
-        const n = Number(args.node.split("-")[1]);
-        return { class: "ok", delayMs: 100 + n, reviewed: false, target: "https://stub.invalid/g", testedAtMs: Date.now(), sampleCount: 1, detail: "" };
-      },
-    });
-  }, { snapshot });
+    window.__cb.setCommands({ proxies_test_snapshot: () => data });
+  }, snapshot);
 
   await gotoNav(page, "节点", ".cb-view-proxies");
   const testAll = page.locator(".cb-node-test-all");
-  await testAll.waitFor({ state: "visible", timeout: 8000 });
   await testAll.click();
+  await eventually(page, "第一批测量已发出",
+    async (p) => (await calls(p, "test_node_delay_structured")) >= 7);
+  const snapshotReads = await calls(page, "proxies_test_snapshot");
+  const dispatched = await calls(page, "test_node_delay_structured");
+  await eventually(page, "测量中仍周期刷新代理组快照",
+    async (p) => (await calls(p, "proxies_test_snapshot")) > snapshotReads);
+  assert((await testAll.textContent()).includes("取消测速"), "周期刷新后任务应继续存在");
 
-  // 等第二批派发发生，证明队列在持续运转
-  await eventually(page, "测量队列持续派发（第二批已发出）",
-    async (p) => (await calls(p, "test_node_delay_structured")) >= 12, 10_000);
+  await page.evaluate(() => window.__cb.releaseMeasurements(6));
+  await eventually(page, "周期刷新后继续派发并保留完成项",
+    async (p) => (await calls(p, "test_node_delay_structured")) >= dispatched + 6
+      && (await nodeCard(p, "节点-01").textContent()).includes("101 ms"));
   const dispatchedAtCancel = await calls(page, "test_node_delay_structured");
-  assert(dispatchedAtCancel < 24, `取消时刻应仍有未派发节点（实际已派发 ${dispatchedAtCancel}/24）`);
-
+  assert(dispatchedAtCancel < 24, "取消前必须还有未派发节点");
   await page.locator(".cb-node-test-all", { hasText: "取消测速" }).click();
+  await eventually(page, "取消通知送达且未完成节点显示已取消",
+    async (p) => (await calls(p, "end_node_delay_test")) >= 1
+      && (await nodeCard(p, "节点-07").textContent()).includes("已取消"));
 
-  await sleep(250);
+  await page.evaluate(() => window.__cb.releaseMeasurements());
+  await eventually(page, "已派发结果全部返回且按钮复位",
+    async (p) => (await p.evaluate(() => window.__cb.measurementReplies())) === dispatchedAtCancel
+      && (await testAll.textContent()).includes("延迟测试"));
   assert((await calls(page, "test_node_delay_structured")) === dispatchedAtCancel,
-    "点击取消后不得再派发新的测量请求");
-  assert((await nodeCard(page, "节点-07").textContent()).includes("已取消"),
-  "未完成节点-07 应显示「已取消」");
-  assert((await nodeCard(page, "节点-08").textContent()).includes("已取消"),
-  "未完成节点-08 应显示「已取消」");
-
-  await sleep(2400); // 越过 1.6s 迟到返回窗口
-  assert((await calls(page, "test_node_delay_structured")) === dispatchedAtCancel,
-    "取消后队列应完全停住，不再派发");
+    "迟到结果返回后也不能继续派发");
   assert((await nodeCard(page, "节点-01").textContent()).includes("101 ms"),
     "已完成节点的测速结果应保留（101 ms）");
   assert((await nodeCard(page, "节点-07").textContent()).includes("已取消"),
-  "迟到结果不得把「已取消」改写成其他状态");
-
-  await eventually(page, "任务收尾：按钮恢复为「延迟测试」",
-    async (p) => (await p.locator(".cb-node-test-all").textContent()).includes("延迟测试"), 8000);
-  assert((await calls(page, "end_node_delay_test")) >= 1, "取消后应通知后端结束测量任务");
+    "迟到结果不得把「已取消」改写成其他状态");
   await assertNoUnknownCommands(page);
 }
 
@@ -274,7 +296,13 @@ async function scenarioDiagnostics(page) {
   assert((await page.locator("#cb-check-first-problem").textContent()).includes("混合端口监听"),
     "首个阻塞项应指向混合端口监听");
 
-  // 导出白名单：摘要 + 故障证据，不得含订阅、节点名、原始错误、观测值
+  // Capture the actual copy-button output without writing to the OS clipboard.
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: async (text) => { window.__cb.copiedSummary = text; } },
+    });
+  });
   await page.locator(".cb-page-head button", { hasText: "预览诊断摘要" }).click();
   const share = await page.locator(".cb-share-preview").textContent();
   for (const must of [
@@ -288,6 +316,9 @@ async function scenarioDiagnostics(page) {
   for (const banned of ["SECRET-TOKEN", "SECRET-RAW-ERR", "stub.invalid", "验证订阅", "节点-01"]) {
     assert(!share.includes(banned), `导出摘要泄露了非白名单内容：${banned}`);
   }
+  await page.locator(".cb-dialog .actions button").click();
+  await eventually(page, "复制入口输出和预览完全一致",
+    (p) => p.evaluate((expected) => window.__cb.copiedSummary === expected, share));
   await page.keyboard.press("Escape");
 
   // 恢复复检：状态事件推进诊断序号 → 原样本标记过期 → 重跑全过（恢复样本）
@@ -306,96 +337,60 @@ async function scenarioDiagnostics(page) {
 
 // ---------------------------------------------------------------- 场景 4
 async function scenarioWindowControls(page) {
-  const sizes = [
-    { w: 1120, h: 720, name: "默认 1120x720" },
-    { w: 880, h: 560, name: "最小 880x560" },
-  ];
-  const navTargets = [
-    ["概览", ".cb-view-home"],
-    ["节点", ".cb-view-proxies"],
-    ["监测", ".cb-view-connections"],
-    ["配置", ".cb-view-profiles"],
-    ["设置", ".cb-view-settings"],
-  ];
-
-  const checkNavBounds = async (clickOne) => {
-    const vp = page.viewportSize();
-    for (const [label] of navTargets) {
-      const button = page.locator(".cb-primary-nav button", { hasText: label });
-      await button.waitFor({ state: "visible", timeout: 8000 });
-      const box = await button.boundingBox();
-      assert(box, `导航「${label}」应有布局尺寸`);
-      assert(box.x >= 0 && box.y >= 0 && box.x + box.width <= vp.width && box.y + box.height <= vp.height,
-        `窗口 ${vp.width}x${vp.height} 下导航「${label}」超出视口：${JSON.stringify({ box, vp })}`);
-    }
-    if (clickOne) {
-      // 拖拽层不得拦截导航点击（mac Overlay 标题栏回归面）
-      await page.locator(".cb-primary-nav button", { hasText: "概览" }).click();
-      await page.locator(".cb-view-home").waitFor({ state: "visible" });
-    }
-    const footer = page.locator(".cb-system-foot");
-    await footer.waitFor({ state: "visible" });
-    const footerBox = await footer.boundingBox();
-    assert(footerBox.y + footerBox.height <= vp.height, `窗口 ${vp.width}x${vp.height} 下页脚溢出视口：${JSON.stringify(footerBox)}`);
+  const [{ width, height, minWidth, minHeight }] = JSON.parse(
+    readFileSync(path.join(DESKTOP_DIR, "src-tauri/tauri.conf.json"), "utf8"),
+  ).app.windows;
+  const sizes = [{ width, height }, { width: minWidth, height: minHeight }];
+  const views = ["home", "proxies", "connections", "profiles", "settings"];
+  const languages = {
+    zh: ["概览", "节点", "监测", "配置", "设置"],
+    en: ["Overview", "Nodes", "Monitor", "Configuration", "Settings"],
   };
+  const withinViewport = (box, size) => box && box.x >= -0.5 && box.y >= -0.5
+    && box.x + box.width <= size.width + 0.5 && box.y + box.height <= size.height + 0.5;
 
-  await page.locator(".cb-system-foot").waitFor({ state: "visible", timeout: 15_000 });
   for (const size of sizes) {
-    await page.setViewportSize({ width: size.w, height: size.h });
-    await sleep(350); // 等布局/ResizeObserver 稳定
-    for (const [label, view] of navTargets) {
-      await gotoNav(page, label, view);
+    await page.setViewportSize(size);
+    for (const [lang, labels] of Object.entries(languages)) {
+      for (const theme of ["light", "dark"]) {
+        const label = `${size.width}×${size.height} · ${lang} · ${theme}`;
+        await page.evaluate(({ lang, theme }) => {
+          window.__cb.emit("ui://lang", lang);
+          window.__cb.emit("ui://theme", theme);
+        }, { lang, theme });
+        await eventually(page, `应用语言和主题 ${label}`, async (p) =>
+          await p.locator(".cb-primary-nav button", { hasText: labels[0] }).isVisible()
+          && (await p.evaluate(() => document.documentElement.classList.contains("dark"))) === (theme === "dark"));
+        for (const [index, name] of labels.entries()) {
+          const button = page.locator(".cb-primary-nav button", { hasText: name });
+          assert(withinViewport(await button.boundingBox(), size), `${label} 下「${name}」越界`);
+          await gotoNav(page, name, `.cb-view-${views[index]}`);
+        }
+        assert(withinViewport(await page.locator(".cb-system-foot").boundingBox(), size),
+          `${label} 下页脚越界`);
+
+        const portButton = page.locator("#cb-port-setting .cb-port-readout button");
+        await eventually(page, `混合端口编辑已就绪 ${label}`, () => portButton.isEnabled());
+        await page.locator(".cb-primary-nav button", { hasText: labels.at(-1) }).focus();
+        let reached = false;
+        for (let step = 0; step < 30; step++) {
+          await page.keyboard.press("Tab");
+          reached = await portButton.evaluate((button) => button === document.activeElement);
+          if (reached) break;
+        }
+        assert(reached && withinViewport(await portButton.boundingBox(), size),
+          `${label} 下应能 Tab 到混合端口，且随键盘焦点滚动到视口`);
+        await page.keyboard.press("Enter");
+        const field = page.locator("#mixed-port");
+        await field.waitFor({ state: "visible" });
+        assert(await field.evaluate((input) => input === document.activeElement),
+          `${label} 下键盘打开编辑后应聚焦端口输入框`);
+        await page.keyboard.press("Escape");
+        await eventually(page, `关闭编辑后焦点回到端口按钮 ${label}`,
+          () => portButton.evaluate((button) => button === document.activeElement));
+      }
     }
-    await checkNavBounds(true);
-    // 键盘可达：Tab 后焦点落到可聚焦控件
-    await page.evaluate(() => document.activeElement?.blur());
-    await page.keyboard.press("Tab");
-    const focusedTag = await page.evaluate(() => document.activeElement?.tagName ?? "NONE");
-    assert(focusedTag === "BUTTON" || focusedTag === "A" || focusedTag === "INPUT",
-      `Tab 后焦点应落在可交互控件上（实际 ${focusedTag}）`);
   }
-
-  // 最小窗口下设置页端口设置可聚焦并进入视口（焦点/滚动可用）
-  await gotoNav(page, "设置", ".cb-view-settings");
-  const scrollInfo = await page.evaluate(() => {
-    const row = document.getElementById("cb-port-setting");
-    // ControlRow 是不可聚焦的 div；聚焦行内的实际控件（input/button）
-    const control = row?.querySelector("input, button, select") ?? row;
-    control?.scrollIntoView({ block: "center" });
-    control?.focus({ preventScroll: true });
-    const active = document.activeElement;
-    const scrollers = [...document.querySelectorAll(".cb-paper, .cb-page-content")]
-      .filter((e) => e.scrollHeight > e.clientHeight + 4);
-    return {
-      activeTag: active?.tagName ?? "NONE",
-      activeInRow: !!(active && row && row.contains(active)),
-      top: row ? Math.round(row.getBoundingClientRect().top) : -1,
-      viewportH: window.innerHeight,
-      scrollers: scrollers.map((e) => e.className),
-    };
-  });
-  assert(scrollInfo.activeInRow && scrollInfo.activeTag !== "BODY" && scrollInfo.activeTag !== "NONE",
-    `端口设置行内控件应可聚焦（实际 ${scrollInfo.activeTag}）`);
-  assert(scrollInfo.top >= 0 && scrollInfo.top < scrollInfo.viewportH,
-    `聚焦后端口设置应在视口内：${JSON.stringify(scrollInfo)}`);
-
-  // 语言与主题热切换（设置事件路径，不重载页面）
-  await page.evaluate(() => { window.__cb.emit("ui://lang", "en"); window.__cb.emit("ui://theme", "dark"); });
-  await eventually(page, "切换英文后导航出现 Nodes",
-    async (p) => p.locator(".cb-primary-nav button", { hasText: "Nodes" }).isVisible());
-  assert(await page.evaluate(() => document.documentElement.classList.contains("dark")), "dark 主题应挂到 html.dark");
-  const enVp = page.viewportSize();
-  for (const label of ["Overview", "Nodes", "Monitor", "Configuration", "Settings"]) {
-    const box = await page.locator(".cb-primary-nav button", { hasText: label }).boundingBox();
-    assert(box && box.x >= 0 && box.y >= 0 && box.x + box.width <= enVp.width && box.y + box.height <= enVp.height,
-      `英文导航「${label}」在最小窗口下超出视口：${JSON.stringify(box)}`);
-  }
-  const bgDark = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-  await page.evaluate(() => window.__cb.emit("ui://theme", "light"));
-  await eventually(page, "light 主题应移除 html.dark",
-    async (p) => !((await p.evaluate(() => document.documentElement.classList.contains("dark")))));
-  const bgLight = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-  assert(bgDark !== bgLight, `明暗主题应有可见差异（${bgDark} vs ${bgLight}）`);
   await assertNoUnknownCommands(page);
 }
 
@@ -404,61 +399,90 @@ const SCENARIOS = [
   { id: 1, name: "配置快切忽略同名节点旧结果", fn: scenarioProfileSwitch },
   { id: 2, name: "测速取消后停止派发", fn: scenarioCancelStopsDispatch },
   { id: 3, name: "诊断原样本/恢复样本与导出白名单", fn: scenarioDiagnostics },
-  { id: 4, name: "默认/最小窗口控件可见性（中英文×明暗）", fn: scenarioWindowControls },
+  { id: 4, name: "默认/最小窗口控件可见性（中英文 × 明暗）", fn: scenarioWindowControls },
 ];
 
 async function main() {
+  const { scenario: selected, headed } = parseArgs(process.argv.slice(2));
+  const commit = revision();
   const vite = await startVite();
+  const origin = new URL(vite.url).origin;
   let browser;
-  const dir = artifactsDir();
-  const failures = [];
+  let dir;
+  let failures = 0;
   let passedCount = 0;
   try {
     browser = await launchBrowser(!headed);
+    const browserVersion = browser.version();
+    console.log(`桌面模拟 · commit ${commit} · ${process.platform}/${process.arch} · Chromium ${browserVersion}`);
     for (const scenario of SCENARIOS) {
-      if (scenarioArg !== null && scenario.id !== scenarioArg) continue;
-      const context = await browser.newContext({ viewport: { width: 1120, height: 720 } });
-      await context.addInitScript(stubSource());
-      const page = await context.newPage();
-      const consoleErrors = [];
-      page.on("console", (msg) => {
-        if (msg.type() === "error") consoleErrors.push(msg.text().slice(0, 300));
-      });
-      page.on("pageerror", (err) => consoleErrors.push(`pageerror: ${String(err).slice(0, 300)}`));
-      const started = Date.now();
+      if (selected !== null && scenario.id !== selected) continue;
+      const context = await browser.newContext({ viewport: { width: 1120, height: 720 }, serviceWorkers: "block" });
       try {
-        await openApp(page);
-        await scenario.fn(page);
-        passedCount += 1;
-        console.log(`✓ 场景${scenario.id} ${scenario.name}（${((Date.now() - started) / 1000).toFixed(1)}s）`);
-      } catch (error) {
-        const shot = `${dir}/scenario${scenario.id}.png`;
-        await page.screenshot({ path: shot, fullPage: true }).catch(() => {});
-        const dump = await page.evaluate(() => ({ calls: window.__cb.calls, unknown: window.__cb.unknown })).catch(() => ({}));
-        writeFileSync(`${dir}/scenario${scenario.id}.calls.json`, JSON.stringify(dump, null, 2));
-        const message = [
-          `✗ 场景${scenario.id} ${scenario.name} 失败：${error.message}`,
-          `    应用版本标记：页脚 Crossbow v…（stub 版本 0.14.4-verify）`,
-          `    控制台错误（前 5 条）：${consoleErrors.slice(0, 5).join(" | ") || "无"}`,
-          `    证据目录：${dir}`,
-        ].join("\n");
-        failures.push(message);
-        console.error(message);
+        // Production UI may grow network features. Keep the browser preview
+        // on loopback even if a newly added feature bypasses the IPC mock.
+        const blockedRequests = [];
+        await context.route("**/*", (route) => {
+          if (new URL(route.request().url()).origin === origin) return route.continue();
+          blockedRequests.push(route.request().resourceType());
+          return route.abort();
+        });
+        await context.routeWebSocket(/.*/, (socket) => {
+          const endpoint = new URL(socket.url());
+          if (endpoint.protocol === "ws:" && endpoint.host === new URL(origin).host) socket.connectToServer();
+          else {
+            blockedRequests.push("websocket");
+            socket.close();
+          }
+        });
+        await context.addInitScript(stubSource());
+        const page = await context.newPage();
+        const consoleErrors = [];
+        const pageErrors = [];
+        page.on("console", (msg) => {
+          if (msg.type() === "error" && consoleErrors.length < 20) consoleErrors.push(msg.text().slice(0, 300));
+        });
+        page.on("pageerror", (err) => {
+          if (pageErrors.length < 20) pageErrors.push(String(err).slice(0, 300));
+        });
+        const started = Date.now();
+        try {
+          await openApp(page, vite.url);
+          await scenario.fn(page);
+          assert(pageErrors.length === 0, `页面脚本错误：${pageErrors.join(" | ")}`);
+          assert(blockedRequests.length === 0, `页面尝试访问非本机地址：${blockedRequests.join(", ")}`);
+          passedCount += 1;
+          console.log(`✓ 场景 ${scenario.id} ${scenario.name}（${((Date.now() - started) / 1000).toFixed(1)}s）`);
+        } catch (error) {
+          failures += 1;
+          dir ??= artifactsDir();
+          const name = path.join(dir, `scenario-${scenario.id}`);
+          await page.screenshot({ path: `${name}.png`, fullPage: true, timeout: 5000 }).catch(() => {});
+          const ipc = await page.evaluate(() => ({
+            calls: window.__cb?.calls, unknown: window.__cb?.unknown,
+          })).catch(() => ({}));
+          writeFileSync(`${name}.json`, JSON.stringify({
+            scenario: scenario.name, commit, browserVersion, platform: process.platform,
+            viewport: page.viewportSize(), error: error.message, ipc, consoleErrors, pageErrors, blockedRequests,
+          }, null, 2));
+          console.error(`✗ 场景 ${scenario.id} ${scenario.name}（${commit}）：${error.message}\n    证据目录：${dir}`);
+        }
       } finally {
         await context.close();
       }
     }
   } finally {
-    if (browser) await browser.close().catch(() => {});
-    stopVite(vite);
+    try {
+      if (browser) await browser.close();
+    } finally {
+      await vite.close();
+    }
   }
-  console.log(`\n通过 ${passedCount} 项${failures.length ? `，失败 ${failures.length} 项` : "，全部通过"}`);
-  if (failures.length) {
-    process.exit(1);
-  }
+  console.log(`通过 ${passedCount} 项${failures ? `，失败 ${failures} 项` : "，全部通过"}`);
+  if (failures) process.exitCode = 1;
 }
 
-main().catch((e) => {
-  console.error("FATAL:", e.message);
-  process.exit(2);
+main().catch((error) => {
+  console.error("FATAL:", error.message);
+  process.exitCode = 2;
 });

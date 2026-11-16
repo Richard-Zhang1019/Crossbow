@@ -7,45 +7,57 @@
 //     回调（@tauri-apps/api listen 的前置条件）；所有数据脱敏，无真实节点/订阅。
 //  3. findChrome + launch —— playwright-core 只驱动系统已装浏览器，不下载任何二进制。
 
-import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { once } from "node:events";
+import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 export const DESKTOP_DIR = path.join(REPO_ROOT, "apps/desktop");
-export const VERIFY_PORT = 5199;
-export const VERIFY_URL = `http://127.0.0.1:${VERIFY_PORT}/`;
 
 /** 验证专用版本号：页脚 "Crossbow v…" 是场景的启动完成标记。 */
 export const STUB_APP_VERSION = "0.14.4-verify";
 
 export async function startVite() {
-  const child = spawn("pnpm", ["exec", "vite", "--port", String(VERIFY_PORT), "--strictPort", "--host", "127.0.0.1"], {
-    cwd: DESKTOP_DIR,
-    stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, BROWSER: "none" },
-  });
-  let output = "";
-  child.stdout.on("data", (d) => { output += d; });
-  child.stderr.on("data", (d) => { output += d; });
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) break;
+  // Resolve Vite from the desktop workspace, without a package-manager
+  // subprocess or a fixed port shared by concurrent verification runs.
+  const require = createRequire(path.join(DESKTOP_DIR, "package.json"));
+  const viteDir = path.dirname(require.resolve("vite/package.json"));
+  const { createServer } = await import(pathToFileURL(path.join(viteDir, "dist/node/index.js")));
+  const cacheDir = mkdtempSync(path.join(os.tmpdir(), "crossbow-verify-vite-"));
+  let server;
+  const close = async () => {
     try {
-      const res = await fetch(VERIFY_URL);
-      if (res.ok) return child;
-    } catch { /* not up yet */ }
-    await sleep(250);
+      await server?.close();
+    } finally {
+      rmSync(cacheDir, { recursive: true, force: true });
+    }
+  };
+  try {
+    server = await createServer({
+      root: DESKTOP_DIR,
+      cacheDir,
+      server: { host: "127.0.0.1", open: false, hmr: false },
+    });
+    const httpServer = server.httpServer;
+    if (!httpServer) throw new Error("Vite did not create an HTTP server");
+    // Vite 6 normalizes port 0 to its default in server.listen(). Calling
+    // the underlying HTTP listener lets the OS reserve the port atomically.
+    const listening = once(httpServer, "listening");
+    httpServer.listen(0, "127.0.0.1");
+    await listening;
+    const address = httpServer.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Vite did not provide a loopback port");
+    }
+    return { url: `http://127.0.0.1:${address.port}/`, close };
+  } catch (error) {
+    await close();
+    throw error;
   }
-  child.kill("SIGTERM");
-  throw new Error(`vite dev 未就绪：\n${output.slice(-2000)}`);
-}
-
-export function stopVite(child) {
-  if (child && child.exitCode === null) child.kill("SIGTERM");
 }
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -54,7 +66,11 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  *  绝不触发浏览器下载。 */
 export function findChromeExecutable() {
   const candidates = [];
-  if (process.env.CB_CHROME_BIN) candidates.push(process.env.CB_CHROME_BIN);
+  if (process.env.CB_CHROME_BIN) {
+    const executable = path.resolve(process.env.CB_CHROME_BIN);
+    accessSync(executable, constants.X_OK);
+    return executable;
+  }
   if (process.platform === "darwin") {
     for (const app of ["Google Chrome", "Chromium", "Microsoft Edge", "Arc"]) {
       candidates.push(`/Applications/${app}.app/Contents/MacOS/${app === "Arc" ? "Arc" : app}`);
@@ -85,62 +101,45 @@ export function findChromeExecutable() {
         candidates.push(path.join(cacheRoot, entry, "chrome-mac/Chromium.app/Contents/MacOS/Chromium"));
         candidates.push(path.join(cacheRoot, entry, "chrome-mac-arm64/Chromium.app/Contents/MacOS/Chromium"));
       } else if (process.platform === "win32") {
+        candidates.push(path.join(cacheRoot, entry, "chrome-win64/chrome.exe"));
         candidates.push(path.join(cacheRoot, entry, "chrome-win/chrome.exe"));
       } else {
+        candidates.push(path.join(cacheRoot, entry, "chrome-linux64/chrome"));
         candidates.push(path.join(cacheRoot, entry, "chrome-linux/chrome"));
       }
     }
   }
-  for (const c of candidates) {
-    if (c.includes("/") || c.includes("\\")) {
-      if (existsSync(c)) return c;
-    } else {
-      const resolved = which(c);
-      if (resolved) return resolved;
+  for (const candidate of candidates) {
+    const paths = path.isAbsolute(candidate) ? [candidate]
+      : (process.env.PATH ?? "").split(path.delimiter).filter(Boolean)
+        .map((dir) => path.join(dir, candidate));
+    for (const executable of paths) {
+      try {
+        accessSync(executable, constants.X_OK);
+        return executable;
+      } catch { /* try the next candidate */ }
     }
   }
-  throw new Error(
-    "未找到可用的浏览器。请安装 Google Chrome，或设置 CB_CHROME_BIN 指向 Chrome/Chromium 可执行文件。\n" +
-    "本脚本刻意不下载浏览器二进制。",
-  );
-}
-
-function which(name) {
-  const dirs = (process.env.PATH ?? "").split(path.delimiter);
-  for (const dir of dirs) {
-    const full = path.join(dir, name);
-    if (existsSync(full)) return full;
-  }
-  return null;
+  throw new Error("未找到可用的 Chrome/Chromium。请设置 CB_CHROME_BIN 指向已安装的浏览器。");
 }
 
 export async function launchBrowser(headless) {
   const { chromium } = await import("playwright-core");
-  const require = createRequire(import.meta.url);
-  require.resolve("playwright-core"); // 失败时报_install 提示而不是 ESM 内部栈
-  const args = ["--disable-dev-shm-usage"];
-  if (process.env.CI || process.platform === "linux") {
-    args.push("--no-sandbox", "--disable-setuid-sandbox");
-  }
-  return chromium.launch({ executablePath: findChromeExecutable(), headless, args });
+  return chromium.launch({ executablePath: findChromeExecutable(), headless });
 }
 
-/** 失败现场（截图 + 控制台 + IPC 调用计数）写到临时目录，绝不进仓库。 */
 export function artifactsDir() {
-  const dir = path.join(os.tmpdir(), `crossbow-verify-${new Date().toISOString().replace(/[:.]/g, "-")}`);
-  mkdirSync(dir, { recursive: true });
-  return dir;
+  const root = process.env.CB_VERIFY_ARTIFACTS_ROOT || os.tmpdir();
+  mkdirSync(root, { recursive: true });
+  return mkdtempSync(path.join(root, "crossbow-verify-"));
 }
 
-export function writeEvidence(dir, name, page, extra) {
-  const files = [];
+export function revision() {
   try {
-    const shot = path.join(dir, `${name}.png`);
-    // 同步 API 不可用于截图；这里只记录路径，截图由调用方异步补写。
-    files.push(shot);
-  } catch { /* ignore */ }
-  writeFileSync(path.join(dir, `${name}.calls.json`), JSON.stringify(extra ?? {}, null, 2));
-  return files;
+    return execFileSync("git", ["rev-parse", "HEAD"], { cwd: REPO_ROOT, encoding: "utf8" }).trim();
+  } catch {
+    return process.env.GITHUB_SHA || "unknown";
+  }
 }
 
 /**
@@ -208,18 +207,16 @@ export function stubSource() {
     "notification_pause", "notification_action", "notification_resize",
     "notification_restore_completed", "notification_publish", "notification_resolve",
   ])});
-  const calls = {};
+  const calls = Object.create(null);
   const unknown = [];
-  const invokeLog = [];
   const registry = new Map();   // handlerId -> { event, fn }
   const byEvent = new Map();    // event -> Set<handlerId>
   let nextId = 100;
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
   window.__cb = {
-    calls, unknown, invokeLog,
+    calls, unknown,
     setCommands(overrides) { Object.assign(config, overrides); },
-    handlerCount(event) { return (byEvent.get(event) ?? new Set()).size; },
     emit(event, payload) {
       const ids = [...(byEvent.get(event) ?? new Set())];
       let n = 0;
@@ -256,7 +253,6 @@ export function stubSource() {
     },
     invoke(cmd, args = {}) {
       calls[cmd] = (calls[cmd] ?? 0) + 1;
-      invokeLog.push({ cmd, args, at: Date.now() });
       if (cmd === "plugin:event|listen") {
         const { event, handler } = args;
         registry.set(handler, { event, fn: window["_" + handler] });
@@ -271,7 +267,7 @@ export function stubSource() {
       }
       if (silent.has(cmd)) return Promise.resolve(null);
       // 值为 null 也是已注册命令（可空返回），只有完全未登记才算夹具缺口
-      if (cmd in config) {
+      if (Object.hasOwn(config, cmd)) {
         const v = config[cmd];
         if (typeof v === "function") {
           // 第三个参数 seq 是本次调用的序号（1 起）——夹具在微任务里执行，
@@ -284,7 +280,7 @@ export function stubSource() {
         }
         return Promise.resolve(v);
       }
-      unknown.push({ cmd, args, at: Date.now() });
+      unknown.push(cmd);
       return Promise.reject(new Error("[verify-stub] 未注册命令: " + cmd));
     },
   };
