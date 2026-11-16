@@ -113,6 +113,84 @@ CPU、16 GiB）/ Python 3.14.7 / mihomo v1.19.32。与 2026-11-14 记录唯一�
   路由可能影响公网路径）。数字仅代表本次 DIRECT 显式代理负载，不支持 TUN、
   真实系统代理接管、弱网或默认值调参结论——见「静态审计与待验证边界」。
 
+## 双内核同基线对比（2026-11-16，Refs #503）
+
+`bench_network.py` 新增 `--engine sing-box`：按引擎生成 DIRECT-only 夹具配置
+（sing-box JSON：mixed 入站 + clash_api 控制器 + direct 出站）、启动命令、
+版本探测与逐样本日志证据解析（sing-box 以连接 id 关联 ANSI 着色行）。同
+commit `30463fb`、同脚本哈希、同参数（30 样本 × 2 轮、吞吐 8 MiB、公网
+2/目标、DNS 3），`worktree_dirty=false`：
+
+| 内核 | 回环 204 | 回环 P50 / P95（ms） | 吞吐（MiB/s） | 冷启动（ms） | 重启（ms） |
+| --- | --- | --- | --- | --- | --- |
+| [mihomo v1.19.32](2026-11-16-mihomo-dual-engine.json) | 30/30 × 2 | 0.561 / 0.709；0.345 / 0.626 | 2204.7；2142.1 | 30.1 | 29.6 |
+| [sing-box 1.14.2](2026-11-16-singbox-dual-engine.json) | 30/30 × 2 | 0.530 / 0.724；0.538 / 0.755 | 1959.8；1351.8 | 55.8 | 84.1 |
+
+两内核公网样本全部 204 且逐条通过各自内核日志的 DIRECT 证据核验；
+sing-box 控制器经 clash_api 与 mihomo 同形。差异提示（非结论）：sing-box
+冷启动/重启更慢（进程语义不同）、吞吐轮间波动更大；数字仅代表本次回环
+DIRECT 负载，不能外推到节点协议或真实链路性能。
+
+## 受控弱网矩阵（2026-11-16，Refs #503）
+
+[2026-11-16-weak-network-matrix.json](2026-11-16-weak-network-matrix.json)
+（commit `30463fb`，dirty=false）。新增
+`scripts/benchmark/bench_weak_network.py`：toxiproxy 施加在「客户端 → 显式
+代理」链路上的受控损伤（内核 DIRECT 路径由独立 sanity 样本归因证明；经
+toxiproxy 的逐样本日志归因不可用——内核侧连接源是 toxiproxy 出口端口）。
+
+| 场景 | toxics | 回环 204 | P50 / P95（ms） | 吞吐（MiB/s） |
+| --- | --- | --- | --- | --- |
+| baseline | 无 | 20/20 | 0.705 / — | 1048.3 |
+| latency_50ms（双向） | latency 50ms j10 | 20/20 | 105.8 / 117.1 | — |
+| latency_150ms（双向） | latency 150ms j30 | 20/20 | 318.1 / 356.2 | — |
+| bandwidth_512k | 带宽 512 KB/s 下行 | 10/10 | 1.312 / — | **0.488** |
+| intermittent | latency 200ms j50 + timeout 500ms（toxicity 0.5） | **11/20** | 243.3 / 251.1 | — |
+| sustained_slow | latency 300ms j30 | 20/20 | 326.2 / 332.3 | — |
+| outage_recovery | listen 关闭 2s 后重开 | — | 恢复 1.2ms（首样本） | — |
+
+**偶发与持续的指标区分**（#503 验收要求）：intermittent 成功率 55%（≈
+toxicity 0.5）但 ok 样本快（p50 243ms）；sustained_slow 成功率 100% 但全体
+慢（p50 326ms）——「成功率」与「延迟分位数」必须成对报告，单看任一指标都
+会误判链路健康度。恢复时间与受控重启分别记录。
+
+**指标不可混用夹具**：同一夹具内，TCP 可达（accept 不应答）而代理 HTTP
+超时；HTTP 204 正常而对上游无 UDP 监听端口发数据报超时——TCP 可达性、
+代理 HTTP 延迟、UDP 可用性三者互相不能替代，节点测速指标必须按协议族
+分别报告。
+
+复跑命令：
+
+```sh
+python3 scripts/benchmark/bench_weak_network.py \
+  --core apps/desktop/src-tauri/binaries/mihomo-aarch64-apple-darwin \
+  --toxiproxy-bin /opt/homebrew/bin/toxiproxy-server --samples 20 \
+  --output target/network-benchmark
+python3 scripts/benchmark/bench_network.py \
+  --core <core-binary> --engine <mihomo|sing-box> \
+  --samples 30 --throughput-mib 8 --rounds 2 --public-samples 2 --dns-samples 3 \
+  --output target/network-benchmark
+```
+
+弱网未覆盖（待后续）：真丢包模型（toxiproxy 无丢包 toxic，需 netem/容器）、
+UDP 受限链路、IPv6 异常、公网目标弱网。
+
+## TUN 路径观测证据（2026-11-16，Refs #502/#503）
+
+bench 脚本继续拒绝 TUN 模式（混合端口探针不能证明 TUN 转发）。以下为
+**观测性证据**（应用实机验收期间记录，非基准数据，无吞吐指标）：
+
+- TUN 内核：`tun-binaries/` 独立目录的 mihomo（v1.19.32），单实例同时服务
+  mixed-port 与 TUN 入站。
+- 接口与路由：`utun6`（198.18.0.1）UP；default 路由仍在物理网关，mihomo 以
+  细分前缀路由（1、2/7、4/6、8/7…共 41 条 → utun6）覆盖 IPv4 空间。
+- 非回环目标连通：TUN 劫持路径 curl 204（0.34–0.78s，热点/Wi-Fi 均测）。
+- 切网轨迹（2 秒采样）：热点↔家 Wi-Fi 双向切换中 41 条劫持路由**全程未被
+  清除**，default 平滑迁移（切换在两采样间隙内完成）；双接管下系统代理
+  7898 无漂移；全程 decision.log 零新行（零重启）。
+- 拆除：关闭 TUN 后 utun 接口与全部劫持路由移除，内核进程复用转显式代理
+  模式（零中断）。
+
 ## 旧数据
 
 [`2026-11-14-sysproxy-baseline.json`](2026-11-14-sysproxy-baseline.json) 保留原始数值，
