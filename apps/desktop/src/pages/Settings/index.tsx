@@ -211,6 +211,7 @@ export default function SettingsPage({
               retention: "settings.logsRetention",
               "auto-check": "settings.autoCheck",
               "auto-download": "settings.autoDownload",
+              "unified-delay": "settings.unifiedDelay",
             } as Record<string, string>
           )[key] ?? `settings.${key}`,
       });

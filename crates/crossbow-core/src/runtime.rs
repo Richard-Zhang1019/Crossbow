@@ -35,7 +35,7 @@ pub struct RuntimeConfig {
     /// v4-only 网络上必然 no route to host（#136 实测）。未探测的平台
     /// 保持 true（现双栈行为）。
     pub native_ipv6: bool,
-    /// #532：unified-delay 测延迟去握手；测试/未来配置面可关。
+    /// #532：unified-delay 测延迟去握手；由设置页控制，可关闭。
     pub unified_delay: bool,
 }
 
@@ -324,19 +324,20 @@ mod tests {
         assert!(without_v6.contains("ipv6: false"));
     }
 
-    /// #532：unified-delay 注入 mihomo（跨协议测速公平）；关闭态不出现。
+    /// #532：unified-delay 注入 mihomo（跨协议测速公平），覆盖订阅值。
     /// sing-box 无此配置项，不受影响。
     #[test]
     fn unified_delay_injection_gates_on_field() {
-        let base = "mixed-port: 7897\nproxies: []\n";
+        let base_enabled = "mixed-port: 7897\nproxies: []\nunified-delay: false\n";
+        let base_disabled = "mixed-port: 7897\nproxies: []\nunified-delay: true\n";
         let rt = |unified_delay| RuntimeConfig {
             unified_delay,
             ..RuntimeConfig::default()
         };
-        let with = apply_runtime(base, &rt(true)).unwrap();
+        let with = apply_runtime(base_enabled, &rt(true)).unwrap();
         assert!(with.contains("unified-delay: true"));
         assert!(with.contains("tcp-concurrent: true"));
-        let without = apply_runtime(base, &rt(false)).unwrap();
+        let without = apply_runtime(base_disabled, &rt(false)).unwrap();
         // 关闭态显式写入 false：测速语义由 Crossbow 统一决定，
         // 不被订阅自带的 unified-delay: true 左右。
         assert!(without.contains("unified-delay: false"));
