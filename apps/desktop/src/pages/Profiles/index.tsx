@@ -12,6 +12,7 @@ import { useT } from "@/i18n/i18n";
 import FitItems from "@/components/FitItems";
 import Dialog from "@/components/Dialog";
 import { Icon } from "@/components/Icon";
+import PopoverPanel from "@/components/PopoverPanel";
 import { ProgressRing } from "@/components/ProgressRing";
 import { PageHead } from "@/pages/Home";
 import { writeSetupProgress } from "@/pages/Home/firstConnection";
@@ -247,18 +248,51 @@ export default function ProfilesPage({
         meta={t(tab === "overrides" ? "ov.hint" : "studio.configHint")}
       >
         {tab === "overrides" && <Button variant="primary" onClick={()=>setCreatingOverride(true)}>{t("ov.create")}</Button>}
-        <Button onClick={()=>setRecovering(true)}>{t("backup.title")}</Button>
         {tab === "sources" && (
           <>
-            <Button onClick={() => setExportingPackage(true)} disabled={pkgBusy !== null}>
-              <Icon name="download" />
-              {t("pkg.export")}
-            </Button>
-            <Button onClick={() => void importPackage()} loading={pkgBusy === "preview"} disabled={pkgBusy !== null}>
-              <Icon name="upload" />
-              {t("pkg.import")}
-            </Button>
-            <Button onClick={() => setImporting(true)}>
+            {/* #538：低频操作（换机迁移 ×2、历史回滚）收进「备份与迁移」，
+                主链路「添加订阅」作为唯一 primary 不与低频按钮平铺。 */}
+            <PopoverPanel
+              label={t("settings.backupMigrate")}
+              trigger={
+                <Button disabled={pkgBusy !== null}>
+                  {t("settings.backupMigrate")}
+                </Button>
+              }
+            >
+              {(close) => (
+                <div className="cb-backup-menu">
+                  <button
+                    type="button"
+                    className="cb-backup-menu-item"
+                    onClick={() => { close(); setExportingPackage(true); }}
+                    disabled={pkgBusy !== null}
+                  >
+                    <span className="cb-backup-menu-title"><Icon name="download" />{t("backup.exportEntry")}</span>
+                    <span className="cb-backup-menu-hint">{t("backup.exportEntryHint")}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="cb-backup-menu-item"
+                    onClick={() => { close(); void importPackage(); }}
+                    disabled={pkgBusy !== null}
+                  >
+                    <span className="cb-backup-menu-title"><Icon name="upload" />{t("backup.importEntry")}</span>
+                    <span className="cb-backup-menu-hint">{t("backup.importEntryHint")}</span>
+                  </button>
+                  <div className="cb-backup-menu-sep" />
+                  <button
+                    type="button"
+                    className="cb-backup-menu-item"
+                    onClick={() => { close(); setRecovering(true); }}
+                  >
+                    <span className="cb-backup-menu-title"><Icon name="refresh" />{t("backup.title")}</span>
+                    <span className="cb-backup-menu-hint">{t("backup.menuHint")}</span>
+                  </button>
+                </div>
+              )}
+            </PopoverPanel>
+            <Button variant="primary" onClick={() => setImporting(true)}>
               <Icon name="download" />
               {t("studio.importSource")}
             </Button>

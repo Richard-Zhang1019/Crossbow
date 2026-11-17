@@ -379,3 +379,20 @@ input[type="checkbox"] {
   flex: none;
   border-radius: 50%;
 }
+
+
+/* #538：配置页「备份与迁移」下拉项（PopoverPanel 内） */
+.cb-backup-menu { display: flex; flex-direction: column; gap: 2px; min-width: 232px; }
+.cb-backup-menu-item {
+  display: flex; flex-direction: column; gap: 2px; text-align: left;
+  padding: 9px 12px; border-radius: 8px; border: 0; background: transparent;
+  cursor: pointer; color: var(--cb-text, #1a1d26); font: inherit;
+}
+.cb-backup-menu-item:hover:not(:disabled) { background: var(--cb-accent-soft, #eceefc); }
+.cb-backup-menu-item:disabled { opacity: .5; cursor: default; }
+.cb-backup-menu-title {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 13.5px; font-weight: 600;
+}
+.cb-backup-menu-hint { font-size: 11.5px; color: var(--cb-dim, #6b7080); }
+.cb-backup-menu-sep { height: 1px; background: var(--cb-line, #e4e6ec); margin: 5px 8px; }
