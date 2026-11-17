@@ -32,6 +32,7 @@ fn real_store_singbox_e2e() {
             log_level: "info".into(),
             tun_enable: false,
             native_ipv6: true,
+            unified_delay: true,
         },
     )
     .expect("apply_runtime");

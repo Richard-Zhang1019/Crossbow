@@ -559,6 +559,7 @@ pub(crate) fn runtime_for(
         log_level: "info".into(),
         tun_enable,
         native_ipv6,
+        unified_delay: true,
     }
 }
 

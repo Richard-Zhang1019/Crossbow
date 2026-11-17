@@ -35,6 +35,8 @@ pub struct RuntimeConfig {
     /// v4-only 网络上必然 no route to host（#136 实测）。未探测的平台
     /// 保持 true（现双栈行为）。
     pub native_ipv6: bool,
+    /// #532：unified-delay 测延迟去握手；测试/未来配置面可关。
+    pub unified_delay: bool,
 }
 
 impl Default for RuntimeConfig {
@@ -48,6 +50,7 @@ impl Default for RuntimeConfig {
             log_level: "info".into(),
             tun_enable: false,
             native_ipv6: true,
+            unified_delay: true,
         }
     }
 }
@@ -64,6 +67,12 @@ fn apply_runtime_mihomo(base_yaml: &str, rt: &RuntimeConfig) -> Result<String, S
     let mut patch = Mapping::new();
     patch.insert(Value::from("mixed-port"), Value::from(rt.mixed_port));
     patch.insert(Value::from("allow-lan"), Value::from(rt.allow_lan));
+    // #532：统一延迟（unified-delay）——测延迟发两次请求取差值，扣除
+    // TLS/协议握手开销，让 SS 与 VMess+TLS、Hysteria2 等不同协议节点的
+    // 延迟数字横向可比（订阅是否自带该字段不再影响测速语义）。
+    // tcp-concurrent 同为测速体验补齐（并发握手取最优路径）。
+    patch.insert(Value::from("unified-delay"), Value::from(rt.unified_delay));
+    patch.insert(Value::from("tcp-concurrent"), Value::from(true));
     patch.insert(
         Value::from("bind-address"),
         Value::from(if rt.allow_lan { "*" } else { "127.0.0.1" }),
@@ -315,6 +324,37 @@ mod tests {
         assert!(without_v6.contains("ipv6: false"));
     }
 
+    /// #532：unified-delay 注入 mihomo（跨协议测速公平）；关闭态不出现。
+    /// sing-box 无此配置项，不受影响。
+    #[test]
+    fn unified_delay_injection_gates_on_field() {
+        let base = "mixed-port: 7897\nproxies: []\n";
+        let rt = |unified_delay| RuntimeConfig {
+            unified_delay,
+            ..RuntimeConfig::default()
+        };
+        let with = apply_runtime(base, &rt(true)).unwrap();
+        assert!(with.contains("unified-delay: true"));
+        assert!(with.contains("tcp-concurrent: true"));
+        let without = apply_runtime(base, &rt(false)).unwrap();
+        // 关闭态显式写入 false：测速语义由 Crossbow 统一决定，
+        // 不被订阅自带的 unified-delay: true 左右。
+        assert!(without.contains("unified-delay: false"));
+        assert!(!without.contains("unified-delay: true"));
+        // tcp-concurrent 是独立特性，不随 unified-delay 关闭
+        assert!(without.contains("tcp-concurrent: true"));
+        // sing-box 路径不注入该字段（配置项为 mihomo 专属）
+        let sb = apply_runtime(
+            "{\"inbounds\": [], \"outbounds\": []}",
+            &RuntimeConfig {
+                engine: Engine::SingBox,
+                ..RuntimeConfig::default()
+            },
+        )
+        .unwrap();
+        assert!(!sb.contains("unified-delay"));
+    }
+
     #[test]
     fn preserves_explicit_process_lookup_mode() {
         for mode in ["always", "off"] {
@@ -424,6 +464,7 @@ mod tests {
                 allow_lan: true,
                 controller_port: 19090,
                 controller_secret: "sb-secret".into(),
+                unified_delay: true,
                 log_level: "warning".into(),
                 tun_enable: false,
                 native_ipv6: true,
