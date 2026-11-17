@@ -2,9 +2,12 @@ name: build
 
 # 双平台构建验证：macOS (Apple Silicon) + Windows (x64)。
 # 未签名产物仅作验证；正式发版复用此工作流，通过后再签名、公证。
+# feat/** 不再触发 push run：PR 的每次更新由 pull_request 事件单独跑
+# 一遍（push 与 PR 的 concurrency key 不同，双事件会不互斥地双跑完整
+# CI——#540）。改动一律走 PR（仓库铁律），feat 直推不属于支持场景。
 on:
   push:
-    branches: [main, "feat/**"]
+    branches: [main]
   pull_request:
   workflow_dispatch:
   workflow_call:
