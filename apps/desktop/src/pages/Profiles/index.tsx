@@ -268,24 +268,33 @@ export default function ProfilesPage({
                     onClick={() => { close(); setExportingPackage(true); }}
                     disabled={pkgBusy !== null}
                   >
-                    <span className="cb-backup-menu-title"><Icon name="download" />{t("backup.exportEntry")}</span>
-                    <span className="cb-backup-menu-hint">{t("backup.exportEntryHint")}</span>
+                    <span className="cb-backup-menu-icon"><Icon name="download" size={14} /></span>
+                    <span className="cb-backup-menu-copy">
+                      <span className="cb-backup-menu-title">{t("backup.exportEntry")}</span>
+                      <span className="cb-backup-menu-hint">{t("backup.exportEntryHint")}</span>
+                    </span>
                   </ButtonBase>
                   <ButtonBase
                     className="cb-backup-menu-item"
                     onClick={() => { close(); void importPackage(); }}
                     disabled={pkgBusy !== null}
                   >
-                    <span className="cb-backup-menu-title"><Icon name="upload" />{t("backup.importEntry")}</span>
-                    <span className="cb-backup-menu-hint">{t("backup.importEntryHint")}</span>
+                    <span className="cb-backup-menu-icon"><Icon name="upload" size={14} /></span>
+                    <span className="cb-backup-menu-copy">
+                      <span className="cb-backup-menu-title">{t("backup.importEntry")}</span>
+                      <span className="cb-backup-menu-hint">{t("backup.importEntryHint")}</span>
+                    </span>
                   </ButtonBase>
                   <div className="cb-backup-menu-sep" />
                   <ButtonBase
                     className="cb-backup-menu-item"
                     onClick={() => { close(); setRecovering(true); }}
                   >
-                    <span className="cb-backup-menu-title"><Icon name="refresh" />{t("backup.title")}</span>
-                    <span className="cb-backup-menu-hint">{t("backup.menuHint")}</span>
+                    <span className="cb-backup-menu-icon"><Icon name="refresh" size={14} /></span>
+                    <span className="cb-backup-menu-copy">
+                      <span className="cb-backup-menu-title">{t("backup.title")}</span>
+                      <span className="cb-backup-menu-hint">{t("backup.menuHint")}</span>
+                    </span>
                   </ButtonBase>
                 </div>
               )}
