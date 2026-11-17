@@ -613,6 +613,7 @@ fn route(app: &AppHandle, elapsed: u64) {
     // #528：快照前置——mac/win 托盘态走系统级通知中心（Error 类带提示音）；
     // 全部投递成功则不再创建/显示浮窗（发送失败回退浮窗路径）。
     let snapshot = queue.snapshot();
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     let english = app
         .try_state::<crate::AppState>()
         .map(|state| {
