@@ -255,40 +255,38 @@ export default function ProfilesPage({
             <PopoverPanel
               label={t("settings.backupMigrate")}
               trigger={
-                <Button disabled={pkgBusy !== null}>
+                <Button className="cb-backup-trigger" disabled={pkgBusy !== null}>
                   {t("settings.backupMigrate")}
+                  <Icon name="chevron" />
                 </Button>
               }
             >
               {(close) => (
                 <div className="cb-backup-menu">
-                  <button
-                    type="button"
+                  <ButtonBase
                     className="cb-backup-menu-item"
                     onClick={() => { close(); setExportingPackage(true); }}
                     disabled={pkgBusy !== null}
                   >
                     <span className="cb-backup-menu-title"><Icon name="download" />{t("backup.exportEntry")}</span>
                     <span className="cb-backup-menu-hint">{t("backup.exportEntryHint")}</span>
-                  </button>
-                  <button
-                    type="button"
+                  </ButtonBase>
+                  <ButtonBase
                     className="cb-backup-menu-item"
                     onClick={() => { close(); void importPackage(); }}
                     disabled={pkgBusy !== null}
                   >
                     <span className="cb-backup-menu-title"><Icon name="upload" />{t("backup.importEntry")}</span>
                     <span className="cb-backup-menu-hint">{t("backup.importEntryHint")}</span>
-                  </button>
+                  </ButtonBase>
                   <div className="cb-backup-menu-sep" />
-                  <button
-                    type="button"
+                  <ButtonBase
                     className="cb-backup-menu-item"
                     onClick={() => { close(); setRecovering(true); }}
                   >
                     <span className="cb-backup-menu-title"><Icon name="refresh" />{t("backup.title")}</span>
                     <span className="cb-backup-menu-hint">{t("backup.menuHint")}</span>
-                  </button>
+                  </ButtonBase>
                 </div>
               )}
             </PopoverPanel>
