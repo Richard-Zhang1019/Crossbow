@@ -121,6 +121,7 @@ export interface EngineConfigView {
   mixed_port: number;
   allow_lan: boolean;
   flag_emoji: boolean;
+  unified_delay: boolean;
   linux_wireguard_coexist: boolean;
   core_installed: boolean;
 }
@@ -351,6 +352,7 @@ export const ipc = {
   validateOverrides: () => invoke<void>("validate_overrides"),
   applyOverrides: () => invoke<void>("apply_overrides"),
   setFlagEmoji: (enabled: boolean) => invoke<void>("set_flag_emoji", { enabled }),
+  setUnifiedDelay: (enabled: boolean) => invoke<void>("set_unified_delay", { enabled }),
   setEngine: (engine: "mihomo" | "singbox") => invoke<void>("set_engine", { engine }),
   coreInstall: (engine: "mihomo" | "singbox") =>
     invoke<CoreBinaryInfo>("core_install", { engine }),
