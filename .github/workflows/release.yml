@@ -74,6 +74,10 @@ jobs:
     uses: ./.github/workflows/build.yml
     with:
       ref: ${{ needs.preflight.outputs.commit }}
+      # tag commit 必然刚在 main push 全绿（发版先合并 PR）；签名构建
+      # （release-windows/release-macos）是更强的验证——checks 只保留
+      # 护栏/测试终检，跳过无签名双平台构建（#540，发版 -12 分钟）。
+      skip_build: true
 
   # Windows：NSIS 安装包 + 更新器签名（无代码签名证书，SmartScreen
     # 策略见 #82；升级渠道 #79）

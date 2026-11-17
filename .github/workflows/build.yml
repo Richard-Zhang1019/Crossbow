@@ -16,6 +16,10 @@ on:
         description: Exact release commit to test
         type: string
         default: ""
+      skip_build:
+        description: Skip the unsigned dual-platform build (release provides signed builds)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -258,7 +262,9 @@ jobs:
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     needs: [changes, pipeline-check, core-test]
-    if: needs.changes.outputs.rust == 'true'
+    # 发版链路传 skip_build=true：签名构建（release-windows/release-macos）
+    # 本身是更强的验证，无签名验证构建纯重复（#540）。
+    if: needs.changes.outputs.rust == 'true' && inputs.skip_build != true
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
