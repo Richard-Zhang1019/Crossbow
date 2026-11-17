@@ -626,11 +626,16 @@ fn route(app: &AppHandle, elapsed: u64) {
                 == "en"
         })
         .unwrap_or(false);
+    // native_desktop 仅 mac/win 编译；Linux 托盘态已走桌面通知服务
+    // （notifications_linux），浮窗路径本就被 native_background 门控。
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     let native_delivered = if !native_background && !main_visible && has_notices {
         native_desktop::update(&snapshot.active, english)
     } else {
         false
     };
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let native_delivered = false;
     if !main_visible
         && !native_background
         && has_notices

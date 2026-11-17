@@ -13,11 +13,20 @@ use crate::notifications::{Kind, Notice};
 static LAST_BATCH: Mutex<Option<BTreeSet<String>>> = Mutex::new(None);
 
 /// Error 类通知伴随系统默认提示音；其余类别静默横幅。
+/// 音效名按平台取系统常量：macOS 的 NSUserNotification.soundName 需要
+/// `NSUserNotificationDefaultSoundName` 字面量（"Default" 不是有效音效名，
+/// 静默）；Windows 的 Sound::from_str 识别 "Default"（toast 省略 audio
+/// 元素 = 默认提示音）。
+#[cfg(target_os = "macos")]
+const DEFAULT_SOUND: &str = "NSUserNotificationDefaultSoundName";
+#[cfg(target_os = "windows")]
+const DEFAULT_SOUND: &str = "Default";
+
 fn sound(notices: &[Notice]) -> Option<&'static str> {
     notices
         .iter()
         .any(|n| n.kind == Kind::Error)
-        .then_some("Default")
+        .then_some(DEFAULT_SOUND)
 }
 
 fn batch_key(notices: &[Notice]) -> BTreeSet<String> {
@@ -68,9 +77,9 @@ mod tests {
     #[test]
     fn sound_follows_error_kind_only() {
         let errors = [notice("a", Kind::Error)];
-        assert_eq!(sound(&errors), Some("Default"));
+        assert_eq!(sound(&errors), Some(DEFAULT_SOUND));
         let mixed = [notice("a", Kind::Error), notice("b", Kind::Success)];
-        assert_eq!(sound(&mixed), Some("Default"));
+        assert_eq!(sound(&mixed), Some(DEFAULT_SOUND));
         let silent = [notice("a", Kind::Success), notice("b", Kind::Info)];
         assert_eq!(sound(&silent), None);
     }
