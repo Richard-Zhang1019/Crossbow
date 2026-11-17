@@ -16,6 +16,45 @@ export function faultEvidenceState(fault: FaultEvidence) {
   return "ongoing";
 }
 
+export function probeOk(probe: FaultEvidenceProbe | null | undefined) {
+  return !!probe && probe.class === "ok";
+}
+
+function layerOk(layer: { primary: FaultEvidenceProbe; review?: FaultEvidenceProbe | null }) {
+  return probeOk(layer.primary) && (!layer.review || probeOk(layer.review));
+}
+
+/** 五个探测层的成败统计（故障折叠条摘要行用）。 */
+export function faultLayerStats(fault: FaultEvidence) {
+  const layerOkFlags = [
+    fault.mixedPortOk,
+    probeOk(fault.controller),
+    layerOk(fault.directCn),
+    layerOk(fault.directGlobal),
+    layerOk(fault.proxyHttps),
+  ];
+  return { total: layerOkFlags.length, failed: layerOkFlags.filter(pass => !pass).length };
+}
+
+/**
+ * 「接口 → 端点」观测按端点去重；全部指向同一端点时返回按接口名聚合的分组，
+ * 解析失败或存在多目标时返回 null（调用方回退到原始列表）。
+ */
+export function dedupeObservedTargets(observed: string[]) {
+  const parsed: { iface: string; target: string }[] = [];
+  for (const entry of observed) {
+    const sep = entry.indexOf(" → ");
+    if (sep < 0) return null;
+    const target = entry.slice(sep + 3);
+    if (!target) return null;
+    parsed.push({ iface: entry.slice(0, sep), target });
+  }
+  if (!parsed.length || new Set(parsed.map(item => item.target)).size !== 1) return null;
+  const groups = new Map<string, number>();
+  for (const item of parsed) groups.set(item.iface, (groups.get(item.iface) ?? 0) + 1);
+  return [...groups].map(([iface, count]) => ({ iface, target: parsed[0].target, count }));
+}
+
 const faultStateText: Record<ReturnType<typeof faultEvidenceState>, string> = {
   resolved: "recovered (verified)",
   superseded: "context changed; recovery unconfirmed",

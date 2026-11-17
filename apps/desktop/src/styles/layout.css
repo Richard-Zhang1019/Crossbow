@@ -2287,8 +2287,6 @@ textarea:focus-visible,
 .cb-recovery-list p,.cb-recovery-confirm p { font-size: var(--font-sm); color:var(--cb-text-dim); overflow-wrap:anywhere; margin-top:5px; }
 @media(max-width:900px) { .cb-log-reading-tools span { display:none; } }
 .cb-diag-blocker { display:flex; align-items:center; justify-content:space-between; gap:20px; flex:none; }
-.cb-diag-blocker p { margin-bottom:0; }
-.cb-diag-blocker > button { flex:none; }
 .cb-diag-results { overflow:auto; padding-top:8px; }
 .cb-diag-results > .cb-diagnostic-step { flex:none; min-height:62px; padding:12px 4px; }
 .cb-diag-results > .cb-diagnostic-step.has-issue { padding-left:12px; box-shadow:inset 2px 0 var(--cb-warn); background:var(--cb-surface); }
@@ -2365,4 +2363,261 @@ textarea:focus-visible,
 .cb-fault-layers dd {
   margin: 0;
   color: var(--cb-text);
+}
+
+/* ============================================================
+   诊断页改版：列表是唯一滚动区，状态带/故障条/页头固定。
+   高度链：.cb-paper（frame 网格 1fr，有确定高度）→ 页内容 → 页根 → 列表。
+   :has 不支持时（旧 WebKit）整链失效，退化为旧的整页滚动。
+   ============================================================ */
+.cb-paper:has(> .cb-page-content.cb-view-diagnostics) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.cb-paper:has(> .cb-page-content.cb-view-diagnostics) > .cb-subnav { flex: none; }
+.cb-page-content.cb-view-diagnostics {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.cb-diagnostics-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 状态带：唯一的状态语义出口（结论 + 故障 chip + 检查时间/首个阻塞 + 动作） */
+.cb-diag-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  margin: 16px 0 10px;
+  padding: 12px 16px;
+  border: 1px solid var(--cb-line);
+  border-radius: 12px;
+  background: var(--cb-surface);
+}
+.cb-diag-summary h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-lg);
+  font-weight: 600;
+}
+.cb-diag-summary p {
+  font-size: var(--font-sm);
+  line-height: 18px;
+  color: var(--cb-text-dim);
+  margin-top: 2px;
+}
+.cb-diag-band-text { min-width: 0; flex: 1; }
+.cb-diag-band-chip {
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: var(--cb-accent-soft);
+  color: var(--cb-accent);
+  font-size: var(--font-xs);
+  font-weight: 600;
+}
+.cb-diag-band-actions { margin-left: auto; display: flex; gap: 8px; flex: none; }
+
+/* 故障取证：默认折叠为一行摘要条，展开为探针网格 */
+.cb-fault-evidence {
+  flex: none;
+  margin: 0 0 10px;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+.cb-fault-evidence-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 16px;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  color: var(--cb-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cb-fault-evidence-toggle:focus-visible { outline: 2px solid var(--cb-accent); outline-offset: -2px; }
+.cb-fault-evidence-toggle h2 {
+  margin: 0;
+  font-size: var(--font-md);
+  font-weight: 600;
+  flex: none;
+}
+.cb-fault-chev {
+  display: inline-flex;
+  color: var(--cb-text-dim);
+  transition: transform 160ms ease;
+  flex: none;
+}
+.cb-fault-evidence.open .cb-fault-chev { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .cb-fault-chev { transition: none; } }
+.cb-fault-evidence-sum {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-sm);
+  color: var(--cb-text-dim);
+}
+.cb-fault-state {
+  margin-left: auto;
+  flex: none;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: var(--font-xs);
+  color: var(--cb-text-dim);
+  background: var(--cb-surface-2);
+}
+.cb-fault-state.ongoing {
+  color: var(--cb-accent);
+  background: var(--cb-accent-soft);
+  font-weight: 600;
+}
+.cb-fault-detail {
+  border-top: 1px solid var(--cb-line);
+  padding: 14px 16px 16px;
+  /* 展开的取证详情封顶内滚：上一条也展开时卡片无限撑高，
+     会把 flex:1 的诊断列表挤到 0（用户实测）。列表必须有保底可见高度。 */
+  max-height: clamp(240px, 42vh, 440px);
+  overflow-y: auto;
+  /* 详情区内滚同样不让滚动条压到 pill 与文字 */
+  padding-inline-end: 12px;
+  scrollbar-gutter: stable;
+}
+.cb-fault-probe-grid {
+  display: grid;
+  grid-template-columns: minmax(120px, 150px) minmax(0, 1fr) minmax(0, 1fr);
+  border: 1px solid var(--cb-line);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 0 0 10px;
+}
+.cb-fault-grid-h {
+  padding: 7px 14px;
+  background: var(--cb-surface-2);
+  color: var(--cb-faint);
+  font-size: var(--font-xs);
+  font-weight: 600;
+}
+.cb-fault-grid-c {
+  padding: 8px 14px;
+  font-size: var(--font-sm);
+  border-top: 1px solid var(--cb-line);
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.cb-fault-grid-c + .cb-fault-grid-c { border-left: 1px solid var(--cb-line); }
+.cb-fault-layer-name { font-weight: 500; }
+.cb-fault-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: var(--font-xs);
+  width: fit-content;
+}
+.cb-fault-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.cb-fault-pill.ok { color: var(--cb-ok); background: color-mix(in srgb, var(--cb-ok) 10%, var(--cb-bg)); }
+.cb-fault-pill.bad { color: var(--cb-bad); background: color-mix(in srgb, var(--cb-bad) 12%, var(--cb-bg)); }
+.cb-fault-na { color: var(--cb-faint); font-size: var(--font-sm); }
+.cb-fault-ifchips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.cb-fault-ifchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 11px;
+  border: 1px solid var(--cb-line);
+  border-radius: 8px;
+  background: var(--cb-bg);
+  font-size: var(--font-sm);
+}
+.cb-fault-ifchip code { font-family: var(--cb-mono); font-size: var(--font-xs); color: var(--cb-text-dim); }
+.cb-fault-arrow { color: var(--cb-faint); }
+.cb-fault-prev { margin-top: 12px; font-size: var(--font-sm); }
+.cb-fault-prev summary { width: fit-content; cursor: pointer; color: var(--cb-text-dim); padding-block: 4px; }
+.cb-fault-prev summary:hover { color: var(--cb-text); }
+.cb-fault-prev .cb-fault-probe-grid { margin-top: 10px; }
+
+/* 诊断列表：唯一滚动区。padding-inline-end 12px 是滚动条不压内容的关键——
+   overlay 滚动条（macOS）浮动绘制时只压 padding，不压「通过/失败」文字；
+   scrollbar-gutter 在经典滚动条环境再预留一份位置。 */
+.cb-diag-results {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  /* 保底可见高度：故障详情展开时列表也不允许被完全挤出视口 */
+  min-height: 150px;
+  max-height: none;
+  overflow-y: auto;
+  border-top: 1px solid var(--cb-line);
+  padding-top: 4px;
+  padding-inline-end: 12px;
+  scrollbar-gutter: stable;
+}
+.cb-diag-results > section {
+  flex: none;
+  border: 0;
+  border-bottom: 1px solid var(--cb-line);
+  border-radius: 0;
+  background: transparent;
+  padding: 13px 0 13px 16px;
+  position: relative;
+}
+/* 首个失败项在列表内升级，替代独立的优先处理大卡 */
+.cb-diagnostic-step.first-failed { background: color-mix(in srgb, var(--cb-warn) 5%, transparent); }
+.cb-diagnostic-step.first-failed::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 2.5px;
+  border-radius: 2px;
+  background: var(--cb-warn);
+}
+.cb-prio-tag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--cb-warn) 12%, transparent);
+  color: var(--cb-warn);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  flex: none;
+}
+.cb-check-state-fail { color: var(--cb-bad); font-weight: 600; }
+.cb-empty-sig {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--cb-surface-2);
+  color: var(--cb-text-dim);
+  display: grid;
+  place-items: center;
+  margin: 0 auto 12px;
+}
+.cb-empty .cb-button { margin-top: 6px; }
+@media (max-height: 620px) {
+  .cb-diag-summary { margin-top: 10px; padding: 8px 12px; }
+  .cb-fault-evidence-toggle { padding: 8px 12px; }
+  .cb-fault-detail { padding: 10px 12px 12px; }
+  .cb-diag-results > section { padding: 5px 0 5px 16px; }
+}
+@media (max-width: 720px) {
+  .cb-fault-probe-grid { grid-template-columns: minmax(96px, 110px) minmax(0, 1fr) minmax(0, 1fr); }
+  .cb-fault-grid-h, .cb-fault-grid-c { padding-inline: 10px; }
+  .cb-diag-band-actions .cb-button:first-child { display: none; }
 }
