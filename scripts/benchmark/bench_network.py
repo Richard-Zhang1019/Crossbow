@@ -179,13 +179,24 @@ def proxied_fetch(mixed_port, url, timeout=5, expected_status=204, expected_byte
     return result
 
 
-def fixture(mixed, controller, secret):
-    # JSON is valid YAML; a single mapping prevents duplicate DNS keys.
-    return {"mixed-port": mixed, "allow-lan": False, "bind-address": "127.0.0.1",
-            "external-controller": f"127.0.0.1:{controller}", "secret": secret,
-            "log-level": "info", "ipv6": False, "tun": {"enable": False},
-            "dns": {"enable": False}, "profile": {"store-selected": False},
-            "rules": ["MATCH,DIRECT"]}
+def fixture(mixed, controller, secret, engine="mihomo"):
+    """DIRECT-only loopback fixture per engine. Returns (config_dict, filename)."""
+    if engine == "mihomo":
+        # JSON is valid YAML; a single mapping prevents duplicate DNS keys.
+        return {"mixed-port": mixed, "allow-lan": False, "bind-address": "127.0.0.1",
+                "external-controller": f"127.0.0.1:{controller}", "secret": secret,
+                "log-level": "info", "ipv6": False, "tun": {"enable": False},
+                "dns": {"enable": False}, "profile": {"store-selected": False},
+                "rules": ["MATCH,DIRECT"]}, "fixture.yaml"
+    if engine == "sing-box":
+        return {"log": {"level": "info"},
+                "inbounds": [{"type": "mixed", "tag": "mixed-in",
+                              "listen": "127.0.0.1", "listen_port": mixed}],
+                "outbounds": [{"type": "direct", "tag": "direct"}],
+                "route": {"final": "direct"},
+                "experimental": {"clash_api": {"external_controller": f"127.0.0.1:{controller}",
+                                               "secret": secret}}}, "fixture.json"
+    raise ValueError(f"unsupported engine: {engine}")
 
 
 def wait_core_ready(process, controller, secret, timeout=15):
@@ -207,12 +218,19 @@ def wait_core_ready(process, controller, secret, timeout=15):
     raise RuntimeError("owned core controller never became ready")
 
 
+ANSI_COLOR = re.compile(r"\x1b\[[0-9;]*m")
+
+
 class Core:
     """Own and reap the child even if readiness, measurement or restart fails."""
-    def __init__(self, binary, workdir, config, controller, secret, log_name):
-        self.command = [str(binary), "-d", str(workdir), "-f", str(config)]
+    def __init__(self, binary, workdir, config, controller, secret, log_name, engine="mihomo"):
+        if engine == "sing-box":
+            self.command = [str(binary), "run", "-c", str(config), "-D", str(workdir)]
+        else:
+            self.command = [str(binary), "-d", str(workdir), "-f", str(config)]
         self.controller, self.secret = controller, secret
         self.log_path = workdir / log_name
+        self.engine = engine
         self.process, self.log = None, None
 
     def __enter__(self):
@@ -254,17 +272,35 @@ class Core:
     def evidence(self, sample):
         if not sample["source"]:
             return None
-        pattern = re.compile(r'\[TCP\] ' + re.escape(sample["source"])
-                             + r'(?:\([^\n]*?\))? --> (\S+)[^\n]*?using DIRECT(?=["\s]|$)')
         deadline = time.monotonic() + 1
         while True:
-            matches = pattern.findall(self.log_path.read_text(errors="replace"))
-            if matches:
-                return {"core_outbound": "DIRECT", "core_reported_destination": matches[-1],
+            match = self._evidence_match(sample["source"])
+            if match:
+                return {"core_outbound": match[0], "core_reported_destination": match[1],
                         "owned_core_pid": self.process.pid}
             if time.monotonic() >= deadline:
                 return None
             time.sleep(.01)
+
+    def _evidence_match(self, source):
+        text = self.log_path.read_text(errors="replace")
+        if self.engine == "mihomo":
+            pattern = re.compile(r'\[TCP\] ' + re.escape(source)
+                                 + r'(?:\([^\n]*?\))? --> (\S+)[^\n]*?using DIRECT(?=["\s]|$)')
+            matches = pattern.findall(text)
+            return ("DIRECT", matches[-1]) if matches else None
+        # sing-box: ANSI-colored lines keyed by connection id; the direct
+        # outbound line shares the id with the inbound-from line.
+        text = ANSI_COLOR.sub("", text)
+        ids = re.findall(r'\[(\d+)[^\]]*\] inbound/mixed\[mixed-in\]: inbound connection from '
+                         + re.escape(source) + r'$', text, flags=re.MULTILINE)
+        for connection_id in reversed(ids):
+            outbound = re.search(r'\[' + re.escape(connection_id)
+                                 + r'[^\]]*\] outbound/direct\[direct\]: outbound connection to (\S+)',
+                                 text)
+            if outbound:
+                return ("direct", outbound.group(1))
+        return None
 
 
 def measured_fetch(core, mixed, url, **kwargs):
@@ -447,8 +483,10 @@ def save_result(output, result):
 
 
 def run(core_bin, output, samples=30, size_mib=8, rounds=2, public_samples=0,
-        dns_samples=0, load_seconds=1, timeout=5):
-    result = {"schema_version": 2, "status": "failed", "mode": "explicit-proxy",
+        dns_samples=0, load_seconds=1, timeout=5, engine="mihomo"):
+    if engine not in ("mihomo", "sing-box"):
+        raise ValueError(f"unsupported engine: {engine}")
+    result = {"schema_version": 2, "status": "failed", "mode": "explicit-proxy", "engine": engine,
               "core_outbound_intent": "DIRECT", "physical_egress": "unverified",
               "source": source_metadata(), "env": {"os": platform.platform(), "arch": platform.machine(),
               "hardware": hardware_metadata(), "client_tls": tls_metadata(),
@@ -459,20 +497,21 @@ def run(core_bin, output, samples=30, size_mib=8, rounds=2, public_samples=0,
     owned, phase = [], "preflight"
     try:
         binary = core_bin.resolve(strict=True)
-        version = subprocess.run([str(binary), "-v"], capture_output=True, text=True, timeout=5, check=True)
+        version_argv = ["-v"] if engine == "mihomo" else ["version"]
+        version = subprocess.run([str(binary), *version_argv], capture_output=True, text=True, timeout=5, check=True)
         result["core"] = {"version": version.stdout.strip(), "sha256": hashlib.sha256(binary.read_bytes()).hexdigest()}
-        if 'mihomo' not in version.stdout.lower():
-            raise ValueError("only the mihomo fixture is supported")
+        if engine not in version.stdout.lower():
+            raise ValueError(f"binary is not {engine}: {version.stdout.strip()[:80]}")
         with tempfile.TemporaryDirectory(prefix="crossbow-bench-") as temp, upstream() as up:
             workdir = Path(temp)
             mixed = free_port({up})
             controller = free_port({up, mixed})
             secret = uuid.uuid4().hex
-            config = fixture(mixed, controller, secret)
-            config_path = workdir / 'fixture.yaml'
+            config, config_name = fixture(mixed, controller, secret, engine)
+            config_path = workdir / config_name
             config_path.write_text(json.dumps(config))
             config_path.chmod(0o600)
-            result["fixture"] = {**config, "secret": "<ephemeral redacted>"}
+            result["fixture"] = json.loads(json.dumps(config).replace(secret, "<ephemeral redacted>"))
             result["targets"] = {"local_204": f"http://127.0.0.1:{up}/204", "public_https": list(PROBE_TARGETS)}
             phase = "negative_control"
             negative = proxied_fetch(free_port({up, mixed, controller}), result["targets"]["local_204"], timeout=1)
@@ -481,7 +520,7 @@ def run(core_bin, output, samples=30, size_mib=8, rounds=2, public_samples=0,
                 raise RuntimeError("closed proxy accepted a loopback request: invalid measurement path")
             with ExitStack() as cleanup:
                 phase = "cold_start"
-                first = Core(binary, workdir, config_path, controller, secret, 'first.log')
+                first = Core(binary, workdir, config_path, controller, secret, 'first.log', engine)
                 owned.append(first)
                 core = cleanup.enter_context(first)
                 result["cold_start"] = first_request(core, mixed, result["targets"]["local_204"])
@@ -504,7 +543,7 @@ def run(core_bin, output, samples=30, size_mib=8, rounds=2, public_samples=0,
                 started = time.monotonic()
                 core.close()
                 stop_ms = (time.monotonic() - started) * 1000
-                restarted = Core(binary, workdir, config_path, controller, secret, 'restart.log')
+                restarted = Core(binary, workdir, config_path, controller, secret, 'restart.log', engine)
                 owned.append(restarted)
                 restarted = cleanup.enter_context(restarted)
                 first_after_restart = first_request(restarted, mixed, result["targets"]["local_204"])
@@ -533,6 +572,8 @@ def run(core_bin, output, samples=30, size_mib=8, rounds=2, public_samples=0,
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--core', type=Path, required=True)
+    parser.add_argument('--engine', choices=['mihomo', 'sing-box'], default='mihomo',
+                        help='fixture core engine (config generation, log evidence)')
     parser.add_argument('--mode', choices=['explicit-proxy', 'sysproxy', 'tun'], default='explicit-proxy')
     parser.add_argument('--output', type=Path, default=REPO / 'target/network-benchmark')
     parser.add_argument('--samples', type=int, default=30)
@@ -553,7 +594,8 @@ def main(argv=None):
     if not .1 <= args.load_seconds <= 10 or not .1 <= args.timeout <= 30:
         parser.error('load-seconds must be 0.1..10; timeout must be 0.1..30')
     result, path = run(args.core, args.output, args.samples, args.throughput_mib, args.rounds,
-                       args.public_samples, args.dns_samples, args.load_seconds, args.timeout)
+                       args.public_samples, args.dns_samples, args.load_seconds, args.timeout,
+                       args.engine)
     print(json.dumps({'mode': result['mode'], 'status': result['status'], 'result': str(path), 'failure': result.get('failure'), 'probe_failures': result['probe_failures']}, ensure_ascii=False))
     return 0 if result['status'] == 'completed' else 1
 

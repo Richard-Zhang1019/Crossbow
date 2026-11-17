@@ -241,27 +241,6 @@ impl NetworkSetup {
         script
     }
 
-    /// 密码仅交由 macOS 授权窗口处理，不持久化授权或安装 root 常驻进程。
-    fn run_batch(commands: &[String], restoring: bool) -> Result<(), String> {
-        if commands.is_empty() {
-            return Ok(());
-        }
-        crate::lifecycle::authorization::require_interactive()?;
-        let script = Self::batch_script(commands, restoring);
-        let out = std::process::Command::new("/usr/bin/osascript")
-            .args(["-e", "on run argv\ndo shell script (item 1 of argv) with administrator privileges\nend run", "--", &script])
-            .output().map_err(|error| format!("无法打开系统管理员授权：{error}"))?;
-        if out.status.success() {
-            return Ok(());
-        }
-        let detail = Self::error_detail(&out);
-        if detail.contains("(-128)") {
-            Err("已取消系统代理管理员授权，代理设置未提交".into())
-        } else {
-            Err(format!("系统代理管理员操作失败：{detail}"))
-        }
-    }
-
     /// 使用当前进程已有权限，不调用 osascript、不提示授权。
     fn run_unattended(commands: &[String], restoring: bool) -> Result<(), String> {
         Self::run_unattended_until(commands, restoring, std::time::Duration::from_secs(10))
@@ -430,7 +409,9 @@ impl SysProxyBackend for NetworkSetup {
             .iter()
             .flat_map(|service| Self::enable_commands(service, port))
             .collect();
-        Self::run_batch(&commands, false)
+        // #526：管理员用户免 sudo 的 networksetup 写可用（实测 exit 0），
+        // 开关不再走 osascript 提权弹窗；失败走既有错误路径。
+        Self::run_unattended(&commands, false)
     }
 
     fn disable_services(&self, services: &[String]) -> Result<(), String> {
@@ -448,7 +429,8 @@ impl SysProxyBackend for NetworkSetup {
                 commands.extend(Self::disable_commands(service));
             }
         }
-        if let Err(error) = Self::run_batch(&commands, true) {
+        // #526：关闭同走无人值守通道（原 run_batch 的提权弹窗移除）。
+        if let Err(error) = Self::run_unattended(&commands, true) {
             errors.push(error);
         }
         if errors.is_empty() {
@@ -479,7 +461,8 @@ impl SysProxyBackend for NetworkSetup {
                 changed.push((service, snapshot));
             }
         }
-        if let Err(error) = Self::run_batch(&commands, true) {
+        // #526：还原走无人值守通道（快照不匹配跳过的预检保留）。
+        if let Err(error) = Self::run_unattended(&commands, true) {
             errors.push(error);
         } else {
             for (service, snapshot) in changed {
@@ -3046,8 +3029,17 @@ mod tests {
         #[test]
         fn exit_clears_dead_snapshot_ports() {
             let dir = tempfile::tempdir().unwrap();
-            // 7890 在测试环境无监听：旧语义会把浏览器指回死端口造成断网。
-            let backend = FakeBackend::new(&["Wi-Fi"]).with_preset("Wi-Fi", owned_snapshot(7890));
+            // 动态确定一个当下确认无监听的端口：硬编码端口在本机可能恰好
+            // 被其他代理实例占用（port_has_listener 为真时按语义写回，测试
+            // 就失去了确定性）。
+            let dead_port = {
+                let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+                let port = listener.local_addr().unwrap().port();
+                drop(listener);
+                port
+            };
+            let backend =
+                FakeBackend::new(&["Wi-Fi"]).with_preset("Wi-Fi", owned_snapshot(dead_port));
             let mgr = manager_with(backend.clone(), &dir);
             mgr.enable(7898).unwrap();
 
