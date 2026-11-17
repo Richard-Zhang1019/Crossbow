@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { faultProbeText, faultEvidenceState, faultEvidenceText } from './report.ts';
+import { faultProbeText, faultEvidenceState, faultEvidenceText, faultLayerStats, dedupeObservedTargets } from './report.ts';
 
 const ok = { class: 'ok', httpStatus: 204 };
 const fault = {
@@ -50,4 +50,31 @@ test('unknown categories remain unknown and historical states explain the eviden
   assert.match(legacy, /State: recovery recorded in legacy format/);
   assert.match(legacy, /Legacy recovery timestamp: 2023-11-14T22:13:21.000Z/);
   assert.match(legacy, /Note: legacy fault-time proxy samples may have been overwritten/);
+});
+test('layer stats count each of the five probe layers once', () => {
+  assert.deepEqual(faultLayerStats(fault), { total: 5, failed: 1 });
+  const allOk = {
+    ...fault,
+    proxyHttps: { primary: ok, review: ok },
+  };
+  assert.deepEqual(faultLayerStats(allOk), { total: 5, failed: 0 });
+  const mixedPortDown = { ...fault, mixedPortOk: false };
+  assert.deepEqual(faultLayerStats(mixedPortDown), { total: 5, failed: 2 });
+  const reviewFails = {
+    ...fault,
+    directCn: { primary: ok, review: { class: 'dns', httpStatus: null } },
+  };
+  assert.deepEqual(faultLayerStats(reviewFails), { total: 5, failed: 2 });
+});
+test('observed proxies dedupe by target when every interface shares one endpoint', () => {
+  const grouped = dedupeObservedTargets([
+    'Wi-Fi → 127.0.0.1:7898', 'Wi-Fi → 127.0.0.1:7898', 'Thunderbolt Bridge → 127.0.0.1:7898',
+  ]);
+  assert.deepEqual(grouped, [
+    { iface: 'Wi-Fi', target: '127.0.0.1:7898', count: 2 },
+    { iface: 'Thunderbolt Bridge', target: '127.0.0.1:7898', count: 1 },
+  ]);
+  assert.equal(dedupeObservedTargets(['Wi-Fi → 127.0.0.1:7898', 'Wi-Fi → 10.0.0.2:7898']), null);
+  assert.equal(dedupeObservedTargets(['managed-network']), null);
+  assert.equal(dedupeObservedTargets([]), null);
 });

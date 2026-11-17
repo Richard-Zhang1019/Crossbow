@@ -282,19 +282,25 @@ async function scenarioDiagnostics(page) {
   await faultCard.waitFor({ state: "visible", timeout: 8000 });
   assert((await page.locator(".cb-fault-evidence .cb-fault-state").first().textContent()).includes("已验证恢复"),
     "最新故障样本应显示「已验证恢复」（含恢复探针）");
+  // 改版后取证默认折叠：先展开卡片，再展开上一条（原样本）
+  await page.locator(".cb-fault-evidence-toggle").click();
   await page.locator(".cb-fault-evidence details summary").first().click();
   await eventually(page, "上一条故障记录（原样本）展开可见",
     async (p) => (await p.locator(".cb-fault-evidence details").first().textContent()).includes("进行中"));
   // 页面可以展示观测值，但导出摘要必须白名单化
   assert((await faultCard.textContent()).includes("SECRET-TOKEN"), "页面本身应显示系统代理观测值");
 
-  // 首次诊断：2 项失败
-  await page.locator(".cb-page-head button", { hasText: "开始诊断" }).click();
+  // 首次诊断：2 项失败（空状态 CTA 触发，动作唯一出口已移入状态带）
+  await page.locator(".cb-empty .cb-button", { hasText: "开始诊断" }).click();
   await eventually(page, "诊断完成并提示 2 项需要处理",
     async (p) => (await p.locator(".cb-diag-summary h2").textContent()).includes("2 项需要处理"), 20_000);
   assert(await page.locator("#cb-check-listener.has-issue").isVisible(), "失败检查行应有 has-issue 标记");
-  assert((await page.locator("#cb-check-first-problem").textContent()).includes("混合端口监听"),
+  const firstFailed = page.locator("#cb-check-listener.first-failed");
+  assert(await firstFailed.isVisible(), "首个阻塞项应在列表内升级显示");
+  assert((await firstFailed.textContent()).includes("混合端口监听"),
     "首个阻塞项应指向混合端口监听");
+  assert((await firstFailed.locator(".cb-prio-tag").textContent()).includes("优先处理"),
+    "首个阻塞项应带优先处理标");
 
   // Capture the actual copy-button output without writing to the OS clipboard.
   await page.evaluate(() => {
@@ -303,7 +309,7 @@ async function scenarioDiagnostics(page) {
       value: { writeText: async (text) => { window.__cb.copiedSummary = text; } },
     });
   });
-  await page.locator(".cb-page-head button", { hasText: "预览诊断摘要" }).click();
+  await page.locator(".cb-diag-band-actions button", { hasText: "预览诊断摘要" }).click();
   const share = await page.locator(".cb-share-preview").textContent();
   for (const must of [
     "Crossbow 0.14.4-verify", "Mixed port: 7897",
@@ -326,7 +332,7 @@ async function scenarioDiagnostics(page) {
   await eventually(page, "原样本应标记为已过期",
     async (p) => (await p.locator(".cb-diag-summary h2").textContent()).includes("上次检查结果已过期"));
   await page.evaluate(() => window.__cb.finishAllOk());
-  await page.locator(".cb-page-head button", { hasText: "重新检查" }).click();
+  await page.locator(".cb-diag-band-actions button", { hasText: "重新检查" }).click();
   await eventually(page, "复检全部通过",
     async (p) => (await p.locator(".cb-diag-summary h2").textContent()).includes("所有适用检查已通过"), 20_000);
   assert(!(await page.locator("#cb-check-listener").getAttribute("class")).includes("has-issue"),

@@ -1,16 +1,16 @@
 import Dialog from "@/components/Dialog";
 import { useClipboardFeedback } from "@/hooks/useClipboardFeedback";
 import { Icon } from "@/components/Icon";
-import { Button } from "@/components/Button";
+import { Button, ButtonBase } from "@/components/Button";
 import { notify, notificationText } from "@/notifications/service";
 import { useOperationNotice } from "@/notifications/NotificationProvider";
-import { useEffect, useRef, useState, type MutableRefObject } from "react";
-import { ipc, type CheckResult, type FaultEvidence, type FaultEvidenceHistory, type FaultEvidenceLayer } from "@/services/ipc";
+import { Fragment, useEffect, useRef, useState, type MutableRefObject, type ReactNode } from "react";
+import { ipc, type CheckResult, type FaultEvidence, type FaultEvidenceLayer, type FaultEvidenceProbe, type FaultEvidenceHistory } from "@/services/ipc";
 import { currentLang, useT } from "@/i18n/i18n";
 import { PageHead } from "@/pages/Home";
 import { ProgressRing } from "@/components/ProgressRing";
 import { DIAG_STEPS, navigateTo } from "@/lib/workflow";
-import { failedChecks, faultEvidenceState, faultEvidenceText, faultProbeText, guideUrl, isStale, remainingAge, shareText, type DiagnosisSnapshot } from "./report";
+import { dedupeObservedTargets, failedChecks, faultEvidenceState, faultEvidenceText, faultLayerStats, faultProbeText, guideUrl, isStale, probeOk, remainingAge, shareText, type DiagnosisSnapshot } from "./report";
 
 let previousReport: DiagnosisSnapshot | null = null;
 
@@ -26,19 +26,49 @@ function FaultState({ fault }: { fault: FaultEvidence }) {
   </span>;
 }
 
+function ProbePill({ probe, fallback, text }: { probe: FaultEvidenceProbe | null; fallback?: string; text: (key: string) => string }) {
+  if (!probe) return <span className="cb-fault-na">{fallback ?? "—"}</span>;
+  const ok = probeOk(probe);
+  return <span className={`cb-fault-pill ${ok ? "ok" : "bad"}`}>{faultProbeText(probe, text)}</span>;
+}
+
 function FaultSamples({ fault }: { fault: FaultEvidence }) {
   const t = useT();
   const layerText = (layer: FaultEvidenceLayer) =>
     `${t("fault.primary")} ${faultProbeText(layer.primary, t)}` +
     (layer.review ? ` · ${t("fault.review")} ${faultProbeText(layer.review, t)}` : "");
+  const layers: { key: string; ok: boolean; primary: ReactNode; review: ReactNode }[] = [
+    {
+      key: "mixedPort",
+      ok: fault.mixedPortOk,
+      primary: <span className={`cb-fault-pill ${fault.mixedPortOk ? "ok" : "bad"}`}>{fault.mixedPortOk ? t("fault.class.ok") : t("fault.class.connect")}</span>,
+      review: <span className="cb-fault-na">—</span>,
+    },
+    {
+      key: "controller",
+      ok: probeOk(fault.controller),
+      primary: <ProbePill probe={fault.controller} text={t} />,
+      review: <span className="cb-fault-na">—</span>,
+    },
+    ...([["directCn", fault.directCn], ["directGlobal", fault.directGlobal], ["proxyHttps", fault.proxyHttps]] as const).map(([key, layer]) => ({
+      key,
+      ok: probeOk(layer.primary) && (!layer.review || probeOk(layer.review)),
+      primary: <ProbePill probe={layer.primary} text={t} />,
+      review: <ProbePill probe={layer.review ?? null} text={t} />,
+    })),
+  ];
   return <>
-    <p className="cb-fault-time">{t("fault.startedAt")}：{faultTime(fault.startedAtMs)}</p>
-    <dl className="cb-fault-layers">
-      <div><dt>{t("fault.mixedPort")}</dt><dd>{fault.mixedPortOk ? t("fault.class.ok") : t("fault.class.connect")}</dd></div>
-      <div><dt>{t("fault.controller")}</dt><dd>{faultProbeText(fault.controller, t)}</dd></div>
-      <div><dt>{t("fault.directCn")}</dt><dd>{layerText(fault.directCn)}</dd></div>
-      <div><dt>{t("fault.directGlobal")}</dt><dd>{layerText(fault.directGlobal)}</dd></div>
-      <div><dt>{t("fault.proxyHttps")}</dt><dd>{layerText(fault.proxyHttps)}</dd></div>
+    <dl className="cb-fault-probe-grid">
+      <div className="cb-fault-grid-h">{t("fault.layerHeader")}</div>
+      <div className="cb-fault-grid-h">{t("fault.primary")}</div>
+      <div className="cb-fault-grid-h">{t("fault.review")}</div>
+      {layers.map(layer => (
+        <Fragment key={layer.key}>
+          <div className="cb-fault-grid-c cb-fault-layer-name">{t(`fault.${layer.key}`)}</div>
+          <div className="cb-fault-grid-c">{layer.primary}</div>
+          <div className="cb-fault-grid-c">{layer.review}</div>
+        </Fragment>
+      ))}
     </dl>
     {fault.recovery && <p className="cb-fault-time">
       {t("fault.recoveryProbe")}：{layerText(fault.recovery.proxyHttps)} · {faultTime(fault.recovery.atMs)}
@@ -48,10 +78,32 @@ function FaultSamples({ fault }: { fault: FaultEvidence }) {
       {t("fault.legacyNote")}
     </p>}
     <p className="cb-fault-time">{t("fault.pathUnverified")}</p>
-    {fault.sysproxyObserved.length > 0 && <p className="cb-fault-observed cb-selectable">
-      {t("fault.observed")}：{fault.sysproxyObserved.join("；")}
-    </p>}
+    <ObservedList observed={fault.sysproxyObserved} />
   </>;
+}
+
+/** 观测接口按端点去重；多目标或解析失败时回退原始列表。 */
+function ObservedList({ observed }: { observed: string[] }) {
+  const t = useT();
+  if (!observed.length) return null;
+  const groups = dedupeObservedTargets(observed);
+  if (!groups) {
+    return <p className="cb-fault-observed cb-selectable">
+      {t("fault.observed")}：{observed.join("；")}
+    </p>;
+  }
+  return <div className="cb-fault-observed">
+    <p className="cb-fault-time">{t("fault.observed")}：{t("fault.observedAll", { n: observed.length })}</p>
+    <div className="cb-fault-ifchips">
+      {groups.map(group => (
+        <span className="cb-fault-ifchip" key={group.iface}>
+          <b>{group.count > 1 ? `${group.iface} ×${group.count}` : group.iface}</b>
+          <span className="cb-fault-arrow" aria-hidden="true">→</span>
+          <code>{group.target}</code>
+        </span>
+      ))}
+    </div>
+  </div>;
 }
 
 export default function DiagnosticsPage({
@@ -70,6 +122,8 @@ export default function DiagnosticsPage({
   const [checking, setChecking] = useState<string | null>(null);
   const [fixing, setFixing] = useState<CheckResult | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  // 故障取证默认折叠：它是背景资料，不应把诊断结果顶出视口（#诊断页改版）
+  const [faultOpen, setFaultOpen] = useState(false);
   const [faultHistory, setFaultHistory] = useState<FaultEvidenceHistory | null>(null);
   const { copied, copy, clear } = useClipboardFeedback<string>("diagnostics-summary-copy");
   const restartRunning = useOperationNotice("core-restart")?.kind === "progress";
@@ -222,6 +276,7 @@ export default function DiagnosticsPage({
   const canRepair = !running && !runFailed && !stale;
   const fault = faultHistory?.latest;
   const previousFault = faultHistory?.previous;
+  const faultStats = fault ? faultLayerStats(fault) : null;
   const summaryText = summaryOpen ? [
     report ? shareText(report, appVersion, stale || runFailed) : null,
     fault ? faultEvidenceText(fault) : null,
@@ -234,81 +289,87 @@ export default function DiagnosticsPage({
     : first ? t("diag.resultIssues", { n: failed.length })
     : applicable ? t("diag.applicableOk") : t("diag.title");
   const goConfig = () => window.dispatchEvent(new CustomEvent("cb:goto", { detail: "profiles" }));
-  return (
-    <div className="cb-diagnostics-page">
-      <PageHead title={t("diag.title")} meta={t("diag.hint")}>
+  const faultCard = fault && (
+    <section className={`cb-card cb-fault-evidence${faultOpen ? " open" : ""}`} aria-label={t("fault.title")}>
+      <ButtonBase
+        className="cb-fault-evidence-toggle"
+        aria-expanded={faultOpen}
+        aria-controls="cb-fault-evidence-detail"
+        onClick={() => setFaultOpen(open => !open)}
+      >
+        <span className="cb-fault-chev" aria-hidden="true"><Icon name="chevron" size={15} strokeWidth={2} /></span>
+        <h2>{t("fault.title")}</h2>
+        <span className="cb-fault-evidence-sum">
+          {t("fault.startedAt")} {faultTime(fault.startedAtMs)}
+          {faultStats && <> · {t("fault.probeLayers", { n: faultStats.total })} · {t("fault.probeFailed", { n: faultStats.failed })}</>}
+          {previousFault && <> · {t("fault.previous")} {faultTime(previousFault.startedAtMs)}</>}
+        </span>
+        <FaultState fault={fault} />
+      </ButtonBase>
+      <div className="cb-fault-detail" id="cb-fault-evidence-detail" hidden={!faultOpen}>
+        <FaultSamples fault={fault} />
+        {previousFault && (
+          <details className="cb-fault-prev">
+            <summary>{t("fault.previous")} · {faultTime(previousFault.startedAtMs)}</summary>
+            <FaultState fault={previousFault} />
+            <FaultSamples fault={previousFault} />
+          </details>
+        )}
+      </div>
+    </section>
+  );
+  const statusBand = (running || report) && (
+    <div className="cb-diag-summary" aria-live="polite">
+      {running ? (
+        <ProgressRing value={progress.length / DIAG_STEPS.length * 100} label={resultTitle} size={28} />
+      ) : (
+        <span className="cb-diagnostic-result" data-result={canRepair && applicable && !first ? "passed" : "attention"} aria-hidden="true">
+          <Icon name={canRepair && applicable && !first ? "check" : "activity"} size={20} />
+        </span>
+      )}
+      <div className="cb-diag-band-text">
+        <h2>
+          {resultTitle}
+          {fault && faultEvidenceState(fault) === "ongoing" && (
+            <span className="cb-diag-band-chip">{t("diag.ongoingFaultChip")}</span>
+          )}
+        </h2>
+        {!running && report && (
+          <p>
+            {t("diag.checkedAt", { time: new Date(report.completedAt).toLocaleString() })}
+            {canRepair && first && <> · {t("diag.firstBlockerMeta", { check: t(`check.${first.id}`) })}</>}
+          </p>
+        )}
+      </div>
+      <div className="cb-diag-band-actions">
         {(report || fault) && !running && (
-          <Button onClick={() => setSummaryOpen(true)}>
-            {t("diag.summaryPreview")}
-          </Button>
+          <Button onClick={() => setSummaryOpen(true)}>{t("diag.summaryPreview")}</Button>
         )}
         <Button variant="primary" disabled={!listeners} loading={running || repairRunning} onClick={() => void run()}>
           <span role="status">{running ? t("diag.running") : repairRunning ? repairLabel : t(stale || runFailed ? "diag.rerun" : "diag.run")}</span>
         </Button>
-      </PageHead>
-      {fault && <section className="cb-card cb-fault-evidence" aria-label={t("fault.title")}>
-        <div className="cb-fault-evidence-head">
-          <h2>{t("fault.title")}</h2>
-          <FaultState fault={fault} />
-        </div>
-        <FaultSamples fault={fault} />
-        {previousFault && <details className="cb-fault-time">
-          <summary>{t("fault.previous")} · {faultTime(previousFault.startedAtMs)}</summary>
-          <FaultState fault={previousFault} />
-          <FaultSamples fault={previousFault} />
-        </details>}
-      </section>}
+      </div>
+    </div>
+  );
+  return (
+    <div className="cb-diagnostics-page">
+      <PageHead title={t("diag.title")} meta={t("diag.hint")} />
       {!results && !runFailed ? (
-        <div className="cb-empty">
-          <p>{repairRunning ? repairLabel : t("diag.hint")}</p>
-        </div>
+        <>
+          {faultCard}
+          <div className="cb-empty">
+            <span className="cb-empty-sig" aria-hidden="true"><Icon name="pulse" size={20} /></span>
+            <h2>{t("diag.emptyTitle")}</h2>
+            <p>{repairRunning ? repairLabel : t("diag.emptyHint")}</p>
+            <Button variant="primary" disabled={!listeners} loading={running} onClick={() => void run()}>
+              <span role="status">{repairRunning ? repairLabel : t("diag.run")}</span>
+            </Button>
+          </div>
+        </>
       ) : (
         <>
-          <div className="cb-diag-summary" aria-live="polite">
-            {running ? (
-              <ProgressRing value={progress.length / DIAG_STEPS.length * 100} label={resultTitle} size={28} />
-            ) : (
-              <span className="cb-diagnostic-result" data-result={canRepair && applicable && !first ? "passed" : "attention"} aria-hidden="true">
-                <Icon name={canRepair && applicable && !first ? "check" : "activity"} size={22} />
-              </span>
-            )}
-            <div>
-              <h2>{resultTitle}</h2>
-              {!running && report && <p>{t("diag.checkedAt", { time: new Date(report.completedAt).toLocaleString() })}</p>}
-            </div>
-          </div>
-          {canRepair && first && (
-            <section
-              id="cb-check-first-problem"
-              tabIndex={-1}
-              className="cb-workflow-callout cb-diag-blocker"
-            >
-              <div>
-                <span>{t("diag.firstBlocker")}</span>
-                <h3>{t(`check.${first.id}`)}</h3>
-                <p>{t("diag.nextStep")}</p>
-              </div>
-              {first.fix ? (
-                <Button
-                  loading={fixing?.id === first.id}
-                  disabled={repairRunning}
-                  onClick={() => void fix(first)}
-                >
-                  {t(`diag.fix.${first.fix}`)}
-                </Button>
-              ) : (
-                <Button
-                  onClick={
-                    first.id === "config_renders"
-                      ? goConfig
-                      : () => document.getElementById(`cb-check-${first.id}`)?.focus()
-                  }
-                >
-                  {first.id === "config_renders" ? t("diag.openConfig") : t("workflow.details")}
-                </Button>
-              )}
-            </section>
-          )}
+          {statusBand}
+          {faultCard}
           <div className="cb-diag-results">
             {DIAG_STEPS.map((id) => {
               const row = results?.find((r) => r.id === id),
@@ -321,17 +382,22 @@ export default function DiagnosticsPage({
                   : checking === id
                     ? "diag.checking"
                     : runFailed ? "diag.incomplete" : "diag.pending";
+              const isFailedRow = !!row && !row.ok && !row.skipped;
+              const isFirstFailure = canRepair && isFailedRow && row.id === first?.id;
               return (
                 <section
                   key={id}
                   id={`cb-check-${id}`}
                   tabIndex={-1}
-                  className={`cb-card cb-diagnostic-step ${row && !row.ok && !row.skipped ? "has-issue" : ""}`}
+                  className={`cb-card cb-diagnostic-step ${isFailedRow ? "has-issue" : ""}${isFirstFailure ? " first-failed" : ""}`}
                   aria-busy={running && checking === id}
                 >
                   <span className="cb-check-symbol" data-state={!row?"pending":row.skipped?"skipped":row.ok?"passed":"failed"} aria-hidden="true"><Icon name={!row||row.skipped?"minus":row.ok?"check":"close"} size={16} strokeWidth={2}/></span>
                   <div>
-                    <h3>{t(`check.${id}`)}</h3>
+                    <h3>
+                      {t(`check.${id}`)}
+                      {isFirstFailure && <span className="cb-prio-tag">{t("diag.prio")}</span>}
+                    </h3>
                     {row?.detail && <p className="cb-selectable">{row.detail}</p>}
                     {!running && report && row && !row.ok && !row.skipped && (
                       <a className="cb-diagnostic-guide" href={guideUrl(id, currentLang(), report.context)}
@@ -344,8 +410,8 @@ export default function DiagnosticsPage({
                       </a>
                     )}
                   </div>
-                  <span>{t(state)}</span>
-                  {canRepair && row?.fix && (
+                  <span className={isFailedRow ? "cb-check-state-fail" : undefined}>{t(state)}</span>
+                  {canRepair && isFailedRow && row?.fix && (
                     <Button
                       size="small"
                       loading={fixing?.id === id}
@@ -354,6 +420,9 @@ export default function DiagnosticsPage({
                     >
                       {t(`diag.fix.${row.fix}`)}
                     </Button>
+                  )}
+                  {isFirstFailure && !row?.fix && id === "config_renders" && (
+                    <Button size="small" onClick={goConfig}>{t("diag.openConfig")}</Button>
                   )}
                 </section>
               );
