@@ -1,7 +1,7 @@
 import Dialog from "@/components/Dialog";
 import { useClipboardFeedback } from "@/hooks/useClipboardFeedback";
 import { Icon } from "@/components/Icon";
-import { Button } from "@/components/Button";
+import { Button, ButtonBase } from "@/components/Button";
 import { notify, notificationText } from "@/notifications/service";
 import { useOperationNotice } from "@/notifications/NotificationProvider";
 import { Fragment, useEffect, useRef, useState, type MutableRefObject, type ReactNode } from "react";
@@ -291,8 +291,7 @@ export default function DiagnosticsPage({
   const goConfig = () => window.dispatchEvent(new CustomEvent("cb:goto", { detail: "profiles" }));
   const faultCard = fault && (
     <section className={`cb-card cb-fault-evidence${faultOpen ? " open" : ""}`} aria-label={t("fault.title")}>
-      <button
-        type="button"
+      <ButtonBase
         className="cb-fault-evidence-toggle"
         aria-expanded={faultOpen}
         aria-controls="cb-fault-evidence-detail"
@@ -306,7 +305,7 @@ export default function DiagnosticsPage({
           {previousFault && <> · {t("fault.previous")} {faultTime(previousFault.startedAtMs)}</>}
         </span>
         <FaultState fault={fault} />
-      </button>
+      </ButtonBase>
       <div className="cb-fault-detail" id="cb-fault-evidence-detail" hidden={!faultOpen}>
         <FaultSamples fault={fault} />
         {previousFault && (
