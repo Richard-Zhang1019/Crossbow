@@ -559,7 +559,7 @@ pub(crate) fn runtime_for(
         log_level: "info".into(),
         tun_enable,
         native_ipv6,
-        unified_delay: true,
+        unified_delay: store.data().engine.unified_delay,
     }
 }
 
@@ -745,6 +745,7 @@ pub(crate) struct EngineView {
     pub(crate) mixed_port: u16,
     pub(crate) allow_lan: bool,
     pub(crate) flag_emoji: bool,
+    pub(crate) unified_delay: bool,
     pub(crate) linux_wireguard_coexist: bool,
     /// 当前引擎对应内核是否已安装。
     pub(crate) core_installed: bool,

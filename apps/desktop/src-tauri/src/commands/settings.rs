@@ -93,6 +93,7 @@ pub(crate) fn get_engine_config(state: State<AppState>) -> EngineView {
         mixed_port: store.data().engine.mixed_port,
         allow_lan: store.data().engine.allow_lan,
         flag_emoji: store.data().engine.flag_emoji,
+        unified_delay: store.data().engine.unified_delay,
         linux_wireguard_coexist: store.data().engine.linux_wireguard_coexist,
         core_installed,
     }
@@ -115,6 +116,14 @@ pub(crate) fn platform_capabilities() -> platform::Capabilities {
 pub(crate) fn set_flag_emoji(state: State<AppState>, enabled: bool) -> Result<(), String> {
     let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
     store.data_mut().engine.flag_emoji = enabled;
+    store.save().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub(crate) fn set_unified_delay(state: State<AppState>, enabled: bool) -> Result<(), String> {
+    let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+    store.data_mut().engine.unified_delay = enabled;
     store.save().map_err(|e| e.to_string())?;
     Ok(())
 }
