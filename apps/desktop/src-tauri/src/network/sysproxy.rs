@@ -3029,8 +3029,17 @@ mod tests {
         #[test]
         fn exit_clears_dead_snapshot_ports() {
             let dir = tempfile::tempdir().unwrap();
-            // 7890 在测试环境无监听：旧语义会把浏览器指回死端口造成断网。
-            let backend = FakeBackend::new(&["Wi-Fi"]).with_preset("Wi-Fi", owned_snapshot(7890));
+            // 动态确定一个当下确认无监听的端口：硬编码端口在本机可能恰好
+            // 被其他代理实例占用（port_has_listener 为真时按语义写回，测试
+            // 就失去了确定性）。
+            let dead_port = {
+                let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+                let port = listener.local_addr().unwrap().port();
+                drop(listener);
+                port
+            };
+            let backend =
+                FakeBackend::new(&["Wi-Fi"]).with_preset("Wi-Fi", owned_snapshot(dead_port));
             let mgr = manager_with(backend.clone(), &dir);
             mgr.enable(7898).unwrap();
 
