@@ -122,6 +122,9 @@ pub struct EngineConfig {
     /// 节点旗帜补全（按地区关键词给节点名加国旗前缀）。
     #[serde(default = "default_flag_emoji")]
     pub flag_emoji: bool,
+    /// #532：统一延迟——mihomo 测延迟扣除握手开销，跨协议数字可比。
+    #[serde(default = "default_unified_delay")]
+    pub unified_delay: bool,
     /// TUN 模式：内核创建 utun 虚拟网卡接管全局流量（macOS 需特权服务）。
     #[serde(default)]
     pub tun_enable: bool,
@@ -132,6 +135,10 @@ pub struct EngineConfig {
 
 fn default_engine() -> Engine {
     Engine::Mihomo
+}
+
+fn default_unified_delay() -> bool {
+    true
 }
 
 fn default_mixed_port() -> u16 {
@@ -146,6 +153,7 @@ impl Default for EngineConfig {
             mixed_port: default_mixed_port(),
             allow_lan: false,
             flag_emoji: default_flag_emoji(),
+            unified_delay: true,
             tun_enable: false,
             linux_wireguard_coexist: false,
         }

@@ -93,6 +93,7 @@ pub(crate) fn get_engine_config(state: State<AppState>) -> EngineView {
         mixed_port: store.data().engine.mixed_port,
         allow_lan: store.data().engine.allow_lan,
         flag_emoji: store.data().engine.flag_emoji,
+        unified_delay: store.data().engine.unified_delay,
         linux_wireguard_coexist: store.data().engine.linux_wireguard_coexist,
         core_installed,
     }
@@ -119,6 +120,26 @@ pub(crate) fn set_flag_emoji(state: State<AppState>, enabled: bool) -> Result<()
     Ok(())
 }
 
+#[tauri::command]
+pub(crate) fn set_unified_delay(state: State<AppState>, enabled: bool) -> Result<(), String> {
+    let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+    persist_unified_delay(&mut store, enabled)?;
+    Ok(())
+}
+
+fn persist_unified_delay(store: &mut Store, enabled: bool) -> Result<(), String> {
+    let previous = store.data().engine.unified_delay;
+    if previous == enabled {
+        return Ok(());
+    }
+    store.data_mut().engine.unified_delay = enabled;
+    if let Err(error) = store.save() {
+        store.data_mut().engine.unified_delay = previous;
+        return Err(error.to_string());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,6 +158,24 @@ mod tests {
                 .data()
                 .ui
                 .deep_link_import_confirm
+        );
+    }
+
+    #[test]
+    fn failed_unified_delay_save_preserves_previous_setting() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut store = Store::open(directory.path()).unwrap();
+        store.save().unwrap();
+        std::fs::create_dir(directory.path().join("store.json.tmp")).unwrap();
+
+        assert!(persist_unified_delay(&mut store, false).is_err());
+        assert!(store.data().engine.unified_delay);
+        assert!(
+            Store::open(directory.path())
+                .unwrap()
+                .data()
+                .engine
+                .unified_delay
         );
     }
 }

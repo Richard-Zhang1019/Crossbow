@@ -832,6 +832,7 @@ pub fn run() {
             set_profile_interval,
             rename_profile,
             set_flag_emoji,
+            set_unified_delay,
             create_override,
             update_override,
             remove_override,

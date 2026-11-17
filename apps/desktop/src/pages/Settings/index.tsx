@@ -52,6 +52,7 @@ export default function SettingsPage({
   const engineTouched = useRef(false);
   selectedEngineRef.current = selectedEngine;
   const [flags, setFlags] = useState(true);
+  const [unified, setUnified] = useState(true);
   const [tun, setTun] = useState<{ enabled: boolean; ready: boolean } | null>(
     null,
   );
@@ -121,7 +122,7 @@ export default function SettingsPage({
     };
     await Promise.all([
       read("engine", ipc.getEngineConfig, e => {
-        setEngine(e); setFlags(e.flag_emoji);
+        setEngine(e); setFlags(e.flag_emoji); setUnified(e.unified_delay);
         if (!dirtyPort.current) setPortDraft(String(e.mixed_port));
         if (!engineTouched.current) { setSelectedEngine(e.engine); selectedEngineRef.current = e.engine; }
       }),
@@ -210,6 +211,7 @@ export default function SettingsPage({
               retention: "settings.logsRetention",
               "auto-check": "settings.autoCheck",
               "auto-download": "settings.autoDownload",
+              "unified-delay": "settings.unifiedDelay",
             } as Record<string, string>
           )[key] ?? `settings.${key}`,
       });
@@ -419,6 +421,19 @@ export default function SettingsPage({
                   t("settings.flags"),
                   () => ipc.setFlagEmoji(v),
                   () => setFlags(v),
+                );
+              }}
+            />
+          </Row>
+          <Row label={t("settings.unifiedDelay")} hint={t("settings.unifiedDelayHint")}>
+            <Switch
+              checked={unified}
+              onChange={async (v) => {
+                await saveSetting(
+                  "unified-delay",
+                  t("settings.unifiedDelay"),
+                  () => ipc.setUnifiedDelay(v),
+                  () => setUnified(v),
                 );
               }}
             />
