@@ -138,6 +138,14 @@ pub(crate) async fn open_diagnosis_guide(url: String) -> Result<(), String> {
     {
         return Err("Invalid troubleshooting URL".into());
     }
+    open_in_system_browser(url.as_str(), "Could not open troubleshooting guide").await
+}
+
+/// #544：系统默认浏览器打开 URL（open/rundll32/xdg-open），供带白名单
+/// 校验的命令共用；阻塞在 blocking 线程，不占 async 运行时。
+pub(crate) async fn open_in_system_browser(url: &str, failure_prefix: &str) -> Result<(), String> {
+    let url = url.to_string();
+    let prefix = failure_prefix.to_string();
     tauri::async_runtime::spawn_blocking(move || {
         #[cfg(target_os = "macos")]
         let mut command = crate::process::command("/usr/bin/open");
@@ -156,7 +164,7 @@ pub(crate) async fn open_diagnosis_guide(url: String) -> Result<(), String> {
         status
             .success()
             .then_some(())
-            .ok_or_else(|| format!("Could not open troubleshooting guide: {status}"))
+            .ok_or_else(|| format!("{prefix}: {status}"))
     })
     .await
     .map_err(|error| error.to_string())?

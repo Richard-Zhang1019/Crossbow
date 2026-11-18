@@ -704,6 +704,11 @@ export default function SettingsPage({
             label={t("settings.snapshot")}
             hint={t("settings.snapshotAuto")}
           />
+          <Row label={t("feedback.entry")} hint={t("feedback.entryHint")}>
+            <Button onClick={() => ipc.openFeedbackPage().catch((e) => notify.error(e, "open-feedback"))}>
+              {t("feedback.entryBtn")}
+            </Button>
+          </Row>
           <Row label={t("settings.appVersion")} hint="Crossbow">
             <span
               className="text-xs tabular-nums"
