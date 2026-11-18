@@ -57,6 +57,14 @@ Windows GUI and real-network behavior still need field verification — see
 [Windows testing](docs/WINDOWS-TESTING.md). If the explicit proxy works but your browser
 doesn't, check whether the browser uses the system proxy.
 
+v0.15.0/v0.15.1 adds: an in-app bug-report entry that opens a pre-filled GitHub issue;
+a config-package export/import for device migration (versioned JSON, sanitized import
+preview, automatic rollback); a fault-evidence card in diagnostics with layered probes
+and recovery evidence; network-takeover self-healing across Wi-Fi/hotspot switches,
+sleep/wake and IPv6-only networks; cancellation-aware latency batches with unified delay
+(handshake overhead stripped, cross-protocol numbers comparable); no more admin prompts
+when toggling the system proxy; and a redesigned configuration page header.
+
 When testing network configs on macOS, read [TUN offline recovery](docs/TUN-RECOVERY.md)
 first; recovery commands need a still-running backup proxy. macOS configs and logs live in
 `~/Library/Application Support/com.richard.crossbow/`. Data from the legacy

@@ -48,6 +48,8 @@ v0.14.3 补齐 MIT LICENSE；Windows 静默安装不再因服务注册被环境�
 Windows GUI 与真实网络仍需实机验收，步骤见
 [Windows 测试说明](docs/WINDOWS-TESTING.md)。显式代理能访问而浏览器不能访问时，请检查浏览器是否使用系统代理。
 
+v0.15.0/v0.15.1 新增：应用内「反馈问题」入口（一键打开预填的 GitHub issue）；配置包导出/导入与换机迁移（带版本号的 JSON、导入预览、失败自动回滚）；诊断页故障取证卡（双层探针与恢复证据）；Wi-Fi/热点切换、睡眠唤醒与 IPv6-only 网络下的接管自愈；节点测速支持中途取消并引入统一延迟（扣除握手开销，跨协议数字可比）；开关系统代理不再弹出管理员授权框；配置页页头重设计。
+
 macOS 测试网络配置时可先阅读 [TUN 离线恢复说明](docs/TUN-RECOVERY.md)；恢复命令需要仍在运行的备用代理。
 macOS 配置和日志位于 `~/Library/Application Support/com.richard.crossbow/`。旧版
 `com.crossbow.app` 数据会自动迁移，升级前仍建议备份数据目录。
