@@ -183,9 +183,10 @@ pub fn convert_to_singbox(
         "type": "direct", "tag": "DIRECT"
     }));
     // mihomo REJECT 内置出站 → sing-box block 出站（规则引用时自动补齐）
-    let uses_reject = route_rules
-        .iter()
-        .any(|r| r.get("outbound").and_then(Value::as_str) == Some("REJECT"));
+    let uses_reject = final_out == "REJECT"
+        || route_rules
+            .iter()
+            .any(|r| r.get("outbound").and_then(Value::as_str) == Some("REJECT"));
     if uses_reject {
         outbounds.push(json!({
             "type": "block", "tag": "REJECT"
@@ -1013,6 +1014,29 @@ rules:
         let route = v["route"]["rules"].as_array().unwrap();
         let reject_rules = route.iter().filter(|r| r["outbound"] == "REJECT").count();
         assert_eq!(reject_rules, 2, "两条 REJECT 规则都应保留");
+    }
+
+    #[test]
+    fn reject_match_rule_gets_auto_generated_block_outbound() {
+        let cfg = r#"proxies:
+  - name: HK-01
+    type: ss
+    server: 1.2.3.4
+    port: 5
+    cipher: aes-128-gcm
+    password: p
+rules:
+  - MATCH,REJECT"#;
+        let out = convert_to_singbox(cfg, 7898, false).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        let reject = v["outbounds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|o| o["tag"] == "REJECT")
+            .expect("MATCH,REJECT should generate a block outbound");
+        assert_eq!(reject["type"], "block");
+        assert_eq!(v["route"]["final"], "REJECT");
     }
 
     #[test]
