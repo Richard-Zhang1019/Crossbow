@@ -1,6 +1,112 @@
 // 退出/菜单/启动期自检（#423 Stage B 从 lib.rs 提取）。
 use crate::*;
 use tauri::{AppHandle, Manager};
+/// #527：托盘态重建窗口的加载占位——主题底色（under-page）之上居中放
+/// 品牌 mark（模板图自动适配明暗），页面加载完成后移除。占位在 webview
+/// 之上：首帧前盖住系统白底，webview 内容就绪后自然被覆盖并移除。
+#[cfg(target_os = "macos")]
+fn attach_loading_placeholder(win: &tauri::WebviewWindow) {
+    use objc2::{AnyThread, MainThreadMarker};
+    use objc2_app_kit::{
+        NSAutoresizingMaskOptions, NSImage, NSImageScaling, NSImageView,
+        NSUserInterfaceItemIdentification, NSView, NSWindowOrderingMode,
+    };
+    use objc2_foundation::{NSData, NSPoint, NSRect, NSSize, NSString};
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    let Ok(handle) = win.window_handle() else {
+        return;
+    };
+    let RawWindowHandle::AppKit(appkit) = handle.as_raw() else {
+        return;
+    };
+    unsafe {
+        let view = &*(appkit.ns_view.as_ptr().cast::<NSView>());
+        let Some(ns_window) = view.window() else {
+            return;
+        };
+        let Some(content) = ns_window.contentView() else {
+            return;
+        };
+        let bounds = content.bounds();
+        let (width, height) = (bounds.size.width, bounds.size.height);
+
+        let placeholder = NSView::new(mtm);
+        placeholder.setFrame(bounds);
+        placeholder.setAutoresizingMask(
+            NSAutoresizingMaskOptions::ViewWidthSizable
+                | NSAutoresizingMaskOptions::ViewHeightSizable,
+        );
+        placeholder.setIdentifier(Some(&NSString::from_str("crossbow-loading-placeholder")));
+
+        let mark_size = 44.0;
+        let mark = NSImageView::new(mtm);
+        mark.setFrame(NSRect::new(
+            NSPoint::new((width - mark_size) / 2.0, (height - mark_size) / 2.0),
+            NSSize::new(mark_size, mark_size),
+        ));
+        mark.setAutoresizingMask(
+            NSAutoresizingMaskOptions::ViewMinXMargin
+                | NSAutoresizingMaskOptions::ViewMaxXMargin
+                | NSAutoresizingMaskOptions::ViewMinYMargin
+                | NSAutoresizingMaskOptions::ViewMaxYMargin,
+        );
+        let data = NSData::with_bytes(include_bytes!("../../icons/tray-icon.png"));
+        let Some(image) = NSImage::initWithData(NSImage::alloc(), &data) else {
+            return;
+        };
+        image.setTemplate(true);
+        mark.setImage(Some(&image));
+        mark.setImageScaling(NSImageScaling::ScaleProportionallyDown);
+        mark.setAlphaValue(0.55);
+        // NSImageView 无 Deref 到 NSView（objc2 0.6 子类不生成 Deref），
+        // 转 NSView 引用用 into_super 两次（NSImageView → NSControl → NSView）。
+        let mark_view = mark.into_super().into_super();
+
+        // 最上层：盖住 webview 首帧前的白底。
+        content.addSubview_positioned_relativeTo(&mark_view, NSWindowOrderingMode::Above, None);
+    }
+}
+
+/// #527：按标识移除加载占位（on_page_load Finished，主线程回调）。
+#[cfg(target_os = "macos")]
+fn remove_loading_placeholder(win: &tauri::WebviewWindow) {
+    use objc2::rc::Retained;
+    use objc2_app_kit::NSUserInterfaceItemIdentification;
+    use objc2_app_kit::NSView;
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    let Ok(handle) = win.window_handle() else {
+        return;
+    };
+    let RawWindowHandle::AppKit(appkit) = handle.as_raw() else {
+        return;
+    };
+    unsafe {
+        let view = &*(appkit.ns_view.as_ptr().cast::<NSView>());
+        let Some(ns_window) = view.window() else {
+            return;
+        };
+        let Some(content) = ns_window.contentView() else {
+            return;
+        };
+        let subviews = content.subviews();
+        let mut owned_placeholder: Option<Retained<NSView>> = None;
+        for index in (0..subviews.len()).rev() {
+            let sub = subviews.objectAtIndex(index);
+            let ident = sub.identifier().map(|s| s.to_string());
+            if ident.as_deref() == Some("crossbow-loading-placeholder") {
+                owned_placeholder = Some(sub.clone());
+                sub.removeFromSuperview();
+            }
+        }
+        drop(owned_placeholder);
+    }
+}
+
 pub(crate) fn show_main_window(app: &AppHandle) {
     // Restore the regular app before rebuilding a window from Accessory mode.
     #[cfg(target_os = "macos")]
@@ -28,9 +134,19 @@ pub(crate) fn show_main_window(app: &AppHandle) {
             let builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay);
             #[cfg(target_os = "macos")]
             let builder = builder.hidden_title(true);
+            #[cfg(target_os = "macos")]
+            let builder = builder.on_page_load(|win, payload| {
+                // #527：页面加载完成 → 移除加载占位（webview 内容已可绘制，
+                // 未就绪期间由 under-page 主题底色兜底，无白闪）。
+                if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                    remove_loading_placeholder(&win);
+                }
+            });
             let built = builder.build();
             // 重建窗口同样应用深色标题栏
             if let Ok(win) = built.as_ref() {
+                #[cfg(target_os = "macos")]
+                attach_loading_placeholder(win);
                 let theme = app
                     .try_state::<AppState>()
                     .map(|state| {
