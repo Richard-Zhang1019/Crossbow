@@ -69,6 +69,7 @@ fn apply_macos_window_appearance(win: &tauri::WebviewWindow, theme: &str) {
         NSAppearance, NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua,
         NSView,
     };
+    use objc2_web_kit::WKWebView;
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
     let Ok(handle) = win.window_handle() else {
@@ -92,6 +93,31 @@ fn apply_macos_window_appearance(win: &tauri::WebviewWindow, theme: &str) {
                 ns_window.setAppearance(appearance.as_deref());
             } else {
                 ns_window.setAppearance(None);
+            }
+            // #527：WKWebView 首帧前是系统白底（轻量待机重建时体感为白屏卡死）。
+            // 给 WKWebView 的 under-page 垫主题底色：首帧前显示主题色（加载中
+            // 观感），页面 CSS 绘制后自然覆盖。webview 是 parent view 的子视图
+            // （wry: ns_window.setContentView(parent_view) + addSubview(webview)）。
+            let dark = match theme {
+                "dark" => true,
+                "light" => false,
+                _ => win.theme().ok() == Some(tauri::Theme::Dark),
+            };
+            let (r, g, b) = if dark { (10, 12, 16) } else { (246, 247, 249) };
+            let under_page = objc2_app_kit::NSColor::colorWithSRGBRed_green_blue_alpha(
+                f64::from(r) / 255.0,
+                f64::from(g) / 255.0,
+                f64::from(b) / 255.0,
+                1.0,
+            );
+            if let Some(content) = ns_window.contentView() {
+                let subviews = content.subviews();
+                if let Some(first) = subviews.firstObject() {
+                    // wry 保证子视图[0] 是 WKWebView；downcast 失败则跳过。
+                    if let Some(webview) = first.downcast_ref::<WKWebView>() {
+                        webview.setUnderPageBackgroundColor(Some(&under_page));
+                    }
+                }
             }
         }
     }
