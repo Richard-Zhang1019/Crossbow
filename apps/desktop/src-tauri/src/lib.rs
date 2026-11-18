@@ -833,7 +833,7 @@ pub fn run() {
             set_profile_interval,
             rename_profile,
             set_flag_emoji,
-            open_feedback_issue,
+            open_feedback_page,
             set_unified_delay,
             create_override,
             update_override,

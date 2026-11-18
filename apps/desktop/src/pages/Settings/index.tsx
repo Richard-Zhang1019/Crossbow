@@ -1,7 +1,6 @@
 import { Input, Switch, ControlRow as Row } from "@/components/Controls";
 import { createReadGate, parsePort } from "@/lib/stateReliability";
 import { Button } from "@/components/Button";
-import FeedbackDialog from "@/components/FeedbackDialog";
 import { notify, notificationText } from "@/notifications/service";
 import { useOperationNotice } from "@/notifications/NotificationProvider";
 import { useEffect, useRef, useState } from "react";
@@ -53,7 +52,6 @@ export default function SettingsPage({
   const engineTouched = useRef(false);
   selectedEngineRef.current = selectedEngine;
   const [flags, setFlags] = useState(true);
-  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [unified, setUnified] = useState(true);
   const [tun, setTun] = useState<{ enabled: boolean; ready: boolean } | null>(
     null,
@@ -707,7 +705,7 @@ export default function SettingsPage({
             hint={t("settings.snapshotAuto")}
           />
           <Row label={t("feedback.entry")} hint={t("feedback.entryHint")}>
-            <Button onClick={() => setFeedbackOpen(true)}>
+            <Button onClick={() => ipc.openFeedbackPage().catch((e) => notify.error(e, "open-feedback"))}>
               {t("feedback.entryBtn")}
             </Button>
           </Row>
@@ -820,10 +818,7 @@ export default function SettingsPage({
         </Group></>
       )}
       </fieldset>
-          {feedbackOpen && (
-        <FeedbackDialog onClose={() => setFeedbackOpen(false)} />
-      )}
-</div>
+    </div>
   );
 }
 
