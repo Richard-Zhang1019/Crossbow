@@ -854,6 +854,8 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
     }
 
     /// #547：曾接管标记文件是否存在（设置丢失检测用）。
+    /// 调用方在 macOS 门控的检测里（#540 同款 Linux dead_code 门禁）。
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
     pub fn has_takeover_journal(&self) -> bool {
         self.journal_path.exists()
     }
