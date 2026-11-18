@@ -45,6 +45,22 @@ fn is_own_core_path(line: &str) -> bool {
         || line.contains("com.crossbow.app")
 }
 
+/// #547 决策落地：系统代理设置丢失（Missing）时不自动恢复——尊重外部
+/// 操作与第三方工具；改为**检测 + 引导**：曾接管过（journal 在）而设置
+/// 被清空、内核与端口仍健康时，提示用户手动重新开启。四个条件缺一不可，
+/// 避免把「用户主动关闭」误报为丢失（用户主动关时内核通常也会被停止，
+/// 或 TUN 正在接管）。
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+fn sysproxy_lost(
+    journal_exists: bool,
+    sysproxy_enabled: bool,
+    core_running: bool,
+    tun_enabled: bool,
+    port_listening: bool,
+) -> bool {
+    journal_exists && !sysproxy_enabled && core_running && !tun_enabled && port_listening
+}
+
 /// 从 `ps -axo command=` 的行里识别其他代理软件。
 /// 返回 (是否发现已知常驻服务, 其他内核进程命令行列表)。
 #[cfg_attr(target_os = "linux", allow(dead_code))]
@@ -163,7 +179,58 @@ pub fn detect(state: &crate::AppState) -> Vec<CoexistFinding> {
         }
     }
 
+    // 4) #547：系统代理设置丢失引导（不自动恢复，横幅提示手动开启）
+    if let Some(finding) = sysproxy_lost_finding(state) {
+        findings.push(finding);
+    }
+
     findings
+}
+
+/// #547：曾接管（journal 在）而代理设置被清空、内核与混合端口仍健康 →
+/// 引导用户手动重新开启（不自动写回，尊重外部操作）。
+#[cfg(target_os = "macos")]
+fn sysproxy_lost_finding(state: &crate::AppState) -> Option<CoexistFinding> {
+    let core = state.core();
+    if core.status() != crate::CoreStatus::Running {
+        return None;
+    }
+    let sysproxy = &state.sysproxy;
+    if sysproxy.status().enabled {
+        return None;
+    }
+    if state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .engine
+        .tun_enable
+    {
+        return None;
+    }
+    if !sysproxy.has_takeover_journal() {
+        return None;
+    }
+    let port = sysproxy.status().port;
+    let listening = std::net::TcpStream::connect_timeout(
+        &std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, port)),
+        std::time::Duration::from_millis(300),
+    )
+    .is_ok();
+    if !listening {
+        return None;
+    }
+    if !sysproxy_lost(true, false, true, false, true) {
+        return None;
+    }
+    Some(CoexistFinding {
+        kind: "sysproxy-lost".into(),
+        detail: format!(
+            "系统代理设置已被清除（可能被其他工具覆盖），内核与端口 {} 仍正常。请在本页重新打开系统代理以恢复接管",
+            port
+        ),
+    })
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows", test))]
