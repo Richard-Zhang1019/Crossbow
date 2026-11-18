@@ -2,9 +2,12 @@ name: build
 
 # 双平台构建验证：macOS (Apple Silicon) + Windows (x64)。
 # 未签名产物仅作验证；正式发版复用此工作流，通过后再签名、公证。
+# feat/** 不再触发 push run：PR 的每次更新由 pull_request 事件单独跑
+# 一遍（push 与 PR 的 concurrency key 不同，双事件会不互斥地双跑完整
+# CI——#540）。改动一律走 PR（仓库铁律），feat 直推不属于支持场景。
 on:
   push:
-    branches: [main, "feat/**"]
+    branches: [main]
   pull_request:
   workflow_dispatch:
   workflow_call:
@@ -13,6 +16,10 @@ on:
         description: Exact release commit to test
         type: string
         default: ""
+      skip_build:
+        description: Skip the unsigned dual-platform build (release provides signed builds)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -255,7 +262,9 @@ jobs:
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     needs: [changes, pipeline-check, core-test]
-    if: needs.changes.outputs.rust == 'true'
+    # 发版链路传 skip_build=true：签名构建（release-windows/release-macos）
+    # 本身是更强的验证，无签名验证构建纯重复（#540）。
+    if: needs.changes.outputs.rust == 'true' && inputs.skip_build != true
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
