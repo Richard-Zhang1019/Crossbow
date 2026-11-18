@@ -95,15 +95,15 @@ fn apply_macos_window_appearance(win: &tauri::WebviewWindow, theme: &str) {
                 ns_window.setAppearance(None);
             }
             // #527：WKWebView 首帧前是系统白底（轻量待机重建时体感为白屏卡死）。
-            // 给 WKWebView 的 under-page 垫主题底色：首帧前显示主题色（加载中
-            // 观感），页面 CSS 绘制后自然覆盖。webview 是 parent view 的子视图
-            // （wry: ns_window.setContentView(parent_view) + addSubview(webview)）。
+            // 给 WKWebView 的 under-page 垫主题底色：首帧前显示主题色，index.html
+            // 内联启动骨架首绘后自然接管。取值对齐前端 tokens.css 的 --cb-bg
+            // （亮 #ffffff / 暗 #1a1c21），保证与骨架、真实页面同色无跳变。
             let dark = match theme {
                 "dark" => true,
                 "light" => false,
                 _ => win.theme().ok() == Some(tauri::Theme::Dark),
             };
-            let (r, g, b) = if dark { (10, 12, 16) } else { (246, 247, 249) };
+            let (r, g, b) = if dark { (26, 28, 33) } else { (255, 255, 255) };
             let under_page = objc2_app_kit::NSColor::colorWithSRGBRed_green_blue_alpha(
                 f64::from(r) / 255.0,
                 f64::from(g) / 255.0,

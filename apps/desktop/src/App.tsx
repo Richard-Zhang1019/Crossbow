@@ -63,6 +63,13 @@ function applyTheme(theme: UiSettings["theme"]) {
     theme === "dark" ||
     (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
   document.documentElement.classList.toggle("dark", dark);
+  // #527 首帧主题：落盘解析结果，index.html 内联脚本在 React 挂载前读取，
+  // 避免暗色用户启动/托盘重建时骨架首帧闪浅色。
+  try {
+    localStorage.setItem("cb-dark", dark ? "1" : "0");
+  } catch {
+    /* 存储不可用时骨架按系统主题 */
+  }
 }
 
 export default function App() {
