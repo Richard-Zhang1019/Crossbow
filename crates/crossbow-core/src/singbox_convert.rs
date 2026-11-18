@@ -182,6 +182,16 @@ pub fn convert_to_singbox(
     outbounds.push(json!({
         "type": "direct", "tag": "DIRECT"
     }));
+    // mihomo REJECT 内置出站 → sing-box block 出站（规则引用时自动补齐）
+    let uses_reject = final_out == "REJECT"
+        || route_rules
+            .iter()
+            .any(|r| r.get("outbound").and_then(Value::as_str) == Some("REJECT"));
+    if uses_reject {
+        outbounds.push(json!({
+            "type": "block", "tag": "REJECT"
+        }));
+    }
 
     // 引用到的规则集 → remote 定义：sing-box 自行下载、缓存进 cache.db 并周期更新。
     // URL 走 gh-proxy 镜像（CN 直连 raw.githubusercontent 不可达）；下载绕行
@@ -810,7 +820,9 @@ fn convert_rules(
         if target.is_empty() {
             return Err(error("缺少目标出站"));
         }
-        if !declared.contains(target) {
+        // mihomo 内置出站（DIRECT/REJECT）映射到 sing-box 对应出站，
+        // 不要求订阅显式声明（#544 联调发现的真实订阅缺陷）。
+        if !declared.contains(target) && !matches!(target, "DIRECT" | "REJECT") {
             return Err(error("目标出站未定义"));
         }
         if parts.next().is_some() {
@@ -972,6 +984,61 @@ rules:
 
     // sing-box 1.14 移除了 DNS 规则的 outbound 匹配项，域名解析出口改用
     // route.default_domain_resolver；此回归锁住该迁移（内核会 FATAL 拒启）。
+    /// #544 联调发现：真实订阅规则引用 mihomo 内置 REJECT 出站（反广告
+    /// 规则），转换时自动补 block 出站而不是报「目标出站未定义」。
+    #[test]
+    fn reject_rules_map_to_auto_generated_block_outbound() {
+        let cfg = r#"mixed-port: 7898
+proxies:
+  - name: HK-01
+    type: ss
+    server: 1.2.3.4
+    port: 5
+    cipher: aes-128-gcm
+    password: p
+rules:
+  - DOMAIN,s1.example.com,DIRECT
+  - DOMAIN,api.ip.sb,REJECT
+  - DOMAIN,api.ipapi.co,REJECT
+  - MATCH,HK-01"#;
+        let out = convert_to_singbox(cfg, 7898, false).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        let obs = v["outbounds"].as_array().unwrap();
+        let tags: Vec<_> = obs.iter().map(|o| o["tag"].as_str().unwrap()).collect();
+        assert!(
+            tags.contains(&"REJECT"),
+            "应自动补 REJECT block 出站: {tags:?}"
+        );
+        let block = obs.iter().find(|o| o["tag"] == "REJECT").unwrap();
+        assert_eq!(block["type"], "block");
+        let route = v["route"]["rules"].as_array().unwrap();
+        let reject_rules = route.iter().filter(|r| r["outbound"] == "REJECT").count();
+        assert_eq!(reject_rules, 2, "两条 REJECT 规则都应保留");
+    }
+
+    #[test]
+    fn reject_match_rule_gets_auto_generated_block_outbound() {
+        let cfg = r#"proxies:
+  - name: HK-01
+    type: ss
+    server: 1.2.3.4
+    port: 5
+    cipher: aes-128-gcm
+    password: p
+rules:
+  - MATCH,REJECT"#;
+        let out = convert_to_singbox(cfg, 7898, false).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        let reject = v["outbounds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|o| o["tag"] == "REJECT")
+            .expect("MATCH,REJECT should generate a block outbound");
+        assert_eq!(reject["type"], "block");
+        assert_eq!(v["route"]["final"], "REJECT");
+    }
+
     #[test]
     fn no_deprecated_outbound_dns_rule() {
         let out = convert_to_singbox(SAMPLE, 7897, false).unwrap();
