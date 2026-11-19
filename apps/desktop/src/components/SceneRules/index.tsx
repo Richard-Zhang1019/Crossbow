@@ -5,6 +5,7 @@ import { Button } from "@/components/Button";
 import { notify } from "@/notifications/service";
 import { ipc, type ScenesStatus } from "@/services/ipc";
 import { useT } from "@/i18n/i18n";
+import "./SceneRules.css";
 
 /**
  * 网络场景（#566）：SSID → 进入该网络时的接管动作（直连/代理）。

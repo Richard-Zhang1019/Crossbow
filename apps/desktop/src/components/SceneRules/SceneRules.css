@@ -1,0 +1,40 @@
+/* SSID 网络场景（#566）：当前网络状态与规则行布局。 */
+.cb-scene-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cb-scene-current {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.cb-scene-current strong {
+  color: var(--cb-text);
+}
+.cb-scene-active {
+  color: var(--cb-text-dim);
+}
+.cb-scene-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+.cb-scene-list {
+  display: flex;
+  flex-direction: column;
+}
+.cb-scene-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--cb-line);
+}
+.cb-scene-row:last-child {
+  border-bottom: none;
+}
+.cb-scene-ssid {
+  color: var(--cb-text);
+  min-width: 160px;
+}
