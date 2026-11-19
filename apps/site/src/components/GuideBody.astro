@@ -229,29 +229,40 @@ const TOC = [
   // guide 左轨当前章高亮（#553）
   const links = document.querySelectorAll<HTMLAnchorElement>(".rail a[data-guide]");
   let ticking = false;
+  // 平滑滚动期间锁定高亮到目标节（scrollspy 逐帧重算会沿途扫过中间节）
+  let lockedId: string | null = null;
+  let lockUntil = 0;
   const update = () => {
     ticking = false;
-    let best = -Infinity;
     let current: string | null = null;
-    for (const a of links) {
-      const sec = document.getElementById(a.dataset.guide ?? "");
-      if (!sec) continue;
-      const top = sec.getBoundingClientRect().top;
-      if (top <= 240 && top > best) { best = top; current = a.dataset.guide ?? null; }
+    if (lockedId && Date.now() < lockUntil) {
+      current = lockedId;
+    } else {
+      let best = -Infinity;
+      for (const a of links) {
+        const sec = document.getElementById(a.dataset.guide ?? "");
+        if (!sec) continue;
+        const top = sec.getBoundingClientRect().top;
+        if (top <= 240 && top > best) { best = top; current = a.dataset.guide ?? null; }
+      }
     }
     links.forEach((a) => a.classList.toggle("active", a.dataset.guide === current));
   };
   addEventListener("scroll", () => {
     if (!ticking) { ticking = true; requestAnimationFrame(update); }
   }, { passive: true });
+  addEventListener("scrollend", () => { lockedId = null; });
   addEventListener("click", (e) => {
     const a = (e.target as HTMLElement).closest("a[data-guide]");
     if (!a) return;
     const target = document.getElementById(a.dataset.guide ?? "");
     if (!target) return;
     e.preventDefault();
+    lockedId = a.dataset.guide ?? null;
+    lockUntil = Date.now() + 1200;
     target.scrollIntoView({ behavior: "smooth", block: "start" });
     history.replaceState(null, "", a.getAttribute("href"));
+    update();
   });
   update();
 </script>

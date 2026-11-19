@@ -265,15 +265,23 @@ const path = (id: string) => `${import.meta.env.BASE_URL.replace(/\/+$/, "")}${l
   const bar = document.getElementById("railBar");
   const progress = document.getElementById("railProgress");
   let ticking = false;
+  // 点击目录后的平滑滚动期间锁定高亮到目标节：scrollspy 逐帧几何重算
+  // 会让高亮沿途扫过中间节（rail 顺序与滚动路径不同序，视觉乱跳）
+  let lockedId: string | null = null;
+  let lockUntil = 0;
   const update = () => {
     ticking = false;
-    // 取「已越过锚线（top≤140）的节中 top 最大者」：
-    // 简单取最后一个满足者会被已滚过的上方节覆盖（节 top 为负也满足 ≤140）。
-    let best = -Infinity;
     let current = sections[0];
-    for (const s of sections) {
-      const top = s.getBoundingClientRect().top;
-      if (top <= 240 && top > best) { best = top; current = s; }
+    if (lockedId && Date.now() < lockUntil) {
+      current = sections.find((s) => s.id === lockedId) ?? current;
+    } else {
+      // 取「已越过锚线（top≤240）的节中 top 最大者」：
+      // 简单取最后一个满足者会被已滚过的上方节覆盖（节 top 为负也满足 ≤240）。
+      let best = -Infinity;
+      for (const s of sections) {
+        const top = s.getBoundingClientRect().top;
+        if (top <= 240 && top > best) { best = top; current = s; }
+      }
     }
     links.forEach((a) => a.classList.toggle("active", a.dataset.section === current?.id));
     const i = sections.indexOf(current);
@@ -285,6 +293,8 @@ const path = (id: string) => `${import.meta.env.BASE_URL.replace(/\/+$/, "")}${l
   addEventListener("scroll", () => {
     if (!ticking) { ticking = true; requestAnimationFrame(update); }
   }, { passive: true });
+  // 滚动停止即解除锁定，恢复几何跟随
+  addEventListener("scrollend", () => { lockedId = null; });
   // 目录点击受控滚动：默认锚点跳转在连续点击时会被 smooth 滚动互相打断
   addEventListener("click", (e) => {
     const a = (e.target as HTMLElement).closest("a[data-section]");
@@ -292,8 +302,11 @@ const path = (id: string) => `${import.meta.env.BASE_URL.replace(/\/+$/, "")}${l
     const target = document.getElementById(a.dataset.section ?? "");
     if (!target) return;
     e.preventDefault();
+    lockedId = a.dataset.section ?? null;
+    lockUntil = Date.now() + 1200;
     target.scrollIntoView({ behavior: "smooth", block: "start" });
     history.replaceState(null, "", a.getAttribute("href"));
+    update();
   });
   update();
 </script>
