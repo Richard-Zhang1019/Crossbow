@@ -69,6 +69,8 @@ fn apply_macos_window_appearance(win: &tauri::WebviewWindow, theme: &str) {
         NSAppearance, NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua,
         NSView,
     };
+    use objc2_foundation::{NSOperatingSystemVersion, NSProcessInfo};
+    use objc2_web_kit::WKWebView;
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
     let Ok(handle) = win.window_handle() else {
@@ -92,6 +94,39 @@ fn apply_macos_window_appearance(win: &tauri::WebviewWindow, theme: &str) {
                 ns_window.setAppearance(appearance.as_deref());
             } else {
                 ns_window.setAppearance(None);
+            }
+            // #527：WKWebView 首帧前是系统白底（轻量待机重建时体感为白屏卡死）。
+            // 给 WKWebView 的 under-page 垫主题底色：首帧前显示主题色，index.html
+            // 内联启动骨架首绘后自然接管。取值对齐前端 tokens.css 的 --cb-bg
+            // （亮 #ffffff / 暗 #1a1c21），保证与骨架、真实页面同色无跳变。
+            let dark = match theme {
+                "dark" => true,
+                "light" => false,
+                _ => win.theme().ok() == Some(tauri::Theme::Dark),
+            };
+            let (r, g, b) = if dark { (26, 28, 33) } else { (255, 255, 255) };
+            let under_page = objc2_app_kit::NSColor::colorWithSRGBRed_green_blue_alpha(
+                f64::from(r) / 255.0,
+                f64::from(g) / 255.0,
+                f64::from(b) / 255.0,
+                1.0,
+            );
+            if let Some(content) = ns_window.contentView() {
+                let subviews = content.subviews();
+                if let Some(first) = subviews.firstObject() {
+                    // wry 保证子视图[0] 是 WKWebView；downcast 失败则跳过。
+                    if let Some(webview) = first.downcast_ref::<WKWebView>() {
+                        if NSProcessInfo::processInfo().isOperatingSystemAtLeastVersion(
+                            NSOperatingSystemVersion {
+                                majorVersion: 12,
+                                minorVersion: 0,
+                                patchVersion: 0,
+                            },
+                        ) {
+                            webview.setUnderPageBackgroundColor(Some(&under_page));
+                        }
+                    }
+                }
             }
         }
     }

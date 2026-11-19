@@ -187,7 +187,10 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
     const generation = ++subscriptionGeneration.current;
     let active = true;
     mounted.current = true;
-    refresh();
+    // #527 首屏数据就绪：首个 refresh 完成后撤启动骨架（index.html #cb-boot）。
+    void refresh().finally(() => {
+      if (mounted.current) window.dispatchEvent(new CustomEvent("cb:boot-ready"));
+    });
     const un1 = ipc.onCoreStatus((status) => {
       if (!active) return;
       eventReceived("core"); setCore(status);

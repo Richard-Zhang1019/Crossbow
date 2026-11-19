@@ -4,9 +4,574 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Crossbow</title>
+    <script>
+      // #527 首帧主题：读取主题模式同步解析；system/无记录按当前系统外观。
+      // 通知独立窗口（?notifications）不渲染骨架。
+      (function () {
+        try {
+          if (new URLSearchParams(location.search).has("notifications")) {
+            document.documentElement.classList.add("cb-boot-off");
+            return;
+          }
+          var theme = localStorage.getItem("cb-theme");
+          var dark =
+            theme === "dark" ||
+            (theme !== "light" &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.classList.toggle("dark", dark);
+          if (navigator.userAgent.includes("Macintosh"))
+            document.documentElement.classList.add("cb-boot-mac");
+        } catch (e) {
+          /* 存储不可用时按系统主题，骨架照常 */
+        }
+      })();
+    </script>
+    <style>
+      /* #527 启动骨架：与工作台页同构（顶导航/标题/主列/侧列三卡），
+         纯 HTML+CSS 不依赖 bundle，首帧即绘。灰块呼吸错峰 85ms 波浪式。
+         React 挂载不碰它（#root 兄弟层），cb:boot-ready 后交叉淡出移除。 */
+      #cb-boot {
+        --bt-bg: #ffffff;
+        --bt-chrome: #eef0f5;
+        --bt-surface: #f7f8fb;
+        --bt-surface-2: #f0f2f7;
+        --bt-line: #e4e7ee;
+        --bt-sk: #eef1f6;
+        position: fixed;
+        inset: 0;
+        z-index: 200;
+        background: var(--bt-bg);
+        display: grid;
+        grid-template-rows: 28px 68px minmax(0, 1fr) 30px;
+        padding: 0 8px;
+        pointer-events: none;
+        transition: opacity 0.26s ease;
+      }
+      html.dark #cb-boot {
+        --bt-bg: #1a1c21;
+        --bt-chrome: #121317;
+        --bt-surface: #23262d;
+        --bt-surface-2: #30343d;
+        --bt-line: #343840;
+        --bt-sk: #2c313a;
+      }
+      html.cb-boot-off #cb-boot {
+        display: none;
+      }
+      html:not(.cb-boot-mac) #cb-boot {
+        grid-template-rows: 0 68px minmax(0, 1fr) 30px;
+      }
+      #cb-boot.done {
+        opacity: 0;
+      }
+      .cbt-sk {
+        background: var(--bt-sk);
+        border-radius: 5px;
+        animation: cbt-breathe 1.7s ease-in-out infinite;
+        animation-delay: calc(var(--i, 0) * 85ms);
+        display: block;
+      }
+      @keyframes cbt-breathe {
+        0%,
+        100% {
+          opacity: 0.5;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .cbt-sk {
+          animation: none;
+          opacity: 0.75;
+        }
+      }
+      .cbt-nav {
+        display: flex;
+        align-items: center;
+        gap: 40px;
+        padding: 0 24px 0 0;
+        min-width: 0;
+      }
+      .cbt-wordmark {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .cbt-wordmark .cbt-sk {
+        width: 20px;
+        height: 20px;
+        border-radius: 6px;
+        --i: 0;
+      }
+      .cbt-wordmark .cbt-wm-text {
+        width: 68px;
+        height: 13px;
+        --i: 0;
+      }
+      .cbt-navitems {
+        display: flex;
+        gap: 10px;
+      }
+      .cbt-navitems .cbt-sk {
+        width: 56px;
+        height: 26px;
+        border-radius: 8px;
+      }
+      .cbt-tools {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .cbt-tools .cbt-profile {
+        width: 108px;
+        height: 26px;
+        border-radius: 8px;
+        --i: 6;
+      }
+      .cbt-tools .cbt-diag {
+        width: 74px;
+        height: 26px;
+        border-radius: 8px;
+        --i: 7;
+      }
+      .cbt-tools .cbt-bell {
+        width: 26px;
+        height: 26px;
+        border-radius: 8px;
+        --i: 8;
+      }
+      .cbt-paper {
+        background: var(--bt-bg);
+        border: 1px solid var(--bt-line);
+        border-radius: 16px;
+        overflow: hidden;
+        min-height: 0;
+      }
+      .cbt-content {
+        padding: 26px 30px 0;
+        height: 100%;
+        overflow: hidden;
+      }
+      .cbt-title {
+        width: 132px;
+        height: 19px;
+        margin-bottom: 26px;
+        --i: 9;
+      }
+      .cbt-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) clamp(300px, 29vw, 368px);
+        gap: 24px;
+      }
+      .cbt-statusline {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 13px;
+      }
+      .cbt-statusline .cbt-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        --i: 10;
+      }
+      .cbt-statusline .cbt-core {
+        width: 72px;
+        height: 11px;
+        --i: 10;
+      }
+      .cbt-statusline .cbt-mode {
+        width: 40px;
+        height: 18px;
+        border-radius: 6px;
+        margin-left: 6px;
+        --i: 11;
+      }
+      .cbt-h2 {
+        width: 224px;
+        height: 17px;
+        margin-bottom: 11px;
+        --i: 12;
+      }
+      .cbt-hint {
+        width: 78%;
+        height: 11px;
+        --i: 13;
+      }
+      .cbt-path {
+        margin-top: 20px;
+      }
+      .cbt-pathhead {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 24px;
+        margin-bottom: 10px;
+      }
+      .cbt-pathhead .cbt-sk {
+        width: 40px;
+        height: 11px;
+        --i: 14;
+      }
+      .cbt-pathhead .cbt-ob {
+        width: 88px;
+        height: 18px;
+        border-radius: 6px;
+        --i: 14;
+      }
+      .cbt-flow {
+        position: relative;
+        display: flex;
+        justify-content: space-between;
+        padding: 6px 8px 0;
+      }
+      .cbt-node {
+        width: 96px;
+        text-align: center;
+      }
+      .cbt-node .cbt-ic {
+        width: 44px;
+        height: 40px;
+        border-radius: 12px;
+        margin: 0 auto 8px;
+      }
+      .cbt-node .cbt-nm {
+        width: 64px;
+        height: 11px;
+        margin: 0 auto 6px;
+      }
+      .cbt-node .cbt-mt {
+        width: 44px;
+        height: 10px;
+        margin: 0 auto;
+      }
+      .cbt-node .cbt-sk {
+        --i: 15;
+        display: block;
+      }
+      .cbt-node:nth-child(3) .cbt-sk {
+        --i: 16;
+      }
+      .cbt-node:nth-child(5) .cbt-sk {
+        --i: 17;
+      }
+      .cbt-line {
+        position: absolute;
+        top: 26px;
+        height: 1px;
+        width: calc(33% - 100px);
+        background: var(--bt-line);
+        left: calc(33% - 50px);
+      }
+      .cbt-line.l2 {
+        left: auto;
+        right: calc(33% - 50px);
+      }
+      .cbt-bottom {
+        margin-top: 22px;
+        display: flex;
+        gap: 20px;
+        align-items: flex-end;
+      }
+      .cbt-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        flex: none;
+      }
+      .cbt-btn {
+        width: 112px;
+        height: 32px;
+        border-radius: 9px;
+      }
+      .cbt-actions .cbt-btn:first-child {
+        --i: 18;
+      }
+      .cbt-actions .cbt-btn:last-child {
+        --i: 19;
+      }
+      .cbt-chart {
+        flex: 1;
+        min-width: 0;
+        border-top: 1px solid var(--bt-line);
+        padding-top: 14px;
+      }
+      .cbt-chart .cbt-ch {
+        width: 52%;
+        height: 11px;
+        margin-bottom: 12px;
+        --i: 20;
+      }
+      .cbt-chart .cbt-plot {
+        height: 86px;
+        border-radius: 8px;
+        --i: 21;
+      }
+      .cbt-chart .cbt-cf {
+        width: 66%;
+        height: 8px;
+        margin-top: 10px;
+        --i: 22;
+      }
+      .cbt-side {
+        display: grid;
+        gap: 16px;
+        align-content: start;
+        min-width: 0;
+      }
+      .cbt-card {
+        border-radius: 12px;
+        background: var(--bt-surface);
+        padding: 20px;
+      }
+      .cbt-card .cbt-title {
+        width: 60px;
+        height: 11px;
+        margin-bottom: 13px;
+      }
+      .cbt-side .cbt-card:nth-child(1) .cbt-title {
+        --i: 23;
+      }
+      .cbt-side .cbt-card:nth-child(2) .cbt-title {
+        --i: 27;
+      }
+      .cbt-side .cbt-card:nth-child(3) .cbt-title {
+        --i: 30;
+      }
+      .cbt-trow {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+      }
+      .cbt-trow .cbt-lb {
+        width: 58%;
+        height: 10px;
+      }
+      .cbt-trow .cbt-sw {
+        width: 30px;
+        height: 17px;
+        border-radius: 9px;
+        flex: none;
+      }
+      .cbt-side .cbt-card:nth-child(1) .cbt-trow:nth-of-type(1) .cbt-sk {
+        --i: 24;
+      }
+      .cbt-side .cbt-card:nth-child(1) .cbt-trow:nth-of-type(2) .cbt-sk {
+        --i: 25;
+      }
+      .cbt-seg {
+        width: 100%;
+        height: 26px;
+        border-radius: 8px;
+        --i: 26;
+      }
+      .cbt-hrow {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 8px;
+      }
+      .cbt-hrow .cbt-k {
+        width: 42px;
+        height: 10px;
+      }
+      .cbt-hrow .cbt-v {
+        width: 52px;
+        height: 10px;
+      }
+      .cbt-side .cbt-card:nth-child(2) .cbt-hrow:nth-of-type(1) .cbt-sk {
+        --i: 28;
+      }
+      .cbt-side .cbt-card:nth-child(2) .cbt-hrow:nth-of-type(2) .cbt-sk {
+        --i: 29;
+      }
+      .cbt-side .cbt-card:nth-child(2) .cbt-hrow:nth-of-type(3) .cbt-sk {
+        --i: 29;
+      }
+      .cbt-rate {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+      .cbt-rate .cbt-sk {
+        height: 44px;
+        border-radius: 9px;
+        --i: 31;
+      }
+      .cbt-strip {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 8px;
+      }
+      .cbt-strip .cbt-sk {
+        height: 28px;
+        border-radius: 7px;
+        --i: 32;
+      }
+      .cbt-foot {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0 12px;
+      }
+      .cbt-foot .cbt-f1 {
+        width: 96px;
+        height: 9px;
+        --i: 33;
+      }
+      .cbt-foot .cbt-f2 {
+        width: 120px;
+        height: 9px;
+        margin-left: auto;
+        --i: 34;
+      }
+    </style>
   </head>
   <body>
+    <div id="cb-boot" aria-hidden="true">
+      <div class="cbt-drag"></div>
+      <div class="cbt-nav">
+        <span class="cbt-wordmark"
+          ><span class="cbt-sk"></span><span class="cbt-sk cbt-wm-text"></span
+        ></span>
+        <span class="cbt-navitems">
+          <span class="cbt-sk" style="--i: 1"></span>
+          <span class="cbt-sk" style="--i: 2"></span>
+          <span class="cbt-sk" style="--i: 3"></span>
+          <span class="cbt-sk" style="--i: 4"></span>
+          <span class="cbt-sk" style="--i: 5"></span>
+        </span>
+        <span class="cbt-tools"
+          ><span class="cbt-sk cbt-profile"></span
+          ><span class="cbt-sk cbt-diag"></span
+          ><span class="cbt-sk cbt-bell"></span
+        ></span>
+      </div>
+      <div class="cbt-paper">
+        <div class="cbt-content">
+          <span class="cbt-sk cbt-title"></span>
+          <div class="cbt-grid">
+            <div>
+              <div class="cbt-statusline">
+                <span class="cbt-sk cbt-dot"></span
+                ><span class="cbt-sk cbt-core"></span
+                ><span class="cbt-sk cbt-mode"></span>
+              </div>
+              <span class="cbt-sk cbt-h2"></span>
+              <span class="cbt-sk cbt-hint"></span>
+              <div class="cbt-path">
+                <div class="cbt-pathhead">
+                  <span class="cbt-sk"></span><span class="cbt-sk cbt-ob"></span>
+                </div>
+                <div class="cbt-flow">
+                  <span class="cbt-line"></span>
+                  <span class="cbt-line l2"></span>
+                  <div class="cbt-node">
+                    <span class="cbt-sk cbt-ic"></span
+                    ><span class="cbt-sk cbt-nm"></span
+                    ><span class="cbt-sk cbt-mt"></span>
+                  </div>
+                  <div class="cbt-node">
+                    <span class="cbt-sk cbt-ic"></span
+                    ><span class="cbt-sk cbt-nm"></span
+                    ><span class="cbt-sk cbt-mt"></span>
+                  </div>
+                  <div class="cbt-node">
+                    <span class="cbt-sk cbt-ic"></span
+                    ><span class="cbt-sk cbt-nm"></span
+                    ><span class="cbt-sk cbt-mt"></span>
+                  </div>
+                </div>
+              </div>
+              <div class="cbt-bottom">
+                <span class="cbt-actions"
+                  ><span class="cbt-sk cbt-btn"></span
+                  ><span class="cbt-sk cbt-btn"></span
+                ></span>
+                <div class="cbt-chart">
+                  <span class="cbt-sk cbt-ch"></span
+                  ><span class="cbt-sk cbt-plot"></span
+                  ><span class="cbt-sk cbt-cf"></span>
+                </div>
+              </div>
+            </div>
+            <div class="cbt-side">
+              <div class="cbt-card">
+                <span class="cbt-sk cbt-title"></span>
+                <div class="cbt-trow">
+                  <span class="cbt-sk cbt-lb"></span
+                  ><span class="cbt-sk cbt-sw"></span>
+                </div>
+                <div class="cbt-trow">
+                  <span class="cbt-sk cbt-lb"></span
+                  ><span class="cbt-sk cbt-sw"></span>
+                </div>
+                <span class="cbt-sk cbt-seg"></span>
+              </div>
+              <div class="cbt-card" style="padding: 16px 20px">
+                <span class="cbt-sk cbt-title"></span>
+                <div class="cbt-hrow">
+                  <span class="cbt-sk cbt-k"></span
+                  ><span class="cbt-sk cbt-v"></span>
+                </div>
+                <div class="cbt-hrow">
+                  <span class="cbt-sk cbt-k"></span
+                  ><span class="cbt-sk cbt-v"></span>
+                </div>
+                <div class="cbt-hrow" style="margin-bottom: 0">
+                  <span class="cbt-sk cbt-k"></span
+                  ><span class="cbt-sk cbt-v"></span>
+                </div>
+              </div>
+              <div class="cbt-card" style="padding: 16px 20px">
+                <span class="cbt-sk cbt-title"></span>
+                <div class="cbt-rate">
+                  <span class="cbt-sk"></span><span class="cbt-sk"></span>
+                </div>
+                <div class="cbt-strip">
+                  <span class="cbt-sk"></span><span class="cbt-sk"></span
+                  ><span class="cbt-sk"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cbt-foot">
+        <span class="cbt-sk cbt-f1"></span><span class="cbt-sk cbt-f2"></span>
+      </div>
+    </div>
     <div id="root"></div>
+    <script>
+      // #527 骨架控制器：首屏数据就绪（cb:boot-ready，Home 首个 refresh
+      // 完成时派发）交叉淡出后移除；10s 兜底——React 崩溃时骨架不许装活，
+      // 让出位置给错误呈现。
+      (function () {
+        var boot = document.getElementById("cb-boot");
+        if (!boot) return;
+        var done = false;
+        var dismiss = function () {
+          if (done) return;
+          done = true;
+          boot.classList.add("done");
+          boot.addEventListener(
+            "transitionend",
+            function () {
+              boot.remove();
+            },
+            { once: true }
+          );
+          setTimeout(function () {
+            if (boot.parentNode) boot.remove();
+          }, 600);
+        };
+        window.addEventListener("cb:boot-ready", dismiss);
+        setTimeout(dismiss, 10000);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

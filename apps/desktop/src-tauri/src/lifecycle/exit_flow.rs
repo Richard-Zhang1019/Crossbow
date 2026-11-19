@@ -1,6 +1,7 @@
 // 退出/菜单/启动期自检（#423 Stage B 从 lib.rs 提取）。
 use crate::*;
 use tauri::{AppHandle, Manager};
+
 pub(crate) fn show_main_window(app: &AppHandle) {
     // Restore the regular app before rebuilding a window from Accessory mode.
     #[cfg(target_os = "macos")]
