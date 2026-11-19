@@ -83,6 +83,8 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
   useEffect(() => {
     let active = true;
     let hadConflict = false;
+    let hadSysproxyLost = false;
+    let checkedSysproxyLost = false;
     const check = async () => {
       try {
         const findings = await ipc.coexistDetect();
@@ -112,6 +114,29 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
             operationId: "coexist",
           });
         }
+        // #547 决策（选项 1）：系统代理设置被外部清除时**不自动恢复**，
+        // 改为状态翻转时引导用户手动重新开启（每轮去重，状态正确即静默）
+        const sysproxyLost = findings.find(
+          (finding) => finding.kind === "sysproxy-lost",
+        );
+        if (sysproxyLost) {
+          if (!hadSysproxyLost) {
+            notify.publish({
+              kind: "warning",
+              title: t("home.sysproxyLostTitle"),
+              description: sysproxyLost.detail,
+              source: "coexist-sysproxy-lost",
+              operationId: "coexist-sysproxy-lost",
+              duration: 0,
+              actions: ["diagnostics"],
+            });
+          }
+          hadSysproxyLost = true;
+        } else if (hadSysproxyLost || !checkedSysproxyLost) {
+          hadSysproxyLost = false;
+          void notify.resolve("coexist-sysproxy-lost");
+        }
+        checkedSysproxyLost = true;
       } catch (error) {
         if (active) notify.error(error, "coexist-read");
       }

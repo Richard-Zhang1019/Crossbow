@@ -271,7 +271,7 @@ function parsePayload<T>(raw: unknown): T {
 }
 
 export interface CoexistFinding {
-  kind: "tunnel" | "service" | "core";
+  kind: "tunnel" | "service" | "core" | "sysproxy-lost";
   detail: string;
 }
 

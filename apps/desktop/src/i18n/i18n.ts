@@ -530,6 +530,7 @@ const dict: Record<Lang, Record<string, string>> = {
     "settings.updateReady": "新版本已下载 · 重启后生效",
     "settings.updateProgress": "下载中",
     "home.coexistTitle": "检测到其他代理软件正在运行",
+    "home.sysproxyLostTitle": "系统代理设置丢失",
     "home.coexistHint":
       "同时开启两家的 TUN / 系统代理会互相抢占流量与端口，建议只保留一个代理软件接管。",
     "home.updateAvailable": "发现新版本",
@@ -1122,6 +1123,7 @@ const dict: Record<Lang, Record<string, string>> = {
     "settings.updateReady": "Downloaded · takes effect after relaunch",
     "settings.updateProgress": "Downloading",
     "home.coexistTitle": "Another proxy is running",
+    "home.sysproxyLostTitle": "System proxy settings lost",
     "home.coexistHint":
       "Running both clients' TUN / system proxy at once makes them fight over traffic and ports — keep only one in charge.",
     "home.updateAvailable": "New version available",
