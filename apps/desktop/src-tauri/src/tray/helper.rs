@@ -33,7 +33,7 @@ pub(crate) struct Helper(Arc<Mutex<Option<Sender<Command>>>>);
 
 impl Helper {
     pub(crate) fn send(&self, command: Command) -> Result<(), Command> {
-        match self.0.lock().unwrap().as_ref() {
+        match self.0.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
             Some(tx) => tx.send(command).map_err(|error| error.0),
             None => Err(command),
         }
@@ -73,7 +73,10 @@ pub(crate) fn start(handle: &AppHandle) -> io::Result<Option<Helper>> {
             }
         }
         let _ = child.wait();
-        sender_on_exit.lock().unwrap().take();
+        sender_on_exit
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
         let app = handle.clone();
         let _ = handle.run_on_main_thread(move || speed::helper_stopped(&app));
     });

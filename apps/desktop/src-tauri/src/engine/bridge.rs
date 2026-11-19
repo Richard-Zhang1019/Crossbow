@@ -884,7 +884,7 @@ pub(crate) mod tests {
         let reader = hub
             .active
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .get("logs-cache")
             .unwrap()
             .0
@@ -899,7 +899,12 @@ pub(crate) mod tests {
         .unwrap();
         assert!(Arc::ptr_eq(
             &reader,
-            &hub.active.lock().unwrap().get("logs-cache").unwrap().0
+            &hub.active
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get("logs-cache")
+                .unwrap()
+                .0
         ));
         send_log.send("on-page").unwrap();
         wait_for_logs(2);

@@ -719,7 +719,16 @@ fn route(app: &AppHandle, elapsed: u64) {
         let reminder = if !main_visible && !snapshot.active.is_empty() {
             let english = app
                 .try_state::<crate::AppState>()
-                .map(|state| state.store.lock().unwrap().data().ui.lang == "en")
+                .map(|state| {
+                    state
+                        .store
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .data()
+                        .ui
+                        .lang
+                        == "en"
+                })
                 .unwrap_or(false);
             Some(native_reminder(&snapshot.active, english))
         } else {
