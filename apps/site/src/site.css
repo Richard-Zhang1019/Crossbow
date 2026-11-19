@@ -402,12 +402,13 @@ h2:hover .anchor-button, .anchor-button:focus-visible { opacity: 1; }
   overflow-y: auto;
   scrollbar-width: none;
   padding-bottom: 8px;
+  padding-inline-start: 16px;
 }
 .rail::-webkit-scrollbar { display: none; }
-.rail-label { font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--faint); padding: 0 14px; margin: 0 0 10px; }
+.rail-label { font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--faint); padding: 0 2px; margin: 0 0 10px; }
 .rail a {
   position: relative; display: block;
-  padding: 7px 14px; margin-block: 2px; margin-inline: -14px;
+  padding: 7px 14px; margin-block: 2px;
   color: var(--dim); font-size: 13px; line-height: 1.55;
   border-radius: 0 8px 8px 0;
   transition: color 130ms ease, background-color 130ms ease;
@@ -415,13 +416,13 @@ h2:hover .anchor-button, .anchor-button:focus-visible { opacity: 1; }
 .rail a:hover { color: var(--text); background: color-mix(in srgb, var(--surface-2) 62%, transparent); }
 .rail a.active { color: var(--accent); background: var(--accent-soft); font-weight: 600; transition: none; }
 .rail a.active::before, .rail a:hover::before {
-  content: ""; position: absolute; left: -14px; top: 7px; bottom: 7px;
+  content: ""; position: absolute; left: -12px; top: 7px; bottom: 7px;
   width: 2px; border-radius: 2px; background: var(--accent);
 }
 .rail a:hover:not(.active)::before { opacity: .35; }
 .rail-group { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
 .rail-group:first-of-type { margin-top: 16px; padding-top: 0; border-top: 0; }
-.rail-progress { margin-top: 24px; padding: 0 14px; }
+.rail-progress { margin-top: 24px; padding: 0 2px; }
 .rail-bar { height: 2px; border-radius: 1px; background: var(--line); overflow: hidden; margin-bottom: 7px; }
 .rail-bar i { display: block; height: 100%; width: 0; border-radius: 1px; background: var(--accent); transition: width 200ms ease; }
 .rail-num { font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
