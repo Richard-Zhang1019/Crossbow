@@ -8,6 +8,7 @@ import HomePage, { coreText } from "@/pages/Home";
 import ProxiesPage from "@/pages/Proxies";
 import ProfilesPage from "@/pages/Profiles";
 import ConnectionsPage from "@/pages/Connections";
+import StatsPage from "@/pages/Stats";
 import DiagnosticsPage from "@/pages/Diagnostics";
 import LogsPage from "@/pages/Logs";
 import SettingsPage from "@/pages/Settings";
@@ -36,6 +37,7 @@ const PAGES = [
   "connections",
   "logs",
   "diagnostics",
+  "stats",
   "profiles",
   "settings",
 ] as const;
@@ -264,7 +266,7 @@ export default function App() {
     return()=>cancelAnimationFrame(frame);
   },[destination,page,settingSection]);
 
-  const workspace = ["connections", "logs", "diagnostics"].includes(page) ? "monitor" : page;
+  const workspace = ["connections", "logs", "diagnostics", "stats"].includes(page) ? "monitor" : page;
   const go = (next: PageId) => {
     setDestination(null);
     setPage(next);
@@ -339,6 +341,7 @@ export default function App() {
                 ["connections", "nav.connections"],
                 ["logs", "nav.logs"],
                 ["diagnostics", "nav.diagnostics"],
+                ["stats", "nav.stats"],
               ] as const
             ).map(([id, label]) => (
               <ButtonBase
@@ -374,6 +377,7 @@ export default function App() {
           {page === "proxies" && <ProxiesPage />}
           {page === "profiles" && <ProfilesPage tab={configTab} focusProfileId={destination?.profileId} navigationRequest={destination} />}
           {page === "connections" && <ConnectionsPage />}
+          {page === "stats" && <StatsPage />}
           {page === "diagnostics" && <DiagnosticsPage revision={diagnosisRevision} listeners={diagnosisListeners} appVersion={appVersion} />}
           {page === "logs" && <LogsPage />}
           {page === "settings" && (

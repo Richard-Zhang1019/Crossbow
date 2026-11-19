@@ -205,6 +205,44 @@ impl WsHub {
         self.unsubscribe("traffic-tray");
     }
 
+    /// #567：常驻低频 /connections 采样（统计聚合用，独立于页面订阅）。
+    /// 帧节流在本地线程状态里：连接累计值语义下跳帧不丢增量。
+    pub fn subscribe_stats_connections(
+        &self,
+        port: u16,
+        secret: &str,
+        on_frame: impl Fn(&str) + Send + 'static,
+    ) -> Result<(), String> {
+        let url = ws_url(port, secret, "/connections");
+        self.subscribe("stats-connections", move |flag, last_seen| {
+            std::thread::spawn(move || {
+                let mut last_parse =
+                    Instant::now() - crate::traffic_stats::STATS_PARSE_MIN_INTERVAL;
+                read_loop(
+                    &url,
+                    flag,
+                    Some(WS_STALE_RECONNECT),
+                    Some(last_seen),
+                    None,
+                    |msg| {
+                        if let Some(Message::Text(txt)) = msg {
+                            if last_parse.elapsed() < crate::traffic_stats::STATS_PARSE_MIN_INTERVAL
+                            {
+                                return;
+                            }
+                            last_parse = Instant::now();
+                            on_frame(&txt);
+                        }
+                    },
+                );
+            });
+        })
+    }
+
+    pub fn unsubscribe_stats(&self) {
+        self.unsubscribe("stats-connections");
+    }
+
     pub fn subscribe_traffic(
         &self,
         port: u16,

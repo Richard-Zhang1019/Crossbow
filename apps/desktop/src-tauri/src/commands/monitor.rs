@@ -13,6 +13,15 @@ pub(crate) fn traffic_history(state: State<AppState>) -> Vec<TrafficHistoryEntry
         })
         .collect()
 }
+
+/// #567：本地流量统计 TopN 查询（days 含今天，1=今日 / 7 / 30）。
+#[tauri::command]
+pub(crate) fn traffic_stats(
+    state: State<AppState>,
+    days: Option<u32>,
+) -> traffic_stats::TrafficStatsReport {
+    state.traffic_stats_topn(days.unwrap_or(7).clamp(1, 90))
+}
 #[tauri::command]
 pub(crate) fn open_logs_dir(state: State<AppState>) -> Result<(), String> {
     let dir = crate::diagnostics::log_files::logs_dir(&state.data_dir);
