@@ -184,11 +184,11 @@ const path = (id: string) => `${import.meta.env.BASE_URL.replace(/\/+$/, "")}${l
   <div class="page-grid">
     <nav class="rail" aria-label={i18n("features.142")}>
       <div class="rail-label">{i18n("features.142")}</div>
-      <a href={path("support-matrix")} class="rail-link" data-section="support-matrix">{i18n("features.1")}</a>
+      <a href="#support-matrix" class="rail-link" data-section="support-matrix">{i18n("features.1")}</a>
       {GROUPS.map((g) => (
         <div class="rail-group">
           <div class="rail-label">{g.label}</div>
-          {g.ids.map((id) => <a href={path(id)} class="rail-link" data-section={id}>{byId[id].tag}</a>)}
+          {g.ids.map((id) => <a href={`#${id}`} class="rail-link" data-section={id}>{byId[id].tag}</a>)}
         </div>
       ))}
       <div class="rail-progress" aria-hidden="true"><div class="rail-bar"><i id="railBar"></i></div><span class="rail-num" id="railProgress"></span></div>
@@ -273,7 +273,7 @@ const path = (id: string) => `${import.meta.env.BASE_URL.replace(/\/+$/, "")}${l
     let current = sections[0];
     for (const s of sections) {
       const top = s.getBoundingClientRect().top;
-      if (top <= 140 && top > best) { best = top; current = s; }
+      if (top <= 240 && top > best) { best = top; current = s; }
     }
     links.forEach((a) => a.classList.toggle("active", a.dataset.section === current?.id));
     const i = sections.indexOf(current);
@@ -285,5 +285,15 @@ const path = (id: string) => `${import.meta.env.BASE_URL.replace(/\/+$/, "")}${l
   addEventListener("scroll", () => {
     if (!ticking) { ticking = true; requestAnimationFrame(update); }
   }, { passive: true });
+  // 目录点击受控滚动：默认锚点跳转在连续点击时会被 smooth 滚动互相打断
+  addEventListener("click", (e) => {
+    const a = (e.target as HTMLElement).closest("a[data-section]");
+    if (!a) return;
+    const target = document.getElementById(a.dataset.section ?? "");
+    if (!target) return;
+    e.preventDefault();
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    history.replaceState(null, "", a.getAttribute("href"));
+  });
   update();
 </script>

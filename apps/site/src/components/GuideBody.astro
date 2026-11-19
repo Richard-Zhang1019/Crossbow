@@ -87,7 +87,7 @@ const TOC = [
       {TOC.map((group, gi) => (
         <div class="rail-group" data-guide-group={gi}>
           <div class="rail-label">{group.group}</div>
-          {group.items.map((item) => <a class="rail-link" data-guide={item.id} href={route(`/guide#${item.id}`)}>{item.label}</a>)}
+          {group.items.map((item) => <a class="rail-link" data-guide={item.id} href={`#${item.id}`}>{item.label}</a>)}
         </div>
       ))}
     </nav>
@@ -237,12 +237,21 @@ const TOC = [
       const sec = document.getElementById(a.dataset.guide ?? "");
       if (!sec) continue;
       const top = sec.getBoundingClientRect().top;
-      if (top <= 140 && top > best) { best = top; current = a.dataset.guide ?? null; }
+      if (top <= 240 && top > best) { best = top; current = a.dataset.guide ?? null; }
     }
     links.forEach((a) => a.classList.toggle("active", a.dataset.guide === current));
   };
   addEventListener("scroll", () => {
     if (!ticking) { ticking = true; requestAnimationFrame(update); }
   }, { passive: true });
+  addEventListener("click", (e) => {
+    const a = (e.target as HTMLElement).closest("a[data-guide]");
+    if (!a) return;
+    const target = document.getElementById(a.dataset.guide ?? "");
+    if (!target) return;
+    e.preventDefault();
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    history.replaceState(null, "", a.getAttribute("href"));
+  });
   update();
 </script>
