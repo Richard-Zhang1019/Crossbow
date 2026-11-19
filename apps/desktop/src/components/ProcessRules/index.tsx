@@ -6,6 +6,7 @@ import { Input } from "@/components/Controls";
 import { notify } from "@/notifications/service";
 import { ipc, type ProcessRuleStatus } from "@/services/ipc";
 import { useT } from "@/i18n/i18n";
+import "./ProcessRules.css";
 
 /**
  * 按进程分流规则（#570）：进程名 → 策略目标（DIRECT/REJECT/策略组）。
@@ -64,7 +65,6 @@ export default function ProcessRules({ presetProcess }: { presetProcess?: string
 
   return (
     <div className="cb-process-rules">
-      <p className="cb-control-note">{t("pr.hint")}</p>
       {readError ? (
         <p role="status">{t("home.statePendingHint")}</p>
       ) : (
@@ -110,10 +110,10 @@ export default function ProcessRules({ presetProcess }: { presetProcess?: string
           {status && status.rules.length > 0 && (
             <div className="cb-process-list">
               {status.rules.map((rule) => (
-                <div key={rule.id} className="cb-scene-row">
-                  <strong className="cb-scene-ssid">{rule.process}</strong>
-                  <span>{rule.target}</span>
-                  <div className="cb-scene-actions">
+                <div key={rule.id} className="cb-process-row">
+                  <strong className="cb-process-name">{rule.process}</strong>
+                  <span className="cb-process-target">{rule.target}</span>
+                  <div className="cb-process-actions">
                     <Button
                       size="small"
                       onClick={() =>

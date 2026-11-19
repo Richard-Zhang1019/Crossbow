@@ -245,8 +245,14 @@ export default function ProfilesPage({
   return (
     <div className="cb-profiles-page">
       <PageHead
-        title={t(tab === "overrides" ? "studio.overrides" : "studio.sources")}
-        meta={t(tab === "overrides" ? "ov.hint" : "studio.configHint")}
+        title={t(
+          tab === "overrides"
+            ? "studio.overrides"
+            : tab === "process"
+              ? "studio.processRules"
+              : "studio.sources",
+        )}
+        meta={t(tab === "overrides" ? "ov.hint" : tab === "process" ? "pr.hint" : "studio.configHint")}
       >
         {tab === "overrides" && <Button variant="primary" onClick={()=>setCreatingOverride(true)}>{t("ov.create")}</Button>}
         {tab === "sources" && (
