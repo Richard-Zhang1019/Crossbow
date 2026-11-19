@@ -408,7 +408,8 @@ struct TrafficHistoryEntry {
 }
 
 /// 总开关：开启 = 确保内核运行 + 设置系统代理；关闭 = 还原系统代理（内核保持）。
-fn toggle_sysproxy_state(state: &AppState) -> Result<(), String> {
+/// 网络场景引擎（#566）复用同一链路（journal/操作锁/内核启动语义）。
+pub(crate) fn toggle_sysproxy_state(state: &AppState) -> Result<(), String> {
     state.exit.ensure_open()?;
     // Reject before starting a core or changing any persistent state.
     if !platform::capabilities().system_proxy {
@@ -848,6 +849,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             platform_capabilities,
+            commands::scene::network_scenes_get,
+            commands::scene::network_scene_set,
+            commands::scene::network_scene_remove,
             notifications::notification_publish,
             notifications::notification_snapshot,
             notifications::notification_dismiss,
