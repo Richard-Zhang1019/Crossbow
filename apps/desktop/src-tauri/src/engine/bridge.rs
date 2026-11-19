@@ -1116,7 +1116,10 @@ pub(crate) mod tests {
         assert!(!wanted.contains_key("connection-processes"));
         assert!(wanted.contains_key("traffic"));
         drop(wanted);
-        assert!(!conn_flag.load(Ordering::SeqCst), "last release must stop the reader");
+        assert!(
+            !conn_flag.load(Ordering::SeqCst),
+            "last release must stop the reader"
+        );
         // 未登记过的订阅方退订是安全的 no-op（不误伤别人）
         hub.release("connections", "ghost");
         assert!(hub.any_page_channel_wanted());
