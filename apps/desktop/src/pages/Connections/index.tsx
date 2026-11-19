@@ -38,8 +38,11 @@ export default function ConnectionsPage() {
   const latest = useRef<ConnSnapshot>(snapshot);
 
   useEffect(() => {
+    // 本页实例的订阅方标识：与概览页共享后端 connections 通道，卸载
+    // 只移除自己，概览页晚到的退订不会误杀本页数据流（#555）。
+    const subscriber = `connections:${crypto.randomUUID()}`;
     ipc
-      .subscribeConnections(true)
+      .subscribeConnections(subscriber, true)
       .catch((error) => notify.error(error, "connections-stream"));
     const un = ipc.onConnections((s) => {
       latest.current = s;
@@ -47,7 +50,7 @@ export default function ConnectionsPage() {
     });
     return () => {
       void un.then((f) => f());
-      ipc.unsubscribeConnections().catch(() => {});
+      ipc.unsubscribeConnections(subscriber).catch(() => {});
     };
   }, [paused]);
 
