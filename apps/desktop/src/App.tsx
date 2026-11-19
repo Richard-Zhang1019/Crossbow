@@ -81,7 +81,7 @@ export default function App() {
   const [settingSection, setSettingSection] = useState<"network" | "appearance" | "logs" | "app">(
     "network",
   );
-  const [configTab, setConfigTab] = useState<"sources" | "overrides">("sources");
+  const [configTab, setConfigTab] = useState<"sources" | "overrides" | "process">("sources");
   const [profileName, setProfileName] = useState("");
   const [appVersion, setAppVersion] = useState("");
   const [coreStatus, setCoreStatus] = useState<CoreStatus | null>(null);
@@ -246,7 +246,8 @@ export default function App() {
     setDestination(target);
     setPage(target.page);
     if (target.page === "settings") setSettingSection(target.settingSection ?? "app");
-    if (target.page === "profiles") setConfigTab("sources");
+    if (target.page === "profiles")
+      setConfigTab(target.control === "cb-process-rule" ? "process" : "sources");
   }, []);
   useEffect(() => {
     const onNavigate = (event: Event) => navigate((event as CustomEvent<string>).detail);
@@ -365,6 +366,12 @@ export default function App() {
               onClick={() => {setDestination(null);setConfigTab("overrides");}}
             >
               {t("studio.overrides")}
+            </ButtonBase>
+            <ButtonBase
+              className={configTab === "process" ? "active" : ""}
+              onClick={() => {setDestination(null);setConfigTab("process");}}
+            >
+              {t("studio.processRules")}
             </ButtonBase>
           </nav>
         )}

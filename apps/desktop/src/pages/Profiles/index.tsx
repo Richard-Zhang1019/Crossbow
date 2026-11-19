@@ -8,6 +8,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { ipc, type PackagePreview, type Profile, type ProfileStatus } from "@/services/ipc";
 import Select from "@/components/Select";
 import OverridePanel from "@/pages/OverridePanel";
+import ProcessRules from "@/components/ProcessRules";
 import { useT } from "@/i18n/i18n";
 import FitItems from "@/components/FitItems";
 import Dialog from "@/components/Dialog";
@@ -47,7 +48,7 @@ function fmtTime(
 export default function ProfilesPage({
   tab = "sources", focusProfileId, navigationRequest,
 }: {
-  tab?: "sources" | "overrides";
+  tab?: "sources" | "overrides" | "process";
   focusProfileId?:string;
   navigationRequest?:NavigationTarget|null;
 }) {
@@ -361,6 +362,14 @@ export default function ProfilesPage({
           profiles={profiles}
           activeId={activeId}
           onChanged={refresh}
+        />
+      ) : tab === "process" ? (
+        <ProcessRules
+          presetProcess={
+            navigationRequest?.control === "cb-process-rule"
+              ? navigationRequest?.source
+              : undefined
+          }
         />
       ) : profiles.length === 0 ? (
         <div className="cb-empty">

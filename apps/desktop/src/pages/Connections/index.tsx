@@ -3,7 +3,7 @@ import SegmentedControl from "@/components/SegmentedControl";
 import {SearchField} from "@/components/Controls";
 import Dialog from "@/components/Dialog";
 import Select from "@/components/Select";
-import { sortConnections, connectionDetails } from "@/lib/workflow";
+import { navigateTo, sortConnections, connectionDetails } from "@/lib/workflow";
 import { ButtonBase, Button } from "@/components/Button";
 import NodeName from "@/components/NodeName";
 import { nodeNameText } from "@/components/NodeName/nodeFlags";
@@ -17,7 +17,7 @@ import { PageHead } from "@/pages/Home";
 
 const ROW_H = 48;
 const CONNECTION_COLUMNS =
-  "minmax(190px,2fr) 100px minmax(160px,1.2fr) 120px 80px 80px 60px 24px";
+  "minmax(190px,2fr) 100px minmax(160px,1.2fr) 120px 80px 80px 60px 56px";
 const PROCESS_COLUMNS = "minmax(200px,1.6fr) 90px 100px 100px 90px";
 
 /** 连接页：列表 / 按进程聚合双视图（内核 connections WS → Rust 节流聚合）。 */
@@ -134,7 +134,7 @@ export default function ConnectionsPage() {
               />
             }
             render={(row: ConnRow) => (
-              <Row key={row.id} row={row} onInspect={() => {clearCopyFeedback(); setInspected(row);}} onClose={() => closeOne(row.id)} />
+              <Row key={row.id} row={row} onInspect={() => {clearCopyFeedback(); setInspected(row);}} onClose={() => closeOne(row.id)} onRule={(process) => navigateTo({ page: "profiles", control: "cb-process-rule", source: process })} />
             )}
           />
         ) : (
@@ -197,7 +197,7 @@ function Empty({ text }: { text: string }) {
   );
 }
 
-function Row({ row, onClose, onInspect }: { row: ConnRow; onClose: () => void; onInspect:()=>void }) {
+function Row({ row, onClose, onInspect, onRule }: { row: ConnRow; onClose: () => void; onInspect:()=>void; onRule: (process: string) => void }) {
   const t = useT();
   return (
     <div
@@ -238,6 +238,13 @@ function Row({ row, onClose, onInspect }: { row: ConnRow; onClose: () => void; o
       <span className="text-right">{fmtBytes(row.up)}</span>
       <span className="text-right">{fmtBytes(row.down)}</span>
       <span className="text-right">{fmtDuration(row.elapsed_ms)}</span>
+      <Button iconOnly size="small"
+        onClick={() => onRule(row.process)}
+        aria-label={t("pr.createFor")}
+        title={t("pr.createFor")}
+      >
+        ⟶
+      </Button>
       <Button iconOnly size="small" tone="danger"
         onClick={onClose}
         aria-label={t("conn.close")}
