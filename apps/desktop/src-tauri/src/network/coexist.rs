@@ -192,36 +192,31 @@ pub fn detect(state: &crate::AppState) -> Vec<CoexistFinding> {
 #[cfg(target_os = "macos")]
 fn sysproxy_lost_finding(state: &crate::AppState) -> Option<CoexistFinding> {
     let core = state.core();
-    if core.status() != crate::CoreStatus::Running {
-        return None;
-    }
+    let core_running = core.status() == crate::CoreStatus::Running;
     let sysproxy = &state.sysproxy;
-    if sysproxy.status().enabled {
-        return None;
-    }
-    if state
-        .store
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .data()
-        .engine
-        .tun_enable
-    {
-        return None;
-    }
-    if !sysproxy.has_takeover_journal() {
-        return None;
-    }
-    let port = sysproxy.status().port;
-    let listening = std::net::TcpStream::connect_timeout(
-        &std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, port)),
-        std::time::Duration::from_millis(300),
-    )
-    .is_ok();
-    if !listening {
-        return None;
-    }
-    if !sysproxy_lost(true, false, true, false, true) {
+    let sysproxy_enabled = sysproxy.status().enabled;
+    let (tun_enabled, port) = {
+        let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+        let engine = &store.data().engine;
+        (engine.tun_enable, engine.mixed_port)
+    };
+    let journal_exists = sysproxy.has_takeover_journal();
+    let port_listening = core_running
+        && !sysproxy_enabled
+        && !tun_enabled
+        && journal_exists
+        && std::net::TcpStream::connect_timeout(
+            &std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, port)),
+            std::time::Duration::from_millis(300),
+        )
+        .is_ok();
+    if !sysproxy_lost(
+        journal_exists,
+        sysproxy_enabled,
+        core_running,
+        tun_enabled,
+        port_listening,
+    ) {
         return None;
     }
     Some(CoexistFinding {
@@ -611,5 +606,15 @@ mod tests {
         let findings = build_findings(Some("utun9".into()), false, Vec::new());
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].kind, "tunnel");
+    }
+
+    #[test]
+    fn sysproxy_lost_requires_all_signals() {
+        assert!(sysproxy_lost(true, false, true, false, true));
+        assert!(!sysproxy_lost(false, false, true, false, true));
+        assert!(!sysproxy_lost(true, true, true, false, true));
+        assert!(!sysproxy_lost(true, false, false, false, true));
+        assert!(!sysproxy_lost(true, false, true, true, true));
+        assert!(!sysproxy_lost(true, false, true, false, false));
     }
 }

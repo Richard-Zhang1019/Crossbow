@@ -84,6 +84,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
     let active = true;
     let hadConflict = false;
     let hadSysproxyLost = false;
+    let checkedSysproxyLost = false;
     const check = async () => {
       try {
         const findings = await ipc.coexistDetect();
@@ -119,19 +120,23 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
           (finding) => finding.kind === "sysproxy-lost",
         );
         if (sysproxyLost) {
+          if (!hadSysproxyLost) {
+            notify.publish({
+              kind: "warning",
+              title: t("home.sysproxyLostTitle"),
+              description: sysproxyLost.detail,
+              source: "coexist-sysproxy-lost",
+              operationId: "coexist-sysproxy-lost",
+              duration: 0,
+              actions: ["diagnostics"],
+            });
+          }
           hadSysproxyLost = true;
-          notify.publish({
-            kind: "warning",
-            title: t("home.sysproxyLostTitle"),
-            description: sysproxyLost.detail,
-            source: "coexist",
-            operationId: "coexist",
-            duration: 0,
-            actions: ["diagnostics"],
-          });
-        } else if (hadSysproxyLost) {
+        } else if (hadSysproxyLost || !checkedSysproxyLost) {
           hadSysproxyLost = false;
+          void notify.resolve("coexist-sysproxy-lost");
         }
+        checkedSysproxyLost = true;
       } catch (error) {
         if (active) notify.error(error, "coexist-read");
       }
