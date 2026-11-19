@@ -77,6 +77,14 @@ export default function ProfilesPage({
   }, [previewId]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importingFiles = useRef(false);
+  // 卸载守卫：晚到的异步响应不再 setState（对齐 Home/App 的 alive 门，#565）。
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
   useEffect(() => {
     if (focusProfileId) setSelectedId(focusProfileId);
     if (navigationRequest?.control === "cb-config-recovery") setRecovering(true);
@@ -85,6 +93,9 @@ export default function ProfilesPage({
 
   const refresh = useCallback(async () => {
     const results=await Promise.allSettled([ipc.listProfiles(),ipc.activeProfileId(),ipc.profileStatuses()]);
+    // 卸载后丢弃：与 Home/App 的 alive 门一致，卸载期间的晚到响应不再
+    // setState（#565）。
+    if (!alive.current) return;
     const [profiles,active,statuses]=results;
     if(profiles.status==='fulfilled')setProfiles(profiles.value);
     if(active.status==='fulfilled')setActiveId(active.value);
@@ -170,9 +181,10 @@ export default function ProfilesPage({
         titleKey: "profiles.title",
       });
       if(outcome.ok&&key.startsWith("activate-"))window.dispatchEvent(new CustomEvent("cb:profile-switched"));
+      if (!alive.current) return;
       await refresh();
     } finally {
-      setBusy(null);
+      if (alive.current) setBusy(null);
     }
   };
 

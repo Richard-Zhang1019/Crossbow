@@ -36,6 +36,12 @@ export default function ConnectionsPage() {
   const [paused, setPaused] = useState(false);
   const [view, setView] = useState<"list" | "apps">("list");
   const latest = useRef<ConnSnapshot>(snapshot);
+  // 暂停是纯本地 UI 态：订阅回调经 ref 读取，避免把它挂进订阅 effect——
+  // 那会让每次暂停/恢复整套拆除重建后端 connections 通道（churn，#565）。
+  const pausedRef = useRef(paused);
+  useEffect(() => {
+    pausedRef.current = paused;
+  }, [paused]);
 
   useEffect(() => {
     ipc
@@ -43,19 +49,23 @@ export default function ConnectionsPage() {
       .catch((error) => notify.error(error, "connections-stream"));
     const un = ipc.onConnections((s) => {
       latest.current = s;
-      if (!paused) setSnapshot(s);
+      if (!pausedRef.current) setSnapshot(s);
     });
     return () => {
       void un.then((f) => f());
       ipc.unsubscribeConnections().catch(() => {});
     };
-  }, [paused]);
+  }, []);
 
   const closeOne = async (id: string) => {
     try {
       await ipc.closeConnection(id);
-      // 乐观移除，等待下个快照校正
-      setSnapshot((s) => ({ ...s, rows: s.rows.filter((r) => r.id !== id) }));
+      // 乐观移除，等待下个快照校正。暂停期间快照不更新，同步过滤
+      // latest：恢复时 setSnapshot(latest) 不会把已断开的行闪回来；
+      // 若断开实际未生效，内核后续帧会重新带上该行（#565）。
+      const prune = (s: ConnSnapshot) => ({ ...s, rows: s.rows.filter((r) => r.id !== id) });
+      setSnapshot(prune);
+      latest.current = prune(latest.current);
     } catch (e) {
       notify.error(e, "connections-operation");
     }
