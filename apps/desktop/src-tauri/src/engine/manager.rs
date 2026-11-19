@@ -74,6 +74,9 @@ struct Inner {
     external_pid: Option<u32>,
     /// 收养进程的可执行文件身份；对外部 PID 发信号/提权前必须校验。
     external_binary: Option<PathBuf>,
+    /// 杀不确认（进程仍存活）时保留的句柄：进程随后自行退出后由
+    /// reap_dead_children 回收，避免 unix 僵尸留到 GUI 退出才回收（#560）。
+    reaps: Vec<Child>,
 }
 
 /// 线程间共享状态；CoreManager 可 Clone。
@@ -275,7 +278,20 @@ impl Shared {
         Ok(Some((pid, port, secret)))
     }
 
+    /// 收尸（#560）：杀不确认时保留的句柄，在内核自行退出后 try_wait
+    /// 回收——否则 unix 僵尸要等到 GUI 退出才被回收。仍存活的保留待下次。
+    fn reap_dead_children(&self) {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner.reaps.retain_mut(|child| match child.try_wait() {
+            Ok(Some(_)) => false, // 已退出，收尸完成
+            Ok(None) => true,     // 仍存活，保留句柄
+            Err(_) => false,      // 查询失败（句柄已失效），丢弃
+        });
+    }
+
     fn kill_child(&self) -> bool {
+        // 先收上一轮遗留：external_pid 路径杀掉的进程若尚未收尸，此刻回收。
+        self.reap_dead_children();
         let (child, external) = {
             let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
             let child = inner.child.take();
@@ -323,15 +339,17 @@ impl Shared {
                 let _ = child.wait();
                 true
             } else {
-                // Preserve enough identity to retry safely; the child handle itself
-                // cannot be retained after this bounded stop attempt.
+                // Preserve enough identity to retry safely. Keep the child
+                // handle in the reaper set: if the process exits on its own
+                // later, reap_dead_children collects it instead of leaving a
+                // zombie until GUI exit（#560）.
                 let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+                inner.reaps.push(child);
                 inner.external_pid = Some(pid);
                 inner.external_binary = Some(self.binary_path.clone());
                 inner.detached = false;
                 false
             }
-            // gone=false 时故意丢弃 Child：进程仍存活，句柄无再收价值
         } else if let Some((pid, binary)) = external {
             #[cfg(target_os = "linux")]
             let stopped = if crate::network::linux_service::managed_pid() == Some(pid) {
@@ -394,6 +412,7 @@ impl CoreManager {
                     detached: false,
                     external_pid: None,
                     external_binary: None,
+                    reaps: Vec::new(),
                 }),
             }),
         }
@@ -518,6 +537,8 @@ impl CoreManager {
             .lifecycle
             .lock()
             .unwrap_or_else(|e| e.into_inner());
+        // 启动前收尸：上一轮杀不确认、随后自行退出的句柄在此回收（#560）。
+        self.shared.reap_dead_children();
         let result = self.start_attempt(base_config, engine_rt, spawner);
         if let Err(error) = &result {
             if self.status() == CoreStatus::Starting {
@@ -1012,6 +1033,8 @@ impl CoreManager {
 
     /// 调用方已持有 lifecycle；启动替换 Starting 批次时也走同一条停止路径。
     fn stop_locked(&self) -> bool {
+        // 停止前收尸：上一轮杀不确认、随后自行退出的句柄在此回收（#560）。
+        self.shared.reap_dead_children();
         #[cfg(target_os = "linux")]
         {
             self.shared
@@ -1409,10 +1432,18 @@ fn kill_external_checked(pid: u32, expected: Option<&Path>, work_dir: Option<&Pa
     }
     #[cfg(not(unix))]
     {
-        let _ = crate::process::command("taskkill")
-            .args(["/F", "/PID", &pid.to_string()])
-            .output();
-        wait_for_exit(gone, KILL_GRACE)
+        // #560：taskkill /PID 与身份校验之间存在 PID 复用窗口；改持句柄
+        // 校验后终止。None（身份不符/查询失败）保留描述符走既有拒绝路径；
+        // Some(false) 进程已不存在，交给 gone 判定自然确认。
+        match terminate_verified_process(pid, expected) {
+            None => {
+                eprintln!(
+                    "core kill: identity cannot be verified via handle; retaining descriptor"
+                );
+                return false;
+            }
+            _ => wait_for_exit(gone, KILL_GRACE),
+        }
     }
 }
 
@@ -1836,6 +1867,56 @@ fn process_matches_binary(pid: u32, expected: &Path) -> Option<bool> {
             ),
             _ => Some(actual.eq_ignore_ascii_case(&expected.to_string_lossy())),
         }
+    }
+}
+
+/// #560：`taskkill /F /PID` 与身份校验之间存在 PID 复用窗口——校验通过后
+/// 进程退出、PID 被系统分配给无关进程，taskkill 就会误杀。改为持句柄校验
+/// 后终止：OpenProcess 的句柄引用内核对象，持有期间 PID 不会复用，
+/// QueryFullProcessImageNameW 与 TerminateProcess 作用于同一对象。
+/// 返回 Some(true)=已终止；Some(false)=进程已不存在；None=身份不符或查询
+/// 失败，调用方按既有拒绝路径保留描述符。
+#[cfg(target_os = "windows")]
+fn terminate_verified_process(pid: u32, expected: &Path) -> Option<bool> {
+    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_INVALID_PARAMETER};
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, TerminateProcess, PROCESS_NAME_WIN32,
+        PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
+    };
+
+    unsafe {
+        let handle = OpenProcess(
+            PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION,
+            0,
+            pid,
+        );
+        if handle.is_null() {
+            return Some(GetLastError() == ERROR_INVALID_PARAMETER);
+        }
+        let mut buf = [0_u16; 1024];
+        let mut len = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, buf.as_mut_ptr(), &mut len);
+        if ok == 0 {
+            CloseHandle(handle);
+            return None;
+        }
+        let actual = String::from_utf16_lossy(&buf[..len as usize]);
+        let verified = match (
+            std::fs::canonicalize(&actual),
+            std::fs::canonicalize(expected),
+        ) {
+            (Ok(actual), Ok(expected)) => actual
+                .as_os_str()
+                .eq_ignore_ascii_case(expected.as_os_str()),
+            _ => actual.eq_ignore_ascii_case(&expected.to_string_lossy()),
+        };
+        if !verified {
+            CloseHandle(handle);
+            return None;
+        }
+        let terminated = TerminateProcess(handle, 1) != 0;
+        CloseHandle(handle);
+        Some(terminated)
     }
 }
 
