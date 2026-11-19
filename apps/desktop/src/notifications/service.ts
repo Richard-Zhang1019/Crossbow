@@ -214,6 +214,20 @@ const copy = {
     "连续多次健康检测失败，已关闭 TUN。请检查网络或更换节点。",
     "Repeated health checks failed. TUN was turned off. Check the network or change nodes.",
   ],
+  "scene.applied.direct": [
+    "已按网络场景切换为直连",
+    "Switched to direct by network scene",
+  ],
+  "scene.applied.proxy": [
+    "已按网络场景切换为代理",
+    "Switched to proxy by network scene",
+  ],
+  "scene.restored": [
+    "已离开网络场景，接管方式已恢复",
+    "Left the network scene; takeover restored",
+  ],
+  "scene.failed": ["网络场景切换未完成", "Network scene switch did not complete"],
+  "scene.restore": ["网络场景恢复", "Network scene restore"],
 } as const;
 export function notificationText(
   code: string,
