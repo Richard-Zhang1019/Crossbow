@@ -635,7 +635,12 @@ pub(crate) fn tidy_runtime_files(dir: &std::path::Path) {
 /// 影响网络可用性。端口有监听（内核被收养/别的客户端占用同端口）则不动。
 #[cfg(any(target_os = "macos", windows))]
 pub(crate) fn clear_stale_system_proxy_early() {
-    let dir = data_dir_for_early_hooks();
+    // HOME/APPDATA 缺失（launchd 精简环境、服务化启动）无法定位数据目录：
+    // 跳过本次自愈并留痕——Builder 前 panic 会让应用完全无法启动。
+    let Some(dir) = data_dir_for_early_hooks() else {
+        eprintln!("stale system proxy self-heal skipped: HOME/APPDATA unset");
+        return;
+    };
     let journal = dir.join("sysproxy-journal.json");
     if !journal.is_file() {
         return;
@@ -687,20 +692,35 @@ pub(crate) fn port_has_listener(port: u16) -> bool {
 }
 
 #[cfg(any(target_os = "macos", windows))]
-pub(crate) fn data_dir_for_early_hooks() -> std::path::PathBuf {
+/// 纯函数便于测试：env 值 → 数据目录。env 缺失返回 None 而非 panic
+/// （精简环境 launchd/服务化启动不能在 Builder 前崩溃，宁可跳过自愈）。
+#[cfg(any(target_os = "macos", windows))]
+fn data_dir_from_env(value: Option<std::ffi::OsString>) -> Option<std::path::PathBuf> {
     #[cfg(target_os = "macos")]
     {
-        std::env::var_os("HOME")
+        value
             .map(std::path::PathBuf::from)
             .map(|h| h.join("Library/Application Support/com.richard.crossbow"))
-            .expect("HOME unset; cannot locate data dir")
     }
     #[cfg(windows)]
     {
-        std::env::var_os("APPDATA")
+        value
             .map(std::path::PathBuf::from)
             .map(|h| h.join("com.richard.crossbow"))
-            .expect("APPDATA unset; cannot locate data dir")
+    }
+}
+
+/// 与 panic hook 同目标但不依赖 AppState；env 缺失返回 None，调用方跳过
+/// 自愈（#561：原先 .expect 在精简启动环境让应用直接拒绝启动）。
+#[cfg(any(target_os = "macos", windows))]
+pub(crate) fn data_dir_for_early_hooks() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        data_dir_from_env(std::env::var_os("HOME"))
+    }
+    #[cfg(windows)]
+    {
+        data_dir_from_env(std::env::var_os("APPDATA"))
     }
 }
 
@@ -747,5 +767,15 @@ mod tidy_tests {
             let meta = dir.path().join(name).metadata().unwrap();
             assert_eq!(meta.permissions().mode() & 0o777, 0o600);
         }
+    }
+
+    #[test]
+    #[cfg(any(target_os = "macos", windows))]
+    fn data_dir_from_env_missing_value_yields_none_without_panic() {
+        // #561：env 缺失必须返回 None（调用方跳过自愈），不得 panic
+        assert_eq!(data_dir_from_env(None), None);
+        let dir = data_dir_from_env(Some(std::ffi::OsString::from("/home/test")));
+        let dir = dir.expect("present env value must map to a data dir");
+        assert!(dir.ends_with("com.richard.crossbow"));
     }
 }

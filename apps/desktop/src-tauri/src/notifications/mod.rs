@@ -952,6 +952,23 @@ fn navigation_target(page: &str, source: &str) -> String {
     target.to_string()
 }
 
+/// #561：Action → 通知点击后的导航页。两个 Retry 动作在
+/// notification_action 入口已单独处理（下载重试走后台任务、系统代理
+/// 恢复走 restore 流程），此处返回 None 由调用方忽略——不用
+/// unreachable!()（新增枚举变体时那是可触达的 panic 点），也不设
+/// `_ =>` 通配（通分会消除编译器对新增变体的完备性检查）。
+fn navigation_page(action: &Action) -> Option<&'static str> {
+    match action {
+        Action::Settings => Some("settings"),
+        Action::Diagnostics => Some("diagnostics"),
+        Action::Logs => Some("logs"),
+        Action::Profiles => Some("profiles"),
+        Action::Nodes => Some("proxies"),
+        Action::ContinueSetup => Some("home"),
+        Action::RetryDownload | Action::RetrySystemProxy => None,
+    }
+}
+
 #[tauri::command]
 pub async fn notification_action(
     app: AppHandle,
@@ -1030,15 +1047,11 @@ pub async fn notification_action(
         });
         return Ok(());
     }
-    let page = match action {
-        Action::Settings => "settings",
-        Action::Diagnostics => "diagnostics",
-        Action::Logs => "logs",
-        Action::Profiles => "profiles",
-        Action::Nodes => "proxies",
-        Action::ContinueSetup => "home",
-        Action::RetryDownload => unreachable!(),
-        Action::RetrySystemProxy => unreachable!(),
+    let Some(page) = navigation_page(&action) else {
+        // RetryDownload/RetrySystemProxy 在入口已处理；走到这里说明早退
+        // 分支被后续改动遗漏——留痕忽略，不 panic（#561）。
+        eprintln!("notification action {action:?} requires no navigation; ignored");
+        return Ok(());
     };
     {
         let mut queue = service.queue.lock().unwrap_or_else(|e| e.into_inner());
@@ -1445,6 +1458,20 @@ mod tests {
         assert_eq!(q.entries[0].id, id);
         assert_eq!(q.entries[0].details, "original sanitized diagnostic");
         assert!(q.entries[0].resolved_at.is_some());
+    }
+
+    #[test]
+    fn navigation_page_maps_navigable_actions_and_ignores_retries() {
+        // #561：导航动作逐一映射；Retry 动作返回 None 而非 panic
+        //（原先两处 unreachable!() 在新增枚举变体时是可触达的 panic 点）
+        assert_eq!(navigation_page(&Action::Settings), Some("settings"));
+        assert_eq!(navigation_page(&Action::Diagnostics), Some("diagnostics"));
+        assert_eq!(navigation_page(&Action::Logs), Some("logs"));
+        assert_eq!(navigation_page(&Action::Profiles), Some("profiles"));
+        assert_eq!(navigation_page(&Action::Nodes), Some("proxies"));
+        assert_eq!(navigation_page(&Action::ContinueSetup), Some("home"));
+        assert_eq!(navigation_page(&Action::RetryDownload), None);
+        assert_eq!(navigation_page(&Action::RetrySystemProxy), None);
     }
 }
 
