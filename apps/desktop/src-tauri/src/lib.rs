@@ -69,6 +69,7 @@ fn apply_macos_window_appearance(win: &tauri::WebviewWindow, theme: &str) {
         NSAppearance, NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua,
         NSView,
     };
+    use objc2_foundation::{NSOperatingSystemVersion, NSProcessInfo};
     use objc2_web_kit::WKWebView;
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
@@ -115,7 +116,15 @@ fn apply_macos_window_appearance(win: &tauri::WebviewWindow, theme: &str) {
                 if let Some(first) = subviews.firstObject() {
                     // wry 保证子视图[0] 是 WKWebView；downcast 失败则跳过。
                     if let Some(webview) = first.downcast_ref::<WKWebView>() {
-                        webview.setUnderPageBackgroundColor(Some(&under_page));
+                        if NSProcessInfo::processInfo().isOperatingSystemAtLeastVersion(
+                            NSOperatingSystemVersion {
+                                majorVersion: 12,
+                                minorVersion: 0,
+                                patchVersion: 0,
+                            },
+                        ) {
+                            webview.setUnderPageBackgroundColor(Some(&under_page));
+                        }
                     }
                 }
             }

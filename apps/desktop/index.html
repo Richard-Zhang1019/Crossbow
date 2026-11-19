@@ -5,8 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Crossbow</title>
     <script>
-      // #527 首帧主题：读上次会话 applyTheme 落盘的解析结果，无记录按系统
-      // 深浅。React 挂载后 applyTheme 会按真实设置再校正一次。
+      // #527 首帧主题：读取主题模式同步解析；system/无记录按当前系统外观。
       // 通知独立窗口（?notifications）不渲染骨架。
       (function () {
         try {
@@ -14,11 +13,11 @@
             document.documentElement.classList.add("cb-boot-off");
             return;
           }
-          var d = localStorage.getItem("cb-dark");
+          var theme = localStorage.getItem("cb-theme");
           var dark =
-            d === null
-              ? window.matchMedia("(prefers-color-scheme: dark)").matches
-              : d === "1";
+            theme === "dark" ||
+            (theme !== "light" &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
           document.documentElement.classList.toggle("dark", dark);
           if (navigator.userAgent.includes("Macintosh"))
             document.documentElement.classList.add("cb-boot-mac");
