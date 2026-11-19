@@ -388,3 +388,93 @@ h2:hover .anchor-button, .anchor-button:focus-visible { opacity: 1; }
 /* 反馈（#366）：下载按钮与导航行视觉重量对齐 */
 .nav-download { min-height: 34px; margin-left: 10px; padding: 4px 12px; gap: 6px; border-radius: 7px; font-size: 12.5px; }
 .nav-download svg { width: 14px; height: 14px; }
+
+/* ============================================================
+   #553 features/guide 左轨目录 + 分章（B 系统内）
+   ============================================================ */
+.detail-page, .guide-page { padding-block: 64px 80px; }
+.page-grid { display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 56px; align-items: start; }
+
+.rail {
+  position: sticky;
+  top: 104px;
+  max-height: calc(100vh - 128px);
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding-bottom: 8px;
+}
+.rail::-webkit-scrollbar { display: none; }
+.rail-label { font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--faint); padding: 0 14px; margin: 0 0 6px; }
+.rail a {
+  position: relative; display: block;
+  padding: 5px 14px; margin-inline: -14px;
+  color: var(--dim); font-size: 13px; line-height: 1.55;
+  border-radius: 0 8px 8px 0;
+  transition: color 130ms ease, background-color 130ms ease;
+}
+.rail a:hover { color: var(--text); background: color-mix(in srgb, var(--surface-2) 62%, transparent); }
+.rail a.active { color: var(--accent); background: var(--accent-soft); font-weight: 600; transition: none; }
+.rail a.active::before, .rail a:hover::before {
+  content: ""; position: absolute; left: -14px; top: 5px; bottom: 5px;
+  width: 2px; border-radius: 2px; background: var(--accent);
+}
+.rail a:hover:not(.active)::before { opacity: .35; }
+.rail-group { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.rail-group:first-of-type { margin-top: 14px; padding-top: 0; border-top: 0; }
+.rail-progress { margin-top: 24px; padding: 0 14px; }
+.rail-bar { height: 2px; border-radius: 1px; background: var(--line); overflow: hidden; margin-bottom: 7px; }
+.rail-bar i { display: block; height: 100%; width: 0; border-radius: 1px; background: var(--accent); transition: width 200ms ease; }
+.rail-num { font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { .rail a, .rail-bar i { transition: none; } }
+
+/* 内容分章 */
+.group-head { padding-top: 52px; }
+.group-head .g-label { font-size: 12.5px; font-weight: 600; color: var(--faint); }
+.group-head .rule { height: 1px; background: var(--line); margin-top: 16px; }
+.detail-list > .group-head:first-child, .guide-list > .guide-chapter:first-child .group-head { padding-top: 0; }
+
+/* guide：卡盒改细线分隔（去卡片汤），组内收紧 */
+.guide-list { display: block; }
+.guide-chapter { padding-top: 44px; }
+.guide-chapter:first-child { padding-top: 0; }
+.guide-card { padding: 26px 0 4px; background: transparent; border-radius: 0; border-top: 1px solid var(--line); }
+.guide-card h2 { font-size: 26px; }
+/* 归类散落的内联样式 */
+.guide-card .g-sum { color: var(--dim); font-size: 15px; line-height: 1.75; margin: 10px 0 4px; }
+.guide-card .g-note { color: var(--dim); font-size: 13px; line-height: 1.7; }
+.guide-card .g-sum code, .guide-card .g-note code { font: 12px var(--mono); }
+
+/* 窄屏：左轨退化为页头下折叠目录（rail-fold 由组件渲染） */
+.rail-fold { display: none; }
+@media (max-width: 1080px) {
+  .page-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .rail { display: none; }
+  .rail-fold { display: block; margin-top: 20px; }
+  .rail-fold summary {
+    display: flex; align-items: center; justify-content: space-between;
+    min-height: 44px; padding: 10px 16px; cursor: pointer;
+    background: var(--surface); border-radius: 8px;
+    font-size: 14px; color: var(--dim); list-style: none;
+  }
+  .rail-fold summary::-webkit-details-marker { display: none; }
+  .rail-fold summary::after { content: "▾"; color: var(--faint); }
+  .rail-fold[open] summary::after { content: "▴"; }
+  .rail-fold .rail { position: static; max-height: 46vh; padding-bottom: 0; }
+}
+.guide-cta {
+  margin-top: 48px;
+  padding: 32px 24px;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+.guide-cta h3 { font-size: 18px; font-weight: 700; }
+.guide-cta p { color: var(--dim); font-size: 15px; margin: 8px auto 20px; }
+.guide-cta .btn-primary {
+  display: inline-flex; align-items: center; gap: 8px;
+  border-radius: 10px; padding: 11px 22px;
+  font-size: 14px; font-weight: 600;
+  color: var(--on-button); background: var(--button);
+}
+.guide-cta .guide-cta-docs { margin-left: 10px; color: var(--dim); font-size: 15px; }

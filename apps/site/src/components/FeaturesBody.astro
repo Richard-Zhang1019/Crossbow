@@ -130,10 +130,10 @@ const FEATURES = [
     ],
   },
   {
-    id: "config-package", tag: i18n("features.100"), title: i18n("features.101"),
-    summary: i18n("features.102"),
+    id: "config-package", tag: i18n("features.135"), title: i18n("features.135"),
+    summary: i18n("features.136"),
     detail: [
-      i18n("features.103"),
+      i18n("features.137"),
       i18n("features.103b"),
     ],
   },
@@ -180,22 +180,36 @@ const path = (id: string) => `${import.meta.env.BASE_URL.replace(/\/+$/, "")}${l
 ---
 
 <div class="shell detail-page">
-  <header class="page-heading"><h1>{i18n("features.104")}</h1><p>{i18n("features.105")}</p></header>
-  <nav class="section-nav" aria-label={i18n("features.106")}>
-    <a href={path("support-matrix")} class="section-link" data-section="support-matrix">{i18n("features.1")}</a>
-    {GROUPS.map((g) => (
-      <div class="nav-group">
-        <span class="nav-group-label">{g.label}</span>
-        {g.ids.map((id) => <a href={path(id)} class="section-link" data-section={id}>{byId[id].tag}</a>)}
-      </div>
-    ))}
-  </nav>
-  <div class="detail-list">
-    {FEATURES.map((f, i) => (
-      <>
-        {i > 0 && groupLabel(f.id) !== groupLabel(FEATURES[i - 1].id) && (
-          <div class="detail-group" aria-hidden="true">{groupLabel(f.id)}</div>
-        )}
+  <header class="page-heading"><h1>{i18n("features.140")}</h1><p>{i18n("features.141")}</p></header>
+  <div class="page-grid">
+    <nav class="rail" aria-label={i18n("features.142")}>
+      <div class="rail-label">{i18n("features.142")}</div>
+      <a href={path("support-matrix")} class="rail-link" data-section="support-matrix">{i18n("features.1")}</a>
+      {GROUPS.map((g) => (
+        <div class="rail-group">
+          <div class="rail-label">{g.label}</div>
+          {g.ids.map((id) => <a href={path(id)} class="rail-link" data-section={id}>{byId[id].tag}</a>)}
+        </div>
+      ))}
+      <div class="rail-progress" aria-hidden="true"><div class="rail-bar"><i id="railBar"></i></div><span class="rail-num" id="railProgress"></span></div>
+    </nav>
+
+    <details class="rail-fold">
+      <summary>{i18n("features.142")}</summary>
+      <nav class="rail" aria-hidden="true">
+        <a href={path("support-matrix")}>{i18n("features.1")}</a>
+        {GROUPS.map((g) => <div>{g.ids.map((id) => <a href={path(id)}>{byId[id].tag}</a>)}</div>)}
+      </nav>
+    </details>
+    <div class="detail-list">
+      {FEATURES.map((f, i) => (
+        <>
+          {i > 0 && groupLabel(f.id) !== groupLabel(FEATURES[i - 1].id) && (
+            <div class="group-head" aria-hidden="true">
+              <div class="g-label">{groupLabel(f.id)}</div>
+              <div class="rule"></div>
+            </div>
+          )}
 
       <section class={"detail-section" + (f.matrix ? " wide support-matrix" : "")} id={f.id}>
         <div>
@@ -231,6 +245,7 @@ const path = (id: string) => `${import.meta.env.BASE_URL.replace(/\/+$/, "")}${l
       </section>
       </>
     ))}
+    </div>
   </div>
   <div class="page-next">
     <div><h2>{i18n("features.130")}</h2><p>{i18n("features.131")}</p></div>
@@ -243,13 +258,32 @@ const path = (id: string) => `${import.meta.env.BASE_URL.replace(/\/+$/, "")}${l
 </div>
 
 <script>
-  // 当前章节高亮（#349 功能页目录）
-  const links = document.querySelectorAll<HTMLAnchorElement>(".section-nav a[data-section]");
+  // 当前章节高亮 + 进度（#553 左轨目录）。几何计算随滚动更新：
+  // IntersectionObserver 的回调只在相交状态翻转时触发，快速滚动会漏帧。
+  const links = document.querySelectorAll<HTMLAnchorElement>(".rail a[data-section]");
   const sections = [...links].map((a) => document.getElementById(a.dataset.section ?? "")).filter((el): el is HTMLElement => Boolean(el));
-  const observer = new IntersectionObserver((entries) => {
-    const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
-    if (!visible) return;
-    links.forEach((a) => a.classList.toggle("active", a.dataset.section === visible.target.id));
-  }, { rootMargin: "-104px 0px -55% 0px" });
-  sections.forEach((s) => observer.observe(s));
+  const bar = document.getElementById("railBar");
+  const progress = document.getElementById("railProgress");
+  let ticking = false;
+  const update = () => {
+    ticking = false;
+    // 取「已越过锚线（top≤140）的节中 top 最大者」：
+    // 简单取最后一个满足者会被已滚过的上方节覆盖（节 top 为负也满足 ≤140）。
+    let best = -Infinity;
+    let current = sections[0];
+    for (const s of sections) {
+      const top = s.getBoundingClientRect().top;
+      if (top <= 140 && top > best) { best = top; current = s; }
+    }
+    links.forEach((a) => a.classList.toggle("active", a.dataset.section === current?.id));
+    const i = sections.indexOf(current);
+    if (bar && progress && i >= 0) {
+      bar.style.width = `${((i + 1) / sections.length) * 100}%`;
+      progress.textContent = `${i + 1} / ${sections.length}`;
+    }
+  };
+  addEventListener("scroll", () => {
+    if (!ticking) { ticking = true; requestAnimationFrame(update); }
+  }, { passive: true });
+  update();
 </script>
