@@ -11,12 +11,14 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { currentLang, initLang, useT } from "@/i18n/i18n";
+import { unsubscribe } from "@/lib/unlisten";
 import { ProgressRing } from "@/components/ProgressRing";
 import { Icon } from "@/components/Icon";
 import { ipc } from "@/services/ipc";
 import {
   notificationHint,
   notificationText as text,
+  notify,
   type Notification,
   type NotificationSnapshot,
 } from "./service";
@@ -688,6 +690,9 @@ export function NotificationHistory() {
                       await invoke("notification_restore_completed");
                       setCleared(0);
                       window.clearTimeout(undoTimer.current);
+                    } catch (error) {
+                      // 用户动作失败必须可见（#562-3）
+                      notify.error(error, "notification-history");
                     } finally {
                       setClearing(false);
                     }
@@ -713,6 +718,9 @@ export function NotificationHistory() {
                         () => setCleared(0),
                         10000,
                       );
+                    } catch (error) {
+                      // 用户动作失败必须可见（#562-4）
+                      notify.error(error, "notification-history");
                     } finally {
                       setClearing(false);
                     }
@@ -740,17 +748,24 @@ export function NotificationWindow() {
             matchMedia("(prefers-color-scheme: dark)").matches),
       );
     let alive = true;
-    void ipc.getUiSettings().then((settings) => {
-      if (alive) apply(settings.theme);
-    });
+    // 独立通知窗：主题读取失败保持系统默认即可，无需打扰（#562-5）
+    void ipc
+      .getUiSettings()
+      .then((settings) => {
+        if (alive) apply(settings.theme);
+      })
+      .catch(() => {});
     const off = ipc.onTheme(apply);
     const media = matchMedia("(prefers-color-scheme: dark)");
     const changed = () =>
-      void ipc.getUiSettings().then((settings) => apply(settings.theme));
+      void ipc
+        .getUiSettings()
+        .then((settings) => apply(settings.theme))
+        .catch(() => {});
     media.addEventListener("change", changed);
     return () => {
       alive = false;
-      void off.then((f) => f());
+      unsubscribe(off);
       media.removeEventListener("change", changed);
     };
   }, []);

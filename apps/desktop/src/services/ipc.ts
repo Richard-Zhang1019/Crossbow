@@ -239,13 +239,11 @@ export interface GroupView {
   nodes: NodeView[];
 }
 
-export const CORE_MODES = [
-  { id: "direct", label: "直连" },
-  { id: "rule", label: "规则" },
-  { id: "global", label: "全局" },
-] as const;
+// #563：仅保留语义 id，文案统一走 i18n（mode.*）——内置中文 label 是
+// 无人消费的死数据，误导后来者以为 label 在用。
+export const CORE_MODES = ["direct", "rule", "global"] as const;
 
-export type CoreMode = (typeof CORE_MODES)[number]["id"];
+export type CoreMode = (typeof CORE_MODES)[number];
 
 export interface CoreBinaryInfo {
   path: string;
@@ -370,6 +368,8 @@ export const ipc = {
   setActiveProfile: (id: string) => invoke<void>("set_active_profile", { id }),
   removeProfile: (id: string) => invoke<void>("remove_profile", { id }),
   coreStart: () => invoke<void>("core_start"),
+  /** #563：混合端口是否被占用（端口冲突引导判定，替代后端文案子串匹配） */
+  portHasListener: (port: number) => invoke<boolean>("probe_port_listener", { port }),
   coreRestart: () => invoke<void>("core_restart"),
   logsSettings: () =>
     invoke<{ save_enabled: boolean; retention_days: number }>("logs_settings"),

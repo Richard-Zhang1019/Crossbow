@@ -19,6 +19,7 @@ import {
   type PlatformCapabilities,
 } from "@/services/ipc";
 import { fmtBytes } from "@/lib/format";
+import { unsubscribe } from "@/lib/unlisten";
 import { useT } from "@/i18n/i18n";
 import { Icon } from "@/components/Icon";
 import { ConnectionFlow } from "@/components/ConnectionFlow";
@@ -79,6 +80,11 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
   }, []);
   const eventReceived = (key: string) => { readGate.current.invalidate(key); confirm(key); };
 
+  // #563：coexist 轮询 effect 依赖 []不随渲染重挂，持最新 t——语言切换后
+  // 60s 轮询不再用挂载时旧语言的冲突文案
+  const latestT = useRef(t);
+  latestT.current = t;
+
   // Conflict feedback shares the same queue and is deduplicated across polls.
   useEffect(() => {
     let active = true;
@@ -97,8 +103,8 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
           hadConflict = true;
           notify.publish({
             kind: "warning",
-            title: t("home.coexistTitle"),
-            description: t("home.coexistHint"),
+            title: latestT.current("home.coexistTitle"),
+            description: latestT.current("home.coexistHint"),
             details: findings.map((finding) => finding.detail).join("\n"),
             source: "coexist",
             operationId: "coexist",
@@ -123,7 +129,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
           if (!hadSysproxyLost) {
             notify.publish({
               kind: "warning",
-              title: t("home.sysproxyLostTitle"),
+              title: latestT.current("home.sysproxyLostTitle"),
               description: sysproxyLost.detail,
               source: "coexist-sysproxy-lost",
               operationId: "coexist-sysproxy-lost",
@@ -255,7 +261,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
       active = false;
       mounted.current = false;
       for (const un of [un1, un2, un3, un4, un5, untun])
-        void un.then((f) => f());
+        unsubscribe(un);
       // React StrictMode immediately mounts this page again in development.
       // Wait for in-flight subscribe commands, then let the new generation
       // decide whether the backend streams should remain active.
@@ -274,8 +280,20 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
 
   useEffect(()=>{const changed=()=>void refresh();window.addEventListener("cb:profile-switched",changed);return()=>window.removeEventListener("cb:profile-switched",changed)},[refresh]);
   useEffect(() => {
-    const off = ipc.onEngineChanged(() => void refresh());
-    return () => void off.then(unlisten => unlisten());
+    // 注册 promise 在卸载后才 resolve 时立即退订，防监听器泄漏（#562-6）
+    let alive = true;
+    let unlisten: (() => void) | null = null;
+    void ipc
+      .onEngineChanged(() => void refresh())
+      .then((f) => {
+        if (alive) unlisten = f;
+        else f(); // 卸载后才 resolve：立即退订，防泄漏
+      })
+      .catch(() => {}); // 注册失败：本次挂载不跟随引擎切换，refresh 周期兜底
+    return () => {
+      alive = false;
+      unlisten?.();
+    };
   }, [refresh]);
   useEffect(() => {
     if (installNotice?.kind === "success") void refresh();
@@ -412,7 +430,18 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
           try {
             await ipc.coreStart();
           } catch (error) {
-            if (mounted.current) setPortConflict(String(error).includes("无法绑定"));
+            // #563：端口冲突判定不再匹配后端错误文案（改词/本地化即失效），
+            // 改为探测混合端口是否真有监听者（引导语义 = 端口被占用）
+            if (mounted.current && mixedPort != null && mixedPort > 0) {
+              void ipc
+                .portHasListener(mixedPort)
+                .then((listening) => {
+                  if (mounted.current) setPortConflict(listening);
+                })
+                .catch(() => {
+                  if (mounted.current) setPortConflict(false); // 探测失败不作冲突判定
+                });
+            }
             throw error;
           }
         }, undefined, { feedback: "error-only", titleKey: "setup.startAction" });
@@ -655,7 +684,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
               <div className="cb-mode-control">
                 <p>{t("studio.mode")}</p>
                 <SegmentedControl label={t("studio.mode")} value={known.has("mode")?mode:""} disabled={busy||!known.has("mode")||readErrors.has("mode")}
-                  options={CORE_MODES.map(m=>({value:m.id,label:t(`mode.${m.id}`)}))}
+                  options={CORE_MODES.map(m=>({value:m,label:t(`mode.${m}`)}))}
                   onChange={value=>{if(!value)return;void notify.run("core-mode",notificationText("core.mode"),()=>ipc.setCoreMode(value as CoreMode),undefined,{feedback:"error-only"})}}/>
 
               </div>

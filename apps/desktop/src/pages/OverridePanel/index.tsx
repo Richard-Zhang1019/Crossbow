@@ -24,6 +24,7 @@ export default function OverridePanel({
 }) {
   const t = useT();
   const [overrides, setOverrides] = useState<OverrideDef[]>([]);
+  const [loadError, setLoadError] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -36,7 +37,15 @@ export default function OverridePanel({
   const active = profiles.find((p) => p.id === activeId);
 
   const refresh = useCallback(async () => {
-    setOverrides(await ipc.listOverrides().catch(() => []));
+    // 读取失败保留错误态 + 重试入口，不再吞成空列表伪装「尚无覆写」
+    //（对照 Home 的 readErrors 模式，#562-1）
+    try {
+      setOverrides(await ipc.listOverrides());
+      setLoadError(false);
+    } catch (error) {
+      setLoadError(true);
+      notify.error(error, "override-load");
+    }
   }, []);
 
   useEffect(() => {
@@ -138,7 +147,14 @@ export default function OverridePanel({
           <div className="actions"><Button disabled={creating} onClick={onCreateClose}>{t("ov.cancel")}</Button><Button type="submit" variant="primary" disabled={creating||!newName.trim()} loading={creating}>{t("ov.createAction")}</Button></div>
         </form>
       </Dialog>}
-      {overrides.length === 0 ? (
+      {loadError && overrides.length === 0 ? (
+        <div className="cb-empty">
+          <p role="status">{t("ov.loadFailed")}</p>
+          <Button size="small" onClick={() => void refresh()}>
+            {t("ov.retry")}
+          </Button>
+        </div>
+      ) : overrides.length === 0 ? (
         <div className="cb-empty">
           <p>{t("ov.empty")}</p>
         </div>

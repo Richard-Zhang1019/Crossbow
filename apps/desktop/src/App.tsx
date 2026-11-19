@@ -1,6 +1,7 @@
 import ProfileSwitcher from "@/components/ProfileSwitcher";
 import { UpdateEntry } from "@/components/UpdateEntry";
 import { parseNavigation, type NavigationTarget } from "@/lib/workflow";
+import { unsubscribe } from "@/lib/unlisten";
 import { ButtonBase, Button } from "@/components/Button";
 import { notify } from "@/notifications/service";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -21,7 +22,8 @@ import { Icon } from "@/components/Icon";
 export function dragWindow(e: React.MouseEvent) {
   if (e.button === 0) {
     e.preventDefault();
-    getCurrentWindow().startDragging();
+    // 拖动被取消/失败无补救动作，静默（#562-8）
+    getCurrentWindow().startDragging().catch(() => {});
   }
 }
 import { ipc, type UiSettings, type PlatformCapabilities, type CoreStatus } from "@/services/ipc";
@@ -112,7 +114,7 @@ export default function App() {
     return () => {
       active = false;
       for (const subscription of subscriptions) {
-        void subscription.then(off => off()).catch(() => {});
+        unsubscribe(subscription);
       }
     };
   }, []);
@@ -151,7 +153,7 @@ export default function App() {
       .catch(() => {});
     return () => {
       active = false;
-      void un.then((off) => off());
+      unsubscribe(un);
     };
   }, []);
 
@@ -173,7 +175,7 @@ export default function App() {
       void refresh();
     });
     window.addEventListener("cb:profile-switched",refresh);
-    return () => { alive=false; window.removeEventListener("cb:profile-switched",refresh); void unBackend.then((off)=>off()); };
+    return () => { alive=false; window.removeEventListener("cb:profile-switched",refresh); unsubscribe(unBackend); };
   }, [page]);
 
   const refreshCoreLabel = () => {
@@ -194,11 +196,18 @@ export default function App() {
   useEffect(() => {
     // 窗口底部的内核标识：跟随持久化引擎与其二进制版本；引擎切换时重取
     refreshCoreLabel();
+    // 注册 promise 在卸载后才 resolve 时立即退订，防监听器泄漏（#562-6）
+    let alive = true;
     let unlisten: (() => void) | null = null;
-    ipc.onEngineChanged(refreshCoreLabel).then((f) => {
-      unlisten = f;
-    });
+    ipc
+      .onEngineChanged(refreshCoreLabel)
+      .then((f) => {
+        if (alive) unlisten = f;
+        else f(); // 卸载后才 resolve：立即退订，防泄漏
+      })
+      .catch(() => {}); // 注册失败：标签不随引擎事件刷新，非关键路径
     return () => {
+      alive = false;
       unlisten?.();
     };
   }, []);
@@ -213,7 +222,7 @@ export default function App() {
       }
     });
     return () => {
-      void un.then((f) => f());
+      unsubscribe(un);
     };
   }, []);
 
@@ -235,7 +244,7 @@ export default function App() {
     };
     mq.addEventListener("change", onSystem);
     return () => {
-      void un.then((f) => f());
+      unsubscribe(un);
       mq.removeEventListener("change", onSystem);
     };
   }, []);

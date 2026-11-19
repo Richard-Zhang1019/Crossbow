@@ -149,8 +149,11 @@ export default function ProxiesPage() {
       const [profile, core] = await Promise.all([ipc.activeProfileId(), ipc.coreStatus()]);
       if (revision !== snapshotRevision.current) return;
       if (!profile || core.state !== "Running") {
-        const missing = profile && core.state !== "Starting" && !(await ipc.getEngineConfig()).core_installed;
+        // 引擎配置属次要读取：失败不放大为整页错误，按「已安装」降级处理
+        //（profile/core 真实状态已取得）；下次进入页面会重试（#562-2）
+        const engine = await ipc.getEngineConfig().catch(() => null);
         if (revision !== snapshotRevision.current) return;
+        const missing = profile && core.state !== "Starting" && engine !== null && !engine.core_installed;
         updateSnapshot(null, []);
         setPhase(!profile ? "noConfig" : missing ? "missingCore" : "stopped");
         return;

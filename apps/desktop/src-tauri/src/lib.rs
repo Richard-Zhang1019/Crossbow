@@ -881,6 +881,7 @@ pub fn run() {
             set_active_profile,
             remove_profile,
             core_start,
+            probe_port_listener,
             core_restart,
             core_stop,
             core_status,

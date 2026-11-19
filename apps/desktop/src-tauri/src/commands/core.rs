@@ -204,6 +204,14 @@ pub(crate) async fn core_restart(app: AppHandle, state: State<'_, AppState>) -> 
 pub(crate) async fn core_start(state: State<'_, AppState>) -> Result<(), String> {
     start_core(&state).and_then(|()| wait_core_running(&state))
 }
+
+/// #563：混合端口是否被占用——前端在内核启动失败后据此判定端口冲突
+/// 引导，替代对后端错误文案的中文子串匹配（后端改词/本地化即失效）。
+/// 函数名避开 exit_flow 的同名纯函数（lib.rs 双 glob 会产生歧义）。
+#[tauri::command]
+pub(crate) async fn probe_port_listener(port: u16) -> bool {
+    lifecycle::exit_flow::port_has_listener(port)
+}
 /// 节点旗帜补全开关。
 /// 切换内核引擎（mihomo / singbox）。运行中则热重启；切换目标未安装则报错。
 #[tauri::command]
