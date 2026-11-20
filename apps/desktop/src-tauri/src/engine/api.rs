@@ -565,7 +565,9 @@ impl Controller {
         }
     }
 
-    /// 单节点测速。
+    /// 单节点测速：仅测试消费（#564 命令删后）；生产走
+    /// `measure_node_delay_with_review`（结构化结果）。
+    #[cfg(test)]
     pub fn test_node_delay(&self, node: &str) -> Result<u64, String> {
         self.measure_node_delay(node)
             .map_err(|error| error.to_string())
@@ -573,10 +575,12 @@ impl Controller {
 
     /// A gateway timeout from the controller is a completed node test.
     /// A transport failure talking to the controller is a different failure.
+    #[cfg(test)]
     pub(crate) fn measure_node_delay(&self, node: &str) -> Result<u64, NodeDelayError> {
         self.measure_via(node, BENCHMARK_URL)
     }
 
+    #[cfg(test)]
     fn measure_via(&self, node: &str, url: &str) -> Result<u64, NodeDelayError> {
         self.measure_via_with_timeout(node, url, Duration::from_secs(30))
     }

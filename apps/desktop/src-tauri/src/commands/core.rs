@@ -21,29 +21,6 @@ pub(crate) fn set_core_mode(
 pub(crate) fn core_mode(state: State<AppState>) -> String {
     state.mode.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
-/// 内核版本（执行 `<bin> -v` 首行）。
-#[tauri::command]
-pub(crate) fn core_version(state: State<AppState>) -> Result<String, String> {
-    let bin = state.core().binary_path();
-    if !bin.exists() {
-        return Err("内核未安装".into());
-    }
-    let out = crate::process::command(&bin)
-        .arg("-v")
-        .output()
-        .map_err(|e| e.to_string())?;
-    let first = String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .next()
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    if first.is_empty() {
-        Err("无法读取内核版本".into())
-    } else {
-        Ok(first)
-    }
-}
 /// 下载安装内核（前端用 invoke 阻塞调用，期间显示进度提示）。
 #[tauri::command]
 pub(crate) async fn core_install(
@@ -102,28 +79,6 @@ pub(crate) async fn core_install(
         notifications::publish(&app, notice);
     }
     result
-}
-#[tauri::command]
-pub(crate) fn core_binary_info(state: State<AppState>) -> CoreBinaryInfo {
-    let resolved = resolve_core_binary(&state.data_dir);
-    let path = resolved
-        .as_ref()
-        .map(|p| p.display().to_string())
-        .unwrap_or_default();
-    let source = match &resolved {
-        None => "missing",
-        Some(p) if p.starts_with(&state.data_dir) => "data",
-        Some(_) => "builtin",
-    };
-    let version = resolved
-        .as_ref()
-        .and_then(core_version_of)
-        .unwrap_or_default();
-    CoreBinaryInfo {
-        path,
-        source: source.into(),
-        version,
-    }
 }
 /// 按引擎查询内核安装状态。
 #[tauri::command]
