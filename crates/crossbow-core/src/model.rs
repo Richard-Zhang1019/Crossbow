@@ -188,6 +188,10 @@ pub struct StoreSchema {
     /// （自动更新回滚）读新文件不被 SchemaTooNew 拒绝。
     #[serde(default)]
     pub scenes: NetworkScenes,
+    /// v3：按进程分流规则（#570）。渲染时前插到订阅规则之前；目标策略
+    /// 失效（订阅更新后组名消失）的规则在渲染时防御性丢弃。
+    #[serde(default)]
+    pub process_rules: Vec<ProcessRule>,
 }
 
 /// SSID 网络场景（#566）：Wi-Fi 名称 → 进入该网络时的接管动作。
@@ -209,6 +213,16 @@ impl NetworkScenes {
             _ => None,
         }
     }
+}
+
+/// 一条按进程分流规则（#570）：`process` 为内核连接元数据里的进程名
+/// （与连接页展示同名）；`target` 为 DIRECT / REJECT / 当前订阅的
+/// proxy-groups 名。id 是前端 key 与命令句柄。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProcessRule {
+    pub id: String,
+    pub process: String,
+    pub target: String,
 }
 
 /// 应用更新设置（#28）。
@@ -309,6 +323,7 @@ impl Default for StoreSchema {
             logs: LogSettings::default(),
             update: UpdateSettings::default(),
             scenes: NetworkScenes::default(),
+            process_rules: Vec::new(),
         }
     }
 }

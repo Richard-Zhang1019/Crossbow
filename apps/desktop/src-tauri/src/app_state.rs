@@ -45,6 +45,8 @@ pub struct AppState {
     /// 速率历史环形缓冲（#181）：托盘通道每秒喂入，与页面存亡无关；
     /// 首页挂载时一次取回预填「最近 120 秒」图表。
     pub(crate) traffic_history: Mutex<std::collections::VecDeque<TrafficSample>>,
+    /// 本地流量统计（#567）：按域名/出口节点的日累计聚合，常驻低频采样。
+    pub(crate) traffic_stats: traffic_stats::TrafficStats,
 }
 
 /// 单秒速率采样（字节/秒）。
@@ -114,6 +116,21 @@ impl AppState {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clear();
+    }
+
+    /// #567：解析一帧 /connections 并聚合（常驻采样线程逐帧喂入）。
+    pub fn traffic_stats_ingest(&self, txt: &str) {
+        self.traffic_stats.ingest(txt);
+    }
+
+    /// #567：核心停止/退订——立即强制落盘，保留窗口裁剪。
+    pub fn traffic_stats_stop(&self) {
+        self.traffic_stats.flush_if_due(true);
+    }
+
+    /// #567：窗口内 TopN + 逐日总量（前端统计页查询）。
+    pub fn traffic_stats_topn(&self, days: u32) -> traffic_stats::TrafficStatsReport {
+        self.traffic_stats.topn(days)
     }
 }
 

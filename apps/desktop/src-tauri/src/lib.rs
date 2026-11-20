@@ -58,6 +58,7 @@ pub(crate) mod process;
 pub(crate) mod scheduler;
 #[cfg(windows)]
 pub(crate) mod service_client;
+pub(crate) mod traffic_stats;
 pub(crate) mod update_check;
 pub(crate) mod workflow;
 /// Match the AppKit window border to the application's theme.
@@ -726,6 +727,7 @@ pub fn run() {
                 update: Mutex::new(update_settings_init),
                 node_menu: Mutex::new(crate::tray::state::TrayState::default()),
                 traffic_history: Mutex::new(std::collections::VecDeque::new()),
+                traffic_stats: traffic_stats::TrafficStats::open(&data_dir),
             });
 
             #[cfg(any(target_os = "macos", windows))]
@@ -862,6 +864,9 @@ pub fn run() {
             commands::scene::network_scenes_get,
             commands::scene::network_scene_set,
             commands::scene::network_scene_remove,
+            commands::rules::process_rules_get,
+            commands::rules::process_rule_set,
+            commands::rules::process_rule_remove,
             notifications::notification_publish,
             notifications::notification_snapshot,
             notifications::notification_dismiss,
@@ -907,6 +912,7 @@ pub fn run() {
             subscribe_traffic,
             unsubscribe_traffic,
             traffic_history,
+            traffic_stats,
             subscribe_connections,
             unsubscribe_connections,
             subscribe_logs,

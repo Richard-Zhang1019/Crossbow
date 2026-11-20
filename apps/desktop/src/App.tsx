@@ -9,6 +9,7 @@ import HomePage, { coreText } from "@/pages/Home";
 import ProxiesPage from "@/pages/Proxies";
 import ProfilesPage from "@/pages/Profiles";
 import ConnectionsPage from "@/pages/Connections";
+import StatsPage from "@/pages/Stats";
 import DiagnosticsPage from "@/pages/Diagnostics";
 import LogsPage from "@/pages/Logs";
 import SettingsPage from "@/pages/Settings";
@@ -38,6 +39,7 @@ const PAGES = [
   "connections",
   "logs",
   "diagnostics",
+  "stats",
   "profiles",
   "settings",
 ] as const;
@@ -83,7 +85,7 @@ export default function App() {
   const [settingSection, setSettingSection] = useState<"network" | "appearance" | "logs" | "app">(
     "network",
   );
-  const [configTab, setConfigTab] = useState<"sources" | "overrides">("sources");
+  const [configTab, setConfigTab] = useState<"sources" | "overrides" | "process">("sources");
   const [profileName, setProfileName] = useState("");
   const [appVersion, setAppVersion] = useState("");
   const [coreStatus, setCoreStatus] = useState<CoreStatus | null>(null);
@@ -241,7 +243,8 @@ export default function App() {
     setDestination(target);
     setPage(target.page);
     if (target.page === "settings") setSettingSection(target.settingSection ?? "app");
-    if (target.page === "profiles") setConfigTab("sources");
+    if (target.page === "profiles")
+      setConfigTab(target.control === "cb-process-rule" ? "process" : "sources");
   }, []);
   useEffect(() => {
     const onNavigate = (event: Event) => navigate((event as CustomEvent<string>).detail);
@@ -259,7 +262,7 @@ export default function App() {
     return()=>cancelAnimationFrame(frame);
   },[destination,page,settingSection]);
 
-  const workspace = ["connections", "logs", "diagnostics"].includes(page) ? "monitor" : page;
+  const workspace = ["connections", "logs", "diagnostics", "stats"].includes(page) ? "monitor" : page;
   const go = (next: PageId) => {
     setDestination(null);
     setPage(next);
@@ -334,6 +337,7 @@ export default function App() {
                 ["connections", "nav.connections"],
                 ["logs", "nav.logs"],
                 ["diagnostics", "nav.diagnostics"],
+                ["stats", "nav.stats"],
               ] as const
             ).map(([id, label]) => (
               <ButtonBase
@@ -361,6 +365,12 @@ export default function App() {
             >
               {t("studio.overrides")}
             </ButtonBase>
+            <ButtonBase
+              className={configTab === "process" ? "active" : ""}
+              onClick={() => {setDestination(null);setConfigTab("process");}}
+            >
+              {t("studio.processRules")}
+            </ButtonBase>
           </nav>
         )}
         <div className={`cb-page-content cb-view-${page}`}>
@@ -369,6 +379,7 @@ export default function App() {
           {page === "proxies" && <ProxiesPage />}
           {page === "profiles" && <ProfilesPage tab={configTab} focusProfileId={destination?.profileId} navigationRequest={destination} />}
           {page === "connections" && <ConnectionsPage />}
+          {page === "stats" && <StatsPage />}
           {page === "diagnostics" && <DiagnosticsPage revision={diagnosisRevision} listeners={diagnosisListeners} appVersion={appVersion} />}
           {page === "logs" && <LogsPage />}
           {page === "settings" && (
