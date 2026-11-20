@@ -2659,3 +2659,8 @@ textarea:focus-visible,
 .cb-row-menu-item-danger {
   color: var(--cb-bad);
 }
+/* 行操作菜单面板收紧：默认 cb-popover-panel 固定 320px 是帮助文案用的 */
+.cb-popover-panel.cb-row-menu-panel {
+  width: auto;
+  min-width: 128px;
+}

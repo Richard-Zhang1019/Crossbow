@@ -259,6 +259,7 @@ function Row({ row, onClose, onInspect, onRule }: { row: ConnRow; onClose: () =>
       <span className="text-right">{fmtDuration(row.elapsed_ms)}</span>
       <PopoverPanel
         label={t("col.actions")}
+        className="cb-row-menu-panel"
         trigger={
           <ButtonBase className="cb-row-actions-trigger" aria-label={t("col.actions")}>
             ⋯
