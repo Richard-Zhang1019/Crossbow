@@ -139,27 +139,29 @@ export default function ProcessRules({
         </div>
       ) : (
         <div
-          className="cb-process-table"
+          className="cb-card cb-process-table"
           role="table"
           aria-label={t("pr.list")}
         >
-          <div className="cb-process-columns" role="row">
-            <span role="columnheader">{t("pr.processLabel")}</span>
-            <span role="columnheader">{t("pr.targetLabel")}</span>
-            <span role="columnheader">{t("pr.actions")}</span>
+          <div className="cb-table-heading" role="rowgroup">
+            <div className="cb-th cb-table-row cb-process-columns" role="row">
+              <span role="columnheader">{t("pr.processLabel")}</span>
+              <span role="columnheader">{t("pr.targetLabel")}</span>
+              <span role="columnheader">{t("pr.actions")}</span>
+            </div>
           </div>
           {status.rules.map((rule) => {
             const unavailable = !status.targets.includes(rule.target);
             return (
-              <div key={rule.id} className="cb-process-row" role="row">
+              <div
+                key={rule.id}
+                className="cb-table-row cb-selectable cb-mono cb-process-row"
+                role="row"
+              >
                 <div className="cb-process-identity" role="cell">
-                  <span className="cb-process-glyph">
-                    <Icon name="cube" size={18} />
-                  </span>
-                  <strong title={rule.process}>{rule.process}</strong>
+                  <span title={rule.process}>{rule.process}</span>
                 </div>
                 <div className="cb-process-route" role="cell">
-                  <Icon name="arrow-right" />
                   <span className="cb-process-destination" title={rule.target}>
                     {policy(rule.target)}
                   </span>

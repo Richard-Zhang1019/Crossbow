@@ -1,6 +1,5 @@
 .cb-process-rules {
   width: 100%;
-  max-width: 1100px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -22,54 +21,37 @@
   font-weight: 400;
   color: var(--cb-text-dim);
 }
-.cb-process-table {
-  border: 1px solid var(--cb-line);
-  border-radius: 12px;
-  overflow: hidden;
+.cb-process-table.cb-card {
+  overflow: auto;
+  background: transparent;
 }
 .cb-process-row,
 .cb-process-columns {
-  display: grid;
-  grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) auto;
-  align-items: center;
-  column-gap: 24px;
-}
-.cb-process-columns {
-  padding: 12px 18px;
-  background: var(--cb-surface-2);
-  color: var(--cb-text-dim);
-  font-size: var(--font-sm);
+  grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) 136px;
 }
 .cb-process-columns > :last-child {
-  width: 136px;
   text-align: right;
 }
 .cb-process-row {
-  min-height: 76px;
-  padding: 16px 18px;
-  border-top: 1px solid var(--cb-line);
+  min-height: 48px;
+  padding-block: 8px;
+  border-bottom: 1px solid var(--cb-line);
+  transition: background-color 150ms ease;
+}
+.cb-process-row:last-child {
+  border-bottom: 0;
+}
+.cb-process-row:hover {
+  background: var(--cb-surface);
 }
 .cb-process-identity {
-  display: flex;
   min-width: 0;
-  gap: 12px;
-  align-items: center;
 }
-.cb-process-identity strong {
+.cb-process-identity > span {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 600;
-}
-.cb-process-glyph {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  flex-shrink: 0;
-  border-radius: 9px;
-  background: var(--cb-surface-2);
-  color: var(--cb-text-dim);
 }
 .cb-process-route {
   min-width: 0;
@@ -78,9 +60,6 @@
   gap: 10px;
   flex-wrap: wrap;
   color: var(--cb-text-dim);
-}
-.cb-process-route > svg {
-  flex-shrink: 0;
 }
 .cb-process-destination {
   max-width: 100%;
@@ -149,7 +128,12 @@
 @media (max-width: 960px) {
   .cb-process-row,
   .cb-process-columns {
-    column-gap: 16px;
-    grid-template-columns: minmax(125px, 1fr) minmax(125px, 1fr) auto;
+    grid-template-columns: minmax(125px, 1fr) minmax(125px, 1fr) 136px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cb-process-row {
+    transition: none;
   }
 }
