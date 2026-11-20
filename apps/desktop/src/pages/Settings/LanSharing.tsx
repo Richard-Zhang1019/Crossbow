@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/Button";
 import { ControlRow, Switch } from "@/components/Controls";
-import { Icon } from "@/components/Icon";
 import { useClipboardFeedback } from "@/hooks/useClipboardFeedback";
 import { useT } from "@/i18n/i18n";
 import { notify } from "@/notifications/service";
@@ -70,52 +69,44 @@ function LanAccess({ port }: { port: number }) {
 
   return (
     <section className="cb-lan-access" aria-label={t("settings.lanAccess")}>
-      <header className="cb-lan-access-header">
-        <h3>{t("settings.lanAccess")}</h3>
-        <Button
-          size="small"
-          iconOnly
-          title={t("settings.lanRefresh")}
-          aria-label={t("settings.lanRefresh")}
-          loading={loading}
-          onClick={refresh}
-        >
-          <Icon name="refresh" />
+      <ControlRow label={t("settings.lanAccess")} hint={t("settings.lanSetup")}>
+        <Button size="small" loading={loading} onClick={refresh}>
+          {t("settings.lanRefresh")}
         </Button>
-      </header>
-      <p>{t("settings.lanSetup")}</p>
+      </ControlRow>
       {addresses?.length ? (
         <>
-          <ul>
+          <ul className="cb-lan-addresses">
             {addresses.map(({ interface: name, address }) => {
               const endpoint = `${address}:${port}`;
               const key = `${name}/${endpoint}`;
               const justCopied = copied === key;
               return (
                 <li key={key}>
-                  <div className="cb-lan-address">
-                    <code className="cb-mono cb-selectable">{endpoint}</code>
-                    <span title={name}>{name}</span>
-                  </div>
-                  <Button
-                    size="small"
-                    aria-label={
-                      justCopied
-                        ? t("workflow.copied")
-                        : t("settings.lanCopyAddress", { address: endpoint })
-                    }
-                    onClick={() => void copy(key, () => endpoint)}
-                  >
-                    {justCopied ? t("workflow.copied") : t("settings.lanCopy")}
-                  </Button>
+                  <ControlRow label={name}>
+                    <div className="cb-lan-address-readout">
+                      <span className="cb-selectable">{endpoint}</span>
+                      <Button
+                        size="small"
+                        aria-label={
+                          justCopied
+                            ? t("workflow.copied")
+                            : t("settings.lanCopyAddress", { address: endpoint })
+                        }
+                        onClick={() => void copy(key, () => endpoint)}
+                      >
+                        {justCopied ? t("workflow.copied") : t("settings.lanCopy")}
+                      </Button>
+                    </div>
+                  </ControlRow>
                 </li>
               );
             })}
           </ul>
-          <p>{t("settings.lanBlocked")}</p>
+          <p className="cb-lan-access-note">{t("settings.lanBlocked")}</p>
         </>
       ) : (
-        <p role="status">
+        <p className="cb-lan-access-note" role="status">
           {t(failed ? "settings.lanReadFailed" : loading ? "settings.lanLoading" : "settings.lanEmpty")}
         </p>
       )}
