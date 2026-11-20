@@ -15,6 +15,7 @@
 
 | 日期 | 主题 | 版本 | 状态 | 文件 | 关联 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-11-20 | 独立规则集：策略挂载、顺序与缓存 | v01 | 已实现，待评审/原生验收 | [说明](2026-11-20-rule-sets/v01/SPEC.md) · [浅色](2026-11-20-rule-sets/v01/previews/light.png) · [小窗口表单](2026-11-20-rule-sets/v01/previews/form-small.png) · [源稿](2026-11-20-rule-sets/v01/source.zip) | #571 |
 | 2026-11-20 | Wi-Fi 网络场景设置与添加规则 | v01 | 已实现，待原生验收 | [说明](2026-11-20-network-scenes/v01/SPEC.md) · [浅色](2026-11-20-network-scenes/v01/previews/light.png) · [深色](2026-11-20-network-scenes/v01/previews/dark.png) · [源稿](2026-11-20-network-scenes/v01/source.zip) | #566 / PR #580 |
 | 2026-11-20 | 本地流量统计：区间总量、每日趋势与紧凑排行 | v01 | 已实现，待用户确认 | [说明](2026-11-20-local-traffic/v01/SPEC.md) · [浅色](2026-11-20-local-traffic/v01/previews/light.png) · [深色](2026-11-20-local-traffic/v01/previews/dark.png) · [源稿](2026-11-20-local-traffic/v01/source.zip) | #567 / PR #581 |
 | 2026-11-20 | 进程规则列表与编辑交互 | v01 | 已实现，待评审 | [设计说明](2026-11-20-process-rules/v01/SPEC.md) · [浅色](2026-11-20-process-rules/v01/previews/light.png) · [深色小窗口](2026-11-20-process-rules/v01/previews/dark-small.png) · [源稿](2026-11-20-process-rules/v01/source.zip) | #570 / PR #582 |

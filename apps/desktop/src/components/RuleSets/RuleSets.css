@@ -1,0 +1,138 @@
+.cb-rulesets {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  flex: 1;
+}
+.cb-rulesets-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.cb-rulesets-toolbar > span {
+  font-weight: 600;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.cb-rulesets-table.cb-card {
+  overflow: auto;
+  min-height: 0;
+  background: transparent;
+}
+.cb-rulesets-columns {
+  grid-template-columns: minmax(180px, 1.5fr) minmax(120px, 1fr) 148px 120px;
+}
+.cb-rulesets-columns > :last-child {
+  text-align: right;
+}
+.cb-rulesets-row {
+  min-height: 68px;
+  padding-block: 12px;
+  border-bottom: 1px solid var(--cb-line);
+}
+.cb-rulesets-row:last-child {
+  border-bottom: 0;
+}
+.cb-rulesets-row:hover {
+  background: var(--cb-surface);
+}
+.cb-rulesets-identity,
+.cb-rulesets-policy,
+.cb-rulesets-cache {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.cb-rulesets-identity strong,
+.cb-rulesets-policy > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.cb-rulesets-identity > span,
+.cb-rulesets-cache small,
+.cb-rulesets-policy small {
+  color: var(--cb-text-dim);
+  font-size: var(--font-sm);
+  overflow-wrap: anywhere;
+}
+.cb-rulesets-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.cb-rulesets-empty {
+  padding: 44px 24px;
+  text-align: center;
+  border: 1px solid var(--cb-line);
+  border-radius: 12px;
+  color: var(--cb-text-dim);
+}
+.cb-rulesets-empty h3 {
+  margin: 0 0 12px;
+  color: var(--cb-text);
+  font-size: var(--font-lg);
+}
+.cb-rulesets-empty p {
+  margin: 0;
+  line-height: 1.6;
+}
+.cb-rulesets-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+}
+.cb-rulesets-menu .cb-button {
+  justify-content: flex-start;
+}
+.cb-rulesets-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.cb-rulesets-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 500;
+  min-width: 0;
+}
+.cb-rulesets-form .cb-input,
+.cb-rulesets-form .cb-select {
+  width: 100%;
+  max-width: none;
+}
+.cb-rulesets-form-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.cb-rulesets-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.cb-rulesets-form .cb-control-note {
+  margin: 0;
+}
+@media (max-width: 960px) {
+  .cb-rulesets-columns {
+    grid-template-columns: minmax(160px, 1.4fr) minmax(100px, 1fr) 125px 116px;
+  }
+  .cb-rulesets-cache small {
+    font-size: var(--font-xs);
+  }
+}
+/* Shared dialog labels carry standalone-field margins. This grouped form uses
+   its own row rhythm so the submit controls stay visible at minimum height. */
+.cb-dialog .cb-rulesets-form label {
+  margin: 0;
+  display: flex;
+}

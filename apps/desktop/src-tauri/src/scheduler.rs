@@ -79,6 +79,19 @@ fn is_due(profile: &crossbow_core::Profile, retry: Option<&(u32, u64)>, now: u64
     now >= last.saturating_add(interval.secs())
 }
 
+fn rule_set_due(
+    set: &crossbow_core::rule_sets::RuleSet,
+    retry: Option<&(u32, u64)>,
+    now: u64,
+) -> bool {
+    set.enabled
+        && retry.map(|v| now >= v.1).unwrap_or_else(|| {
+            now >= set
+                .updated_at
+                .saturating_add(set.interval_secs.max(300) as u64)
+        })
+}
+
 /// 非零间隔的轻封装（避免到处判 0）。
 struct NonZeroInterval(u32);
 
@@ -120,9 +133,6 @@ fn tick(app: &AppHandle) {
             .map(|p| p.id.clone())
             .collect()
     };
-    if due.is_empty() {
-        return;
-    }
 
     for id in due {
         // 2) 逐个刷新；网络在 refresh 内部于持锁外完成
@@ -152,6 +162,66 @@ fn tick(app: &AppHandle) {
         }
         // 3) 通知前端刷新（无论成败——失败也要更新卡片上的结果展示）
         let _ = app.emit("profile://updated", id);
+    }
+    // At most one rule subscription per tick: slow sources cannot monopolize
+    // all profile updates. Reuse the existing backoff infrastructure.
+    let next = {
+        let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+        store
+            .data()
+            .rule_sets
+            .iter()
+            .find(|s| {
+                let key = format!("ruleset:{}", s.id);
+                rule_set_due(s, retry.get(&key), now)
+            })
+            .cloned()
+    };
+    if let Some(expected) = next {
+        let id = &expected.id;
+        let key = format!("ruleset:{id}");
+        match crate::commands::rule_sets::refresh(&state, id) {
+            Ok(()) => {
+                clear_retry(&key);
+                crate::notifications::resolve(app, &key);
+            }
+            Err(e) if e == crate::commands::rule_sets::SUPERSEDED => {}
+            Err(e) => {
+                // Order notification/backoff publication with user transactions.
+                // A successful manual refresh/disable/remove must fence this
+                // earlier failure, not be followed by a stale warning.
+                let _op = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
+                let current = state
+                    .store
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .data()
+                    .rule_sets
+                    .iter()
+                    .find(|s| s.id == *id)
+                    .cloned();
+                let Some(mut current) = current else {
+                    return;
+                };
+                current.last_error = expected.last_error.clone();
+                if current != expected {
+                    return;
+                }
+                let mut retries = shared_retry().lock().unwrap_or_else(|e| e.into_inner());
+                let entry = retries.fails.entry(key.clone()).or_insert((0, 0));
+                entry.0 = entry.0.saturating_add(1);
+                entry.1 = now_secs() + backoff_delay_secs(entry.0);
+                drop(retries);
+                let mut notice = crate::notifications::Notice::new(
+                    crate::notifications::Kind::Warning,
+                    "ruleset.updateFailed",
+                    &key,
+                );
+                notice.details = e;
+                notice.actions = vec![crate::notifications::Action::Profiles];
+                crate::notifications::publish(app, notice);
+            }
+        }
     }
 }
 
@@ -214,5 +284,31 @@ mod tests {
         assert!(is_due(&p, Some(&(1, 2000)), 2000));
         // 重试点未到：即使间隔名义上到了也不刷新（退避优先）
         assert!(!is_due(&p, Some(&(1, 9000)), 8000));
+    }
+}
+
+#[cfg(test)]
+mod rule_set_tests {
+    use super::*;
+    #[test]
+    fn disabled_sets_never_run_and_backoff_precedes_interval() {
+        let mut set = crossbow_core::rule_sets::RuleSet {
+            id: "r".into(),
+            name: "AI".into(),
+            url: "https://example.invalid".into(),
+            behavior: crossbow_core::rule_sets::Behavior::Domain,
+            target: "DIRECT".into(),
+            enabled: true,
+            interval_secs: 3600,
+            payload: vec!["example.com".into()],
+            updated_at: 100,
+            last_error: None,
+        };
+        assert!(!rule_set_due(&set, None, 3699));
+        assert!(rule_set_due(&set, None, 3700));
+        assert!(!rule_set_due(&set, Some(&(2, 9000)), 8000));
+        assert!(rule_set_due(&set, Some(&(2, 9000)), 9000));
+        set.enabled = false;
+        assert!(!rule_set_due(&set, Some(&(2, 9000)), 10000));
     }
 }

@@ -64,16 +64,32 @@ pub fn render_config_with(
     // 防御性丢弃，避免订阅更新后内核因未知策略启动失败。
     let config = match store.engine.engine {
         crate::model::Engine::SingBox => {
-            let json = crate::singbox_convert::convert_to_singbox(
-                &config,
-                store.engine.mixed_port,
-                store.engine.allow_lan,
-            )
-            .map_err(|e| RenderError::InvalidYaml(e.to_string()))?;
+            // Native sing-box profiles may already have been round-tripped to
+            // YAML by overrides/flag enrichment. Preserve their schema rather
+            // than sending them through the Clash-only converter.
+            let document: serde_json::Value = serde_yaml::from_str(&config)
+                .map_err(|_| RenderError::InvalidYaml("配置语法无效".into()))?;
+            let json = if document.get("proxies").is_none()
+                && document.get("outbounds").is_some_and(|v| v.is_array())
+            {
+                serde_json::to_string(&document)
+                    .map_err(|e| RenderError::InvalidYaml(e.to_string()))?
+            } else {
+                crate::singbox_convert::convert_to_singbox(
+                    &config,
+                    store.engine.mixed_port,
+                    store.engine.allow_lan,
+                )
+                .map_err(|e| RenderError::InvalidYaml(e.to_string()))?
+            };
+            let json = crate::rule_sets::inject_json(&json, &store.rule_sets)
+                .map_err(RenderError::InvalidYaml)?;
             crate::process_rules::inject_json(&json, &store.process_rules)
                 .map_err(|e| RenderError::InvalidYaml(e.to_string()))?
         }
         crate::model::Engine::Mihomo => {
+            let config = crate::rule_sets::inject_yaml(&config, &store.rule_sets)
+                .map_err(RenderError::InvalidYaml)?;
             crate::process_rules::inject_yaml(&config, &store.process_rules)
                 .map_err(|e| RenderError::InvalidYaml(e.to_string()))?
         }

@@ -9,6 +9,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { ipc, type PackagePreview, type Profile, type ProfileStatus } from "@/services/ipc";
 import Select from "@/components/Select";
 import OverridePanel from "@/pages/OverridePanel";
+import RuleSets from "@/components/RuleSets";
 import ProcessRules from "@/components/ProcessRules";
 import { useT } from "@/i18n/i18n";
 import FitItems from "@/components/FitItems";
@@ -49,7 +50,7 @@ function fmtTime(
 export default function ProfilesPage({
   tab = "sources", focusProfileId, navigationRequest,
 }: {
-  tab?: "sources" | "overrides" | "process";
+  tab?: "sources" | "overrides" | "process" | "rulesets";
   focusProfileId?:string;
   navigationRequest?:NavigationTarget|null;
 }) {
@@ -256,9 +257,9 @@ export default function ProfilesPage({
             ? "studio.overrides"
             : tab === "process"
               ? "studio.processRules"
-              : "studio.sources",
+              : tab === "rulesets" ? "rs.title" : "studio.sources",
         )}
-        meta={t(tab === "overrides" ? "ov.hint" : tab === "process" ? "pr.hint" : "studio.configHint")}
+        meta={t(tab === "overrides" ? "ov.hint" : tab === "process" ? "pr.hint" : tab === "rulesets" ? "rs.hint" : "studio.configHint")}
       >
         {tab === "overrides" && <Button variant="primary" onClick={()=>setCreatingOverride(true)}>{t("ov.create")}</Button>}
         {tab === "sources" && (
@@ -375,7 +376,7 @@ export default function ProfilesPage({
           activeId={activeId}
           onChanged={refresh}
         />
-      ) : tab === "process" ? (
+      ) : tab === "rulesets" ? <RuleSets /> : tab === "process" ? (
         <ProcessRules
           presetProcess={
             navigationRequest?.control === "cb-process-rule"

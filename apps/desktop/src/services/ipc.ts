@@ -149,6 +149,16 @@ export interface TrafficStatsReport {
   daily: TrafficStatRow[];
 }
 
+/** #571: rule-set editor and metadata; cache payload stays in Rust. */
+export interface RuleSetDraft {
+  id: string | null; name: string; url: string; behavior: "domain" | "ipcidr" | "classical";
+  target: string; interval_secs: number;
+}
+export interface RuleSetView extends Omit<RuleSetDraft, "id"> {
+  id: string; enabled: boolean; updated_at: number; last_error: string | null; count: number;
+}
+export interface RuleSetsStatus { sets: RuleSetView[]; targets: string[]; }
+
 /** 一条按进程分流规则（#570）：进程名 → 策略目标。 */
 export interface ProcessRule {
   id: string;
@@ -486,6 +496,11 @@ export const ipc = {
   currentOutbound: () => invoke<OutboundInfo>("current_outbound"),
   closeConnection: (id: string) => invoke<void>("close_connection", { id }),
   // 按进程分流规则（#570）：变更走 commit_config_change（内核热重载）。
+  ruleSets: () => invoke<RuleSetsStatus>("rule_sets_get"),
+  saveRuleSet: (draft: RuleSetDraft) => invoke<void>("rule_set_save", { draft }),
+  updateRuleSet: (id: string) => invoke<void>("rule_set_update", { id }),
+  changeRuleSet: (id: string, action: "enable" | "disable" | "up" | "down" | "remove") => invoke<void>("rule_set_change", { id, action }),
+  onRuleSetsUpdated: (cb: () => void) => listen("rulesets://updated", cb),
   processRules: () => invoke<ProcessRuleStatus>("process_rules_get"),
   setProcessRule: (id: string | null, process: string, target: string) =>
     invoke<void>("process_rule_set", { id: id ?? "", process, target }),

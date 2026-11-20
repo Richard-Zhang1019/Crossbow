@@ -117,6 +117,7 @@ const copy = {
   "core.installFailed": ["内核下载或安装失败", "Could not download or install the core"],
   "core.install": ["下载安装内核", "Install core"],
   "coexist.resolved": ["代理冲突提示已解除", "Proxy conflict cleared"],
+  "ruleset.updateFailed": ["规则集更新失败，保留原缓存", "Rule set update failed; previous cache retained"],
   "profile.updateFailed": [
     "订阅自动更新失败",
     "Automatic subscription update failed",

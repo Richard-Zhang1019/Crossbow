@@ -1,0 +1,35 @@
+{
+  "topic": "Independent rule-set management",
+  "version": "v01",
+  "started_at": "2026-11-20",
+  "completed_at": "2026-11-21",
+  "issue": 571,
+  "status": "implemented, pending PR review and user environment acceptance",
+  "base_commit": "540101e",
+  "branch": "codex/571-rule-sets",
+  "preview": "production React components with fictional IPC fixtures",
+  "viewports": [
+    "1120x720 light zh",
+    "880x560 dark zh/en"
+  ],
+  "source_sha256": {
+    "apps/desktop/src/components/RuleSets/index.tsx": "006b878dd7e0018c5591b65df2b28ffb2ed8bd19cd330b62daf82383a2390dde",
+    "apps/desktop/src/components/RuleSets/RuleSets.css": "e8dfd5fe452c17845eb42f935e14be138a33acaf1540aa5e6243a3df5a86e961",
+    "apps/desktop/src/App.tsx": "c2c12a3ef39a727fedb73d138344447bb6fde22962bb485962a887e71e15f21e",
+    "apps/desktop/src/pages/Profiles/index.tsx": "4f9c425d8589b5eca9e4ff7ebbecd045f1eaf548c6a199413d0ff71c517afa3b",
+    "apps/desktop/src/services/ipc.ts": "fd65c2f903d4e54923ea909dede411fbd593e514dc1b8a21dc95fde700e6f038",
+    "apps/desktop/src/i18n/i18n.ts": "66776ecf5ce0c40dd58864eba0a1d46c67d529721b5445ba1be239b1dd542a0a",
+    "scripts/dev/verify-rule-sets.mjs": "91982da29759e0e37a886c5332eea221c4c14a05bd1a1c51057bc12099dec4d5"
+  },
+  "files": [
+    "SPEC.md",
+    "source.zip",
+    "verify-native.py",
+    "previews/before.png",
+    "previews/dark-small.png",
+    "previews/empty.png",
+    "previews/english-small.png",
+    "previews/form-small.png",
+    "previews/light.png"
+  ]
+}

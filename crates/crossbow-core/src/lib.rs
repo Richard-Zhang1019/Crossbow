@@ -10,6 +10,7 @@ pub mod model;
 pub mod override_patch;
 pub mod process_rules;
 pub mod render;
+pub mod rule_sets;
 pub mod runtime;
 pub mod script_override;
 mod share_links;
