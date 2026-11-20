@@ -127,6 +127,7 @@ jobs:
           pnpm verify:desktop
           node scripts/dev/verify-stats.mjs
           node scripts/dev/verify-process-rules.mjs
+          node scripts/dev/verify-lan.mjs
       - uses: actions/upload-artifact@v7
         if: failure() && steps.desktop-scenarios.outcome == 'failure'
         with:
@@ -188,6 +189,7 @@ jobs:
           pnpm verify:desktop
           node scripts/dev/verify-stats.mjs
           node scripts/dev/verify-process-rules.mjs
+          node scripts/dev/verify-lan.mjs
       - uses: actions/upload-artifact@v7
         if: failure() && steps.desktop-scenarios.outcome == 'failure'
         with:

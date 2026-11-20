@@ -23,6 +23,7 @@ ureq = "2"
 regex = "1"
 os_info = { version = "3", default-features = false }
 socket2 = "0.6"
+if-addrs = "0.14"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 tungstenite = "0.30"
