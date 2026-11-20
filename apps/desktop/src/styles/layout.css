@@ -2621,3 +2621,41 @@ textarea:focus-visible,
   .cb-fault-grid-h, .cb-fault-grid-c { padding-inline: 10px; }
   .cb-diag-band-actions .cb-button:first-child { display: none; }
 }
+
+/* 连接行操作菜单（#588 ⋯ 触发下拉，PopoverPanel portal） */
+.cb-row-actions-trigger {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--cb-line-strong);
+  border-radius: 8px;
+  color: var(--cb-text-dim);
+  font-size: 14px;
+  letter-spacing: 1px;
+}
+.cb-row-actions-trigger:hover {
+  background: var(--cb-surface-2);
+  color: var(--cb-text);
+}
+.cb-row-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 128px;
+  gap: 2px;
+}
+.cb-row-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: var(--font-sm);
+  color: var(--cb-text);
+}
+.cb-row-menu-item:hover {
+  background: var(--cb-surface-2);
+}
+.cb-row-menu-item-danger {
+  color: var(--cb-bad);
+}
