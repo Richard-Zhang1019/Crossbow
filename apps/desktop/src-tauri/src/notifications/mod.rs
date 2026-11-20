@@ -719,7 +719,16 @@ fn route(app: &AppHandle, elapsed: u64) {
         let reminder = if !main_visible && !snapshot.active.is_empty() {
             let english = app
                 .try_state::<crate::AppState>()
-                .map(|state| state.store.lock().unwrap().data().ui.lang == "en")
+                .map(|state| {
+                    state
+                        .store
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .data()
+                        .ui
+                        .lang
+                        == "en"
+                })
                 .unwrap_or(false);
             Some(native_reminder(&snapshot.active, english))
         } else {
@@ -952,6 +961,38 @@ fn navigation_target(page: &str, source: &str) -> String {
     target.to_string()
 }
 
+/// #561：Action → 通知点击后的导航页。两个 Retry 动作在
+/// notification_action 入口已单独处理（下载重试走后台任务、系统代理
+/// 恢复走 restore 流程），此处返回 None 由调用方忽略——不用
+/// unreachable!()，防止以后调整早退流程时意外 panic。当前两个分支
+/// 被早退保护；原 match 已有穷尽检查，新函数同样不设 `_ =>` 通配。
+fn navigation_page(action: &Action) -> Option<&'static str> {
+    match action {
+        Action::Settings => Some("settings"),
+        Action::Diagnostics => Some("diagnostics"),
+        Action::Logs => Some("logs"),
+        Action::Profiles => Some("profiles"),
+        Action::Nodes => Some("proxies"),
+        Action::ContinueSetup => Some("home"),
+        Action::RetryDownload | Action::RetrySystemProxy => None,
+    }
+}
+
+fn proxy_restore_after_tun(source: &str) -> Result<bool, String> {
+    match source {
+        "tun-switch" | "tray-tun" | "tun-health" => Ok(true),
+        "sysproxy-core-recovery" => Ok(false),
+        _ => Err("该通知不支持重试系统代理恢复".into()),
+    }
+}
+
+#[cfg(any(target_os = "macos", windows))]
+fn tun_restore_pending_notice(source: &str) -> Notice {
+    let mut notice = Notice::new(Kind::Error, "sysproxy.restorePending", source);
+    notice.actions = vec![Action::RetrySystemProxy, Action::Diagnostics];
+    notice
+}
+
 #[tauri::command]
 pub async fn notification_action(
     app: AppHandle,
@@ -981,11 +1022,7 @@ pub async fn notification_action(
                 }
                 notice.source.clone()
             };
-            let after_tun = match source.as_str() {
-                "tun-switch" | "tray-tun" | "tun-health" => true,
-                "sysproxy-core-recovery" => false,
-                _ => return Err("该通知不支持重试系统代理恢复".into()),
-            };
+            let after_tun = proxy_restore_after_tun(&source)?;
             if state
                 .store
                 .lock()
@@ -1030,15 +1067,11 @@ pub async fn notification_action(
         });
         return Ok(());
     }
-    let page = match action {
-        Action::Settings => "settings",
-        Action::Diagnostics => "diagnostics",
-        Action::Logs => "logs",
-        Action::Profiles => "profiles",
-        Action::Nodes => "proxies",
-        Action::ContinueSetup => "home",
-        Action::RetryDownload => unreachable!(),
-        Action::RetrySystemProxy => unreachable!(),
+    let Some(page) = navigation_page(&action) else {
+        // RetryDownload/RetrySystemProxy 在入口已处理；走到这里说明早退
+        // 分支被后续改动遗漏——留痕忽略，不 panic（#561）。
+        eprintln!("notification action {action:?} requires no navigation; ignored");
+        return Ok(());
     };
     {
         let mut queue = service.queue.lock().unwrap_or_else(|e| e.into_inner());
@@ -1073,6 +1106,12 @@ pub(crate) fn tun_result(
         state.core().status(),
         crate::CoreStatus::Stopped | crate::CoreStatus::Crashed(_)
     );
+    // Settings and tray operations share the same pending-restore result.
+    // Retain the original source so retry routing and resolution match the operation.
+    if outcome.is_ok() && !tun_enabled && state.sysproxy.has_pending_tun_restore() {
+        publish(app, tun_restore_pending_notice(source));
+        return;
+    }
     if outcome.is_err()
         && !tun_enabled
         && (state.sysproxy.has_pending_tun_restore()
@@ -1140,6 +1179,29 @@ mod tests {
             serde_json::to_string(&Action::RetrySystemProxy).unwrap(),
             "\"retrySystemProxy\""
         );
+    }
+
+    #[cfg(any(target_os = "macos", windows))]
+    #[test]
+    fn pending_tun_restore_preserves_retry_source_and_replaces_progress() {
+        for source in ["tun-switch", "tray-tun", "tun-health"] {
+            let mut queue = visible_queue();
+            queue.push(Notice::new(Kind::Progress, "tray.tun", source));
+            queue.push(tun_restore_pending_notice(source));
+            let pending: Vec<_> = queue.entries.iter().filter(|n| n.is_pending()).collect();
+            assert_eq!(pending.len(), 1);
+            assert_eq!(pending[0].kind, Kind::Error);
+            assert_eq!(pending[0].source, source);
+            assert_eq!(proxy_restore_after_tun(source), Ok(true));
+            assert!(pending[0]
+                .actions
+                .iter()
+                .any(|a| matches!(a, Action::RetrySystemProxy)));
+            queue.resolve(source);
+            assert!(!queue.entries.iter().any(|n| n.is_pending()));
+        }
+        assert_eq!(proxy_restore_after_tun("sysproxy-core-recovery"), Ok(false));
+        assert!(proxy_restore_after_tun("tun-restore").is_err());
     }
 
     fn visible_queue() -> Queue {
@@ -1445,6 +1507,20 @@ mod tests {
         assert_eq!(q.entries[0].id, id);
         assert_eq!(q.entries[0].details, "original sanitized diagnostic");
         assert!(q.entries[0].resolved_at.is_some());
+    }
+
+    #[test]
+    fn navigation_page_maps_navigable_actions_and_ignores_retries() {
+        // #561：导航动作逐一映射；Retry 动作返回 None 而非 panic
+        // 原先的穷尽检查仍保留；遗漏新变体会在编译期报错。
+        assert_eq!(navigation_page(&Action::Settings), Some("settings"));
+        assert_eq!(navigation_page(&Action::Diagnostics), Some("diagnostics"));
+        assert_eq!(navigation_page(&Action::Logs), Some("logs"));
+        assert_eq!(navigation_page(&Action::Profiles), Some("profiles"));
+        assert_eq!(navigation_page(&Action::Nodes), Some("proxies"));
+        assert_eq!(navigation_page(&Action::ContinueSetup), Some("home"));
+        assert_eq!(navigation_page(&Action::RetryDownload), None);
+        assert_eq!(navigation_page(&Action::RetrySystemProxy), None);
     }
 }
 

@@ -1,6 +1,7 @@
 import ProfileSwitcher from "@/components/ProfileSwitcher";
 import { UpdateEntry } from "@/components/UpdateEntry";
 import { parseNavigation, type NavigationTarget } from "@/lib/workflow";
+import { subscriptionCleanup, unsubscribe } from "@/lib/unlisten";
 import { ButtonBase, Button } from "@/components/Button";
 import { notify } from "@/notifications/service";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -21,7 +22,8 @@ import { Icon } from "@/components/Icon";
 export function dragWindow(e: React.MouseEvent) {
   if (e.button === 0) {
     e.preventDefault();
-    getCurrentWindow().startDragging();
+    // 拖动被取消/失败无补救动作，静默（#562-8）
+    getCurrentWindow().startDragging().catch(() => {});
   }
 }
 import { ipc, type UiSettings, type PlatformCapabilities, type CoreStatus } from "@/services/ipc";
@@ -112,7 +114,7 @@ export default function App() {
     return () => {
       active = false;
       for (const subscription of subscriptions) {
-        void subscription.then(off => off()).catch(() => {});
+        unsubscribe(subscription);
       }
     };
   }, []);
@@ -151,7 +153,7 @@ export default function App() {
       .catch(() => {});
     return () => {
       active = false;
-      void un.then((off) => off());
+      unsubscribe(un);
     };
   }, []);
 
@@ -172,8 +174,9 @@ export default function App() {
       window.dispatchEvent(new CustomEvent("cb:profile-switched"));
       void refresh();
     });
+    const cleanup = subscriptionCleanup(unBackend);
     window.addEventListener("cb:profile-switched",refresh);
-    return () => { alive=false; window.removeEventListener("cb:profile-switched",refresh); void unBackend.then((off)=>off()); };
+    return () => { alive=false; window.removeEventListener("cb:profile-switched",refresh); cleanup(); };
   }, [page]);
 
   const refreshCoreLabel = () => {
@@ -194,13 +197,7 @@ export default function App() {
   useEffect(() => {
     // 窗口底部的内核标识：跟随持久化引擎与其二进制版本；引擎切换时重取
     refreshCoreLabel();
-    let unlisten: (() => void) | null = null;
-    ipc.onEngineChanged(refreshCoreLabel).then((f) => {
-      unlisten = f;
-    });
-    return () => {
-      unlisten?.();
-    };
+    return subscriptionCleanup(ipc.onEngineChanged(refreshCoreLabel));
   }, []);
 
   // 托盘「发现新版本」等入口跳转设置页
@@ -212,9 +209,7 @@ export default function App() {
         if (p === "profiles") setConfigTab("sources");
       }
     });
-    return () => {
-      void un.then((f) => f());
-    };
+    return subscriptionCleanup(un);
   }, []);
 
   useEffect(() => {
@@ -228,14 +223,14 @@ export default function App() {
       .getUiSettings()
       .then((u) => updateTheme(u.theme))
       .catch((error) => notify.error(error, "app-settings-read"));
-    const un = ipc.onTheme(updateTheme);
+    const cleanup = subscriptionCleanup(ipc.onTheme(updateTheme));
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const onSystem = () => {
       if (currentTheme === "system") applyTheme("system");
     };
     mq.addEventListener("change", onSystem);
     return () => {
-      void un.then((f) => f());
+      cleanup();
       mq.removeEventListener("change", onSystem);
     };
   }, []);

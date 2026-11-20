@@ -8,6 +8,8 @@ const dict: Record<Lang, Record<string, string>> = {
     "ov.create": "新建覆写",
     "ov.createAction": "创建",
     "ov.cancel": "取消",
+    "ov.loadFailed": "覆写读取失败，请重试",
+    "ov.retry": "重试",
     "ov.type": "覆写类型",
     "ov.hint": "使用脚本或 Merge 补丁调整配置，并按需绑定到订阅。",
     "logs.levels":"日志级别",
@@ -601,6 +603,8 @@ const dict: Record<Lang, Record<string, string>> = {
     "ov.create": "New override",
     "ov.createAction": "Create",
     "ov.cancel": "Cancel",
+    "ov.loadFailed": "Failed to load overrides, please retry",
+    "ov.retry": "Retry",
     "ov.type": "Override type",
     "ov.hint": "Adjust configurations with scripts or Merge patches and bind them to profiles.",
     "logs.levels":"Log levels",
@@ -1249,6 +1253,10 @@ export function initLang() {
   ipc
     .getUiSettings()
     .then((u) => setLang((u.lang as Lang) ?? "zh"))
+    .catch(() => {}); // 读取失败保持默认语言，设置页可再改
+  // 应用生命周期监听：模块单例存活期间永不退订（有意为之）；
+  // 注册失败则语言固定为默认，避免未处理 rejection（#562-7）
+  ipc
+    .onLang((l) => setLang((l as Lang) ?? "zh"))
     .catch(() => {});
-  ipc.onLang((l) => setLang((l as Lang) ?? "zh"));
 }

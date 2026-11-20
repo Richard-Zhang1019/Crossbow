@@ -148,6 +148,11 @@ mod runtime {
                 })
                 .build()
             else {
+                // 静默 return 曾让切换守护失效且查不到任何线索（#558）：
+                // 表现为换网后系统代理指向死端口不被纠正。
+                eprintln!(
+                    "network watch: SCDynamicStore build failed; network-change guard disabled"
+                );
                 return;
             };
             let keys = CFArray::from_CFTypes(&[
@@ -156,9 +161,15 @@ mod runtime {
                 CFString::new("State:/Network/Global/DNS"),
             ]);
             if !store.set_notification_keys(&keys, &CFArray::<CFString>::from_CFTypes(&[])) {
+                eprintln!(
+                    "network watch: set_notification_keys failed; network-change guard disabled"
+                );
                 return;
             }
             let Some(source) = store.create_run_loop_source() else {
+                eprintln!(
+                    "network watch: create_run_loop_source failed; network-change guard disabled"
+                );
                 return;
             };
             // SAFETY: CoreFoundation 的静态模式常量。

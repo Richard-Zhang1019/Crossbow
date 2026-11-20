@@ -27,3 +27,9 @@ export function nextSetupStep({
   if (takeoverAvailable && !takeoverEnabled) return "takeover";
   return "verify";
 }
+
+/** 端口变更后的旧失败不能再引导修改当前端口；不以文案猜测故障原因。 */
+export function isPortUnavailable(error: unknown, port: number | undefined): boolean {
+  return !!error && typeof error === "object" && "kind" in error &&
+    error.kind === "portUnavailable" && "port" in error && error.port === port;
+}

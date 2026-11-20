@@ -1161,7 +1161,15 @@ mod tests {
         std::fs::create_dir(directory.path().join("store.json.tmp")).unwrap();
         let store = Mutex::new(store);
         assert!(restore_store(&store, &before).is_err());
-        assert_eq!(store.lock().unwrap().data().engine.mixed_port, 7897);
+        assert_eq!(
+            store
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .data()
+                .engine
+                .mixed_port,
+            7897
+        );
         assert_eq!(
             Store::open(directory.path())
                 .unwrap()
