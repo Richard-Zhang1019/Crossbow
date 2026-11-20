@@ -1,0 +1,41 @@
+/* 进程规则（#570）：列表行与表单布局。 */
+.cb-process-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cb-process-form {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.cb-process-form .cb-input {
+  max-width: 240px;
+}
+.cb-process-list {
+  display: flex;
+  flex-direction: column;
+}
+.cb-process-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--cb-line);
+}
+.cb-process-row:last-child {
+  border-bottom: none;
+}
+.cb-process-name {
+  color: var(--cb-text);
+  min-width: 160px;
+}
+.cb-process-target {
+  color: var(--cb-text-dim);
+  flex: 1;
+}
+.cb-process-actions {
+  display: flex;
+  gap: 8px;
+}
