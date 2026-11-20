@@ -8,9 +8,9 @@ use std::collections::BTreeMap;
 use tauri::{AppHandle, Manager};
 
 use crate::app_state::AppState;
-use crate::network::{scenes, ssid};
+use crate::network::{location, scenes, ssid};
 
-/// 设置页状态：规则表 + 当前网络 + 当前生效场景。
+/// 设置页状态：规则表 + 当前网络 + 当前生效场景 + 定位授权状态。
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SceneStatus {
@@ -21,6 +21,9 @@ pub(crate) struct SceneStatus {
     pub current_ssid: Option<String>,
     /// 当前生效中的场景（SSID, 动作）；None = 未在任何场景中。
     pub active_scene: Option<(String, String)>,
+    /// 定位授权状态：not_determined 时前端展示「请求定位权限」入口，
+    /// denied 时引导系统设置，authorized 而 SSID 为空才是真无 Wi-Fi。
+    pub location: location::LocationPermission,
 }
 
 #[tauri::command]
@@ -46,10 +49,18 @@ pub(crate) async fn network_scenes_get(app: AppHandle) -> Result<SceneStatus, St
             active_scene: scenes::active_scene(&state),
             supported: cfg!(target_os = "macos"),
             network_state: network_state.into(),
+            location: location::status(),
         }
     })
     .await
     .map_err(|e| e.to_string())
+}
+
+/// 发起定位授权请求（首次弹系统授权框；允许后 Crossbow 出现在定位服务
+/// 列表，SSID 探测才能拿到真实名称）。幂等：已授权/已拒绝时系统不再弹。
+#[tauri::command]
+pub(crate) fn network_scene_request_location() -> location::LocationPermission {
+    location::request_when_in_use()
 }
 
 #[tauri::command]
@@ -124,10 +135,12 @@ mod tests {
             active_scene: Some(("Home".into(), "direct".into())),
             supported: true,
             network_state: "available".into(),
+            location: crate::network::location::LocationPermission::NotDetermined,
         })
         .unwrap();
         assert_eq!(value["currentSsid"], "Home");
         assert_eq!(value["activeScene"][1], "direct");
         assert_eq!(value["networkState"], "available");
+        assert_eq!(value["location"], "not_determined");
     }
 }
