@@ -483,8 +483,11 @@ impl CoreManager {
         }
     }
 
-    /// 测试与设置页注入参数；当前生产路径用默认值。
-    #[allow(dead_code)]
+    /// 测试专用注入口（#564）：CoreOptions 字段生产路径全被消费
+    /// （就绪超时/重启窗口/GeoIP 预取），但设置页从未暴露可调入口——
+    /// 生产恒用 Default。改为 cfg(test) 消除「伪装成可暴露设置项」的
+    /// 挂账；真要暴露时再把入口接到设置页。
+    #[cfg(test)]
     pub fn set_options(&self, opts: CoreOptions) {
         *self.shared.opts.lock().unwrap_or_else(|e| e.into_inner()) = opts;
     }

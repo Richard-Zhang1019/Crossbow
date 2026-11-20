@@ -50,6 +50,11 @@ export interface SiteResult {
 
 export type CoreState = "Stopped" | "Starting" | "Running" | "Crashed";
 
+export interface LanAddress {
+  interface: string;
+  address: string;
+}
+
 export interface CoreStatus {
   state: CoreState;
   message?: string;
@@ -297,11 +302,6 @@ export interface CoreBinaryInfo {
   version: string;
 }
 
-export interface InstallProgress {
-  stage: string;
-  detail: string;
-}
-
 /** 防御性解析：Tauri 事件载荷理论上是对象，若收到字符串则手动解析。 */
 function parsePayload<T>(raw: unknown): T {
   if (typeof raw === "string") {
@@ -349,24 +349,6 @@ export const ipc = {
   onGoto: (cb: (page: string) => void) =>
     listen<string>("ui://goto", (e) => cb(parsePayload<string>(e.payload))),
 
-  checkUpdate: async (): Promise<string | null> => {
-    const { check } = await import("@tauri-apps/plugin-updater");
-    const update = await check();
-    return update?.version ?? null;
-  },
-  applyUpdate: async () => {
-    const { check } = await import("@tauri-apps/plugin-updater");
-    const update = await check();
-    if (update) {
-      await update.downloadAndInstall();
-      await import("@tauri-apps/plugin-process").then((m) => m.relaunch()).catch(() => {});
-    }
-  },
-
-  coreBinaryInfo: () => invoke<CoreBinaryInfo>("core_binary_info"),
-  onInstallProgress: (cb: (p: InstallProgress) => void) =>
-    listen<InstallProgress>("core://install-progress", (e) => cb(e.payload)),
-
   onEngineChanged: (cb: (engine: string) => void) =>
     listen<string>("engine://changed", (e) => cb(e.payload)),
 
@@ -405,12 +387,8 @@ export const ipc = {
     invoke<CoreBinaryInfo>("core_binary_info_for", { engine }),
   onProfileUpdated: (cb: (id: string) => void) =>
     listen<string>("profile://updated", (e) => cb(e.payload)),
-  onSafeMode: (cb: (msg: string) => void) =>
-    listen<string>("core://safe-mode", (e) => cb(e.payload)),
   onTunStatus: (cb: (enabled: boolean) => void) =>
     listen<boolean>("tun://status", (e) => cb(e.payload)),
-  onTunHealthNotice: (cb: (disabled: boolean) => void) =>
-    listen<boolean>("tun://health-notice", (e) => cb(e.payload)),
   setActiveProfile: (id: string) => invoke<void>("set_active_profile", { id }),
   removeProfile: (id: string) => invoke<void>("remove_profile", { id }),
   coreStart: async () => {
@@ -462,9 +440,9 @@ export const ipc = {
   setLinuxWireguardCoexist: (enabled: boolean) =>
     invoke<void>("set_linux_wireguard_coexist", { enabled }),
   setAllowLan: (enabled: boolean) => invoke<void>("set_allow_lan", { enabled }),
+  lanAddresses: () => invoke<LanAddress[]>("lan_addresses"),
   autostartStatus: () => invoke<boolean>("autostart_status"),
   autostartSet: (enable: boolean) => invoke<void>("autostart_set", { enable }),
-  coreVersion: () => invoke<string>("core_version"),
   trafficHistory: () => invoke<{ up: number; down: number }[]>("traffic_history"),
   /** #567：本地流量统计 TopN + 逐日总量（days 含今天，1/7/30） */
   trafficStats: (days: number) =>
@@ -476,7 +454,6 @@ export const ipc = {
     invoke<void>("reset_proxy_selection", { group }),
   testGroupDelay: (group: string) =>
     invoke<Record<string, number>>("test_group_delay", { group }),
-  testNodeDelay: (node: string) => invoke<number>("test_node_delay", { node }),
   proxiesTestSnapshot: () => invoke<{ context: NodeDelayContext; groups: GroupView[] } | null>("proxies_test_snapshot"),
   beginNodeDelayTest: (context: NodeDelayContext, nodeCount: number) =>
     invoke<{ id: string; budgetMs: number } | null>("begin_node_delay_test", { context, nodeCount }),
@@ -546,8 +523,4 @@ export const ipc = {
     listen<UiSettings["theme"]>("ui://theme", (e) => cb(e.payload)),
   onLang: (cb: (l: string) => void) =>
     listen<string>("ui://lang", (e) => cb(e.payload)),
-  onProfileImported: (cb: (url: string) => void) =>
-    listen<string>("profile://imported", (e) => cb(e.payload)),
-  onProfileImportFailed: (cb: (msg: string) => void) =>
-    listen<string>("profile://import-failed", (e) => cb(e.payload)),
 };

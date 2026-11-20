@@ -17,6 +17,7 @@ import SceneRules from "@/components/SceneRules";
 import type { NavigationTarget } from "@/lib/workflow";
 import { useT } from "@/i18n/i18n";
 import { PageHead } from "@/pages/Home";
+import { LanSharing } from "./LanSharing";
 
 
 /** 设置页（M0-S4）：内核端口/局域网、外观主题、开机自启、内核版本。 */
@@ -196,7 +197,7 @@ export default function SettingsPage({
     key: string,
     title: string,
     task: () => Promise<unknown>,
-    commit: () => void,
+    commit: () => void | Promise<void>,
     success?: string,
   ) => {
     if (saving.current.has(key)) return;
@@ -216,7 +217,7 @@ export default function SettingsPage({
             } as Record<string, string>
           )[key] ?? `settings.${key}`,
       });
-      if (result.ok) commit();
+      if (result.ok) await commit();
       else await load();
     } finally {
       saving.current.delete(key);
@@ -524,22 +525,19 @@ export default function SettingsPage({
               />
             </Row>
           )}
-          <Row label={t("settings.lan")} hint={t("settings.lanHint")}>
-            <Switch
-              checked={engine?.allow_lan ?? false}
-              onChange={async (v) => {
-                await saveSetting(
-                  "lan",
-                  t("settings.lan"),
-                  () => ipc.setAllowLan(v),
-                  () => {
-                    void load();
-                  },
-                  v ? t("settings.lanOn") : t("settings.lanOff"),
-                );
-              }}
-            />
-          </Row>
+          <LanSharing
+            enabled={engine?.allow_lan ?? false}
+            port={engine?.mixed_port}
+            onChange={(enabled) =>
+              saveSetting(
+                "lan",
+                t("settings.lan"),
+                () => ipc.setAllowLan(enabled),
+                load,
+                enabled ? t("settings.lanOn") : t("settings.lanOff"),
+              )
+            }
+          />
         </Group><Group title={t("settings.scenes.title")}>
           <SceneRules />
         </Group></>

@@ -1472,6 +1472,16 @@ pub(crate) fn tray_menu_entries(
             tr(&lang, "退出（还原系统代理）", "Quit (restore proxy)"),
             true,
         ),
+        // #572 轻量退出：进程完全退出，内核与代理保持运行，下次启动收养
+        Entry::action(
+            "quit-light",
+            tr(
+                &lang,
+                "轻量退出（保留内核与代理）",
+                "Lightweight quit (keep core & proxy)",
+            ),
+            true,
+        ),
     ]);
     entries
 }

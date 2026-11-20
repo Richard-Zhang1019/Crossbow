@@ -5,14 +5,6 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, State};
 
-#[tauri::command]
-pub(crate) async fn test_node_delay(
-    state: State<'_, AppState>,
-    node: String,
-) -> Result<u64, String> {
-    controller_client(&state)?.test_node_delay(&node)
-}
-
 /// #501：结构化单节点测速结果——错误按类别返回（含取消/跳过），复核
 /// 样本带目标、时间与样本数；不把控制器故障混成节点超时。
 #[derive(serde::Serialize)]
