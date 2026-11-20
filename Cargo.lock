@@ -879,13 +879,16 @@ checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
 name = "crossbow-core"
 version = "0.15.1"
 dependencies = [
+ "base64 0.22.1",
  "boa_engine",
+ "percent-encoding",
  "serde",
  "serde_json",
  "serde_yaml",
  "tempfile",
  "thiserror 2.0.21",
  "ureq",
+ "url",
 ]
 
 [[package]]
