@@ -194,6 +194,7 @@ export function stubSource() {
     "subscribe_connections": null,
     "unsubscribe_connections": null,
     "sysproxy_fault_evidence": null,
+    "network_scenes_get": { rules: {}, currentSsid: null, activeScene: null },
     "test_site": (args) => ({ id: args?.id ?? "", status: "ok", http_status: 200, latency_ms: 45, error: null }),
     "proxies_test_snapshot": null,
     "begin_node_delay_test": () => ({ id: "task-" + (calls.begin_node_delay_test ?? 1), budgetMs: 30000 }),
