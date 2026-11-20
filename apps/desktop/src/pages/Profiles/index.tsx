@@ -2,6 +2,7 @@ import {Input} from "@/components/Controls";
 import type { NavigationTarget } from "@/lib/workflow";
 import ConfigRecovery from "@/components/ConfigRecovery";
 import { Button, ButtonBase } from "@/components/Button";
+import { subscriptionCleanup } from "@/lib/unlisten";
 import { notify, notificationText } from "@/notifications/service";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -67,9 +68,10 @@ export default function ProfilesPage({
   const [pkgPreview, setPkgPreview] = useState<PackagePreview | null>(null);
   const packageOperation = useRef(false);
   const mounted = useRef(false);
+  const readRevision = useRef(0);
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; };
+    return () => { mounted.current = false; ++readRevision.current; };
   }, []);
   const previewId = pkgPreview?.id;
   useEffect(() => {
@@ -77,14 +79,6 @@ export default function ProfilesPage({
   }, [previewId]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importingFiles = useRef(false);
-  // 卸载守卫：晚到的异步响应不再 setState（对齐 Home/App 的 alive 门，#565）。
-  const alive = useRef(true);
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
   useEffect(() => {
     if (focusProfileId) setSelectedId(focusProfileId);
     if (navigationRequest?.control === "cb-config-recovery") setRecovering(true);
@@ -92,10 +86,10 @@ export default function ProfilesPage({
   }, [focusProfileId, navigationRequest]);
 
   const refresh = useCallback(async () => {
+    if (!mounted.current) return;
+    const revision = ++readRevision.current;
     const results=await Promise.allSettled([ipc.listProfiles(),ipc.activeProfileId(),ipc.profileStatuses()]);
-    // 卸载后丢弃：与 Home/App 的 alive 门一致，卸载期间的晚到响应不再
-    // setState（#565）。
-    if (!alive.current) return;
+    if (!mounted.current || revision !== readRevision.current) return;
     const [profiles,active,statuses]=results;
     if(profiles.status==='fulfilled')setProfiles(profiles.value);
     if(active.status==='fulfilled')setActiveId(active.value);
@@ -110,7 +104,7 @@ export default function ProfilesPage({
   // 后台调度器完成自动更新后刷新列表
   useEffect(() => {
     const un = ipc.onProfileUpdated(() => refresh());
-    return () => void un.then((f) => f());
+    return subscriptionCleanup(un);
   }, [refresh]);
 
   const importProfiles = useCallback(async (tasks: Array<() => Promise<Profile>>) => {
@@ -133,11 +127,11 @@ export default function ProfilesPage({
         }
       }
       await refresh();
-      if (allSucceeded) setImporting(false);
+      if (mounted.current && allSucceeded) setImporting(false);
       return allSucceeded;
     } finally {
       importingFiles.current = false;
-      setBusy(null);
+      if (mounted.current) setBusy(null);
     }
   }, [refresh]);
 
@@ -181,10 +175,10 @@ export default function ProfilesPage({
         titleKey: "profiles.title",
       });
       if(outcome.ok&&key.startsWith("activate-"))window.dispatchEvent(new CustomEvent("cb:profile-switched"));
-      if (!alive.current) return;
+      if (!mounted.current) return;
       await refresh();
     } finally {
-      if (alive.current) setBusy(null);
+      if (mounted.current) setBusy(null);
     }
   };
 
@@ -202,12 +196,12 @@ export default function ProfilesPage({
       notify.error(code.startsWith("pkg.error") ? t(code) : t("pkg.errorCommit"), `pkg-${operation}`);
     } finally {
       packageOperation.current = false;
-      setPkgBusy(null);
+      if (mounted.current) setPkgBusy(null);
     }
   };
   const exportPackage = () => runPackageOperation("export", async () => {
     const saved = await ipc.exportConfigPackage();
-    setExportingPackage(false);
+    if (mounted.current) setExportingPackage(false);
     if (saved) notify.success(t("pkg.exported"), "pkg-export");
   });
   const importPackage = () => runPackageOperation("preview", async () => {
@@ -227,7 +221,7 @@ export default function ProfilesPage({
     } finally {
       // The backend consumes the preview even if commit fails. Retry starts
       // with a fresh preview and current conflict counts.
-      setPkgPreview(null);
+      if (mounted.current) setPkgPreview(null);
     }
   });
   const closeExportPackage = () => {
@@ -251,7 +245,7 @@ export default function ProfilesPage({
     if(focusProfileId&&selected?.id===focusProfileId){const frame=requestAnimationFrame(()=>document.getElementById("cb-profile-detail")?.focus());return()=>cancelAnimationFrame(frame);}
   },[focusProfileId,selected?.id]);
   const importUrl = async () => {
-    if (await importProfiles([() => ipc.importProfileUrl(url.trim())])) setUrl("");
+    if (await importProfiles([() => ipc.importProfileUrl(url.trim())]) && mounted.current) setUrl("");
   };
   return (
     <div className="cb-profiles-page">

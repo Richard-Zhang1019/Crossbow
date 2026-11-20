@@ -3,6 +3,7 @@ import SegmentedControl from "@/components/SegmentedControl";
 import {SearchField} from "@/components/Controls";
 import Dialog from "@/components/Dialog";
 import Select from "@/components/Select";
+import { unsubscribe } from "@/lib/unlisten";
 import { sortConnections, connectionDetails } from "@/lib/workflow";
 import { ButtonBase, Button } from "@/components/Button";
 import NodeName from "@/components/NodeName";
@@ -39,21 +40,25 @@ export default function ConnectionsPage() {
   // 暂停是纯本地 UI 态：订阅回调经 ref 读取，避免把它挂进订阅 effect——
   // 那会让每次暂停/恢复整套拆除重建后端 connections 通道（churn，#565）。
   const pausedRef = useRef(paused);
-  useEffect(() => {
-    pausedRef.current = paused;
-  }, [paused]);
 
   useEffect(() => {
-    ipc
-      .subscribeConnections(true)
-      .catch((error) => notify.error(error, "connections-stream"));
+    let active = true;
+    const subscriber = `connections:${crypto.randomUUID()}`;
+    // 先注册事件再启动流；迟到的 subscribe 完成后也必须释放本实例身份。
     const un = ipc.onConnections((s) => {
+      if (!active) return;
       latest.current = s;
       if (!pausedRef.current) setSnapshot(s);
     });
+    const subscribed = un.then(() => {
+      if (active) return ipc.subscribeConnections(subscriber, true);
+    }).catch(error => {
+      if (active) notify.error(error, "connections-stream");
+    });
     return () => {
-      void un.then((f) => f());
-      ipc.unsubscribeConnections().catch(() => {});
+      active = false;
+      unsubscribe(un);
+      void subscribed.then(() => ipc.unsubscribeConnections(subscriber)).catch(() => {});
     };
   }, []);
 
@@ -72,11 +77,10 @@ export default function ConnectionsPage() {
   };
 
   const togglePause = () => {
-    if (paused) {
-      // 恢复时立刻补上暂停期间的数据
-      setSnapshot(latest.current);
-    }
-    setPaused(!paused);
+    const next = !pausedRef.current;
+    pausedRef.current = next;
+    if (!next) setSnapshot(latest.current);
+    setPaused(next);
   };
 
   const rows = useMemo(() => {

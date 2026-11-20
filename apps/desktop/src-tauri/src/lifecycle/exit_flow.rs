@@ -592,14 +592,8 @@ pub(crate) fn install_panic_hook() {
         let line = format!("[{ms}] thread '{thread_name}' panicked at {location}: {payload}\n");
         // 与 data_dir 同目标但不依赖 AppState：macOS ~/Library/Application
         // Support；Windows %APPDATA%。写失败静默放弃（钩子内不能再 panic）。
-        #[cfg(target_os = "macos")]
-        let dir = std::env::var_os("HOME")
-            .map(std::path::PathBuf::from)
-            .map(|h| h.join("Library/Application Support/com.richard.crossbow"));
-        #[cfg(target_os = "windows")]
-        let dir = std::env::var_os("APPDATA")
-            .map(|h| std::path::PathBuf::from(h))
-            .map(|h| h.join("com.richard.crossbow"));
+        #[cfg(any(target_os = "macos", windows))]
+        let dir = data_dir_for_early_hooks();
         #[cfg(not(any(target_os = "macos", windows)))]
         let dir: Option<std::path::PathBuf> = None;
         if let Some(dir) = dir {
@@ -635,7 +629,12 @@ pub(crate) fn tidy_runtime_files(dir: &std::path::Path) {
 /// 影响网络可用性。端口有监听（内核被收养/别的客户端占用同端口）则不动。
 #[cfg(any(target_os = "macos", windows))]
 pub(crate) fn clear_stale_system_proxy_early() {
-    let dir = data_dir_for_early_hooks();
+    // HOME/APPDATA 缺失（launchd 精简环境、服务化启动）无法定位数据目录：
+    // 跳过本次自愈并留痕——Builder 前 panic 会让应用完全无法启动。
+    let Some(dir) = data_dir_for_early_hooks() else {
+        eprintln!("stale system proxy self-heal skipped: HOME/APPDATA missing or not absolute");
+        return;
+    };
     let journal = dir.join("sysproxy-journal.json");
     if !journal.is_file() {
         return;
@@ -686,21 +685,35 @@ pub(crate) fn port_has_listener(port: u16) -> bool {
     .is_ok()
 }
 
+/// Resolve early-hook storage only from an absolute environment path.
+/// Empty/relative values cannot identify the real journal: resolving against
+/// cwd could recover unrelated proxy settings or write panic logs there.
 #[cfg(any(target_os = "macos", windows))]
-pub(crate) fn data_dir_for_early_hooks() -> std::path::PathBuf {
+fn data_dir_from_env(value: Option<std::ffi::OsString>) -> Option<std::path::PathBuf> {
+    let root = value
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.is_absolute())?;
     #[cfg(target_os = "macos")]
     {
-        std::env::var_os("HOME")
-            .map(std::path::PathBuf::from)
-            .map(|h| h.join("Library/Application Support/com.richard.crossbow"))
-            .expect("HOME unset; cannot locate data dir")
+        Some(root.join("Library/Application Support/com.richard.crossbow"))
     }
     #[cfg(windows)]
     {
-        std::env::var_os("APPDATA")
-            .map(std::path::PathBuf::from)
-            .map(|h| h.join("com.richard.crossbow"))
-            .expect("APPDATA unset; cannot locate data dir")
+        Some(root.join("com.richard.crossbow"))
+    }
+}
+
+/// 与 panic hook 共用，不依赖 AppState；env 缺失或非绝对路径返回 None，调用方跳过
+/// 自愈（#561：原先 .expect 在精简启动环境让应用直接拒绝启动）。
+#[cfg(any(target_os = "macos", windows))]
+pub(crate) fn data_dir_for_early_hooks() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        data_dir_from_env(std::env::var_os("HOME"))
+    }
+    #[cfg(windows)]
+    {
+        data_dir_from_env(std::env::var_os("APPDATA"))
     }
 }
 
@@ -746,6 +759,80 @@ mod tidy_tests {
         for name in ["sysproxy-journal.json", "tun-proxy-journal.json"] {
             let meta = dir.path().join(name).metadata().unwrap();
             assert_eq!(meta.permissions().mode() & 0o777, 0o600);
+        }
+    }
+
+    #[test]
+    #[cfg(any(target_os = "macos", windows))]
+    fn data_dir_from_env_missing_value_yields_none_without_panic() {
+        // #561：env 缺失必须返回 None（调用方跳过自愈），不得 panic
+        assert_eq!(data_dir_from_env(None), None);
+        let root = tempfile::tempdir().unwrap();
+        let dir = data_dir_from_env(Some(root.path().as_os_str().to_owned()))
+            .expect("absolute environment path must map to a data dir");
+        #[cfg(target_os = "macos")]
+        assert_eq!(
+            dir,
+            root.path()
+                .join("Library/Application Support/com.richard.crossbow")
+        );
+        #[cfg(windows)]
+        assert_eq!(dir, root.path().join("com.richard.crossbow"));
+    }
+
+    #[test]
+    #[cfg(any(target_os = "macos", windows))]
+    fn data_dir_from_env_rejects_empty_and_relative_paths() {
+        for value in ["", ".", "..", "relative-home"] {
+            assert_eq!(data_dir_from_env(Some(value.into())), None, "{value:?}");
+        }
+        #[cfg(windows)]
+        for value in [r"C:relative-home", r"\root-relative"] {
+            assert_eq!(data_dir_from_env(Some(value.into())), None, "{value:?}");
+        }
+    }
+
+    #[test]
+    #[cfg(any(target_os = "macos", windows))]
+    fn early_proxy_hook_handles_invalid_env_in_child() {
+        const CHILD: &str = "CROSSBOW_TEST_EARLY_PROXY_HOOK_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            // Do not invoke the system proxy path unless invalid input was
+            // rejected. This also makes the test safe on the unfixed code.
+            assert_eq!(data_dir_for_early_hooks(), None);
+            clear_stale_system_proxy_early();
+            install_panic_hook();
+            let panic = std::panic::catch_unwind(|| panic!("early-hook path regression probe"));
+            assert!(panic.is_err());
+            return;
+        }
+        #[cfg(target_os = "macos")]
+        let variable = "HOME";
+        #[cfg(windows)]
+        let variable = "APPDATA";
+        let cwd = tempfile::tempdir().unwrap();
+        for value in [None, Some(""), Some("relative-home")] {
+            let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+            command
+                .args([
+                    "--exact",
+                    "lifecycle::exit_flow::tidy_tests::early_proxy_hook_handles_invalid_env_in_child",
+                    "--nocapture",
+                ])
+                .current_dir(cwd.path())
+                .env(CHILD, "1")
+                .env_remove(variable);
+            if let Some(value) = value {
+                command.env(variable, value);
+            }
+            let output = command.output().unwrap();
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(output.status.success(), "{variable}={value:?}: {stderr}");
+            assert!(
+                stderr.contains("stale system proxy self-heal skipped"),
+                "{stderr}"
+            );
+            assert_eq!(std::fs::read_dir(cwd.path()).unwrap().count(), 0);
         }
     }
 }
