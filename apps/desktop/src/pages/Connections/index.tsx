@@ -3,6 +3,7 @@ import SegmentedControl from "@/components/SegmentedControl";
 import {SearchField} from "@/components/Controls";
 import Dialog from "@/components/Dialog";
 import Select from "@/components/Select";
+import { unsubscribe } from "@/lib/unlisten";
 import { sortConnections, connectionDetails } from "@/lib/workflow";
 import { ButtonBase, Button } from "@/components/Button";
 import NodeName from "@/components/NodeName";
@@ -36,40 +37,50 @@ export default function ConnectionsPage() {
   const [paused, setPaused] = useState(false);
   const [view, setView] = useState<"list" | "apps">("list");
   const latest = useRef<ConnSnapshot>(snapshot);
+  // 暂停是纯本地 UI 态：订阅回调经 ref 读取，避免把它挂进订阅 effect——
+  // 那会让每次暂停/恢复整套拆除重建后端 connections 通道（churn，#565）。
+  const pausedRef = useRef(paused);
 
   useEffect(() => {
-    // 本页实例的订阅方标识：与概览页共享后端 connections 通道，卸载
-    // 只移除自己，概览页晚到的退订不会误杀本页数据流（#555）。
+    let active = true;
     const subscriber = `connections:${crypto.randomUUID()}`;
-    ipc
-      .subscribeConnections(subscriber, true)
-      .catch((error) => notify.error(error, "connections-stream"));
+    // 先注册事件再启动流；迟到的 subscribe 完成后也必须释放本实例身份。
     const un = ipc.onConnections((s) => {
+      if (!active) return;
       latest.current = s;
-      if (!paused) setSnapshot(s);
+      if (!pausedRef.current) setSnapshot(s);
+    });
+    const subscribed = un.then(() => {
+      if (active) return ipc.subscribeConnections(subscriber, true);
+    }).catch(error => {
+      if (active) notify.error(error, "connections-stream");
     });
     return () => {
-      void un.then((f) => f());
-      ipc.unsubscribeConnections(subscriber).catch(() => {});
+      active = false;
+      unsubscribe(un);
+      void subscribed.then(() => ipc.unsubscribeConnections(subscriber)).catch(() => {});
     };
-  }, [paused]);
+  }, []);
 
   const closeOne = async (id: string) => {
     try {
       await ipc.closeConnection(id);
-      // 乐观移除，等待下个快照校正
-      setSnapshot((s) => ({ ...s, rows: s.rows.filter((r) => r.id !== id) }));
+      // 乐观移除，等待下个快照校正。暂停期间快照不更新，同步过滤
+      // latest：恢复时 setSnapshot(latest) 不会把已断开的行闪回来；
+      // 若断开实际未生效，内核后续帧会重新带上该行（#565）。
+      const prune = (s: ConnSnapshot) => ({ ...s, rows: s.rows.filter((r) => r.id !== id) });
+      setSnapshot(prune);
+      latest.current = prune(latest.current);
     } catch (e) {
       notify.error(e, "connections-operation");
     }
   };
 
   const togglePause = () => {
-    if (paused) {
-      // 恢复时立刻补上暂停期间的数据
-      setSnapshot(latest.current);
-    }
-    setPaused(!paused);
+    const next = !pausedRef.current;
+    pausedRef.current = next;
+    if (!next) setSnapshot(latest.current);
+    setPaused(next);
   };
 
   const rows = useMemo(() => {
