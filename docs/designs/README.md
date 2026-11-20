@@ -16,6 +16,7 @@
 | 日期 | 主题 | 版本 | 状态 | 文件 | 关联 |
 | --- | --- | --- | --- | --- | --- |
 | 2026-11-20 | 本地流量统计：区间总量、每日趋势与紧凑排行 | v01 | 已实现，待用户确认 | [说明](2026-11-20-local-traffic/v01/SPEC.md) · [浅色](2026-11-20-local-traffic/v01/previews/light.png) · [深色](2026-11-20-local-traffic/v01/previews/dark.png) · [源稿](2026-11-20-local-traffic/v01/source.zip) | #567 / PR #581 |
+| 2026-11-20 | 进程规则列表与编辑交互 | v01 | 已实现，待评审 | [设计说明](2026-11-20-process-rules/v01/SPEC.md) · [浅色](2026-11-20-process-rules/v01/previews/light.png) · [深色小窗口](2026-11-20-process-rules/v01/previews/dark-small.png) · [源稿](2026-11-20-process-rules/v01/source.zip) | #570 / PR #582 |
 | 2026-11-14 | 首次连接测试融入连接路径 | v03 | 已实现，待评审 | [说明与源稿](2026-11-13-first-connection/v03/SPEC.md) · [浅色测试](2026-11-13-first-connection/v03/previews/verify-light.png) · [深色重试](2026-11-13-first-connection/v03/previews/retry-dark.png) | #484 / #485 |
 | 2026-11-14 | 首次连接引导融入连接状态 | v02 | 由 v03 替代，保留历史 | [说明与源稿](2026-11-13-first-connection/v02/SPEC.md) · [浅色验证](2026-11-13-first-connection/v02/previews/verify-light.png) · [深色重试](2026-11-13-first-connection/v02/previews/retry-dark.png) | #484 |
 | 2026-11-13 | 首次连接引导 | v01 | 由 v02 替代，保留历史 | [说明与源稿](2026-11-13-first-connection/v01/SPEC.md) · [浅色导入](2026-11-13-first-connection/v01/previews/import-light.jpg) · [深色接管](2026-11-13-first-connection/v01/previews/takeover-dark.jpg) | #467 |

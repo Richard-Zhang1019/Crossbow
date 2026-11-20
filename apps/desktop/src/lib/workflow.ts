@@ -32,6 +32,8 @@ export type NavigationTarget = {
   settingSection?: "network" | "appearance" | "logs" | "app";
   control?: string;
   checkId?: string;
+  /** control 附加载荷（#570：cb-process-rule 携带进程名）。 */
+  source?: string;
 };
 export function navigateTo(target: NavigationTarget) {
   window.dispatchEvent(new CustomEvent("cb:goto", { detail: JSON.stringify(target) }));
@@ -64,6 +66,7 @@ export function parseNavigation(raw: string): NavigationTarget | null {
           "cb-profile-detail",
           "cb-config-recovery",
           "cb-import-profile",
+          "cb-process-rule",
           "cb-first-connection",
         ].includes(v.control)
           ? v.control
@@ -72,6 +75,7 @@ export function parseNavigation(raw: string): NavigationTarget | null {
         typeof v.checkId === "string" && [...DIAG_STEPS, "first-problem"].includes(v.checkId)
           ? v.checkId
           : undefined,
+      source: typeof v.source === "string" ? v.source : undefined,
     };
   } catch {
     return null;

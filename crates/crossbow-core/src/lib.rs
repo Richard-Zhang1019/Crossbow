@@ -8,6 +8,7 @@ pub mod config_package;
 pub mod emoji;
 pub mod model;
 pub mod override_patch;
+pub mod process_rules;
 pub mod render;
 pub mod runtime;
 pub mod script_override;
@@ -17,8 +18,8 @@ pub mod subscription;
 
 pub use emoji::enrich_flags;
 pub use model::{
-    Engine, EngineConfig, NodeChanges, OverrideDef, OverrideKind, Profile, ProfileKind,
-    StoreSchema, TrafficInfo, UiSettings, UpdateOutcome,
+    Engine, EngineConfig, NodeChanges, OverrideDef, OverrideKind, ProcessRule, Profile,
+    ProfileKind, StoreSchema, TrafficInfo, UiSettings, UpdateOutcome,
 };
 pub use render::{
     render_config, render_config_with, validate_enabled_overrides, RenderError, Rendered,

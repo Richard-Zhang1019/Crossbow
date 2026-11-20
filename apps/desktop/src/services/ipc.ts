@@ -139,6 +139,19 @@ export interface TrafficStatsReport {
   daily: TrafficStatRow[];
 }
 
+/** 一条按进程分流规则（#570）：进程名 → 策略目标。 */
+export interface ProcessRule {
+  id: string;
+  process: string;
+  target: string;
+}
+
+export interface ProcessRuleStatus {
+  rules: ProcessRule[];
+  /** 当前订阅可用目标：DIRECT/REJECT + proxy-groups 名。 */
+  targets: string[];
+}
+
 export interface ConnRow {
   id: string;
   host: string;
@@ -462,6 +475,11 @@ export const ipc = {
   exportLogLines: (lines:string[]) => invoke<boolean>("export_log_lines",{lines}),
   currentOutbound: () => invoke<OutboundInfo>("current_outbound"),
   closeConnection: (id: string) => invoke<void>("close_connection", { id }),
+  // 按进程分流规则（#570）：变更走 commit_config_change（内核热重载）。
+  processRules: () => invoke<ProcessRuleStatus>("process_rules_get"),
+  setProcessRule: (id: string | null, process: string, target: string) =>
+    invoke<void>("process_rule_set", { id: id ?? "", process, target }),
+  removeProcessRule: (id: string) => invoke<void>("process_rule_remove", { id }),
   // traffic/connections 是多页面共享通道：subscriber 标识页面实例，
   // 后端按订阅方登记/移除，最后一个订阅方离开才真正停流（#555）。
   subscribeTraffic: (subscriber: string) =>
