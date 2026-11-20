@@ -1,5 +1,5 @@
 import SegmentedControl from "@/components/SegmentedControl";
-import { Button } from "@/components/Button";
+import { Button, ButtonBase } from "@/components/Button";
 import { Icon } from "@/components/Icon";
 import NodeName from "@/components/NodeName";
 import { notify } from "@/notifications/service";
@@ -85,7 +85,7 @@ export default function StatsPage() {
         <div className="cb-stats-total"><p>{t(range.labelKey)} · {t('stats.observed')}</p><strong>{fmtBytes(total)}</strong><dl><div><dt><i className="cb-stats-dot down"/>{t('stats.download')}</dt><dd>{fmtBytes(totals.down)}</dd></div><div><dt><i className="cb-stats-dot up"/>{t('stats.upload')}</dt><dd>{fmtBytes(totals.up)}</dd></div></dl></div>
         <div className="cb-stats-trend"><header><h2>{t('stats.daily')}</h2><span className="cb-stats-day-detail">{activeDay?.key} <b>{activeDay?.missing ? t('stats.noData') : fmtBytes((activeDay?.up ?? 0) + (activeDay?.down ?? 0))}</b></span></header>
           <div className="cb-stats-chart-body"><div className="cb-stats-scale"><span>{fmtBytes(max)}</span><span>{fmtBytes(max/2)}</span><span>0 B</span></div><div className="cb-stats-plot" style={{gridTemplateColumns:`repeat(${Math.max(chartDaily.length,1)},minmax(0,1fr))`}}>
-            {chartDaily.map(d => <button className="cb-stats-day" key={d.key} aria-label={d.missing ? `${d.key} · ${t('stats.noData')}` : `${d.key} · ↓ ${fmtBytes(d.down)} · ↑ ${fmtBytes(d.up)}`} aria-pressed={activeDay?.key === d.key} onClick={() => setSelected(d.key)} title={d.missing ? `${d.key} · ${t('stats.noData')}` : `${d.key} · ↓ ${fmtBytes(d.down)} · ↑ ${fmtBytes(d.up)}`}><span className="cb-stats-stack" style={{height:`${(d.up+d.down)/max*100}%`}}><span className="cb-stats-stack-up" style={{flexGrow:d.up}}/><span className="cb-stats-stack-down" style={{flexGrow:d.down}}/></span></button>)}
+            {chartDaily.map(d => <ButtonBase className="cb-stats-day" key={d.key} aria-label={d.missing ? `${d.key} · ${t('stats.noData')}` : `${d.key} · ↓ ${fmtBytes(d.down)} · ↑ ${fmtBytes(d.up)}`} aria-pressed={activeDay?.key === d.key} onClick={() => setSelected(d.key)} title={d.missing ? `${d.key} · ${t('stats.noData')}` : `${d.key} · ↓ ${fmtBytes(d.down)} · ↑ ${fmtBytes(d.up)}`}><span className="cb-stats-stack" style={{height:`${(d.up+d.down)/max*100}%`}}><span className="cb-stats-stack-up" style={{flexGrow:d.up}}/><span className="cb-stats-stack-down" style={{flexGrow:d.down}}/></span></ButtonBase>)}
           </div></div><div className="cb-stats-dates"><span>{chartDaily[0]?.key.slice(5).replace('-','/')}</span><span>{chartDaily.at(-1)?.key.slice(5).replace('-','/')}</span></div>
         </div>
       </section>
