@@ -70,6 +70,8 @@ pub(crate) fn core_status_callback(handle: AppHandle) -> crate::engine::manager:
         let _ = handle.emit("core://status", status.clone());
         // 托盘实时速率：Running 订阅更新，停止/崩溃退订清空
         sync_tray_traffic(&handle);
+        // 本地流量统计采样（#567）：Running 常驻订阅，停止退订并强制落盘
+        sync_traffic_stats(&handle);
         // 最近日志缓存始终跟随内核；落盘另由保存开关控制。
         update_logs_persistence(&handle);
         // 托盘节点菜单数据：Running 时后台拉取组与延迟
@@ -191,6 +193,29 @@ pub(crate) fn sync_tray_traffic(handle: &AppHandle) {
     state.traffic_history_clear();
     #[cfg(target_os = "macos")]
     crate::tray::speed::clear(handle);
+}
+
+/// 本地流量统计采样（#567）：与托盘速率同生命周期——Running 常驻订阅
+/// /connections 低频采样，停止/崩溃退订并强制落盘（关代理后统计停增）。
+pub(crate) fn sync_traffic_stats(handle: &AppHandle) {
+    let Some(state) = handle.try_state::<AppState>() else {
+        return;
+    };
+    if state.core().status() == CoreStatus::Running {
+        if let Some((port, secret)) = state.core().controller() {
+            let h = handle.clone();
+            let _ = state
+                .ws
+                .subscribe_stats_connections(port, &secret, move |txt| {
+                    if let Some(state) = h.try_state::<AppState>() {
+                        state.traffic_stats_ingest(txt);
+                    }
+                });
+        }
+        return;
+    }
+    state.ws.unsubscribe_stats();
+    state.traffic_stats_stop();
 }
 
 /// 内核（重）启后重订仍被页面需要的通道（traffic/connections/logs）。

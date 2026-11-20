@@ -125,6 +125,7 @@ jobs:
           CB_VERIFY_ARTIFACTS_ROOT: ${{ runner.temp }}/crossbow-desktop-evidence
         run: |
           pnpm verify:desktop
+          node scripts/dev/verify-stats.mjs
           node scripts/dev/verify-process-rules.mjs
       - uses: actions/upload-artifact@v7
         if: failure() && steps.desktop-scenarios.outcome == 'failure'
@@ -185,6 +186,7 @@ jobs:
           CB_VERIFY_ARTIFACTS_ROOT: ${{ runner.temp }}/crossbow-desktop-evidence
         run: |
           pnpm verify:desktop
+          node scripts/dev/verify-stats.mjs
           node scripts/dev/verify-process-rules.mjs
       - uses: actions/upload-artifact@v7
         if: failure() && steps.desktop-scenarios.outcome == 'failure'

@@ -260,6 +260,37 @@ impl WsHub {
         self.unsubscribe("traffic-tray");
     }
 
+    /// #567：常驻低频 /connections 采样（统计聚合用，独立于页面订阅）。
+    /// 每个可见快照均参与聚合；跳过中间帧会遗漏短连接，不能按累计值推断无损。
+    pub fn subscribe_stats_connections(
+        &self,
+        port: u16,
+        secret: &str,
+        on_frame: impl Fn(&str) + Send + 'static,
+    ) -> Result<(), String> {
+        let url = ws_url(port, secret, "/connections");
+        self.subscribe("stats-connections", move |flag, last_seen| {
+            std::thread::spawn(move || {
+                read_loop(
+                    &url,
+                    flag,
+                    Some(WS_STALE_RECONNECT),
+                    Some(last_seen),
+                    None,
+                    |msg| {
+                        if let Some(Message::Text(txt)) = msg {
+                            on_frame(&txt);
+                        }
+                    },
+                );
+            });
+        })
+    }
+
+    pub fn unsubscribe_stats(&self) {
+        self.unsubscribe("stats-connections");
+    }
+
     pub fn subscribe_traffic(
         &self,
         port: u16,
@@ -860,6 +891,45 @@ pub(crate) mod tests {
         assert!(data["rows"][0]["elapsed_ms"].is_null());
         assert!(data["rows"][1]["elapsed_ms"].is_null());
         assert!(compact_connections(r#"{"connections":[]}"#, None).unwrap()["memory"].is_null());
+    }
+
+    #[test]
+    fn stats_reader_delivers_short_lived_connections_between_five_second_boundaries() {
+        use std::net::TcpListener;
+        use std::sync::mpsc;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (finish, wait_finish) = mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut ws = tungstenite::accept(stream).unwrap();
+            for frame in [
+                r#"{"connections":[]}"#,
+                r#"{"connections":[{"id":"short","upload":1,"download":2}]}"#,
+                r#"{"connections":[]}"#,
+            ] {
+                ws.send(Message::Text(frame.into())).unwrap();
+            }
+            let _ = wait_finish.recv_timeout(Duration::from_secs(5));
+        });
+        let hub = WsHub::default();
+        let (send, frames) = mpsc::channel();
+        hub.subscribe_stats_connections(port, "", move |frame| {
+            let _ = send.send(frame.to_string());
+        })
+        .unwrap();
+        let received: Vec<_> = (0..3)
+            .filter_map(|_| frames.recv_timeout(Duration::from_secs(2)).ok())
+            .collect();
+        hub.unsubscribe_stats();
+        let _ = finish.send(());
+        server.join().unwrap();
+        assert_eq!(
+            received.len(),
+            3,
+            "dropping intermediate frames loses short connections"
+        );
+        assert!(received[1].contains("short"));
     }
 
     #[test]

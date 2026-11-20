@@ -126,6 +126,19 @@ export interface EngineConfigView {
   core_installed: boolean;
 }
 
+/// #567 本地流量统计：单行（key = 域名/出口节点/日期）与查询结果。
+export interface TrafficStatRow {
+  key: string;
+  up: number;
+  down: number;
+}
+
+export interface TrafficStatsReport {
+  domains: TrafficStatRow[];
+  nodes: TrafficStatRow[];
+  daily: TrafficStatRow[];
+}
+
 /** 一条按进程分流规则（#570）：进程名 → 策略目标。 */
 export interface ProcessRule {
   id: string;
@@ -433,6 +446,9 @@ export const ipc = {
   autostartSet: (enable: boolean) => invoke<void>("autostart_set", { enable }),
   coreVersion: () => invoke<string>("core_version"),
   trafficHistory: () => invoke<{ up: number; down: number }[]>("traffic_history"),
+  /** #567：本地流量统计 TopN + 逐日总量（days 含今天，1/7/30） */
+  trafficStats: (days: number) =>
+    invoke<TrafficStatsReport>("traffic_stats", { days }),
   proxiesSnapshot: () => invoke<GroupView[]>("proxies_snapshot"),
   selectProxy: (group: string, name: string) =>
     invoke<void>("select_proxy", { group, name }),
