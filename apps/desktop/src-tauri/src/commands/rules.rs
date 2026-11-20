@@ -74,13 +74,33 @@ pub(crate) fn process_rule_set(
 ) -> Result<(), String> {
     let process = process.trim().to_string();
     let target = target.trim().to_string();
-    if process.is_empty() || process.len() > 128 {
-        return Err("进程名不能为空且长度需在 128 字符内".into());
+    if !crossbow_core::process_rules::valid_process_name(&process) {
+        return Err("进程名需为 1–128 个字符，不能包含逗号或控制字符".into());
     }
-    if target.is_empty() {
+    if target.is_empty() || target.chars().any(|c| c == ',' || c.is_control()) {
         return Err("策略目标不能为空".into());
     }
     commit_config_change(&state, |data| {
+        // Validate against the same effective render used by the transaction;
+        // the active subscription may have changed while the editor was open.
+        if !matches!(target.as_str(), "DIRECT" | "REJECT") {
+            let rendered = crossbow_core::render_config(data).map_err(|e| e.to_string())?;
+            let document: serde_yaml::Value =
+                serde_yaml::from_str(&rendered.config).map_err(|e| e.to_string())?;
+            let groups = document.get("proxy-groups").and_then(|v| v.as_sequence());
+            let outbounds = document.get("outbounds").and_then(|v| v.as_sequence());
+            let present = groups
+                .into_iter()
+                .flatten()
+                .any(|g| g.get("name").and_then(|v| v.as_str()) == Some(target.as_str()))
+                || outbounds
+                    .into_iter()
+                    .flatten()
+                    .any(|g| g.get("tag").and_then(|v| v.as_str()) == Some(target.as_str()));
+            if !present {
+                return Err("所选策略目标已失效，请刷新后重新选择".into());
+            }
+        }
         match id.as_deref().unwrap_or_default() {
             "" => data.process_rules.push(ProcessRule {
                 id: gen_id(),

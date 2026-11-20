@@ -25,6 +25,13 @@ fn group_names(doc: &Yaml) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// CSV rule fields cannot contain separators or control characters.
+pub fn valid_process_name(name: &str) -> bool {
+    !name.trim().is_empty()
+        && name.chars().count() <= 128
+        && !name.chars().any(|c| c == ',' || c.is_control())
+}
+
 /// 校验并筛出可注入的规则：未知策略组的规则丢弃（返回被丢弃数供日志）。
 fn usable(
     rules: &[ProcessRule],
@@ -33,7 +40,10 @@ fn usable(
     let mut ok = Vec::new();
     let mut dropped = 0;
     for rule in rules {
-        if rule.process.is_empty() || valid_targets(&rule.target) {
+        if valid_process_name(&rule.process)
+            && !rule.target.chars().any(|c| c == ',' || c.is_control())
+            && valid_targets(&rule.target)
+        {
             ok.push((rule.process.clone(), rule.target.clone()));
         } else {
             dropped += 1;
@@ -107,6 +117,28 @@ pub fn inject_json(config_json: &str, rules: &[ProcessRule]) -> Result<String, s
     }
     if dropped > 0 {
         eprintln!("process rules: {dropped} rule(s) dropped, target outbound no longer exists");
+    }
+    // REJECT may be used only by a process rule, so the converter did not
+    // necessarily create its built-in block outbound.
+    if usable_rules.iter().any(|(_, target)| target == "REJECT")
+        && !names.iter().any(|name| name == "REJECT")
+    {
+        let outbounds = doc
+            .get_mut("outbounds")
+            .and_then(Json::as_array_mut)
+            .ok_or_else(|| {
+                serde_json::Error::io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "outbounds must be an array",
+                ))
+            })?;
+        outbounds.push(serde_json::json!({"tag":"REJECT", "type":"block"}));
+    }
+    if !doc.is_object() || doc.get("route").is_some_and(|route| !route.is_object()) {
+        return Err(serde_json::Error::io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "route must be an object",
+        )));
     }
     let injected: Vec<Json> = usable_rules
         .iter()
@@ -186,5 +218,30 @@ mod tests {
         let out = inject_json(json, &[rule("bank", "gone-group")]).unwrap();
         let doc: Json = serde_json::from_str(&out).unwrap();
         assert!(doc["route"]["rules"].as_array().unwrap().is_empty());
+    }
+    #[test]
+    fn malformed_process_fields_are_not_injected() {
+        for process in ["", " ", "curl,DIRECT", "curl\nMATCH,REJECT"] {
+            assert_eq!(inject_yaml(YAML, &[rule(process, "DIRECT")]).unwrap(), YAML);
+        }
+    }
+    #[test]
+    fn json_process_reject_has_a_declared_outbound() {
+        let input = r#"{"outbounds":[{"tag":"DIRECT","type":"direct"}],"route":{"rules":[]}}"#;
+        let result: Json =
+            serde_json::from_str(&inject_json(input, &[rule("curl", "REJECT")]).unwrap()).unwrap();
+        assert_eq!(result["outbounds"][1]["tag"], "REJECT");
+        assert_eq!(result["outbounds"][1]["type"], "block");
+        assert_eq!(result["route"]["rules"][0]["outbound"], "REJECT");
+        let twice: Json = serde_json::from_str(
+            &inject_json(&result.to_string(), &[rule("app", "REJECT")]).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(twice["outbounds"].as_array().unwrap().len(), 2);
+        assert!(inject_json(
+            r#"{"outbounds":[],"route":false}"#,
+            &[rule("curl", "DIRECT")]
+        )
+        .is_err());
     }
 }
