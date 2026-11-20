@@ -225,9 +225,16 @@ impl TrafficStats {
         {
             return;
         }
-        let cutoff = window_start(&local_today(), RETENTION_DAYS);
-        if !cutoff.is_empty() {
-            inner.days.retain(|day, _| day.as_str() >= cutoff.as_str());
+        // 保留窗口锚定数据中最新 day（BTreeMap 有序，恒为业务上的今天），
+        // 而非真实系统时钟：写入方（ingest 用 local_today）正常时两者一致；
+        // 时钟回拨/时区差或测试注入固定日期时，锚真实时钟会把「数据里仍在
+        // 窗口内语义的条目」裁掉（#581 CI 实挂：UTC 日期晚于测试固定日期
+        // 一天，窗口错位导致 32 天 > 30）。
+        if let Some(latest) = inner.days.keys().next_back() {
+            let cutoff = window_start(latest, RETENTION_DAYS);
+            if !cutoff.is_empty() {
+                inner.days.retain(|day, _| day.as_str() >= cutoff.as_str());
+            }
         }
         let payload = serde_json::to_vec(&StatsFileRef { days: &inner.days }).unwrap_or_default();
         // 写失败保持 dirty 下轮再试；统计不应打扰用户
