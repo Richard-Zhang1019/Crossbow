@@ -16,6 +16,7 @@
 //   7 异步失败通知归属、恢复与结构化端口引导
 //   8 监听注册失败在挂载期间处理
 //   9 语言切换后的既有轮询使用新语言
+//   10 连接暂停、关闭校正、配置旧读取与迟到订阅
 //
 // 失败时把截图、IPC 调用计数、控制台错误写入临时目录并打印路径。
 
@@ -37,10 +38,10 @@ function parseArgs(args) {
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--headed") {
       headed = true;
-    } else if (args[i] === "--scenario" && scenario === null && /^[1-9]$/.test(args[i + 1] ?? "")) {
+    } else if (args[i] === "--scenario" && scenario === null && /^(?:[1-9]|10)$/.test(args[i + 1] ?? "")) {
       scenario = Number(args[++i]);
     } else {
-      throw new Error("用法：pnpm verify:desktop [--scenario 1|2|3|4|5|6|7|8|9] [--headed]");
+      throw new Error("用法：pnpm verify:desktop [--scenario 1|2|3|4|5|6|7|8|9|10] [--headed]");
     }
   }
   return { scenario, headed };
@@ -621,8 +622,91 @@ async function scenarioStreamOwnership(page) {
   await assertNoUnknownCommands(page);
 }
 
+
+async function scenarioConnectionPause(page) {
+  await page.evaluate(() => window.__cb.setCommands({ close_connection: () => { throw new Error("close refused"); } }));
+  await gotoNav(page, "监测", ".cb-view-connections");
+  const row = { id: "row-1", host: "example.invalid", rule: "MATCH", chains: "DIRECT", process: "Preview",
+    up: 0, down: 1024, network: "tcp", kind: "HTTP", elapsed_ms: 3000 };
+  const frame = rows => page.evaluate(rows => window.__cb.emit("connections://data", { rows, upload_total: 0, download_total: 1024, memory: 0 }), rows);
+  await frame([row]);
+  const target = page.locator(".cb-connection-row", { hasText: row.host });
+  await target.waitFor();
+  const subs = await calls(page, "subscribe_connections");
+  const unsubs = await calls(page, "unsubscribe_connections");
+  await page.getByRole("button", { name: "暂停", exact: true }).click();
+  await frame([]);
+  assert(await target.count() === 1, "暂停保持已有行");
+  await page.getByRole("button", { name: "已暂停（点击恢复）", exact: true }).click();
+  await eventually(page, "恢复立即应用最新帧", async () => await target.count() === 0);
+  await frame([row]);
+  await target.waitFor();
+  await page.getByRole("button", { name: "暂停", exact: true }).click();
+  await target.getByRole("button").click();
+  await eventually(page, "失败请求已完成", async () => await calls(page, "close_connection") === 1);
+  assert(await target.count() === 1, "关闭失败不能删行");
+  await page.evaluate(() => window.__cb.setCommands({ close_connection: null }));
+  await target.getByRole("button").click();
+  await eventually(page, "关闭成功移除暂停行", async () => await target.count() === 0);
+  await page.getByRole("button", { name: "已暂停（点击恢复）", exact: true }).click();
+  assert(await target.count() === 0, "恢复不能从缓存复活已关闭行");
+  assert(await calls(page, "subscribe_connections") === subs, "暂停恢复不能重订阅");
+  assert(await calls(page, "unsubscribe_connections") === unsubs, "暂停恢复不能退订");
+
+  await page.evaluate(() => {
+    window.__cb.releaseProfileReads = [];
+    window.__cb.setCommands({ list_profiles: () => new Promise(resolve => window.__cb.releaseProfileReads.push(resolve)) });
+  });
+  await gotoNav(page, "配置", ".cb-view-profiles");
+  await eventually(page, "旧读取保持挂起", () => page.evaluate(() => window.__cb.releaseProfileReads.length >= 1));
+  await page.evaluate(() => {
+    const p = { id: "p-a", name: "New profile", kind: "remote", url: "", update_interval_min: 0, override_ids: [] };
+    window.__cb.setCommands({ list_profiles: [p] });
+    window.__cb.emit("profile://updated", "p-a");
+  });
+  await page.locator(".cb-profile-list-item", { hasText: "New profile" }).waitFor();
+  await page.evaluate(() => window.__cb.releaseProfileReads.forEach(resolve => resolve([
+    { id: "p-a", name: "Old profile", kind: "remote", url: "", update_interval_min: 0, override_ids: [] },
+  ])));
+  await sleep(150);
+  assert(await page.locator(".cb-profile-list-item", { hasText: "New profile" }).count() === 1, "旧读取不能覆盖新结果");
+  const dir = artifactsDir();
+  await page.screenshot({ path: path.join(dir, "profiles-read-after.png") });
+
+  console.log(`  配置读取竞态截图：${dir}/profiles-read-after.png`);
+  await page.evaluate(() => window.__cb.setCommands({
+    import_profile_content: () => new Promise(resolve => { window.__cb.completeImport = resolve; }),
+  }));
+  await page.locator('input[type="file"]').setInputFiles({ name: "sample.yaml", mimeType: "text/plain", buffer: Buffer.from("proxies: []") });
+  await eventually(page, "导入操作挂起", () => page.evaluate(() => !!window.__cb.completeImport));
+  await gotoNav(page, "节点", ".cb-view-proxies");
+  await gotoNav(page, "配置", ".cb-view-profiles");
+  await page.evaluate(() => window.__cb.completeImport({ id: "p-imported", name: "Imported", kind: "local", override_ids: [] }));
+  await sleep(150);
+  assert(await page.locator('.cb-view-profiles button[aria-busy="true"]').count() === 0, "旧导入完成不干扰新实例 busy 状态");
+
+  await page.evaluate(() => {
+    window.__cb.pendingOwner = null;
+    window.__cb.setCommands({
+      subscribe_connections: ({ subscriber }) => new Promise(resolve => {
+        window.__cb.finishSubscribe = () => { window.__cb.pendingOwner = subscriber; resolve(); };
+      }),
+      unsubscribe_connections: ({ subscriber }) => {
+        if (window.__cb.pendingOwner === subscriber) window.__cb.pendingOwner = null;
+      },
+    });
+  });
+  await gotoNav(page, "监测", ".cb-view-connections");
+  await eventually(page, "订阅仍在等待", () => page.evaluate(() => !!window.__cb.finishSubscribe));
+  await gotoNav(page, "配置", ".cb-view-profiles");
+  await page.evaluate(() => window.__cb.finishSubscribe());
+  await eventually(page, "迟到订阅必须释放自身身份", () => page.evaluate(() => window.__cb.pendingOwner === null));
+  await assertNoUnknownCommands(page);
+}
+
 // ---------------------------------------------------------------- 编排
 const SCENARIOS = [
+  { id: 10, name: "暂停订阅稳定、关闭校正与配置旧读取", fn: scenarioConnectionPause },
   { id: 1, name: "配置快切忽略同名节点旧结果", fn: scenarioProfileSwitch },
   { id: 2, name: "测速取消后停止派发", fn: scenarioCancelStopsDispatch },
   { id: 3, name: "诊断原样本/恢复样本与导出白名单", fn: scenarioDiagnostics },
