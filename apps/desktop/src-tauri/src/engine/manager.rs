@@ -74,6 +74,9 @@ struct Inner {
     external_pid: Option<u32>,
     /// 收养进程的可执行文件身份；对外部 PID 发信号/提权前必须校验。
     external_binary: Option<PathBuf>,
+    /// 杀不确认（进程仍存活）时保留的句柄：进程随后自行退出后由
+    /// 后台回收线程回收，避免 unix 僵尸留到 GUI 退出才回收（#560）。
+    reaps: Arc<Mutex<Vec<Child>>>,
 }
 
 /// 线程间共享状态；CoreManager 可 Clone。
@@ -279,6 +282,45 @@ impl Shared {
         Ok(Some((pid, port, secret)))
     }
 
+    fn defer_reap(&self, child: Child) {
+        let pending = self
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .reaps
+            .clone();
+        let mut children = pending.lock().unwrap_or_else(|e| e.into_inner());
+        let start_worker = children.is_empty();
+        children.push(child);
+        drop(children);
+        if start_worker {
+            crate::lifecycle::authorization::spawn_background(move || loop {
+                {
+                    let mut children = pending.lock().unwrap_or_else(|e| e.into_inner());
+                    children.retain_mut(|child| match child.try_wait() {
+                        Ok(Some(_)) => false,
+                        Ok(None) => true,
+                        Err(_error) => {
+                            // An interrupted wait must retain ownership for the next tick.
+                            #[cfg(unix)]
+                            {
+                                _error.raw_os_error() != Some(libc::ECHILD)
+                            }
+                            #[cfg(not(unix))]
+                            {
+                                true
+                            }
+                        }
+                    });
+                    if children.is_empty() {
+                        return;
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(200));
+            });
+        }
+    }
+
     fn kill_child(&self) -> bool {
         let (child, external) = {
             let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
@@ -327,15 +369,17 @@ impl Shared {
                 let _ = child.wait();
                 true
             } else {
-                // Preserve enough identity to retry safely; the child handle itself
-                // cannot be retained after this bounded stop attempt.
+                // Preserve enough identity to retry safely. Keep the child
+                // handle in the reaper set: if the process exits on its own
+                // later, the background reaper collects it instead of leaving a
+                // zombie until GUI exit（#560）.
+                self.defer_reap(child);
                 let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
                 inner.external_pid = Some(pid);
                 inner.external_binary = Some(self.binary_path.clone());
                 inner.detached = false;
                 false
             }
-            // gone=false 时故意丢弃 Child：进程仍存活，句柄无再收价值
         } else if let Some((pid, binary)) = external {
             #[cfg(target_os = "linux")]
             let stopped = if crate::network::linux_service::managed_pid() == Some(pid) {
@@ -398,6 +442,7 @@ impl CoreManager {
                     detached: false,
                     external_pid: None,
                     external_binary: None,
+                    reaps: Arc::default(),
                 }),
             }),
         }
@@ -1443,10 +1488,18 @@ fn kill_external_checked(pid: u32, expected: Option<&Path>, work_dir: Option<&Pa
     }
     #[cfg(not(unix))]
     {
-        let _ = crate::process::command("taskkill")
-            .args(["/F", "/PID", &pid.to_string()])
-            .output();
-        wait_for_exit(gone, KILL_GRACE)
+        // #560：taskkill /PID 与身份校验之间存在 PID 复用窗口；改持句柄
+        // 校验后终止。None（身份不符/查询失败）保留描述符走既有拒绝路径；
+        // Some(false) 进程已不存在，交给 gone 判定自然确认。
+        match terminate_verified_process(pid, expected) {
+            None => {
+                eprintln!(
+                    "core kill: identity cannot be verified via handle; retaining descriptor"
+                );
+                return false;
+            }
+            _ => wait_for_exit(gone, KILL_GRACE),
+        }
     }
 }
 
@@ -1870,6 +1923,60 @@ fn process_matches_binary(pid: u32, expected: &Path) -> Option<bool> {
             ),
             _ => Some(actual.eq_ignore_ascii_case(&expected.to_string_lossy())),
         }
+    }
+}
+
+/// #560：`taskkill /F /PID` 与身份校验之间存在 PID 复用窗口——校验通过后
+/// 进程退出、PID 被系统分配给无关进程，taskkill 就会误杀。改为持句柄校验
+/// 后终止：OpenProcess 的句柄引用内核对象，持有期间 PID 不会复用，
+/// QueryFullProcessImageNameW 与 TerminateProcess 作用于同一对象。
+/// 返回 Some(true)=已终止；Some(false)=进程已不存在；None=身份不符或查询
+/// 失败，调用方按既有拒绝路径保留描述符。
+#[cfg(target_os = "windows")]
+fn terminate_verified_process(pid: u32, expected: &Path) -> Option<bool> {
+    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_INVALID_PARAMETER};
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, TerminateProcess, PROCESS_NAME_WIN32,
+        PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
+    };
+
+    unsafe {
+        let handle = OpenProcess(
+            PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION,
+            0,
+            pid,
+        );
+        if handle.is_null() {
+            return if GetLastError() == ERROR_INVALID_PARAMETER {
+                Some(false)
+            } else {
+                None
+            };
+        }
+        let mut buf = [0_u16; 1024];
+        let mut len = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, buf.as_mut_ptr(), &mut len);
+        if ok == 0 {
+            CloseHandle(handle);
+            return None;
+        }
+        let actual = String::from_utf16_lossy(&buf[..len as usize]);
+        let verified = match (
+            std::fs::canonicalize(&actual),
+            std::fs::canonicalize(expected),
+        ) {
+            (Ok(actual), Ok(expected)) => actual
+                .as_os_str()
+                .eq_ignore_ascii_case(expected.as_os_str()),
+            _ => actual.eq_ignore_ascii_case(&expected.to_string_lossy()),
+        };
+        if !verified {
+            CloseHandle(handle);
+            return None;
+        }
+        let terminated = TerminateProcess(handle, 1) != 0;
+        CloseHandle(handle);
+        Some(terminated)
     }
 }
 
@@ -2659,6 +2766,55 @@ pub(crate) mod tests {
     /// 收养死亡回调的测试桩：不做任何重建。
     fn noop_death() -> impl Fn() + Send + 'static {
         || {}
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn verified_termination_rejects_foreign_image_and_handles_missing_pid() {
+        assert_eq!(
+            terminate_verified_process(std::process::id(), Path::new("unrelated-missing-core.exe")),
+            None
+        );
+        assert_eq!(
+            terminate_verified_process(0, Path::new("unused.exe")),
+            Some(false)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn deferred_child_is_reaped_without_another_core_operation() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = CoreManager::new(PathBuf::new(), dir.path().into());
+        let child = std::process::Command::new("/bin/sh")
+            .args(["-c", "sleep 0.05"])
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let pending = manager
+            .shared
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .reaps
+            .clone();
+        manager.shared.defer_reap(child);
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while !pending.lock().unwrap_or_else(|e| e.into_inner()).is_empty() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "background reaper did not finish"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(
+            unsafe { libc::waitpid(pid as i32, std::ptr::null_mut(), libc::WNOHANG) },
+            -1
+        );
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ECHILD)
+        );
     }
 
     #[test]

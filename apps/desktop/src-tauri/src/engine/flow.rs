@@ -73,7 +73,22 @@ pub(crate) fn start_core_locked(state: &AppState) -> Result<(), String> {
     };
     let need = if is_singbox { "sing-box" } else { "mihomo" };
     #[cfg(target_os = "linux")]
-    let _ = ensure_engine_binary(state, need)?;
+    {
+        // Linux 服务端永远跑安装时钉定的副本（linux_service::binary_path 的
+        // CORE 常量，当前固定 mihomo）；GUI 的 ensure_engine_binary 只保证
+        // 数据目录副本就绪，并不影响服务实际运行的内核。二者不一致时
+        // （GUI 切到 sing-box），配置由错误内核渲染必然启动失败且难以
+        // 排查——显式报错，而不是静默跑错内核、仅靠 TUN 场景的
+        // engine==Mihomo 门兜底（#560）。
+        let service_core = crate::network::linux_service::binary_path();
+        if !crate::engine::download::is_core_bin(&service_core, need) {
+            return Err(format!(
+                "Linux 系统服务当前固定运行 mihomo（{}），无法以 {need} 启动；请切回 mihomo 引擎后再启动",
+                service_core.display()
+            ));
+        }
+        ensure_engine_binary(state, need)?;
+    }
     #[cfg(not(target_os = "linux"))]
     let mut binary = ensure_engine_binary(state, need)?;
     let rendered = render_current(state, !safe)?;

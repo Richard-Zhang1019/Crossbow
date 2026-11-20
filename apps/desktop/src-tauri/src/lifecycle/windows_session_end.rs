@@ -37,7 +37,11 @@ unsafe extern "system" fn session_end_proc(
             if let Some(state) = app.try_state::<crate::AppState>() {
                 if state.sysproxy.status().enabled {
                     if let Err(error) = state.sysproxy.disable() {
-                        eprintln!("session-end proxy restore failed: {error}");
+                        // 还原失败（含超时被杀前的半途）：disable_locked 在
+                        // 失败路径保留 sysproxy journal，下次启动的
+                        // clear_stale_system_proxy_early（journal 端口无监听
+                        // 即清理）自愈兜底——这里不需要第二机会（#559）。
+                        eprintln!("session-end proxy restore failed (journal retained, heals on next launch): {error}");
                     }
                 }
             }
