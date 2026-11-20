@@ -955,8 +955,8 @@ fn navigation_target(page: &str, source: &str) -> String {
 /// #561：Action → 通知点击后的导航页。两个 Retry 动作在
 /// notification_action 入口已单独处理（下载重试走后台任务、系统代理
 /// 恢复走 restore 流程），此处返回 None 由调用方忽略——不用
-/// unreachable!()（新增枚举变体时那是可触达的 panic 点），也不设
-/// `_ =>` 通配（通分会消除编译器对新增变体的完备性检查）。
+/// unreachable!()，防止以后调整早退流程时意外 panic。当前两个分支
+/// 被早退保护；原 match 已有穷尽检查，新函数同样不设 `_ =>` 通配。
 fn navigation_page(action: &Action) -> Option<&'static str> {
     match action {
         Action::Settings => Some("settings"),
@@ -1463,7 +1463,7 @@ mod tests {
     #[test]
     fn navigation_page_maps_navigable_actions_and_ignores_retries() {
         // #561：导航动作逐一映射；Retry 动作返回 None 而非 panic
-        //（原先两处 unreachable!() 在新增枚举变体时是可触达的 panic 点）
+        // 原先的穷尽检查仍保留；遗漏新变体会在编译期报错。
         assert_eq!(navigation_page(&Action::Settings), Some("settings"));
         assert_eq!(navigation_page(&Action::Diagnostics), Some("diagnostics"));
         assert_eq!(navigation_page(&Action::Logs), Some("logs"));
