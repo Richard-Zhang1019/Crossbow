@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
-
+import { useCallback, useEffect, useRef, useState } from "react";
 import Select from "@/components/Select";
+import Dialog from "@/components/Dialog";
+import { Icon } from "@/components/Icon";
 import { Button } from "@/components/Button";
 import { Input } from "@/components/Controls";
 import { notify } from "@/notifications/service";
@@ -8,133 +9,256 @@ import { ipc, type ProcessRuleStatus } from "@/services/ipc";
 import { useT } from "@/i18n/i18n";
 import "./ProcessRules.css";
 
-/**
- * 按进程分流规则（#570）：进程名 → 策略目标（DIRECT/REJECT/策略组）。
- * 规则前插到订阅规则之前（渲染层注入），变更走内核热重载。
- * `presetProcess` 非空时打开新增表单并预填（连接页「为此进程创建规则」入口）。
- */
-export default function ProcessRules({ presetProcess }: { presetProcess?: string }) {
+type Draft = { id: string | null; process: string; target: string };
+export default function ProcessRules({
+  presetProcess,
+}: {
+  presetProcess?: string;
+}) {
   const t = useT();
   const [status, setStatus] = useState<ProcessRuleStatus | null>(null);
   const [readError, setReadError] = useState(false);
-  const [editing, setEditing] = useState<{ id: string | null; process: string; target: string } | null>(
-    presetProcess ? { id: null, process: presetProcess, target: "DIRECT" } : null,
-  );
-
+  const [editing, setEditing] = useState<Draft | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const alive = useRef(false),
+    sequence = useRef(0),
+    pending = useRef(false);
   const load = useCallback(async () => {
+    const request = ++sequence.current;
     try {
-      setStatus(await ipc.processRules());
-      setReadError(false);
+      const next = await ipc.processRules();
+      if (alive.current && sequence.current === request) {
+        setStatus(next);
+        setReadError(false);
+      }
     } catch (error) {
-      setReadError(true);
-      notify.error(error, "process-rules-read");
+      if (alive.current && sequence.current === request) {
+        setReadError(true);
+        notify.error(error, "process-rules-read");
+      }
     }
   }, []);
-
   useEffect(() => {
+    alive.current = true;
     void load();
+    const off = [
+      ipc.onProfileSwitched(() => void load()),
+      ipc.onProfileUpdated(() => void load()),
+    ];
+    return () => {
+      alive.current = false;
+      sequence.current++;
+      off.forEach((p) => void p.then((f) => f()));
+    };
   }, [load]);
-
-  const save = async (rule: { id: string | null; process: string; target: string }) => {
-    const process = rule.process.trim();
+  useEffect(() => {
+    if (presetProcess)
+      setEditing({ id: null, process: presetProcess, target: "DIRECT" });
+  }, [presetProcess]);
+  const policy = (value: string) =>
+    value === "DIRECT"
+      ? t("pr.direct")
+      : value === "REJECT"
+        ? t("pr.reject")
+        : value;
+  const save = async () => {
+    if (!editing || pending.current) return;
+    const draft = editing,
+      process = draft.process.trim();
     if (!process) {
       notify.error(t("pr.processRequired"), "process-rule-save");
       return;
     }
-    const ok = await notify.run(
-      rule.id ? `process-rule-${rule.id}` : "process-rule-new",
-      t("studio.processRules"),
-      () => ipc.setProcessRule(rule.id, process, rule.target),
-      t("pr.saved"),
-    );
-    if (ok) {
-      setEditing(null);
-      void load();
+    pending.current = true;
+    setBusy("save");
+    try {
+      const result = await notify.run(
+        draft.id ? `process-rule-${draft.id}` : "process-rule-new",
+        t("studio.processRules"),
+        () => ipc.setProcessRule(draft.id, process, draft.target),
+        t("pr.saved"),
+      );
+      if (alive.current && result.ok) {
+        setEditing(null);
+        await load();
+      }
+    } finally {
+      pending.current = false;
+      if (alive.current) setBusy(null);
     }
   };
-
   const remove = async (id: string) => {
-    await notify.run(
-      `process-rule-remove-${id}`,
-      t("studio.processRules"),
-      () => ipc.removeProcessRule(id),
-      t("pr.removed"),
-    );
-    void load();
+    if (pending.current) return;
+    pending.current = true;
+    setBusy(id);
+    try {
+      const result = await notify.run(
+        `process-rule-remove-${id}`,
+        t("studio.processRules"),
+        () => ipc.removeProcessRule(id),
+        t("pr.removed"),
+      );
+      if (alive.current && result.ok) await load();
+    } finally {
+      pending.current = false;
+      if (alive.current) setBusy(null);
+    }
   };
-
   return (
-    <div className="cb-process-rules">
+    <section className="cb-process-rules" aria-label={t("studio.processRules")}>
+      <div className="cb-process-toolbar">
+        <span className="cb-process-count">
+          {t("pr.list")}
+          <span>{status?.rules.length ?? "—"}</span>
+        </span>
+        <Button
+          variant="primary"
+          disabled={!status || busy !== null || readError}
+          onClick={() =>
+            setEditing({ id: null, process: "", target: "DIRECT" })
+          }
+        >
+          <span aria-hidden="true">＋</span>
+          {t("pr.add")}
+        </Button>
+      </div>
       {readError ? (
-        <p role="status">{t("home.statePendingHint")}</p>
+        <div className="cb-process-empty">
+          <p>{t("home.statePendingHint")}</p>
+          <Button onClick={() => void load()}>{t("home.retryState")}</Button>
+        </div>
+      ) : !status ? (
+        <p role="status" className="cb-control-note">
+          {t("workflow.loading")}
+        </p>
+      ) : status.rules.length === 0 ? (
+        <div className="cb-process-empty">
+          <Icon name="sliders" size={26} />
+          <h3>{t("pr.emptyTitle")}</h3>
+          <p>{t("pr.empty")}</p>
+        </div>
       ) : (
-        <>
-          {editing ? (
-            <form
-              className="cb-process-form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void save(editing);
-              }}
-            >
+        <div
+          className="cb-process-table"
+          role="table"
+          aria-label={t("pr.list")}
+        >
+          <div className="cb-process-columns" role="row">
+            <span role="columnheader">{t("pr.processLabel")}</span>
+            <span role="columnheader">{t("pr.targetLabel")}</span>
+            <span role="columnheader">{t("pr.actions")}</span>
+          </div>
+          {status.rules.map((rule) => {
+            const unavailable = !status.targets.includes(rule.target);
+            return (
+              <div key={rule.id} className="cb-process-row" role="row">
+                <div className="cb-process-identity" role="cell">
+                  <span className="cb-process-glyph">
+                    <Icon name="cube" size={18} />
+                  </span>
+                  <strong title={rule.process}>{rule.process}</strong>
+                </div>
+                <div className="cb-process-route" role="cell">
+                  <Icon name="arrow-right" />
+                  <span className="cb-process-destination" title={rule.target}>
+                    {policy(rule.target)}
+                  </span>
+                  {unavailable && (
+                    <span className="cb-process-unavailable">
+                      {t("pr.unavailable")}
+                    </span>
+                  )}
+                </div>
+                <div className="cb-process-actions" role="cell">
+                  <Button
+                    size="small"
+                    disabled={busy !== null}
+                    onClick={() =>
+                      setEditing({
+                        id: rule.id,
+                        process: rule.process,
+                        target: rule.target,
+                      })
+                    }
+                  >
+                    {t("pr.edit")}
+                  </Button>
+                  <Button
+                    size="small"
+                    tone="danger"
+                    loading={busy === rule.id}
+                    disabled={busy !== null}
+                    onClick={() => void remove(rule.id)}
+                  >
+                    {t("pr.remove")}
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <p className="cb-process-footnote">{t("pr.footnote")}</p>
+      {editing && (
+        <Dialog
+          title={t(editing.id ? "pr.editTitle" : "pr.add")}
+          onClose={() => {
+            if (!pending.current) setEditing(null);
+          }}
+        >
+          <form
+            className="cb-process-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void save();
+            }}
+          >
+            <label>
+              {t("pr.processLabel")}
               <Input
+                autoFocus
+                maxLength={128}
+                disabled={busy !== null}
                 value={editing.process}
-                onChange={(e) => setEditing({ ...editing, process: e.target.value })}
+                onChange={(e) =>
+                  setEditing({ ...editing, process: e.target.value })
+                }
                 placeholder={t("pr.processPlaceholder")}
-                aria-label={t("pr.processLabel")}
               />
+            </label>
+            <label>
+              {t("pr.targetLabel")}
               <Select
                 label={t("pr.targetLabel")}
+                disabled={busy !== null}
                 value={editing.target}
-                options={(status?.targets ?? ["DIRECT"]).map((target) => ({
-                  value: target,
-                  label: target,
-                }))}
-                onChange={(v) => setEditing({ ...editing, target: v })}
+                options={(status?.targets ?? ["DIRECT", "REJECT"]).map(
+                  (value) => ({ value, label: policy(value) }),
+                )}
+                onChange={(target) => setEditing({ ...editing, target })}
               />
-              <Button variant="primary" onClick={() => void save(editing)}>
+            </label>
+            <p className="cb-control-note">{t("pr.editorHint")}</p>
+            <div className="cb-process-form-actions">
+              <Button disabled={busy !== null} onClick={() => setEditing(null)}>
+                {t("pr.cancel")}
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                loading={busy === "save"}
+                disabled={
+                  busy !== null ||
+                  !editing.process.trim() ||
+                  !(status?.targets ?? []).includes(editing.target)
+                }
+              >
                 {t("pr.save")}
               </Button>
-              <Button onClick={() => setEditing(null)}>{t("pr.cancel")}</Button>
-            </form>
-          ) : (
-            <div className="cb-process-form">
-              <Button
-                variant="primary"
-                onClick={() => setEditing({ id: null, process: "", target: "DIRECT" })}
-              >
-                {t("pr.add")}
-              </Button>
             </div>
-          )}
-          {status && status.rules.length > 0 && (
-            <div className="cb-process-list">
-              {status.rules.map((rule) => (
-                <div key={rule.id} className="cb-process-row">
-                  <strong className="cb-process-name">{rule.process}</strong>
-                  <span className="cb-process-target">{rule.target}</span>
-                  <div className="cb-process-actions">
-                    <Button
-                      size="small"
-                      onClick={() =>
-                        setEditing({ id: rule.id, process: rule.process, target: rule.target })
-                      }
-                    >
-                      {t("pr.edit")}
-                    </Button>
-                    <Button size="small" tone="danger" onClick={() => void remove(rule.id)}>
-                      {t("pr.remove")}
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {status && status.rules.length === 0 && !editing && (
-            <p className="cb-control-note">{t("pr.empty")}</p>
-          )}
-        </>
+          </form>
+        </Dialog>
       )}
-    </div>
+    </section>
   );
 }
