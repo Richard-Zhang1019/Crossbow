@@ -8,6 +8,7 @@ pub mod overrides;
 pub mod profiles;
 pub mod proxies;
 pub mod rules;
+pub mod scene;
 pub mod settings;
 pub mod takeover;
 pub mod update;

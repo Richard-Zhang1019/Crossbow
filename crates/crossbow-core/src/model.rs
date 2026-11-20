@@ -6,6 +6,7 @@
 
 use crate::emoji::default_flag_emoji;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// 当前存储 schema 版本。每次不兼容变更 +1，并在 `migrate` 中补一条迁移。
 pub const SCHEMA_VERSION: u32 = 2;
@@ -182,10 +183,36 @@ pub struct StoreSchema {
     /// v3：应用更新设置。
     #[serde(default)]
     pub update: UpdateSettings,
+    /// v3：SSID 网络场景（#566）。serde default 兜底且不推进
+    /// SCHEMA_VERSION——与 ui/logs/update 同一先例，保证旧版本程序
+    /// （自动更新回滚）读新文件不被 SchemaTooNew 拒绝。
+    #[serde(default)]
+    pub scenes: NetworkScenes,
     /// v3：按进程分流规则（#570）。渲染时前插到订阅规则之前；目标策略
     /// 失效（订阅更新后组名消失）的规则在渲染时防御性丢弃。
     #[serde(default)]
     pub process_rules: Vec<ProcessRule>,
+}
+
+/// SSID 网络场景（#566）：Wi-Fi 名称 → 进入该网络时的接管动作。
+/// 动作值只认 `"direct"`（直连）与 `"proxy"`（代理）；未知值按未配置
+/// 处理（不干预），防止旧/异构数据破坏启动。
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct NetworkScenes {
+    #[serde(default)]
+    pub rules: BTreeMap<String, String>,
+}
+
+impl NetworkScenes {
+    /// 当前 SSID 命中的动作；未命中、SSID 未知或动作值非法时为 None。
+    pub fn target_action(&self, ssid: Option<&str>) -> Option<&str> {
+        let ssid = ssid?;
+        let action = self.rules.get(ssid)?;
+        match action.as_str() {
+            "direct" | "proxy" => Some(action),
+            _ => None,
+        }
+    }
 }
 
 /// 一条按进程分流规则（#570）：`process` 为内核连接元数据里的进程名
@@ -295,6 +322,7 @@ impl Default for StoreSchema {
             ui: UiSettings::default(),
             logs: LogSettings::default(),
             update: UpdateSettings::default(),
+            scenes: NetworkScenes::default(),
             process_rules: Vec::new(),
         }
     }
@@ -496,5 +524,32 @@ mod tests {
         let p = s.profile("a").unwrap();
         assert_eq!(p.last_updated, Some(42));
         assert_eq!(p.traffic.unwrap().total, 10);
+    }
+    #[test]
+    fn network_scenes_match_only_known_actions() {
+        // #566：SSID 命中、未命中、SSID 未知、动作值非法各走各的分支。
+        let mut s = StoreSchema::default();
+        s.scenes.rules.insert("Home".into(), "direct".into());
+        s.scenes.rules.insert("Office".into(), "proxy".into());
+        s.scenes.rules.insert("Broken".into(), "turbo".into());
+        assert_eq!(s.scenes.target_action(Some("Home")), Some("direct"));
+        assert_eq!(s.scenes.target_action(Some("Office")), Some("proxy"));
+        assert_eq!(s.scenes.target_action(Some("Broken")), None);
+        assert_eq!(s.scenes.target_action(Some("Cafe")), None);
+        assert_eq!(s.scenes.target_action(None), None);
+    }
+
+    #[test]
+    fn scenes_section_defaults_and_roundtrips() {
+        use crate::Store;
+        // serde default 兜底：旧文件（无 scenes 字段）解析成功且不推版本号。
+        let legacy =
+            Store::load_str(r#"{"schema_version":2,"profiles":[],"overrides":[]}"#).unwrap();
+        assert!(legacy.scenes.rules.is_empty());
+        let mut s = StoreSchema::default();
+        s.scenes.rules.insert("Home".into(), "proxy".into());
+        let raw = serde_json::to_string(&s).unwrap();
+        let back = Store::load_str(&raw).unwrap();
+        assert_eq!(back.scenes.target_action(Some("Home")), Some("proxy"));
     }
 }

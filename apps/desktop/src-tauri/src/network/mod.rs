@@ -5,7 +5,9 @@ pub mod coexist;
 pub mod linux_service;
 #[cfg(any(target_os = "macos", test))]
 pub mod network_watch;
+pub mod scenes;
 pub mod site_tests;
+pub mod ssid;
 pub mod sysproxy;
 #[cfg(target_os = "macos")]
 pub mod tun;
