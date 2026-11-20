@@ -5,6 +5,7 @@ import {
   sleep,
   artifactsDir,
 } from "./verify-lib.mjs";
+import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 const dir = process.env.SCENES_EVIDENCE || artifactsDir();
 mkdirSync(dir, { recursive: true });
@@ -17,6 +18,7 @@ const data = {
   activeScene: ["Home-5G", "direct"],
   supported: true,
   networkState: "available",
+  location: "authorized",
 };
 try {
   const ctx = await browser.newContext({
@@ -103,6 +105,32 @@ try {
       )
         throw Error("unsupported platform must disable edits");
     }
+    // Exercise the async system prompt: first return pending, then change
+    // permission without a focus event and require the page to observe it.
+    await p.evaluate((data) => {
+      window.__cb.scenePermission = "not_determined";
+      window.__cb.setCommands({
+        network_scenes_get: () => ({
+          ...data,
+          currentSsid: null,
+          networkState: "unavailable",
+          location: window.__cb.scenePermission,
+        }),
+        network_scene_request_location: () => "not_determined",
+      });
+    }, data);
+    await p.getByRole("button", { name: "刷新网络状态", exact: true }).click();
+    await p.getByRole("button", { name: "请求定位权限", exact: true }).waitFor();
+    await p.waitForFunction(() => window.__cb.calls.network_scene_request_location === 1);
+    await p.evaluate(() => { window.__cb.scenePermission = "denied"; });
+    await p.getByText("定位权限已被拒绝。", { exact: false }).waitFor();
+    assert.equal(await p.evaluate(() => window.__cb.calls.network_scene_request_location), 1);
+    await p.screenshot({ path: dir + "/permission-denied.png" });
+    await p.evaluate(() => { window.__cb.scenePermission = "authorized"; });
+    await p.getByRole("button", { name: "刷新网络状态", exact: true }).click();
+    await p.getByText("Wi-Fi 名称暂不可用", { exact: true }).first().waitFor();
+    assert.equal(await p.getByText("当前未连接 Wi-Fi，连接后即可按网络自动切换。", { exact: true }).count(), 0);
+
     await p.evaluate(() =>
       window.__cb.setCommands({
         network_scenes_get: () => Promise.reject("read failed"),

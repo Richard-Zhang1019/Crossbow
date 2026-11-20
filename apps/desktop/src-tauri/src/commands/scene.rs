@@ -59,8 +59,29 @@ pub(crate) async fn network_scenes_get(app: AppHandle) -> Result<SceneStatus, St
 /// 发起定位授权请求（首次弹系统授权框；允许后 Crossbow 出现在定位服务
 /// 列表，SSID 探测才能拿到真实名称）。幂等：已授权/已拒绝时系统不再弹。
 #[tauri::command]
-pub(crate) fn network_scene_request_location() -> location::LocationPermission {
-    location::request_when_in_use()
+pub(crate) async fn network_scene_request_location(
+    app: AppHandle,
+) -> Result<location::LocationPermission, String> {
+    #[cfg(target_os = "macos")]
+    {
+        tauri::async_runtime::spawn_blocking(move || {
+            let (sender, receiver) = std::sync::mpsc::channel();
+            app.run_on_main_thread(move || {
+                let _ = sender.send(location::request_when_in_use());
+            })
+            .map_err(|error| error.to_string())?;
+            receiver
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .map_err(|error| error.to_string())
+        })
+        .await
+        .map_err(|error| error.to_string())?
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        Ok(location::status())
+    }
 }
 
 #[tauri::command]

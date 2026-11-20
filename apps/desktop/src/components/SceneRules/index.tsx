@@ -77,6 +77,16 @@ export default function SceneRules() {
     }
   }, [status?.location, readError, requestLocation]);
 
+  useEffect(() => {
+    if (status?.location !== "not_determined" || readError) return;
+    let remaining = 60;
+    const timer = window.setInterval(() => {
+      void load();
+      if (--remaining === 0) window.clearInterval(timer);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [status?.location, readError, load]);
+
   const mutate = async (ssid: string, next: "direct" | "proxy" | null) => {
     if (operation.current) return;
     operation.current = true;
@@ -207,7 +217,7 @@ export default function SceneRules() {
             {t("settings.scenes.locationDenied")}
           </p>
         ) : (
-          <p className="cb-scene-access-note">{t("settings.scenes.noWifi")}</p>
+          <p className="cb-scene-access-note">{t(status.networkState === "disconnected" ? "settings.scenes.noWifi" : "settings.scenes.unavailable")}</p>
         )
       )}
       {rules.length > 0 ? (
