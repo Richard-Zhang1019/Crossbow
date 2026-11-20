@@ -90,6 +90,23 @@ impl WsHub {
         Ok(())
     }
 
+    /// Serialize page reader installation with the final release. A watchdog
+    /// or controller lookup may finish after the page has already left; it must
+    /// neither resurrect an unwanted channel nor race a release stopping it.
+    fn subscribe_page<F>(&self, name: &'static str, spawn_reader: F) -> Result<(), String>
+    where
+        F: FnOnce(Arc<AtomicBool>, Arc<Mutex<Instant>>) + Send + 'static,
+    {
+        let wanted = self.wanted.lock().unwrap_or_else(|e| e.into_inner());
+        if !wanted.contains_key(name) {
+            return Ok(());
+        }
+        // Lock order is always wanted -> active, including release/staleness.
+        let result = self.subscribe(name, spawn_reader);
+        drop(wanted);
+        result
+    }
+
     /// 页面订阅意图登记：必须在订阅命令的最入口调用（require_controller
     /// 之前）——内核 Starting 期间挂载的页面订阅命令会失败，意图集是
     /// Running 后补订的唯一依据。同一订阅方重复登记幂等。
@@ -156,25 +173,21 @@ impl WsHub {
     /// 通道意图并停读线程——先到的页面退订不能杀死后到页面的数据流
     /// （#555：概览卸载的延迟退订曾把连接页刚建立的订阅直接删掉）。
     pub fn release(&self, name: &str, subscriber: &str) {
-        let drained = {
-            let mut wanted = self.wanted.lock().unwrap_or_else(|e| e.into_inner());
-            let Some(subscribers) = wanted.get_mut(name) else {
-                return;
-            };
-            subscribers.remove(subscriber);
-            if !subscribers.is_empty() {
-                return;
-            }
-            wanted.remove(name);
-            if name == "connections" {
-                // 没人订连接了，进程解析意图随之失效
-                wanted.remove("connection-processes");
-            }
-            true
+        let mut wanted = self.wanted.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(subscribers) = wanted.get_mut(name) else {
+            return;
         };
-        if drained {
-            self.stop_reader(name);
+        subscribers.remove(subscriber);
+        if !subscribers.is_empty() {
+            return;
         }
+        wanted.remove(name);
+        if name == "connections" {
+            wanted.remove("connection-processes");
+        }
+        // Keep wanted locked until the old reader is stopped. Otherwise a new
+        // subscriber can install its reader here and have this release kill it.
+        self.stop_reader(name);
     }
 
     /// 停掉指定通道的读线程（若有）。
@@ -254,7 +267,7 @@ impl WsHub {
         emit: impl Fn(&'static str, serde_json::Value) + Send + 'static,
     ) -> Result<(), String> {
         let url = ws_url(port, secret, "/traffic");
-        self.subscribe("traffic", move |flag, last_seen| {
+        self.subscribe_page("traffic", move |flag, last_seen| {
             std::thread::spawn(move || {
                 read_loop(
                     &url,
@@ -281,14 +294,17 @@ impl WsHub {
         emit: impl Fn(&'static str, serde_json::Value) + Send + 'static,
     ) -> Result<(), String> {
         let url = ws_url(port, secret, "/connections");
-        // 粘性意图：任一订阅方要过进程解析，reader 就带（#555 集合语义）。
-        let include_processes = self
-            .wanted
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .contains_key("connection-processes");
-        let process_lookup = include_processes.then(|| self.connection_process_lookup.clone());
-        self.subscribe("connections", move |flag, last_seen| {
+        // Snapshot the processing mode and install the reader under the same
+        // intent lock. A delayed overview/watchdog subscription must not replace
+        // a process-aware reader with an earlier include_processes=false choice.
+        let wanted = self.wanted.lock().unwrap_or_else(|e| e.into_inner());
+        if !wanted.contains_key("connections") {
+            return Ok(());
+        }
+        let process_lookup = wanted
+            .contains_key("connection-processes")
+            .then(|| self.connection_process_lookup.clone());
+        let result = self.subscribe("connections", move |flag, last_seen| {
             std::thread::spawn(move || {
                 let mut last_emit = Instant::now() - CONN_MIN_INTERVAL;
                 read_loop(
@@ -319,7 +335,9 @@ impl WsHub {
                     },
                 );
             });
-        })
+        });
+        drop(wanted);
+        result
     }
 
     pub fn subscribe_logs(
@@ -1146,6 +1164,49 @@ pub(crate) mod tests {
         assert!(!hub.any_page_channel_wanted());
     }
 
+    #[test]
+    fn late_resubscribe_does_not_resurrect_released_page_channels() {
+        let hub = WsHub::default();
+        hub.want_channel("traffic", "home");
+        hub.want_connections("home", false);
+        // Controller lookup/watchdog obtained its arguments before unmount.
+        hub.release("traffic", "home");
+        hub.release("connections", "home");
+        // A log page may still be present, so the watchdog's coarse check can
+        // be true. Each page channel must check its own intent when installing.
+        hub.begin_log_view("logs-page".into());
+        hub.subscribe_traffic(1, "s", |_, _| {}).unwrap();
+        hub.subscribe_connections(1, "s", |_, _| {}).unwrap();
+        assert!(hub.active.lock().unwrap().is_empty());
+        hub.end_log_view("logs-page");
+    }
+
+    #[test]
+    fn page_reader_remains_live_through_concurrent_owner_handoff() {
+        let hub = Arc::new(WsHub::default());
+        // No sockets or scheduling-dependent sleeps: the reader flag is the
+        // lifetime contract shared with the actual WebSocket loop.
+        for _ in 0..256 {
+            hub.want_channel("traffic", "old");
+            hub.subscribe_page("traffic", |_, _| {}).unwrap();
+            let barrier = Arc::new(std::sync::Barrier::new(2));
+            let worker = hub.clone();
+            let ready = barrier.clone();
+            let release = std::thread::spawn(move || {
+                ready.wait();
+                worker.release("traffic", "old");
+            });
+            barrier.wait();
+            hub.want_channel("traffic", "new");
+            hub.subscribe_page("traffic", |_, _| {}).unwrap();
+            release.join().unwrap();
+            let flag = hub.active.lock().unwrap().get("traffic").unwrap().0.clone();
+            assert!(flag.load(Ordering::SeqCst), "old owner stopped new reader");
+            hub.release("traffic", "new");
+            assert!(!flag.load(Ordering::SeqCst));
+        }
+    }
+
     /// 已知锚点：2024-01-01T00:00:00Z = 1704067200。
     #[test]
     fn rfc3339_known_epoch() {
@@ -1207,6 +1268,7 @@ pub(crate) mod tests {
         let (port, secret) = mgr.controller().unwrap();
         let (tx, rx) = std::sync::mpsc::channel::<serde_json::Value>();
         let hub = WsHub::default();
+        hub.want_channel("traffic", "roundtrip");
         hub.subscribe_traffic(port, &secret, move |_, payload| {
             let _ = tx.send(payload);
         })
