@@ -466,14 +466,23 @@ export default function ProfilesPage({
           onClose={() => setImporting(false)}
         >
           <p className="cb-control-note">{t("profiles.dropHint")}</p>
-          <label htmlFor="profile-url">{t("profiles.urlPlaceholder")}</label>
-          <Input
+          <label htmlFor="profile-url">{t("profiles.sourceLabel")}</label>
+          <p id="profile-source-hint" className="cb-control-note">{t("profiles.sourceHint")}</p>
+          <textarea
             id="profile-url"
+            rows={4}
+            aria-describedby="profile-source-hint"
+            spellCheck={false}
+            autoCapitalize="off"
+            autoCorrect="off"
+            style={{ width: "100%", resize: "vertical", minHeight: 96, maxHeight: 240 }}
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && url.trim() && busy === null)
+              if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && url.trim() && busy === null) {
+                e.preventDefault();
                 void importUrl();
+              }
             }}
             className="cb-input cb-selectable"
           />

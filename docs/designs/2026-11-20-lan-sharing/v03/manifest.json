@@ -1,0 +1,15 @@
+{
+  "date": "2026-11-20",
+  "version": "v03",
+  "status": "implemented-awaiting-review",
+  "issue": 568,
+  "pr": 583,
+  "baseline": "180066888ed9e884f9fd35f5e4411de3ca52c1ac",
+  "data": "Production React with sanitized IPC fixtures",
+  "files": [
+    "SPEC.md",
+    "source.zip",
+    "previews/light.png",
+    "previews/dark-small.png"
+  ]
+}

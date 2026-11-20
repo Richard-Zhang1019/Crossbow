@@ -12,6 +12,7 @@ pub mod process_rules;
 pub mod render;
 pub mod runtime;
 pub mod script_override;
+mod share_links;
 pub mod singbox_convert;
 pub mod store;
 pub mod subscription;

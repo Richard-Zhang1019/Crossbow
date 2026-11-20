@@ -411,7 +411,9 @@ fn convert_proxy(p: &ClashProxy) -> Result<Value, ConvertError> {
     let tls_on = if transport.is_some() {
         p.tls.unwrap_or(false)
     } else {
-        p.tls.unwrap_or(false) || matches!(p.kind.as_str(), "trojan" | "hysteria2") || p.port == 443
+        // A port is only a default. Explicit VMess/VLESS TLS=false (e.g. a
+        // share link with security=none on 443) must not change wire protocol.
+        p.tls.unwrap_or(p.port == 443) || matches!(p.kind.as_str(), "trojan" | "hysteria2")
     };
     let common_tls = if tls_on {
         let server_name = if let Some(transport) = &transport {

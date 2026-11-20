@@ -1,0 +1,65 @@
+.cb-lan-sharing {
+  border-bottom: 1px solid var(--cb-line);
+}
+
+.cb-settings-group .cb-rows .cb-lan-sharing > .cb-setting-row {
+  border-bottom: 0;
+}
+
+.cb-lan-sharing .cb-setting-hint {
+  color: var(--cb-warn);
+}
+
+.cb-lan-access {
+  display: grid;
+  gap: 8px;
+  max-inline-size: 540px;
+  margin-block-end: 16px;
+  padding-inline-start: 14px;
+  border-inline-start: 1px solid var(--cb-line);
+  color: var(--cb-text-dim);
+  font-size: var(--font-sm);
+  line-height: 1.5;
+}
+
+.cb-lan-access p,
+.cb-lan-addresses {
+  margin: 0;
+}
+
+.cb-lan-addresses {
+  display: grid;
+  gap: 4px;
+  padding: 0;
+  list-style: none;
+}
+
+.cb-lan-addresses li,
+.cb-lan-access-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cb-lan-address {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cb-lan-endpoint {
+  color: var(--cb-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.cb-lan-access .cb-button {
+  flex-shrink: 0;
+}
+
+.cb-lan-access-note {
+  font-size: var(--font-xs);
+}
