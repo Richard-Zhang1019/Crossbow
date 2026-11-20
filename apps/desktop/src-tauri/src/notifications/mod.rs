@@ -719,7 +719,16 @@ fn route(app: &AppHandle, elapsed: u64) {
         let reminder = if !main_visible && !snapshot.active.is_empty() {
             let english = app
                 .try_state::<crate::AppState>()
-                .map(|state| state.store.lock().unwrap().data().ui.lang == "en")
+                .map(|state| {
+                    state
+                        .store
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .data()
+                        .ui
+                        .lang
+                        == "en"
+                })
                 .unwrap_or(false);
             Some(native_reminder(&snapshot.active, english))
         } else {
@@ -969,6 +978,21 @@ fn navigation_page(action: &Action) -> Option<&'static str> {
     }
 }
 
+fn proxy_restore_after_tun(source: &str) -> Result<bool, String> {
+    match source {
+        "tun-switch" | "tray-tun" | "tun-health" => Ok(true),
+        "sysproxy-core-recovery" => Ok(false),
+        _ => Err("该通知不支持重试系统代理恢复".into()),
+    }
+}
+
+#[cfg(any(target_os = "macos", windows))]
+fn tun_restore_pending_notice(source: &str) -> Notice {
+    let mut notice = Notice::new(Kind::Error, "sysproxy.restorePending", source);
+    notice.actions = vec![Action::RetrySystemProxy, Action::Diagnostics];
+    notice
+}
+
 #[tauri::command]
 pub async fn notification_action(
     app: AppHandle,
@@ -998,11 +1022,7 @@ pub async fn notification_action(
                 }
                 notice.source.clone()
             };
-            let after_tun = match source.as_str() {
-                "tun-switch" | "tray-tun" | "tun-health" => true,
-                "sysproxy-core-recovery" => false,
-                _ => return Err("该通知不支持重试系统代理恢复".into()),
-            };
+            let after_tun = proxy_restore_after_tun(&source)?;
             if state
                 .store
                 .lock()
@@ -1086,6 +1106,12 @@ pub(crate) fn tun_result(
         state.core().status(),
         crate::CoreStatus::Stopped | crate::CoreStatus::Crashed(_)
     );
+    // Settings and tray operations share the same pending-restore result.
+    // Retain the original source so retry routing and resolution match the operation.
+    if outcome.is_ok() && !tun_enabled && state.sysproxy.has_pending_tun_restore() {
+        publish(app, tun_restore_pending_notice(source));
+        return;
+    }
     if outcome.is_err()
         && !tun_enabled
         && (state.sysproxy.has_pending_tun_restore()
@@ -1153,6 +1179,29 @@ mod tests {
             serde_json::to_string(&Action::RetrySystemProxy).unwrap(),
             "\"retrySystemProxy\""
         );
+    }
+
+    #[cfg(any(target_os = "macos", windows))]
+    #[test]
+    fn pending_tun_restore_preserves_retry_source_and_replaces_progress() {
+        for source in ["tun-switch", "tray-tun", "tun-health"] {
+            let mut queue = visible_queue();
+            queue.push(Notice::new(Kind::Progress, "tray.tun", source));
+            queue.push(tun_restore_pending_notice(source));
+            let pending: Vec<_> = queue.entries.iter().filter(|n| n.is_pending()).collect();
+            assert_eq!(pending.len(), 1);
+            assert_eq!(pending[0].kind, Kind::Error);
+            assert_eq!(pending[0].source, source);
+            assert_eq!(proxy_restore_after_tun(source), Ok(true));
+            assert!(pending[0]
+                .actions
+                .iter()
+                .any(|a| matches!(a, Action::RetrySystemProxy)));
+            queue.resolve(source);
+            assert!(!queue.entries.iter().any(|n| n.is_pending()));
+        }
+        assert_eq!(proxy_restore_after_tun("sysproxy-core-recovery"), Ok(false));
+        assert!(proxy_restore_after_tun("tun-restore").is_err());
     }
 
     fn visible_queue() -> Queue {

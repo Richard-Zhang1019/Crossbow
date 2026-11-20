@@ -110,7 +110,7 @@ fn tick(app: &AppHandle) {
 
     // 1) 快照到期列表（短锁，不做网络）
     let due: Vec<String> = {
-        let store = state.store.lock().unwrap();
+        let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         store
             .data()
             .profiles

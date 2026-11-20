@@ -171,7 +171,7 @@ impl Drop for Shared {
         // 兜底防孤儿：最后一个管理器句柄丢弃（含 panic 路径）时收走内核进程。
         // 轻量交接中例外：内核已有意留给系统收养。
         {
-            let mut inner = self.inner.lock().unwrap();
+            let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
             inner.stopping = true;
             if inner.detached {
                 return;
@@ -198,7 +198,7 @@ impl Shared {
         let record = serde_json::json!({
             "port": port, "secret": secret, "pid": pid,
             "binary_path": binary.display().to_string(),
-            "config": self.config_cache.lock().unwrap().clone(),
+            "config": self.config_cache.lock().unwrap_or_else(|e| e.into_inner()).clone(),
         });
         // A restart must not see a truncated descriptor. Keep credentials private.
         let contents = serde_json::to_vec(&record).map_err(|e| e.to_string())?;
@@ -207,16 +207,20 @@ impl Shared {
     }
 
     fn notify(&self, status: CoreStatus) {
-        self.inner.lock().unwrap().status = status.clone();
+        self.inner.lock().unwrap_or_else(|e| e.into_inner()).status = status.clone();
         // 回调可能等待 core_op，不能持注册锁调用。
-        let callback = self.callback.lock().unwrap().clone();
+        let callback = self
+            .callback
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
         if let Some(cb) = callback {
             cb(&status);
         }
     }
 
     fn spawn_child(&self, previous: Option<u32>) -> Result<Option<(u32, u16, String)>, String> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         if inner.stopping || inner.detached || inner.child.as_ref().map(Child::id) != previous {
             return Ok(None);
         }
@@ -225,7 +229,7 @@ impl Shared {
         // 每次拉起（含崩溃自动重启）都重写配置：内容来自本次启动链的缓存，
         // 保证磁盘文件与当前管理的内核/引擎严格一致。
         {
-            let cached = self.config_cache.lock().unwrap();
+            let cached = self.config_cache.lock().unwrap_or_else(|e| e.into_inner());
             let Some(content) = cached.as_ref() else {
                 return Err("no config cached for this start chain".into());
             };
@@ -402,26 +406,44 @@ impl CoreManager {
     /// 测试与设置页注入参数；当前生产路径用默认值。
     #[allow(dead_code)]
     pub fn set_options(&self, opts: CoreOptions) {
-        *self.shared.opts.lock().unwrap() = opts;
+        *self.shared.opts.lock().unwrap_or_else(|e| e.into_inner()) = opts;
     }
 
     #[cfg(test)]
     fn set_service_stop_hook(&self, hook: impl Fn() -> Result<(), String> + Send + Sync + 'static) {
-        *self.shared.service_stop_hook.lock().unwrap() = Some(Arc::new(hook));
+        *self
+            .shared
+            .service_stop_hook
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(hook));
     }
 
     pub fn set_callback(&self, cb: Callback) {
-        *self.shared.callback.lock().unwrap() = Some(cb);
+        *self
+            .shared
+            .callback
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(cb);
     }
 
     pub fn status(&self) -> CoreStatus {
-        self.shared.inner.lock().unwrap().status.clone()
+        self.shared
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .status
+            .clone()
     }
 
     /// 当前控制器 (port, secret)；S3 的 traffic/logs WS 订阅会用到。
     #[allow(dead_code)]
     pub fn controller(&self) -> Option<(u16, String)> {
-        self.shared.inner.lock().unwrap().controller.clone()
+        self.shared
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .controller
+            .clone()
     }
 
     /// 内核二进制路径（诊断与版本查询用）。
@@ -437,7 +459,11 @@ impl CoreManager {
 
     /// 本次启动链的最终配置内容（当前出口解析等用途）；未启动过返回 None。
     pub fn current_config(&self) -> Option<String> {
-        self.shared.config_cache.lock().unwrap().clone()
+        self.shared
+            .config_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// 本次启动使用的配置文件。热重载必须写回这个路径，内核才认。
@@ -485,7 +511,7 @@ impl CoreManager {
     /// 当前内核 PID，包括收养或服务托管的进程。
     #[allow(dead_code)]
     pub fn pid(&self) -> Option<u32> {
-        let inner = self.shared.inner.lock().unwrap();
+        let inner = self.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
         inner.child.as_ref().map(|c| c.id()).or(inner.external_pid)
     }
 
@@ -725,7 +751,11 @@ impl CoreManager {
         };
         let final_config = apply_runtime(base_config, &rt)?;
         // 配置随启动链缓存：崩溃自动重启也重写文件，杜绝旧内核配新配置
-        *self.shared.config_cache.lock().unwrap() = Some(final_config.clone());
+        *self
+            .shared
+            .config_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(final_config.clone());
         append_decision(
             &self.shared.work_dir,
             &format!(
@@ -739,7 +769,7 @@ impl CoreManager {
         );
 
         {
-            let mut inner = self.shared.inner.lock().unwrap();
+            let mut inner = self.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
             inner.stopping = false;
             inner.controller = Some((port, secret.clone()));
             inner.restarts.clear();
@@ -771,7 +801,7 @@ impl CoreManager {
                 #[cfg(not(any(windows, target_os = "linux")))]
                 let actual_binary = self.shared.binary_path.clone();
                 {
-                    let mut inner = self.shared.inner.lock().unwrap();
+                    let mut inner = self.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
                     inner.external_pid = Some(pid);
                     inner.detached = true;
                     inner.external_binary = Some(actual_binary.clone());
@@ -838,8 +868,12 @@ impl CoreManager {
         // still matching the disk file. Legacy/changed files remain uncached,
         // so rollback never guesses which configuration the live process uses.
         let config = d.verified_config(&self.config_path());
-        *self.shared.config_cache.lock().unwrap() = config;
-        let mut inner = self.shared.inner.lock().unwrap();
+        *self
+            .shared
+            .config_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = config;
+        let mut inner = self.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
         inner.stopping = false;
         inner.detached = true;
         inner.external_pid = Some(d.pid);
@@ -925,7 +959,7 @@ impl CoreManager {
             return;
         };
         let (pid, binary) = {
-            let inner = self.shared.inner.lock().unwrap();
+            let inner = self.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
             let Some(pid) = inner.external_pid else {
                 return;
             };
@@ -944,7 +978,7 @@ impl CoreManager {
             return;
         }
         {
-            let mut inner = self.shared.inner.lock().unwrap();
+            let mut inner = self.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
             if inner.external_pid != Some(pid) {
                 return;
             }
@@ -1060,7 +1094,7 @@ impl CoreManager {
             }
         }
         {
-            let mut inner = self.shared.inner.lock().unwrap();
+            let mut inner = self.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
             inner.stopping = true;
             inner.controller = None;
             inner.detached = false;
@@ -1876,7 +1910,7 @@ fn watch_external(
         if process_matches_binary(pid, &binary) != Some(false) && pid_is_alive(pid) {
             continue; // Permissions may temporarily prevent inspecting a root core.
         }
-        let mut inner = shared.inner.lock().unwrap();
+        let mut inner = shared.inner.lock().unwrap_or_else(|e| e.into_inner());
         if inner.stopping || inner.external_pid != Some(pid) {
             return; // 已被 stop/接管/换核：收尾由对方负责
         }
@@ -1946,7 +1980,13 @@ fn watch_linux_service(shared: Arc<Shared>, pid: u32) {
 
 /// 服务托管内核的就绪探测（watch() 的无子进程变体）：置 Running 或 Crashed。
 fn probe_external_core(shared: Arc<Shared>, pid: u32, port: u16, secret: String) {
-    let timeout = Duration::from_secs(shared.opts.lock().unwrap().readiness_timeout_secs);
+    let timeout = Duration::from_secs(
+        shared
+            .opts
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .readiness_timeout_secs,
+    );
     let probe = ControllerProbe { port, secret };
     let ready = probe.wait_ready(
         timeout,
@@ -1973,7 +2013,11 @@ fn finish_external_probe(shared: &Shared, pid: u32, probe: &ControllerProbe, rea
 }
 
 fn watch(shared: Arc<Shared>, pid: u32, port: u16, secret: String) {
-    let opts = shared.opts.lock().unwrap().clone();
+    let opts = shared
+        .opts
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
 
     // 首次启动：GeoIP 数据库缺失/过小时先从镜像下载（mihomo 自带的
     // 直连 GitHub 下载在国内网络极易超时，且被旧版就绪窗口误杀形成
@@ -1989,7 +2033,7 @@ fn watch(shared: Arc<Shared>, pid: u32, port: u16, secret: String) {
     let probe = ControllerProbe { port, secret };
     // 子进程在探测窗口内退出（如端口被占 FATAL）→ 立刻失败，不傻等满超时
     let child_gone = || {
-        let mut inner = shared.inner.lock().unwrap();
+        let mut inner = shared.inner.lock().unwrap_or_else(|e| e.into_inner());
         match inner.child.as_mut() {
             Some(c) if c.id() == pid => c.try_wait().ok().flatten().is_some(),
             _ => true,
@@ -1997,11 +2041,17 @@ fn watch(shared: Arc<Shared>, pid: u32, port: u16, secret: String) {
     };
     if !probe.wait_ready(
         Duration::from_secs(opts.readiness_timeout_secs),
-        || shared.inner.lock().unwrap().stopping,
+        || {
+            shared
+                .inner
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .stopping
+        },
         child_gone,
     ) {
         let stopping = {
-            let inner = shared.inner.lock().unwrap();
+            let inner = shared.inner.lock().unwrap_or_else(|e| e.into_inner());
             inner.stopping || inner.child.as_ref().map(Child::id) != Some(pid)
         };
         if stopping {
@@ -2019,7 +2069,7 @@ fn watch(shared: Arc<Shared>, pid: u32, port: u16, secret: String) {
         return;
     }
     {
-        let inner = shared.inner.lock().unwrap();
+        let inner = shared.inner.lock().unwrap_or_else(|e| e.into_inner());
         if inner.stopping || inner.child.as_ref().map(Child::id) != Some(pid) {
             return;
         }
@@ -2029,7 +2079,7 @@ fn watch(shared: Arc<Shared>, pid: u32, port: u16, secret: String) {
     if let Some(mixed_port) = shared
         .config_cache
         .lock()
-        .unwrap()
+        .unwrap_or_else(|e| e.into_inner())
         .as_deref()
         .and_then(tun_health_port)
     {
@@ -2042,7 +2092,7 @@ fn watch(shared: Arc<Shared>, pid: u32, port: u16, secret: String) {
     // 子进程始终留在共享状态（stop/pid 都依赖它）；这里只轮询退出状态。
     loop {
         let exit = {
-            let mut inner = shared.inner.lock().unwrap();
+            let mut inner = shared.inner.lock().unwrap_or_else(|e| e.into_inner());
             match inner.child.as_mut() {
                 Some(c) if c.id() == pid => c.try_wait().ok().flatten(),
                 _ => return, // 已停止或换核
@@ -2052,14 +2102,19 @@ fn watch(shared: Arc<Shared>, pid: u32, port: u16, secret: String) {
             std::thread::sleep(Duration::from_millis(200));
             continue;
         };
-        if shared.inner.lock().unwrap().stopping {
+        if shared
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .stopping
+        {
             return; // stop() 负责上报 Stopped
         }
         #[cfg(target_os = "macos")]
         let planned = shared
             .inner
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .tun_health_restart
             .is_some_and(|(target, _)| target == pid)
             && exit.code() == Some(0);
@@ -2092,8 +2147,12 @@ fn watch(shared: Arc<Shared>, pid: u32, port: u16, secret: String) {
 
 /// 崩溃重启簿记：窗口内超次返回 false（保持 Crashed）。
 fn allow_restart(shared: &Shared) -> bool {
-    let opts = shared.opts.lock().unwrap().clone();
-    let mut inner = shared.inner.lock().unwrap();
+    let opts = shared
+        .opts
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    let mut inner = shared.inner.lock().unwrap_or_else(|e| e.into_inner());
     let now = Instant::now();
     while inner
         .restarts
@@ -2456,7 +2515,7 @@ fn tun_health_monitor(weak: std::sync::Weak<Shared>, pid: u32, mixed_port: u16) 
         let Some(shared) = weak.upgrade() else {
             return;
         };
-        if !current_tun_child(&shared.inner.lock().unwrap(), pid) {
+        if !current_tun_child(&shared.inner.lock().unwrap_or_else(|e| e.into_inner()), pid) {
             return;
         }
 
@@ -2476,7 +2535,7 @@ fn tun_health_monitor(weak: std::sync::Weak<Shared>, pid: u32, mixed_port: u16) 
         failures = 0;
 
         let outcome = {
-            let mut inner = shared.inner.lock().unwrap();
+            let mut inner = shared.inner.lock().unwrap_or_else(|e| e.into_inner());
             if !current_tun_child(&inner, pid) {
                 return;
             }
@@ -2510,7 +2569,10 @@ fn tun_health_monitor(weak: std::sync::Weak<Shared>, pid: u32, mixed_port: u16) 
                 drop(shared);
                 std::thread::sleep(TERM_GRACE);
                 if let Some(shared) = weak.upgrade() {
-                    if current_tun_child(&shared.inner.lock().unwrap(), pid) {
+                    if current_tun_child(
+                        &shared.inner.lock().unwrap_or_else(|e| e.into_inner()),
+                        pid,
+                    ) {
                         append_decision(
                             &shared.work_dir,
                             &format!(
@@ -2600,6 +2662,24 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn poisoned_core_state_allows_status_and_final_cleanup() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = CoreManager::new(PathBuf::new(), dir.path().into());
+        let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = manager
+                .shared
+                .inner
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            panic!("poison core state");
+        }));
+        assert!(poisoned.is_err());
+        assert!(manager.shared.inner.is_poisoned());
+        assert_eq!(manager.status(), CoreStatus::Stopped);
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(manager))).is_ok());
+    }
+
+    #[test]
     fn startup_log_trim_skips_a_possible_writer() {
         let dir = tempfile::tempdir().unwrap();
         let manager = CoreManager::new(PathBuf::new(), dir.path().to_path_buf());
@@ -2641,7 +2721,11 @@ pub(crate) mod tests {
             );
         }));
         shared.notify(super::CoreStatus::Stopped);
-        shared.callback.lock().unwrap().take();
+        shared
+            .callback
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
         assert!(unlocked.load(Ordering::SeqCst));
     }
 
@@ -2765,12 +2849,21 @@ pub(crate) mod tests {
         let dir = tempfile::tempdir().unwrap();
         let manager = CoreManager::new(PathBuf::from("should-not-be-launched"), dir.path().into());
         {
-            let mut inner = manager.shared.inner.lock().unwrap();
+            let mut inner = manager
+                .shared
+                .inner
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             inner.controller = Some((12345, String::new()));
             inner.stopping = true;
         }
         assert!(manager.shared.spawn_child(None).unwrap().is_none());
-        manager.shared.inner.lock().unwrap().stopping = false;
+        manager
+            .shared
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .stopping = false;
         assert!(manager.shared.spawn_child(Some(1)).unwrap().is_none());
         assert!(!manager.config_path().exists());
     }
@@ -3051,8 +3144,20 @@ pub(crate) mod tests {
         let original = previous.current_config();
         previous.prepare_handoff().unwrap();
         // Simulate the old GUI exiting, without leaving its watcher in this test process.
-        previous.shared.inner.lock().unwrap().stopping = true;
-        let mut child = previous.shared.inner.lock().unwrap().child.take().unwrap();
+        previous
+            .shared
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .stopping = true;
+        let mut child = previous
+            .shared
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .child
+            .take()
+            .unwrap();
         let reaper = std::thread::spawn(move || child.wait());
         let replacement = CoreManager::new(bin.into(), dir.path().to_path_buf());
         assert!(replacement.adopt_external(noop_death()));
@@ -3114,7 +3219,11 @@ pub(crate) mod tests {
 
     fn record_test_external_start(manager: &CoreManager, pid: u32, port: u16, secret: &str) {
         {
-            let mut inner = manager.shared.inner.lock().unwrap();
+            let mut inner = manager
+                .shared
+                .inner
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             inner.status = CoreStatus::Starting;
             inner.stopping = false;
             inner.external_pid = Some(pid);
@@ -3173,7 +3282,12 @@ pub(crate) mod tests {
             (pid, 18080, "old-start"),
         ] {
             for status in [CoreStatus::Starting, CoreStatus::Running] {
-                manager.shared.inner.lock().unwrap().status = status.clone();
+                manager
+                    .shared
+                    .inner
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .status = status.clone();
                 let old_probe = ControllerProbe {
                     port: old_port,
                     secret: old_secret.into(),
@@ -3242,7 +3356,12 @@ pub(crate) mod tests {
         assert!(matches!(manager.status(), CoreStatus::Crashed(_)));
         assert_eq!(manager.pid(), Some(pid));
         assert_eq!(
-            manager.shared.inner.lock().unwrap().external_binary,
+            manager
+                .shared
+                .inner
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .external_binary,
             Some(manager.shared.binary_path.clone())
         );
         assert_eq!(
@@ -3269,7 +3388,7 @@ pub(crate) mod tests {
                 entered_tx.send(()).unwrap();
                 release_rx
                     .lock()
-                    .unwrap()
+                    .unwrap_or_else(|e| e.into_inner())
                     .recv_timeout(Duration::from_secs(5))
                     .unwrap();
             }
@@ -3352,7 +3471,7 @@ pub(crate) mod tests {
         let pid = sleeper.id();
         assert!(pid_is_alive(pid), "sleeper exited before the restart check");
         {
-            let mut inner = mgr.shared.inner.lock().unwrap();
+            let mut inner = mgr.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
             inner.status = CoreStatus::Crashed("服务托管内核启动失败/超时".into());
             inner.external_pid = Some(pid);
             inner.external_binary = None;
@@ -3382,7 +3501,14 @@ pub(crate) mod tests {
             pid_is_alive(pid),
             "refused signal must leave the unverified process alive"
         );
-        assert_eq!(mgr.shared.inner.lock().unwrap().external_pid, Some(pid));
+        assert_eq!(
+            mgr.shared
+                .inner
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .external_pid,
+            Some(pid)
+        );
 
         let calls_for_release = calls.clone();
         mgr.set_service_stop_hook(move || {
@@ -3414,7 +3540,13 @@ pub(crate) mod tests {
             ),
         }
         assert_eq!(calls.load(Ordering::SeqCst), 2);
-        assert!(mgr.shared.inner.lock().unwrap().external_pid.is_none());
+        assert!(mgr
+            .shared
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .external_pid
+            .is_none());
         let _ = sleeper.kill();
         let _ = sleeper.wait();
     }
@@ -3446,10 +3578,14 @@ pub(crate) mod tests {
             },
             Box::new(move |_, _| Ok(pid)),
         );
-        let recorded = result
-            .as_ref()
-            .ok()
-            .and_then(|_| mgr.shared.inner.lock().unwrap().external_binary.clone());
+        let recorded = result.as_ref().ok().and_then(|_| {
+            mgr.shared
+                .inner
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .external_binary
+                .clone()
+        });
         mgr.set_service_stop_hook(move || {
             let _ = crate::process::command("taskkill")
                 .args(["/F", "/PID", &pid.to_string()])
@@ -3624,7 +3760,7 @@ pub(crate) mod tests {
 
         // 杀内核触发崩溃重启，再把磁盘配置篡改成垃圾——重启必须重写
         {
-            let mut inner = mgr.shared.inner.lock().unwrap();
+            let mut inner = mgr.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(c) = inner.child.as_mut() {
                 let _ = c.kill();
             }
@@ -3663,7 +3799,7 @@ pub(crate) mod tests {
             .spawn()
             .expect("spawn sleeper");
         {
-            let mut inner = mgr.shared.inner.lock().unwrap();
+            let mut inner = mgr.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
             inner.detached = true;
             inner.status = CoreStatus::Running;
             inner.controller = Some((1, "x".into()));
@@ -3693,7 +3829,7 @@ pub(crate) mod tests {
             .expect("spawn sleeper");
         let child_pid = sleeper.id();
         {
-            let mut inner = mgr.shared.inner.lock().unwrap();
+            let mut inner = mgr.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
             inner.detached = true;
             inner.status = CoreStatus::Running;
             inner.controller = Some((19099, "sec".into()));
@@ -3765,11 +3901,19 @@ pub(crate) mod tests {
         let previous = CoreManager::new(PathBuf::from("/bin/sleep"), dir.path().to_path_buf());
         let snapshot = "mode: rule\n".to_string();
         std::fs::write(previous.config_path(), &snapshot).unwrap();
-        *previous.shared.config_cache.lock().unwrap() = Some(snapshot.clone());
+        *previous
+            .shared
+            .config_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(snapshot.clone());
         let sleeper = Command::new("/bin/sleep").arg("30").spawn().unwrap();
         let pid = sleeper.id();
         {
-            let mut inner = previous.shared.inner.lock().unwrap();
+            let mut inner = previous
+                .shared
+                .inner
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             inner.child = Some(sleeper);
             inner.status = CoreStatus::Running;
             inner.controller = Some((port, "test-secret".into()));
@@ -3803,7 +3947,14 @@ pub(crate) mod tests {
                 0o600
             );
         }
-        let mut child = previous.shared.inner.lock().unwrap().child.take().unwrap();
+        let mut child = previous
+            .shared
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .child
+            .take()
+            .unwrap();
         drop(previous);
         let reaper = std::thread::spawn(move || child.wait());
         assert!(replacement.stop());
@@ -3819,13 +3970,21 @@ pub(crate) mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         {
-            let mut inner = manager.shared.inner.lock().unwrap();
+            let mut inner = manager
+                .shared
+                .inner
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             inner.external_pid = Some(std::process::id());
             inner.external_binary = None;
             inner.stopping = true;
         }
         {
-            let _lifecycle = manager.shared.lifecycle.lock().unwrap();
+            let _lifecycle = manager
+                .shared
+                .lifecycle
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             manager.resume_after_failed_stop(Some((
                 listener.local_addr().unwrap().port(),
                 "secret".into(),
@@ -3834,7 +3993,11 @@ pub(crate) mod tests {
         assert!(
             matches!(listener.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock)
         );
-        let mut inner = manager.shared.inner.lock().unwrap();
+        let mut inner = manager
+            .shared
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         assert_eq!(inner.external_pid, Some(std::process::id()));
         assert!(inner.external_binary.is_none());
         assert!(inner.controller.is_none());
@@ -3870,20 +4033,35 @@ pub(crate) mod tests {
         let reaper = std::thread::spawn(move || child.wait());
         // 模拟停止授权被取消后留下的状态，恢复只能探测，不能再次杀进程。
         {
-            let mut inner = manager.shared.inner.lock().unwrap();
+            let mut inner = manager
+                .shared
+                .inner
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             inner.external_pid = Some(pid);
             inner.external_binary = Some(PathBuf::from("/bin/sleep"));
             inner.stopping = true;
             inner.status = CoreStatus::Crashed("cancelled".into());
         }
         {
-            let _lifecycle = manager.shared.lifecycle.lock().unwrap();
+            let _lifecycle = manager
+                .shared
+                .lifecycle
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             manager.resume_after_failed_stop(Some((port, "test-secret".into())));
         }
         server.join().unwrap();
         assert_eq!(manager.controller(), Some((port, "test-secret".into())));
         assert_eq!(manager.status(), CoreStatus::Running);
-        assert!(!manager.shared.inner.lock().unwrap().stopping);
+        assert!(
+            !manager
+                .shared
+                .inner
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .stopping
+        );
         assert!(pid_is_alive(pid));
         assert!(manager.stop());
         reaper.join().unwrap().unwrap();
@@ -3896,14 +4074,25 @@ pub(crate) mod tests {
         let manager = CoreManager::new(PathBuf::from("/bin/sleep"), dir.path().to_path_buf());
         let sleeper = Command::new("/bin/sleep").arg("30").spawn().unwrap();
         {
-            let mut inner = manager.shared.inner.lock().unwrap();
+            let mut inner = manager
+                .shared
+                .inner
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             inner.child = Some(sleeper);
             inner.status = CoreStatus::Running;
             inner.controller = Some((19099, "test-secret".into()));
         }
         std::fs::create_dir(Shared::descriptor_path(dir.path())).unwrap();
         assert!(manager.prepare_handoff().is_err());
-        assert!(!manager.shared.inner.lock().unwrap().detached);
+        assert!(
+            !manager
+                .shared
+                .inner
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .detached
+        );
         assert_eq!(
             std::fs::read_dir(dir.path()).unwrap().count(),
             1,
@@ -3924,7 +4113,11 @@ pub(crate) mod tests {
             .write_descriptor(sleeper.id(), 19099, "test-secret", &missing)
             .unwrap();
         {
-            let mut inner = manager.shared.inner.lock().unwrap();
+            let mut inner = manager
+                .shared
+                .inner
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             inner.external_pid = Some(sleeper.id());
             inner.external_binary = Some(missing);
             inner.status = CoreStatus::Running;

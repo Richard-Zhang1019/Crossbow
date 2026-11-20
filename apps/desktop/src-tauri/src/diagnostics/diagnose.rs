@@ -138,7 +138,7 @@ pub fn run(state: &AppState, run_id: &str, send: impl Fn(Progress)) -> Diagnosti
     // 3. 配置可渲染
     results.start("config_renders");
     {
-        let store = state.store.lock().unwrap();
+        let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         match crossbow_core::render_config(store.data()) {
             Ok(r) => results.push(ok("config_renders", format!("profile {}", r.profile_id))),
             Err(e) => results.push(bad("config_renders", e.to_string(), None)),
