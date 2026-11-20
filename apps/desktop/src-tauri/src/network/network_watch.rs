@@ -179,6 +179,8 @@ mod runtime {
             spawn_background(move || {
                 let mut budget = RestartBudget::default();
                 let mut blocked = None;
+                // 启动即评估一次场景：应用可能在场景网络中启动（#566）。
+                crate::network::scenes::evaluate_and_apply(&app);
                 while rx.recv().is_ok() {
                     // 固定窗口避免事件风暴令检查饥饿；后续事件使旧动作失效。
                     std::thread::sleep(DEBOUNCE);
@@ -193,6 +195,9 @@ mod runtime {
                         }
                         std::thread::sleep(DEBOUNCE);
                     }
+                    // 故障恢复收尾后的场景评估：按当前 SSID 决定是否进入/
+                    // 离开场景（#566）。幂等，目标状态已满足时不产生动作。
+                    crate::network::scenes::evaluate_and_apply(&app);
                 }
             });
             core_foundation::runloop::CFRunLoop::run_current();

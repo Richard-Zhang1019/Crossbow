@@ -13,6 +13,7 @@ import {
   type PlatformCapabilities,
 } from "@/services/ipc";
 import Select from "@/components/Select";
+import SceneRules from "@/components/SceneRules";
 import type { NavigationTarget } from "@/lib/workflow";
 import { useT } from "@/i18n/i18n";
 import { PageHead } from "@/pages/Home";
@@ -537,6 +538,8 @@ export default function SettingsPage({
               )
             }
           />
+        </Group><Group title={t("settings.scenes.title")}>
+          <SceneRules />
         </Group></>
       )}
 

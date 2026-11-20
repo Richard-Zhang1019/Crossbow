@@ -1,0 +1,29 @@
+{
+  "date": "2026-11-20",
+  "version": "v01",
+  "status": "implemented",
+  "baseline": "d6c488d8dfe3acd980184ea985878a9cdefb0a54",
+  "issue": 566,
+  "pr": 580,
+  "input": "用户截图标注的设置 → 网络与内核 → 网络场景",
+  "files": [
+    "SPEC.md",
+    "source.zip",
+    "previews/detail.png",
+    "previews/light.png",
+    "previews/dark.png",
+    "previews/small.png",
+    "previews/english.png",
+    "previews/add.png",
+    "previews/unavailable.png",
+    "previews/unsupported.png",
+    "previews/empty.png",
+    "previews/error.png",
+    "previews/before.png"
+  ],
+  "editableSources": [
+    "apps/desktop/src/components/SceneRules/index.tsx",
+    "apps/desktop/src/components/SceneRules/SceneRules.css",
+    "scripts/dev/verify-scenes.mjs"
+  ]
+}

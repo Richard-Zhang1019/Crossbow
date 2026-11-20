@@ -103,6 +103,16 @@ export interface SysProxyStatus {
   port: number;
 }
 
+/** SSID 网络场景状态（#566）：规则表 + 当前网络 + 生效场景。 */
+export interface ScenesStatus {
+  supported?: boolean;
+  networkState?: "available" | "disconnected" | "unavailable";
+  rules: Record<string, string>;
+  /** 当前关联的 Wi-Fi；null = 无 Wi-Fi 或定位权限缺失。 */
+  currentSsid: string | null;
+  activeScene: [string, string] | null;
+}
+
 export interface PackagePreview {
   id: string;
   report: {
@@ -505,6 +515,12 @@ export const ipc = {
     listen<string>("profile://switched", (e) => cb(parsePayload<string>(e.payload))),
   onSysproxyStatus: (cb: (s: SysProxyStatus) => void) =>
     listen<SysProxyStatus>("sysproxy://status", (e) => cb(e.payload)),
+  // SSID 网络场景（#566）：规则存 store，变更即评估生效。
+  networkScenes: () => invoke<ScenesStatus>("network_scenes_get"),
+  setNetworkScene: (ssid: string, action: "direct" | "proxy") =>
+    invoke<void>("network_scene_set", { ssid, action }),
+  removeNetworkScene: (ssid: string) =>
+    invoke<void>("network_scene_remove", { ssid }),
   onCoreMode: (cb: (m: CoreMode) => void) =>
     listen<CoreMode>("core://mode", (e) => cb(e.payload)),
   onTraffic: (cb: (t: { up: number; down: number }) => void) =>
