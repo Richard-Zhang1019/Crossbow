@@ -1,0 +1,40 @@
+{
+  "date": "2026-11-21",
+  "mode": "temporary loopback proxy and origin, no system proxy/TUN changes",
+  "results": [
+    {
+      "engine": "mihomo",
+      "fixture": "mihomo.json",
+      "chains": [
+        "DIRECT",
+        "Policy"
+      ],
+      "rule": "RuleSet"
+    },
+    {
+      "engine": "mihomo",
+      "fixture": "mihomo-disabled.json",
+      "chains": [
+        "DIRECT"
+      ],
+      "rule": "Match"
+    },
+    {
+      "engine": "singbox",
+      "fixture": "singbox.json",
+      "chains": [
+        "DIRECT",
+        "Policy"
+      ],
+      "rule": "rule_set=crossbow-ruleset-ai => route(Policy)"
+    },
+    {
+      "engine": "singbox",
+      "fixture": "singbox-disabled.json",
+      "chains": [
+        "DIRECT"
+      ],
+      "rule": "final"
+    }
+  ]
+}
