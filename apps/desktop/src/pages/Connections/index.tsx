@@ -17,8 +17,10 @@ import { useT } from "@/i18n/i18n";
 import { PageHead } from "@/pages/Home";
 
 const ROW_H = 48;
+// 动作列两条轨道对齐行内两个按钮（⟶ 建规则 + ✕ 关闭）：grid 每子元素
+// 占一轨，轨道不足时第 9 个子元素会换到隐式第二行掉出 48px 行高（#573）。
 const CONNECTION_COLUMNS =
-  "minmax(190px,2fr) 100px minmax(160px,1.2fr) 120px 80px 80px 60px 56px";
+  "minmax(190px,2fr) 100px minmax(160px,1.2fr) 120px 80px 80px 60px 32px 32px";
 const PROCESS_COLUMNS = "minmax(200px,1.6fr) 90px 100px 100px 90px";
 
 /** 连接页：列表 / 按进程聚合双视图（内核 connections WS → Rust 节流聚合）。 */
@@ -122,7 +124,7 @@ export default function ConnectionsPage() {
           <VirtualList
             items={rows}
             rowHeight={ROW_H}
-            minWidth={1010}
+            minWidth={1018}
             header={
               <div
                 className="cb-th cb-table-row"
@@ -135,6 +137,7 @@ export default function ConnectionsPage() {
                 <span className="text-right">{t("col.up")}</span>
                 <span className="text-right">{t("col.down")}</span>
                 <span className="text-right">{t("col.elapsed")}</span>
+                <span />
                 <span />
               </div>
             }
