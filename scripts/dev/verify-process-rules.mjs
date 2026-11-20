@@ -108,6 +108,40 @@ try {
   await page.getByText("为应用指定连接方式", { exact: true }).waitFor();
   await page.waitForTimeout(300);
   if (out) await page.screenshot({ path: `${out}/empty.png` });
+  await page.locator(".cb-primary-nav button", { hasText: "监测" }).click();
+  await page.locator(".cb-connections-page").waitFor();
+  await page.evaluate(() =>
+    window.__cb.emit("connections://data", {
+      rows: [
+        {
+          id: "preview-row",
+          host: "example.invalid",
+          rule: "MATCH",
+          chains: "DIRECT",
+          process: "PreviewProcess",
+          up: 0,
+          down: 0,
+          network: "tcp",
+          kind: "HTTP",
+          elapsed_ms: 1000,
+        },
+      ],
+      upload_total: 0,
+      download_total: 0,
+      memory: 0,
+    }),
+  );
+  await page
+    .getByRole("button", { name: "为此进程创建分流规则", exact: true })
+    .click();
+  const preset = page.getByRole("dialog").getByRole("textbox");
+  await preset.waitFor();
+  assert.equal(
+    await preset.inputValue(),
+    "PreviewProcess",
+    "Connection action must prefill process editor",
+  );
+  await page.getByRole("button", { name: "取消", exact: true }).click();
   assert.deepEqual(errors, []);
   assert.deepEqual(await page.evaluate(() => window.__cb.unknown), []);
   console.log(
