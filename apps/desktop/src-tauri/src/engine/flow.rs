@@ -83,7 +83,8 @@ pub(crate) fn start_core_locked(state: &AppState) -> Result<(), String> {
         let service_core = crate::network::linux_service::binary_path();
         if !crate::engine::download::is_core_bin(&service_core, need) {
             return Err(format!(
-                "Linux 系统服务当前固定运行 mihomo（{service_core}），无法以 {need} 启动；请切回 mihomo 引擎后再启动"
+                "Linux 系统服务当前固定运行 mihomo（{}），无法以 {need} 启动；请切回 mihomo 引擎后再启动",
+                service_core.display()
             ));
         }
         ensure_engine_binary(state, need)?;
