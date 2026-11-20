@@ -315,7 +315,9 @@ async function scenarioDiagnostics(page) {
     "Crossbow 0.14.4-verify", "Mixed port: 7897",
     "- Local mixed port could not be reached",
     "System proxy fault evidence (explicit mixed-port HTTPS; node unknown)",
-    "State: recovered (verified)", "Previous fault record", "State: ongoing",
+    "State: recovered (verified)", "State: ongoing",
+    // 「上一条故障记录」段首已走 i18n（#563）：夹具默认 zh，取中文值断言
+    "上一条故障记录",
   ]) {
     assert(share.includes(must), `导出摘要应包含白名单字段：${must}`);
   }
