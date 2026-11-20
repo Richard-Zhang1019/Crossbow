@@ -49,12 +49,12 @@ export default function ConfigRecovery({
       () => ipc.restoreConfigSnapshot(row.id),
       t("backup.done"),
     );
+    // 成功/失败都要释放 busy：漏掉成功分支会让对话框首次恢复成功即卡死（#556）。
     if (r.ok) {
       onRestored(); // 恢复触发内核重载，父级状态刷新
       void load(); // 恢复前会自动生成新快照，列表就地刷新
-    } else {
-      setBusyId(null);
     }
+    setBusyId(null);
   };
   return (
     <Dialog title={t("backup.title")} onClose={onClose}>

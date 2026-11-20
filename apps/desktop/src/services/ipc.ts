@@ -438,11 +438,16 @@ export const ipc = {
   exportLogLines: (lines:string[]) => invoke<boolean>("export_log_lines",{lines}),
   currentOutbound: () => invoke<OutboundInfo>("current_outbound"),
   closeConnection: (id: string) => invoke<void>("close_connection", { id }),
-  subscribeTraffic: () => invoke<void>("subscribe_traffic"),
-  unsubscribeTraffic: () => invoke<void>("unsubscribe_traffic"),
-  subscribeConnections: (includeProcesses = false) =>
-    invoke<void>("subscribe_connections", { includeProcesses }),
-  unsubscribeConnections: () => invoke<void>("unsubscribe_connections"),
+  // traffic/connections 是多页面共享通道：subscriber 标识页面实例，
+  // 后端按订阅方登记/移除，最后一个订阅方离开才真正停流（#555）。
+  subscribeTraffic: (subscriber: string) =>
+    invoke<void>("subscribe_traffic", { subscriber }),
+  unsubscribeTraffic: (subscriber: string) =>
+    invoke<void>("unsubscribe_traffic", { subscriber }),
+  subscribeConnections: (subscriber: string, includeProcesses = false) =>
+    invoke<void>("subscribe_connections", { subscriber, includeProcesses }),
+  unsubscribeConnections: (subscriber: string) =>
+    invoke<void>("unsubscribe_connections", { subscriber }),
   subscribeLogs: (subscriber: string) => invoke<LogSnapshot>("subscribe_logs", { subscriber }),
   clearLogs: () => invoke<LogSnapshot>("clear_logs"),
   unsubscribeLogs: (subscriber: string) => invoke<void>("unsubscribe_logs", { subscriber }),

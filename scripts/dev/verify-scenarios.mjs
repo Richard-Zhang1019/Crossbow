@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// #511：可复跑桌面验证入口——生产组件 + IPC 桩，固化四个关键回归场景。
+// #511：可复跑桌面验证入口——生产组件 + IPC 桩，固化关键回归场景。
 //
 // 用法（仓库根目录）：
 //   node scripts/dev/verify-scenarios.mjs                # 全部场景（headless）
@@ -11,6 +11,9 @@
 //   2 测速取消后停止派发（已取消后不再发起新测量，已完成结果保留）
 //   3 诊断原样本/恢复样本区分 + 导出白名单（故障证据与摘要只含白名单字段）
 //   4 默认/最小窗口控件可见性（中英文 × 明暗主题 × 1120x720/880x560）
+//
+//   5 快照连续恢复及失败后重试（#556）
+//   6 跨页面共享通道订阅身份与迟到退订（#555，IPC 模拟）
 //
 // 失败时把截图、IPC 调用计数、控制台错误写入临时目录并打印路径。
 
@@ -32,10 +35,10 @@ function parseArgs(args) {
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--headed") {
       headed = true;
-    } else if (args[i] === "--scenario" && scenario === null && /^[1-4]$/.test(args[i + 1] ?? "")) {
+    } else if (args[i] === "--scenario" && scenario === null && /^[1-6]$/.test(args[i + 1] ?? "")) {
       scenario = Number(args[++i]);
     } else {
-      throw new Error("用法：pnpm verify:desktop [--scenario 1|2|3|4] [--headed]");
+      throw new Error("用法：pnpm verify:desktop [--scenario 1|2|3|4|5|6] [--headed]");
     }
   }
   return { scenario, headed };
@@ -400,12 +403,88 @@ async function scenarioWindowControls(page) {
   await assertNoUnknownCommands(page);
 }
 
+// ---------------------------------------------------------------- 场景 5
+async function scenarioSnapshotRecovery(page) {
+  await page.evaluate(() => {
+    window.__cb.setCommands({
+      config_snapshots: [
+        { id: "snapshot-a", at: 1_800_000_000, profiles: 2, overrides: 0, active: "验证订阅A" },
+        { id: "snapshot-b", at: 1_800_000_060, profiles: 2, overrides: 0, active: "验证订阅B" },
+      ],
+      restore_config_snapshot: (_args, _cmd, seq) => {
+        if (seq === 3) throw new Error("验证恢复失败（脱敏夹具）");
+        return null;
+      },
+    });
+  });
+  await gotoNav(page, "配置", ".cb-view-profiles");
+  await page.getByRole("button", { name: "备份与迁移" }).click();
+  await page.locator(".cb-backup-menu-item", { hasText: "恢复快照" }).click();
+  const buttons = page.locator(".cb-recovery-list button");
+  await eventually(page, "应显示两份快照", async () => await buttons.count() === 2);
+  const initialLists = await calls(page, "config_snapshots");
+  for (const [index, row] of [0, 1, 0, 1].entries()) {
+    await buttons.nth(row).click();
+    await eventually(page, `恢复 ${index + 1} 次后应释放所有按钮`, async () =>
+      await buttons.count() === 2 && await buttons.nth(0).isEnabled() && await buttons.nth(1).isEnabled());
+    assert(await calls(page, "restore_config_snapshot") === index + 1, "每次恢复只提交一次");
+  }
+  assert(await calls(page, "config_snapshots") === initialLists + 3, "初次加载与三次成功恢复刷新列表，失败不刷新");
+  await assertNoUnknownCommands(page);
+}
+
+// ---------------------------------------------------------------- 场景 6
+async function scenarioStreamOwnership(page) {
+  // Model only ownership, not Rust/WebSocket transport. Backend tests cover
+  // actual reader lifetime; this catches missing IDs and wrong page cleanup.
+  await page.evaluate(() => {
+    const owners = new Set();
+    window.__cb.owners = owners;
+    window.__cb.streamErrors = [];
+    window.__cb.setCommands({
+      subscribe_connections: ({ subscriber }) => {
+        if (!subscriber) window.__cb.streamErrors.push("missing subscriber");
+        owners.add(subscriber);
+      },
+      unsubscribe_connections: ({ subscriber }) => {
+        if (!subscriber) window.__cb.streamErrors.push("missing unsubscribe subscriber");
+        // A late Home cleanup must only remove its own identity.
+        return new Promise((resolve) => setTimeout(() => { owners.delete(subscriber); resolve(null); }, 80));
+      },
+    });
+  });
+  // Initial Home subscription predates fixture installation. Remount it.
+  await gotoNav(page, "节点", ".cb-view-proxies");
+  await gotoNav(page, "概览", ".cb-view-home");
+  for (let pass = 0; pass < 3; pass++) {
+    await eventually(page, "概览实例登记身份", (p) => p.evaluate(() =>
+      [...window.__cb.owners].some((id) => id?.startsWith("home:"))));
+    await gotoNav(page, "监测", ".cb-view-connections");
+    await eventually(page, "迟到退订后仅剩连接页身份", (p) => p.evaluate(() =>
+      window.__cb.owners.size === 1 && [...window.__cb.owners][0]?.startsWith("connections:")));
+    for (const bytes of [1024, 2048]) {
+      await page.evaluate((upload_total) => window.__cb.emit("connections://data", {
+        rows: [], upload_total, download_total: 0, memory: 0,
+      }), bytes);
+      await eventually(page, "连接页持续消费新事件", async () =>
+        (await page.locator(".cb-connections-page").innerText()).includes(bytes === 1024 ? "1.0 KB" : "2.0 KB"));
+    }
+    await gotoNav(page, "概览", ".cb-view-home");
+  }
+  await gotoNav(page, "节点", ".cb-view-proxies");
+  await eventually(page, "全部页面离开后释放身份", (p) => p.evaluate(() => window.__cb.owners.size === 0));
+  assert(await page.evaluate(() => window.__cb.streamErrors.length === 0), "IPC 订阅/退订必须携带身份");
+  await assertNoUnknownCommands(page);
+}
+
 // ---------------------------------------------------------------- 编排
 const SCENARIOS = [
   { id: 1, name: "配置快切忽略同名节点旧结果", fn: scenarioProfileSwitch },
   { id: 2, name: "测速取消后停止派发", fn: scenarioCancelStopsDispatch },
   { id: 3, name: "诊断原样本/恢复样本与导出白名单", fn: scenarioDiagnostics },
   { id: 4, name: "默认/最小窗口控件可见性（中英文 × 明暗）", fn: scenarioWindowControls },
+  { id: 5, name: "快照连续恢复与失败后重试", fn: scenarioSnapshotRecovery },
+  { id: 6, name: "共享通道订阅身份与迟到退订（IPC 模拟）", fn: scenarioStreamOwnership },
 ];
 
 async function main() {

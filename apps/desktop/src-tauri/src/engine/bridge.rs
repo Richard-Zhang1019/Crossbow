@@ -42,10 +42,13 @@ pub struct WsHub {
     /// 重订同Channel时旧标志被置 false（读线程最迟约 2 秒退出），新读线程顶替——
     /// 「订阅还在但已死/连着旧端口」的冻结形态由此自愈。
     active: Mutex<ChannelSubscriptions>,
-    /// 页面订阅意图集：挂载即登记、卸载即移除，与订阅是否成功无关。
+    /// 页面订阅意图：channel 名 → 订阅方集合。订阅方是页面实例标识
+    /// （前端挂载时生成、卸载时移除）。多页面可共享同一通道（概览与
+    /// 连接页都订 connections）——只有最后一个订阅方离开才移除意图并
+    /// 停读线程；重复登记幂等（30s 自愈补订、StrictMode 重挂不膨胀）。
     /// 内核重启后据此重订——覆盖「页面在内核 Starting 期间挂载、订阅
-    /// 命令失败」的窗口，保证 Running 后自动补上。
-    wanted: Arc<Mutex<std::collections::HashSet<&'static str>>>,
+    /// 命令失败」的窗口，保证 Running 后自动补上。#555
+    wanted: Arc<Mutex<HashMap<&'static str, HashSet<String>>>>,
     /// Keep the lookup rate and in-flight scan across connection view subscriptions.
     connection_process_lookup: Arc<Mutex<ProcessLookup>>,
     logs: Arc<Mutex<crate::diagnostics::log_cache::LogCache>>,
@@ -56,8 +59,8 @@ pub struct WsHub {
 impl WsHub {
     pub fn begin_log_view(&self, subscriber: String) {
         let mut view = self.log_view.lock().unwrap_or_else(|e| e.into_inner());
-        *view = Some(subscriber);
-        self.want_channel("logs");
+        *view = Some(subscriber.clone());
+        self.want_channel("logs", &subscriber);
     }
 
     pub fn end_log_view(&self, subscriber: &str) {
@@ -87,23 +90,49 @@ impl WsHub {
         Ok(())
     }
 
+    /// Serialize page reader installation with the final release. A watchdog
+    /// or controller lookup may finish after the page has already left; it must
+    /// neither resurrect an unwanted channel nor race a release stopping it.
+    fn subscribe_page<F>(&self, name: &'static str, spawn_reader: F) -> Result<(), String>
+    where
+        F: FnOnce(Arc<AtomicBool>, Arc<Mutex<Instant>>) + Send + 'static,
+    {
+        let wanted = self.wanted.lock().unwrap_or_else(|e| e.into_inner());
+        if !wanted.contains_key(name) {
+            return Ok(());
+        }
+        // Lock order is always wanted -> active, including release/staleness.
+        let result = self.subscribe(name, spawn_reader);
+        drop(wanted);
+        result
+    }
+
     /// 页面订阅意图登记：必须在订阅命令的最入口调用（require_controller
     /// 之前）——内核 Starting 期间挂载的页面订阅命令会失败，意图集是
-    /// Running 后补订的唯一依据。
-    pub fn want_channel(&self, name: &'static str) {
+    /// Running 后补订的唯一依据。同一订阅方重复登记幂等。
+    pub fn want_channel(&self, name: &'static str, subscriber: &str) {
         self.wanted
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .insert(name);
+            .entry(name)
+            .or_default()
+            .insert(subscriber.to_owned());
     }
 
-    pub fn want_connections(&self, include_processes: bool) {
+    pub fn want_connections(&self, subscriber: &str, include_processes: bool) {
         let mut wanted = self.wanted.lock().unwrap_or_else(|e| e.into_inner());
-        wanted.insert("connections");
+        wanted
+            .entry("connections")
+            .or_default()
+            .insert(subscriber.to_owned());
+        // include_processes 只做粘性登记、不做清除：任一订阅方要过进程
+        // 解析，通道 reader 就带（payload 多余字段对不要的页面无影响）；
+        // 进程意图随 connections 集合归零在 release 里一起清。
         if include_processes {
-            wanted.insert("connection-processes");
-        } else {
-            wanted.remove("connection-processes");
+            wanted
+                .entry("connection-processes")
+                .or_default()
+                .insert(subscriber.to_owned());
         }
     }
 
@@ -124,7 +153,7 @@ impl WsHub {
     pub fn any_page_channel_stale(&self, threshold: Duration) -> bool {
         let wanted = self.wanted.lock().unwrap_or_else(|e| e.into_inner());
         ["traffic", "connections"].into_iter().any(|name| {
-            wanted.contains(name)
+            wanted.contains_key(name)
                 && self
                     .last_message_ago(name)
                     .is_some_and(|ago| ago >= threshold)
@@ -140,14 +169,29 @@ impl WsHub {
             .map(|(_, t)| t.lock().unwrap_or_else(|e| e.into_inner()).elapsed())
     }
 
-    pub fn unsubscribe(&self, name: &str) {
-        {
-            let mut wanted = self.wanted.lock().unwrap_or_else(|e| e.into_inner());
-            wanted.remove(name);
-            if name == "connections" {
-                wanted.remove("connection-processes");
-            }
+    /// 页面通道退订：移除订阅方自己的意图。最后一个订阅方离开才移除
+    /// 通道意图并停读线程——先到的页面退订不能杀死后到页面的数据流
+    /// （#555：概览卸载的延迟退订曾把连接页刚建立的订阅直接删掉）。
+    pub fn release(&self, name: &str, subscriber: &str) {
+        let mut wanted = self.wanted.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(subscribers) = wanted.get_mut(name) else {
+            return;
+        };
+        subscribers.remove(subscriber);
+        if !subscribers.is_empty() {
+            return;
         }
+        wanted.remove(name);
+        if name == "connections" {
+            wanted.remove("connection-processes");
+        }
+        // Keep wanted locked until the old reader is stopped. Otherwise a new
+        // subscriber can install its reader here and have this release kill it.
+        self.stop_reader(name);
+    }
+
+    /// 停掉指定通道的读线程（若有）。
+    fn stop_reader(&self, name: &str) {
         if let Some((flag, _)) = self
             .active
             .lock()
@@ -156,6 +200,17 @@ impl WsHub {
         {
             flag.store(false, Ordering::SeqCst);
         }
+    }
+
+    /// 单方通道退订（logs / logs-cache / traffic-tray / logs-file）：
+    /// 无订阅方概念，整条移除意图并停线程。页面通道（traffic /
+    /// connections）用 [`Self::release`]。
+    pub fn unsubscribe(&self, name: &str) {
+        self.wanted
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(name);
+        self.stop_reader(name);
     }
 
     pub fn unsubscribe_all(&self) {
@@ -212,7 +267,7 @@ impl WsHub {
         emit: impl Fn(&'static str, serde_json::Value) + Send + 'static,
     ) -> Result<(), String> {
         let url = ws_url(port, secret, "/traffic");
-        self.subscribe("traffic", move |flag, last_seen| {
+        self.subscribe_page("traffic", move |flag, last_seen| {
             std::thread::spawn(move || {
                 read_loop(
                     &url,
@@ -239,13 +294,17 @@ impl WsHub {
         emit: impl Fn(&'static str, serde_json::Value) + Send + 'static,
     ) -> Result<(), String> {
         let url = ws_url(port, secret, "/connections");
-        let include_processes = self
-            .wanted
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .contains("connection-processes");
-        let process_lookup = include_processes.then(|| self.connection_process_lookup.clone());
-        self.subscribe("connections", move |flag, last_seen| {
+        // Snapshot the processing mode and install the reader under the same
+        // intent lock. A delayed overview/watchdog subscription must not replace
+        // a process-aware reader with an earlier include_processes=false choice.
+        let wanted = self.wanted.lock().unwrap_or_else(|e| e.into_inner());
+        if !wanted.contains_key("connections") {
+            return Ok(());
+        }
+        let process_lookup = wanted
+            .contains_key("connection-processes")
+            .then(|| self.connection_process_lookup.clone());
+        let result = self.subscribe("connections", move |flag, last_seen| {
             std::thread::spawn(move || {
                 let mut last_emit = Instant::now() - CONN_MIN_INTERVAL;
                 read_loop(
@@ -276,7 +335,9 @@ impl WsHub {
                     },
                 );
             });
-        })
+        });
+        drop(wanted);
+        result
     }
 
     pub fn subscribe_logs(
@@ -315,7 +376,7 @@ impl WsHub {
                 let mut on_status = |connected| {
                     let status = cache.lock().unwrap_or_else(|e| e.into_inner()).set_connected(generation, connected);
                     if let Some(status) = status {
-                        if wanted.lock().unwrap_or_else(|e| e.into_inner()).contains("logs") {
+                        if wanted.lock().unwrap_or_else(|e| e.into_inner()).contains_key("logs") {
                             emit(EV_LOG_STATUS, serde_json::json!({ "connected": status.connected, "generation": status.generation }));
                             // Drain cached entries missed just before reconnect;
                             // client sequence IDs remove any overlap with live batches.
@@ -341,13 +402,13 @@ impl WsHub {
                             || batch.len() >= LOG_FLUSH_COUNT)
                     {
                         let entries = std::mem::take(&mut batch);
-                        if wanted.lock().unwrap_or_else(|e| e.into_inner()).contains("logs") {
+                        if wanted.lock().unwrap_or_else(|e| e.into_inner()).contains_key("logs") {
                             emit(EV_LOGS, serde_json::json!(entries));
                         }
                         last_flush = Instant::now();
                     }
                 });
-                if !batch.is_empty() && wanted.lock().unwrap_or_else(|e| e.into_inner()).contains("logs") {
+                if !batch.is_empty() && wanted.lock().unwrap_or_else(|e| e.into_inner()).contains_key("logs") {
                     emit(EV_LOGS, serde_json::json!(batch));
                 }
             });
@@ -1024,7 +1085,7 @@ pub(crate) mod tests {
         assert!(!hub.any_page_channel_stale(Duration::from_secs(15)));
         // 生产入口（lib.rs 订阅命令）先登记意图，再走桥订阅；连不上的
         // 死端口也要注册心跳（active 表项同步插入）
-        hub.want_channel("traffic");
+        hub.want_channel("traffic", "home");
         hub.subscribe_traffic(1, "s", |_, _| {}).unwrap();
         assert!(hub.last_message_ago("traffic").is_some());
         assert!(!hub.any_page_channel_stale(Duration::from_secs(15)));
@@ -1033,8 +1094,122 @@ pub(crate) mod tests {
         hub.subscribe_logs(1, "s", |_, _| {}).unwrap();
         assert!(hub.any_page_channel_stale(Duration::from_secs(0)));
         // traffic 退订（wanted 移除）后只剩不参与判定的 logs：不判冻结
-        hub.unsubscribe("traffic");
+        hub.release("traffic", "home");
         assert!(!hub.any_page_channel_stale(Duration::from_secs(0)));
+    }
+
+    /// #555 核心场景：多页面共享 connections 通道时，先到订阅方的退订
+    /// 不得杀死后到订阅方的数据流；最后一个订阅方离开才真正停流。
+    #[test]
+    fn shared_channel_release_only_stops_when_last_subscriber_leaves() {
+        let hub = WsHub::default();
+        // 连接页（要进程解析）先订阅，概览页（不要）后订阅
+        hub.want_connections("conn-page", true);
+        hub.want_connections("home", false);
+        assert!(hub.any_page_channel_wanted());
+        // 进程解析意图是粘性登记：概览页 include=false 不清除连接页的意图
+        assert!(hub
+            .wanted
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key("connection-processes"));
+        // 概览页卸载的延迟退订：连接页仍在——意图保留
+        hub.release("connections", "home");
+        assert!(hub.any_page_channel_wanted());
+        assert!(hub
+            .wanted
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key("connection-processes"));
+        // 最后一个订阅方离开：意图整体清除（含进程解析），线程停掉
+        hub.want_channel("traffic", "home"); // traffic 由概览页持有，不应被波及
+        let conn_flag = {
+            hub.subscribe_connections(1, "s", |_, _| {}).unwrap();
+            hub.active
+                .lock()
+                .unwrap()
+                .get("connections")
+                .unwrap()
+                .0
+                .clone()
+        };
+        hub.release("connections", "conn-page");
+        let wanted = hub.wanted.lock().unwrap_or_else(|e| e.into_inner());
+        assert!(!wanted.contains_key("connections"));
+        assert!(!wanted.contains_key("connection-processes"));
+        assert!(wanted.contains_key("traffic"));
+        drop(wanted);
+        assert!(
+            !conn_flag.load(Ordering::SeqCst),
+            "last release must stop the reader"
+        );
+        // 未登记过的订阅方退订是安全的 no-op（不误伤别人）
+        hub.release("connections", "ghost");
+        assert!(hub.any_page_channel_wanted());
+        // traffic 意图仍在：概览页自己退订后整体清空
+        hub.release("traffic", "home");
+        assert!(!hub.any_page_channel_wanted());
+    }
+
+    /// 幂等登记：30s 自愈补订与 StrictMode 重挂重复登记不膨胀，
+    /// 一次退订即可完全移除。
+    #[test]
+    fn repeated_wants_stay_idempotent() {
+        let hub = WsHub::default();
+        for _ in 0..3 {
+            hub.want_channel("traffic", "home");
+            hub.want_connections("home", false);
+        }
+        let wanted = hub.wanted.lock().unwrap_or_else(|e| e.into_inner());
+        assert_eq!(wanted.get("traffic").map(|s| s.len()), Some(1));
+        assert_eq!(wanted.get("connections").map(|s| s.len()), Some(1));
+        drop(wanted);
+        hub.release("traffic", "home");
+        hub.release("connections", "home");
+        assert!(!hub.any_page_channel_wanted());
+    }
+
+    #[test]
+    fn late_resubscribe_does_not_resurrect_released_page_channels() {
+        let hub = WsHub::default();
+        hub.want_channel("traffic", "home");
+        hub.want_connections("home", false);
+        // Controller lookup/watchdog obtained its arguments before unmount.
+        hub.release("traffic", "home");
+        hub.release("connections", "home");
+        // A log page may still be present, so the watchdog's coarse check can
+        // be true. Each page channel must check its own intent when installing.
+        hub.begin_log_view("logs-page".into());
+        hub.subscribe_traffic(1, "s", |_, _| {}).unwrap();
+        hub.subscribe_connections(1, "s", |_, _| {}).unwrap();
+        assert!(hub.active.lock().unwrap().is_empty());
+        hub.end_log_view("logs-page");
+    }
+
+    #[test]
+    fn page_reader_remains_live_through_concurrent_owner_handoff() {
+        let hub = Arc::new(WsHub::default());
+        // No sockets or scheduling-dependent sleeps: the reader flag is the
+        // lifetime contract shared with the actual WebSocket loop.
+        for _ in 0..256 {
+            hub.want_channel("traffic", "old");
+            hub.subscribe_page("traffic", |_, _| {}).unwrap();
+            let barrier = Arc::new(std::sync::Barrier::new(2));
+            let worker = hub.clone();
+            let ready = barrier.clone();
+            let release = std::thread::spawn(move || {
+                ready.wait();
+                worker.release("traffic", "old");
+            });
+            barrier.wait();
+            hub.want_channel("traffic", "new");
+            hub.subscribe_page("traffic", |_, _| {}).unwrap();
+            release.join().unwrap();
+            let flag = hub.active.lock().unwrap().get("traffic").unwrap().0.clone();
+            assert!(flag.load(Ordering::SeqCst), "old owner stopped new reader");
+            hub.release("traffic", "new");
+            assert!(!flag.load(Ordering::SeqCst));
+        }
     }
 
     /// 已知锚点：2024-01-01T00:00:00Z = 1704067200。
@@ -1098,6 +1273,7 @@ pub(crate) mod tests {
         let (port, secret) = mgr.controller().unwrap();
         let (tx, rx) = std::sync::mpsc::channel::<serde_json::Value>();
         let hub = WsHub::default();
+        hub.want_channel("traffic", "roundtrip");
         hub.subscribe_traffic(port, &secret, move |_, payload| {
             let _ = tx.send(payload);
         })
