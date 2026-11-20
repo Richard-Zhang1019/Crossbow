@@ -228,18 +228,6 @@ pub(crate) async fn set_tun(
             .data()
             .engine
             .tun_enable;
-        // 热关 TUN 成功但系统代理恢复失败：restore journal 挂起。TUN 本身
-        // 已关（outcome 为 Ok，tun_result 不会报失败），必须单独提示，否则
-        // 用户在无任何提示的情况下代理异常（#558）。
-        if result.is_ok() && !actual && state.sysproxy.has_pending_tun_restore() {
-            let mut notice = notifications::Notice::new(
-                notifications::Kind::Error,
-                "sysproxy.restorePending",
-                "tun-restore",
-            );
-            notice.actions = vec![notifications::Action::RetrySystemProxy];
-            notifications::publish(&app, notice);
-        }
         let _ = app.emit("tun://status", actual);
         let _ = app.emit("sysproxy://status", state.sysproxy.status());
         refresh_tray(&app);

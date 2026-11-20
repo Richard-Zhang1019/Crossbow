@@ -2257,6 +2257,29 @@ mod tests {
     }
 
     #[test]
+    fn poisoned_proxy_state_allows_status_and_exit_restore() {
+        let dir = tempfile::tempdir().unwrap();
+        let backend = FakeBackend::new(&["Wi-Fi"]);
+        let manager = manager_with(backend.clone(), &dir);
+        manager.enable(7898).unwrap();
+        let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = manager.state.lock().unwrap_or_else(|e| e.into_inner());
+            panic!("poison proxy state");
+        }));
+        assert!(poisoned.is_err());
+        assert!(manager.state.is_poisoned());
+        assert!(manager.status().enabled);
+        manager.prepare_exit(false).unwrap();
+        assert!(!manager.status().enabled);
+        assert!(backend
+            .inner
+            .restored
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key("Wi-Fi"));
+    }
+
+    #[test]
     fn diagnostic_enable_is_idempotent_and_preserves_foreign_or_unreadable_settings() {
         let dir = tempfile::tempdir().unwrap();
         let backend = FakeBackend::new(&["Wi-Fi", "Ethernet"]);

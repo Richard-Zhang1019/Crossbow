@@ -2662,6 +2662,24 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn poisoned_core_state_allows_status_and_final_cleanup() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = CoreManager::new(PathBuf::new(), dir.path().into());
+        let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = manager
+                .shared
+                .inner
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            panic!("poison core state");
+        }));
+        assert!(poisoned.is_err());
+        assert!(manager.shared.inner.is_poisoned());
+        assert_eq!(manager.status(), CoreStatus::Stopped);
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(manager))).is_ok());
+    }
+
+    #[test]
     fn startup_log_trim_skips_a_possible_writer() {
         let dir = tempfile::tempdir().unwrap();
         let manager = CoreManager::new(PathBuf::new(), dir.path().to_path_buf());
