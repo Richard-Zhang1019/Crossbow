@@ -194,6 +194,99 @@ pub(crate) fn request_process_exit(app: &AppHandle, code: Option<i32>) {
     });
 }
 
+/// #572 轻量退出交接准备：内核 detach（描述符留档，进程继续跑）、跳过
+/// sysproxy 还原与内核停止——与更新接力同一条 handoff 链路，但交接后
+/// 由本进程直接退出，无安装器接力。返回是否成功交接；无可交接内核
+/// （未运行）返回 false，调用方回退普通退出。
+fn prepare_lightweight_exit(app: &AppHandle) -> Result<bool, String> {
+    let state = app.state::<AppState>();
+    if !state.exit.begin() {
+        return Err("应用已经在准备退出".into());
+    }
+    let handed_off = {
+        let _operation = state
+            .core_op
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        state.core().prepare_handoff()
+    };
+    let handed_off = match handed_off {
+        Ok(Some(_)) => true,
+        Ok(None) => {
+            // 内核未运行：没有可保留的东西，回退普通退出语义
+            state.exit.cancel();
+            return Ok(false);
+        }
+        Err(error) => {
+            state.exit.cancel();
+            return Err(error);
+        }
+    };
+    // handoff 置位供 cleanup 判定交接（app.exit(0) 的 code=Some 分支
+    // 不会消费它，不与轻量关窗的一次性拦截冲突）。
+    state
+        .handoff
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let result = cleanup_before_process_exit(app, true);
+    if let Err(error) = result {
+        state.exit.cancel();
+        return Err(error);
+    }
+    Ok(handed_off)
+}
+
+/// #572 轻量退出入口：进程完全退出，内核与代理保持运行，下次启动
+/// adopt_external 收养（PID 不变、连接不断）。内核未运行时回退普通退出。
+pub(crate) fn lightweight_process_exit(app: &AppHandle) {
+    let Ok(true) = prepare_lightweight_exit(app) else {
+        // 交接失败/无可交接内核：普通退出（失败已 cancel，可重试）
+        request_process_exit(app, None);
+        return;
+    };
+    notify_lightweight_exit(app);
+    // 交给独立线程延后退出：给系统通知一点投递时间，也不阻塞菜单线程
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        handle.exit(0);
+    });
+}
+
+/// 轻量退出后托盘图标随进程消失，系统通知明确告知内核与代理仍在运行
+///（避免「应用崩了」误读）。Linux 走桌面通知服务，首发 macOS，差异记录。
+#[cfg(any(target_os = "macos", windows))]
+fn notify_lightweight_exit(app: &AppHandle) {
+    let english = app
+        .try_state::<AppState>()
+        .map(|state| {
+            state
+                .store
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .data()
+                .ui
+                .lang
+                == "en"
+        })
+        .unwrap_or(false);
+    let mut notification = notify_rust::Notification::new();
+    if english {
+        notification
+            .summary("Crossbow quit lightly")
+            .body("Core and proxy keep running. Reopen Crossbow to manage again.");
+    } else {
+        notification
+            .summary("Crossbow 已轻量退出")
+            .body("内核与代理仍在运行，重新打开应用即可恢复管理。");
+    }
+    let _ = notification.show();
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+fn notify_lightweight_exit(app: &AppHandle) {
+    let _ = app;
+}
+
 /// 主线程交付结果后才重新开放退出，避免旧失败结果取消新一轮原生请求。
 pub(crate) fn finish_process_exit(
     handle: &AppHandle,
@@ -412,6 +505,10 @@ pub(crate) fn handle_menu(app: &AppHandle, id: &str) {
                     .store(false, std::sync::atomic::Ordering::SeqCst);
             }
             app.exit(0);
+            Ok(())
+        }
+        "quit-light" => {
+            lightweight_process_exit(app);
             Ok(())
         }
         "lightweight-quit" => {
