@@ -97,7 +97,7 @@ fn start_core_locked_checked(
             return Err(format!(
                 "Linux 系统服务当前固定运行 mihomo（{}），无法以 {need} 启动；请切回 mihomo 引擎后再启动",
                 service_core.display()
-            ));
+            ).into());
         }
         ensure_engine_binary(state, need)?;
     }
