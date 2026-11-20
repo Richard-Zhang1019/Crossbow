@@ -7,7 +7,7 @@ use crate::{Error, Result};
 
 /// 一次订阅拉取的结果。
 pub struct SubscriptionFetch {
-    /// 订阅原文（Clash/mihomo YAML，或 base64 分享文本——后者由上游转换，S2 只支持 YAML）。
+    /// 完整配置保留原文；分享链接订阅已在本地归一化为 mihomo YAML。
     pub content: String,
     /// `subscription-userinfo` 响应头解析出的流量信息；无则 None。
     pub traffic: Option<TrafficInfo>,
@@ -19,12 +19,20 @@ pub fn fetch_subscription(url: &str, timeout_secs: u64) -> Result<SubscriptionFe
         .timeout(std::time::Duration::from_secs(timeout_secs))
         .user_agent("Crossbow/0.1 (clash-verge-compatible)")
         .build();
-    let resp = agent
-        .get(url)
-        .call()
-        .map_err(|e| Error::Network(format!("GET {url}: {e}")))?;
+    let resp = agent.get(url).call().map_err(|e| {
+        // Subscription URLs often contain credentials. Keep both URL and the
+        // transport's free-form error text out of notifications and history.
+        let reason = match e {
+            ureq::Error::Status(code, _) => format!("HTTP {code}"),
+            ureq::Error::Transport(error) => format!("{:?}", error.kind()),
+        };
+        Error::Network(format!("订阅获取失败：{reason}"))
+    })?;
     if resp.status() >= 400 {
-        return Err(Error::Network(format!("GET {url}: HTTP {}", resp.status())));
+        return Err(Error::Network(format!(
+            "订阅获取失败：HTTP {}",
+            resp.status()
+        )));
     }
     let traffic = resp
         .header("subscription-userinfo")
@@ -32,6 +40,7 @@ pub fn fetch_subscription(url: &str, timeout_secs: u64) -> Result<SubscriptionFe
     let content = resp
         .into_string()
         .map_err(|e| Error::Network(format!("read body: {e}")))?;
+    let content = normalize_profile_content(&content)?;
     Ok(SubscriptionFetch { content, traffic })
 }
 
@@ -78,6 +87,13 @@ pub fn now_secs() -> u64 {
         .unwrap_or(0)
 }
 
+/// Normalize URI/Base64 lists locally; no external conversion service is used.
+pub fn normalize_profile_content(content: &str) -> Result<String> {
+    let normalized = crate::share_links::normalize(content)?;
+    validate_profile_content(&normalized)?;
+    Ok(normalized)
+}
+
 /// 导入/更新前的基础校验：必须是能解析的 YAML 且包含 `proxies` 段。
 pub fn validate_profile_content(content: &str) -> Result<()> {
     parse_proxy_names(content)?;
@@ -87,11 +103,22 @@ pub fn validate_profile_content(content: &str) -> Result<()> {
 /// 从 Clash/mihomo YAML 中提取节点名列表（仅用于 UI 展示与校验，
 /// 内核启动仍直接消费原文，避免重复实现内核语义）。
 pub fn parse_proxy_names(clash_yaml: &str) -> Result<Vec<String>> {
-    let doc: serde_yaml::Value = serde_yaml::from_str(clash_yaml)?;
+    let doc: serde_yaml::Value = serde_yaml::from_str(clash_yaml).map_err(|_| {
+        Error::Network(
+            "Clash YAML/JSON 配置语法无效；支持 Clash YAML、sing-box JSON、Base64 与分享链接列表"
+                .into(),
+        )
+    })?;
+    if let Some(outbounds) = doc.get("outbounds").and_then(|v| v.as_sequence()) {
+        return Ok(outbounds
+            .iter()
+            .filter_map(|p| p.get("tag").and_then(|v| v.as_str()).map(String::from))
+            .collect());
+    }
     let proxies = doc
         .get("proxies")
         .and_then(|v| v.as_sequence())
-        .ok_or_else(|| Error::Network("config has no `proxies` section".into()))?;
+        .ok_or_else(|| Error::Network("Clash YAML/未知配置：缺少 proxies 列表；支持 Clash YAML、sing-box JSON、Base64 与分享链接列表".into()))?;
     Ok(proxies
         .iter()
         .filter_map(|p| p.get("name").and_then(|n| n.as_str()).map(String::from))

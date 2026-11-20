@@ -33,6 +33,14 @@ pub(crate) fn import_url_blocking(
     url: &str,
     name: Option<&str>,
 ) -> Result<Profile, String> {
+    // Share links pasted into the URL entry are local content, not HTTP requests.
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        return import_content_blocking(
+            state,
+            name.unwrap_or("分享节点").to_owned(),
+            url.to_owned(),
+        );
+    }
     let fetched = fetch_subscription(url, 30).map_err(|e| e.to_string())?;
     validate_profile_content(&fetched.content).map_err(|e| e.to_string())?;
     let fallback = url
@@ -82,7 +90,8 @@ pub(crate) fn import_content_blocking(
     name: String,
     content: String,
 ) -> Result<Profile, String> {
-    validate_profile_content(&content).map_err(|e| e.to_string())?;
+    let content = crossbow_core::subscription::normalize_profile_content(&content)
+        .map_err(|e| e.to_string())?;
     let mut profile = make_profile(gen_id(), name, ProfileKind::Local, None);
     profile.content = content;
     profile.last_updated = Some(now_secs());
