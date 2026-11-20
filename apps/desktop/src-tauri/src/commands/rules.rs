@@ -20,31 +20,49 @@ pub(crate) struct ProcessRuleStatus {
     pub targets: Vec<String>,
 }
 
-/// 从当前激活订阅解析 proxy-groups 名（解析失败按空表处理——编辑器
-/// 仍有 DIRECT/REJECT 可选）。
+/// Resolve policy names from the effective configuration, including overrides
+/// and native sing-box outbound tags. A stale raw subscription is insufficient.
 fn group_targets(state: &crate::AppState) -> Vec<String> {
     let content = {
         let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-        let data = store.data();
-        data.active_profile
-            .as_deref()
-            .and_then(|pid| data.profile(pid))
-            .map(|p| p.content.clone())
-    }
-    .unwrap_or_default();
-    let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&content) else {
+        crossbow_core::render_config(store.data())
+            .map(|r| r.config)
+            .unwrap_or_default()
+    };
+    let Ok(document) = serde_yaml::from_str::<serde_yaml::Value>(&content) else {
         return Vec::new();
     };
-    doc.get("proxy-groups")
-        .and_then(|g| g.as_sequence())
-        .map(|groups| {
-            groups
-                .iter()
-                .filter_map(|g| g.get("name").and_then(|n| n.as_str()))
-                .map(String::from)
-                .collect()
-        })
-        .unwrap_or_default()
+    policy_names(&document)
+}
+
+fn policy_names(document: &serde_yaml::Value) -> Vec<String> {
+    let mut names = Vec::new();
+    for (section, key) in [("proxy-groups", "name"), ("outbounds", "tag")] {
+        if let Some(items) = document.get(section).and_then(|v| v.as_sequence()) {
+            for item in items {
+                if let Some(name) = item.get(key).and_then(|v| v.as_str()) {
+                    if !matches!(name, "DIRECT" | "REJECT") && !names.iter().any(|n| n == name) {
+                        names.push(name.to_owned());
+                    }
+                }
+            }
+        }
+    }
+    names
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn policy_choices_cover_native_singbox_and_mihomo_without_duplicate_builtins() {
+        let yaml = serde_yaml::from_str("proxy-groups: [{name: auto}, {name: auto}]\n").unwrap();
+        assert_eq!(super::policy_names(&yaml), vec!["auto"]);
+        let native = serde_yaml::from_str(
+            r#"{"outbounds":[{"tag":"DIRECT"},{"tag":"REJECT"},{"tag":"work"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(super::policy_names(&native), vec!["work"]);
+    }
 }
 
 #[tauri::command]
