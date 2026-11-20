@@ -158,17 +158,26 @@ pub fn check_once(
     }
 }
 
+/// #558：DOWNLOADING 在 panic/unwind 路径也必须复位——标志卡在 true 时
+/// 通知里的「重试下载」从此全部静默 no-op，用户点了永远没反应。
+struct DownloadingGuard;
+impl Drop for DownloadingGuard {
+    fn drop(&mut self) {
+        DOWNLOADING.store(false, Ordering::SeqCst);
+    }
+}
+
 /// 下载当前已发现的新版本；完成后置 downloaded=true 并提示重启。
 pub fn download_and_prepare(app: &AppHandle) -> Result<(), String> {
     if DOWNLOADING.swap(true, Ordering::SeqCst) {
         return Ok(());
     }
+    let _reset = DownloadingGuard;
     notifications::publish(
         app,
         Notice::new(Kind::Progress, "update.download", "update-download"),
     );
     let result = download_inner(app);
-    DOWNLOADING.store(false, Ordering::SeqCst);
     match &result {
         Ok(()) => {
             let mut notice = Notice::new(Kind::Success, "update.ready", "update-download");
@@ -326,4 +335,32 @@ pub fn tray_label(app: &AppHandle) -> Option<String> {
         ),
         info.version
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// #558：下载中途 panic（unwind）后 DOWNLOADING 必须被 guard 复位，
+    /// 否则「重试下载」从此全部静默 no-op。
+    #[test]
+    fn downloading_flag_resets_even_when_download_panics() {
+        DOWNLOADING.store(false, Ordering::SeqCst);
+        let panicked = std::panic::catch_unwind(|| {
+            let _guard = DownloadingGuard;
+            DOWNLOADING.store(true, Ordering::SeqCst);
+            panic!("simulated download panic");
+        });
+        assert!(panicked.is_err());
+        assert!(
+            !DOWNLOADING.load(Ordering::SeqCst),
+            "flag must reset after unwind so retry works again"
+        );
+        // 常规路径：guard 离开作用域即复位
+        DOWNLOADING.store(true, Ordering::SeqCst);
+        {
+            let _guard = DownloadingGuard;
+        }
+        assert!(!DOWNLOADING.load(Ordering::SeqCst));
+    }
 }

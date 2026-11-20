@@ -206,19 +206,23 @@ pub(crate) fn subscribe_logs(
     Ok(state.ws.logs_snapshot())
 }
 #[tauri::command]
-pub(crate) fn unsubscribe_connections(state: State<AppState>) -> Result<(), String> {
-    state.ws.unsubscribe("connections");
+pub(crate) fn unsubscribe_connections(
+    state: State<AppState>,
+    subscriber: String,
+) -> Result<(), String> {
+    state.ws.release("connections", &subscriber);
     Ok(())
 }
 #[tauri::command]
 pub(crate) fn subscribe_connections(
     app: AppHandle,
     state: State<AppState>,
+    subscriber: String,
     include_processes: Option<bool>,
 ) -> Result<(), String> {
     state
         .ws
-        .want_connections(include_processes.unwrap_or(false));
+        .want_connections(&subscriber, include_processes.unwrap_or(false));
     let (port, secret) = require_controller(&state)?;
     let h = app.clone();
     state
@@ -228,13 +232,20 @@ pub(crate) fn subscribe_connections(
         })
 }
 #[tauri::command]
-pub(crate) fn unsubscribe_traffic(state: State<AppState>) -> Result<(), String> {
-    state.ws.unsubscribe("traffic");
+pub(crate) fn unsubscribe_traffic(
+    state: State<AppState>,
+    subscriber: String,
+) -> Result<(), String> {
+    state.ws.release("traffic", &subscriber);
     Ok(())
 }
 #[tauri::command]
-pub(crate) fn subscribe_traffic(app: AppHandle, state: State<AppState>) -> Result<(), String> {
-    state.ws.want_channel("traffic");
+pub(crate) fn subscribe_traffic(
+    app: AppHandle,
+    state: State<AppState>,
+    subscriber: String,
+) -> Result<(), String> {
+    state.ws.want_channel("traffic", &subscriber);
     let (port, secret) = require_controller(&state)?;
     let h = app.clone();
     state

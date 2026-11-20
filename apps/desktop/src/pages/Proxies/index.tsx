@@ -149,8 +149,16 @@ export default function ProxiesPage() {
       const [profile, core] = await Promise.all([ipc.activeProfileId(), ipc.coreStatus()]);
       if (revision !== snapshotRevision.current) return;
       if (!profile || core.state !== "Running") {
-        const missing = profile && core.state !== "Starting" && !(await ipc.getEngineConfig()).core_installed;
+        // 安装信息读取失败时仍展示已确认的停止状态，不假定内核已安装。
+        // 无配置/启动中无需额外读取；错误只在主动进入页面时提示，轮询重试。
+        const engine = profile && core.state !== "Starting"
+          ? await ipc.getEngineConfig().catch(error => {
+            if (revision === snapshotRevision.current && !silent) notify.error(error, "proxies-engine-read");
+            return null;
+          }) : null;
+        if (engine && revision === snapshotRevision.current) void notify.resolve("proxies-engine-read");
         if (revision !== snapshotRevision.current) return;
+        const missing = profile && core.state !== "Starting" && engine !== null && !engine.core_installed;
         updateSnapshot(null, []);
         setPhase(!profile ? "noConfig" : missing ? "missingCore" : "stopped");
         return;

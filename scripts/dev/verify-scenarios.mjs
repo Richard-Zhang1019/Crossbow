@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// #511：可复跑桌面验证入口——生产组件 + IPC 桩，固化四个关键回归场景。
+// #511：可复跑桌面验证入口——生产组件 + IPC 桩，固化关键回归场景。
 //
 // 用法（仓库根目录）：
 //   node scripts/dev/verify-scenarios.mjs                # 全部场景（headless）
@@ -11,6 +11,12 @@
 //   2 测速取消后停止派发（已取消后不再发起新测量，已完成结果保留）
 //   3 诊断原样本/恢复样本区分 + 导出白名单（故障证据与摘要只含白名单字段）
 //   4 默认/最小窗口控件可见性（中英文 × 明暗主题 × 1120x720/880x560）
+//   5 快照连续恢复与失败后重试
+//   6 共享通道订阅身份与迟到退订（IPC 模拟）
+//   7 异步失败通知归属、恢复与结构化端口引导
+//   8 监听注册失败在挂载期间处理
+//   9 语言切换后的既有轮询使用新语言
+//   10 连接暂停、关闭校正、配置旧读取与迟到订阅
 //
 // 失败时把截图、IPC 调用计数、控制台错误写入临时目录并打印路径。
 
@@ -32,10 +38,10 @@ function parseArgs(args) {
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--headed") {
       headed = true;
-    } else if (args[i] === "--scenario" && scenario === null && /^[1-4]$/.test(args[i + 1] ?? "")) {
+    } else if (args[i] === "--scenario" && scenario === null && /^(?:[1-9]|10)$/.test(args[i + 1] ?? "")) {
       scenario = Number(args[++i]);
     } else {
-      throw new Error("用法：pnpm verify:desktop [--scenario 1|2|3|4] [--headed]");
+      throw new Error("用法：pnpm verify:desktop [--scenario 1|2|3|4|5|6|7|8|9|10] [--headed]");
     }
   }
   return { scenario, headed };
@@ -315,7 +321,9 @@ async function scenarioDiagnostics(page) {
     "Crossbow 0.14.4-verify", "Mixed port: 7897",
     "- Local mixed port could not be reached",
     "System proxy fault evidence (explicit mixed-port HTTPS; node unknown)",
-    "State: recovered (verified)", "Previous fault record", "State: ongoing",
+    "State: recovered (verified)", "State: ongoing",
+    // 「上一条故障记录」段首已走 i18n（#563）：夹具默认 zh，取中文值断言
+    "上一条故障记录",
   ]) {
     assert(share.includes(must), `导出摘要应包含白名单字段：${must}`);
   }
@@ -400,12 +408,314 @@ async function scenarioWindowControls(page) {
   await assertNoUnknownCommands(page);
 }
 
+
+// #562/#563：失败后的通知归属、恢复与结构化端口引导。
+async function scenarioAsyncErrors(page) {
+  await page.evaluate(() => {
+    const invoke = window.__TAURI_INTERNALS__.invoke;
+    window.__cb.notices = [];
+    window.__cb.resolved = [];
+    window.__TAURI_INTERNALS__.invoke = (cmd, args) => {
+      if (cmd === "notification_publish") window.__cb.notices.push(args.notice);
+      if (cmd === "notification_resolve") window.__cb.resolved.push(args.source);
+      return invoke(cmd, args);
+    };
+    window.__cb.setCommands({ list_overrides: () => { throw new Error("override read failed"); } });
+  });
+  await gotoNav(page, "配置", ".cb-view-profiles");
+  await page.getByRole("button", { name: "覆写链", exact: true }).click();
+  await page.getByText("覆写读取失败，请重试", { exact: true }).waitFor();
+  const dir = artifactsDir();
+  await sleep(350);
+  await page.screenshot({ path: path.join(dir, "override-load-error.png"), fullPage: true });
+  await page.setViewportSize({ width: 880, height: 560 });
+  await page.evaluate(() => window.__cb.emit("ui://theme", "dark"));
+  await sleep(350);
+  await page.screenshot({ path: path.join(dir, "override-load-error-dark.png"), fullPage: true });
+  assert(await page.getByRole("button", { name: "重试", exact: true }).isVisible(), "最小窗口深色主题的重试入口可见");
+  await page.setViewportSize({ width: 1120, height: 720 });
+  await page.evaluate(() => window.__cb.emit("ui://theme", "light"));
+  await page.evaluate(() => window.__cb.setCommands({ list_overrides: [] }));
+  await page.getByRole("button", { name: "重试", exact: true }).click();
+  await eventually(page, "覆写读取成功解除旧失败", () => page.evaluate(() =>
+    window.__cb.resolved.includes("override-load")));
+
+  await page.locator(".cb-diagnostics-button").click();
+  const steps = ["core_running", "controller", "config_renders", "listener", "sysproxy", "proxied_traffic", "dns_direct"];
+  for (const [fix, command, id] of [
+    ["restart_core", "core_restart", "listener"],
+    ["enable_sysproxy", "diagnosis_enable_sysproxy", "sysproxy"],
+    ["start_core", "core_start", "core_running"],
+  ]) {
+    await page.evaluate(({ steps, fix, command, id }) => {
+      window.__cb.notices = [];
+      window.__cb.setCommands({
+        run_diagnosis: {
+          rows: steps.map(key => ({ id: key, ok: key !== id, skipped: false, detail: "", fix: key === id ? fix : null })),
+          context: { os: "macos", os_version: "27.2", engine: "mihomo", core_state: "running",
+            core_version: "stub", proxy: "off", tun: "off", mixed_port: 7897 },
+        },
+        [command]: () => { throw new Error("repair failed"); },
+      });
+    }, { steps, fix, command, id });
+    const initial = page.locator(".cb-view-diagnostics .cb-empty button");
+    if (await initial.count()) await initial.click();
+    else await page.locator(".cb-diag-band-actions button").last().click();
+    const repair = page.locator(`#cb-check-${id} button`);
+    await repair.waitFor();
+    const before = await calls(page, "run_diagnosis");
+    await repair.click();
+    await eventually(page, `${fix} 失败仍复检`, async () => (await calls(page, "run_diagnosis")) > before);
+    const count = await page.evaluate(() => window.__cb.notices.filter(n => n.source === "diagnostics-fix").length);
+    assert(count === (fix === "start_core" ? 1 : 0), `${fix} 通知由唯一归属方报告（实际前端 ${count} 条）`);
+  }
+
+  await gotoNav(page, "概览", ".cb-view-home");
+  await page.evaluate(() => {
+    localStorage.setItem("crossbow:first-connection", "pending");
+    window.__cb.setCommands({ core_status: { state: "Stopped" }, tun_status: { enabled: false, ready: false, coreRunning: false } });
+    window.__cb.emit("core://status", { state: "Stopped" });
+  });
+  // remount so the setup progress is read from storage.
+  await gotoNav(page, "配置", ".cb-view-profiles");
+  await gotoNav(page, "概览", ".cb-view-home");
+  const start = page.getByRole("button", { name: "启动内核", exact: true });
+  await start.waitFor();
+  for (const [error, conflict] of [
+    [{ kind: "portUnavailable", port: 7897, message: "bind failed in any language" }, true],
+    [{ kind: "startFailed", port: null, message: "无法绑定 is not a failure code" }, false],
+  ]) {
+    await page.evaluate(error => window.__cb.setCommands({ core_start: () => Promise.reject(error) }), error);
+    await start.click();
+    await eventually(page, "启动失败后按钮恢复", () => start.isEnabled());
+    const hint = page.getByText("混合端口无法绑定，请在网络设置中修改端口后重试。", { exact: true });
+    assert(await hint.isVisible() === conflict, "仅结构化绑定失败显示修改端口引导");
+    assert(!await page.evaluate(() => window.__cb.notices.some(n => n.details?.includes("[object Object]"))), "通知保留可读的结构化错误详情");
+  }
+  await page.evaluate(() => window.__cb.setCommands({ get_engine_config: () => Promise.reject("engine read failed") }));
+  await gotoNav(page, "节点", ".cb-view-proxies");
+  await page.getByRole("heading", { name: "内核尚未就绪", exact: true }).waitFor();
+  await eventually(page, "次要读取失败局部提示", () => page.evaluate(() => window.__cb.notices.some(n => n.source === "proxies-engine-read")));
+  await page.evaluate(() => window.__cb.setCommands({ get_engine_config: { core_installed: false } }));
+  await page.getByRole("button", { name: "刷新", exact: true }).click();
+  await page.getByRole("heading", { name: "内核未安装", exact: true }).waitFor();
+  await eventually(page, "次要读取成功解除错误", () => page.evaluate(() => window.__cb.resolved.includes("proxies-engine-read")));
+  await assertNoUnknownCommands(page);
+  console.log(`  生产覆写页失败态截图：${dir}/override-load-error.png`);
+}
+
+
+async function scenarioRegistrationFailure(page) {
+  await page.addInitScript(() => {
+    const invoke = window.__TAURI_INTERNALS__.invoke;
+    window.__TAURI_INTERNALS__.invoke = (cmd, args) => {
+      if (cmd === "plugin:event|listen" && ["ui://theme", "ui://goto", "engine://changed", "traffic://data"].includes(args.event)) {
+        return Promise.reject(new Error("registration failed"));
+      }
+      return invoke(cmd, args);
+    };
+  });
+  await page.reload();
+  await page.locator(".cb-system-foot").waitFor();
+  // Stay mounted long enough for registration rejection to be observed;
+  // catching only during unmount cannot satisfy this scenario.
+  await sleep(150);
+  await gotoNav(page, "配置", ".cb-view-profiles");
+  await gotoNav(page, "概览", ".cb-view-home");
+  await sleep(150);
+  await assertNoUnknownCommands(page);
+}
+
+
+async function scenarioPollingLanguage(page) {
+  await page.clock.install();
+  await page.reload();
+  await page.locator(".cb-system-foot").waitFor();
+  await page.evaluate(() => {
+    const invoke = window.__TAURI_INTERNALS__.invoke;
+    window.__cb.notices = [];
+    window.__TAURI_INTERNALS__.invoke = (cmd, args) => {
+      if (cmd === "notification_publish") window.__cb.notices.push(args.notice);
+      return invoke(cmd, args);
+    };
+    window.__cb.setCommands({ coexist_detect: [{ kind: "tunnel", detail: "stub tunnel" }] });
+    window.__cb.emit("ui://lang", "en");
+  });
+  await page.locator(".cb-primary-nav button", { hasText: "Overview" }).waitFor();
+  await page.clock.fastForward(60_001);
+  await eventually(page, "已挂载轮询读取当前语言", () => page.evaluate(() =>
+    window.__cb.notices.some(n => n.source === "coexist" && n.title === "Another proxy is running")));
+  await assertNoUnknownCommands(page);
+}
+
+// ---------------------------------------------------------------- 场景 5
+async function scenarioSnapshotRecovery(page) {
+  await page.evaluate(() => {
+    window.__cb.setCommands({
+      config_snapshots: [
+        { id: "snapshot-a", at: 1_800_000_000, profiles: 2, overrides: 0, active: "验证订阅A" },
+        { id: "snapshot-b", at: 1_800_000_060, profiles: 2, overrides: 0, active: "验证订阅B" },
+      ],
+      restore_config_snapshot: (_args, _cmd, seq) => {
+        if (seq === 3) throw new Error("验证恢复失败（脱敏夹具）");
+        return null;
+      },
+    });
+  });
+  await gotoNav(page, "配置", ".cb-view-profiles");
+  await page.getByRole("button", { name: "备份与迁移" }).click();
+  await page.locator(".cb-backup-menu-item", { hasText: "恢复快照" }).click();
+  const buttons = page.locator(".cb-recovery-list button");
+  await eventually(page, "应显示两份快照", async () => await buttons.count() === 2);
+  const initialLists = await calls(page, "config_snapshots");
+  for (const [index, row] of [0, 1, 0, 1].entries()) {
+    await buttons.nth(row).click();
+    await eventually(page, `恢复 ${index + 1} 次后应释放所有按钮`, async () =>
+      await buttons.count() === 2 && await buttons.nth(0).isEnabled() && await buttons.nth(1).isEnabled());
+    assert(await calls(page, "restore_config_snapshot") === index + 1, "每次恢复只提交一次");
+  }
+  assert(await calls(page, "config_snapshots") === initialLists + 3, "初次加载与三次成功恢复刷新列表，失败不刷新");
+  await assertNoUnknownCommands(page);
+}
+
+// ---------------------------------------------------------------- 场景 6
+async function scenarioStreamOwnership(page) {
+  // Model only ownership, not Rust/WebSocket transport. Backend tests cover
+  // actual reader lifetime; this catches missing IDs and wrong page cleanup.
+  await page.evaluate(() => {
+    const owners = new Set();
+    window.__cb.owners = owners;
+    window.__cb.streamErrors = [];
+    window.__cb.setCommands({
+      subscribe_connections: ({ subscriber }) => {
+        if (!subscriber) window.__cb.streamErrors.push("missing subscriber");
+        owners.add(subscriber);
+      },
+      unsubscribe_connections: ({ subscriber }) => {
+        if (!subscriber) window.__cb.streamErrors.push("missing unsubscribe subscriber");
+        // A late Home cleanup must only remove its own identity.
+        return new Promise((resolve) => setTimeout(() => { owners.delete(subscriber); resolve(null); }, 80));
+      },
+    });
+  });
+  // Initial Home subscription predates fixture installation. Remount it.
+  await gotoNav(page, "节点", ".cb-view-proxies");
+  await gotoNav(page, "概览", ".cb-view-home");
+  for (let pass = 0; pass < 3; pass++) {
+    await eventually(page, "概览实例登记身份", (p) => p.evaluate(() =>
+      [...window.__cb.owners].some((id) => id?.startsWith("home:"))));
+    await gotoNav(page, "监测", ".cb-view-connections");
+    await eventually(page, "迟到退订后仅剩连接页身份", (p) => p.evaluate(() =>
+      window.__cb.owners.size === 1 && [...window.__cb.owners][0]?.startsWith("connections:")));
+    for (const bytes of [1024, 2048]) {
+      await page.evaluate((upload_total) => window.__cb.emit("connections://data", {
+        rows: [], upload_total, download_total: 0, memory: 0,
+      }), bytes);
+      await eventually(page, "连接页持续消费新事件", async () =>
+        (await page.locator(".cb-connections-page").innerText()).includes(bytes === 1024 ? "1.0 KB" : "2.0 KB"));
+    }
+    await gotoNav(page, "概览", ".cb-view-home");
+  }
+  await gotoNav(page, "节点", ".cb-view-proxies");
+  await eventually(page, "全部页面离开后释放身份", (p) => p.evaluate(() => window.__cb.owners.size === 0));
+  assert(await page.evaluate(() => window.__cb.streamErrors.length === 0), "IPC 订阅/退订必须携带身份");
+  await assertNoUnknownCommands(page);
+}
+
+
+async function scenarioConnectionPause(page) {
+  await page.evaluate(() => window.__cb.setCommands({ close_connection: () => { throw new Error("close refused"); } }));
+  await gotoNav(page, "监测", ".cb-view-connections");
+  const row = { id: "row-1", host: "example.invalid", rule: "MATCH", chains: "DIRECT", process: "Preview",
+    up: 0, down: 1024, network: "tcp", kind: "HTTP", elapsed_ms: 3000 };
+  const frame = rows => page.evaluate(rows => window.__cb.emit("connections://data", { rows, upload_total: 0, download_total: 1024, memory: 0 }), rows);
+  await frame([row]);
+  const target = page.locator(".cb-connection-row", { hasText: row.host });
+  await target.waitFor();
+  const subs = await calls(page, "subscribe_connections");
+  const unsubs = await calls(page, "unsubscribe_connections");
+  await page.getByRole("button", { name: "暂停", exact: true }).click();
+  await frame([]);
+  assert(await target.count() === 1, "暂停保持已有行");
+  await page.getByRole("button", { name: "已暂停（点击恢复）", exact: true }).click();
+  await eventually(page, "恢复立即应用最新帧", async () => await target.count() === 0);
+  await frame([row]);
+  await target.waitFor();
+  await page.getByRole("button", { name: "暂停", exact: true }).click();
+  await target.getByRole("button").click();
+  await eventually(page, "失败请求已完成", async () => await calls(page, "close_connection") === 1);
+  assert(await target.count() === 1, "关闭失败不能删行");
+  await page.evaluate(() => window.__cb.setCommands({ close_connection: null }));
+  await target.getByRole("button").click();
+  await eventually(page, "关闭成功移除暂停行", async () => await target.count() === 0);
+  await page.getByRole("button", { name: "已暂停（点击恢复）", exact: true }).click();
+  assert(await target.count() === 0, "恢复不能从缓存复活已关闭行");
+  assert(await calls(page, "subscribe_connections") === subs, "暂停恢复不能重订阅");
+  assert(await calls(page, "unsubscribe_connections") === unsubs, "暂停恢复不能退订");
+
+  await page.evaluate(() => {
+    window.__cb.releaseProfileReads = [];
+    window.__cb.setCommands({ list_profiles: () => new Promise(resolve => window.__cb.releaseProfileReads.push(resolve)) });
+  });
+  await gotoNav(page, "配置", ".cb-view-profiles");
+  await eventually(page, "旧读取保持挂起", () => page.evaluate(() => window.__cb.releaseProfileReads.length >= 1));
+  await page.evaluate(() => {
+    const p = { id: "p-a", name: "New profile", kind: "remote", url: "", update_interval_min: 0, override_ids: [] };
+    window.__cb.setCommands({ list_profiles: [p] });
+    window.__cb.emit("profile://updated", "p-a");
+  });
+  await page.locator(".cb-profile-list-item", { hasText: "New profile" }).waitFor();
+  await page.evaluate(() => window.__cb.releaseProfileReads.forEach(resolve => resolve([
+    { id: "p-a", name: "Old profile", kind: "remote", url: "", update_interval_min: 0, override_ids: [] },
+  ])));
+  await sleep(150);
+  assert(await page.locator(".cb-profile-list-item", { hasText: "New profile" }).count() === 1, "旧读取不能覆盖新结果");
+  const dir = artifactsDir();
+  await page.screenshot({ path: path.join(dir, "profiles-read-after.png") });
+
+  console.log(`  配置读取竞态截图：${dir}/profiles-read-after.png`);
+  await page.evaluate(() => window.__cb.setCommands({
+    import_profile_content: () => new Promise(resolve => { window.__cb.completeImport = resolve; }),
+  }));
+  await page.locator('input[type="file"]').setInputFiles({ name: "sample.yaml", mimeType: "text/plain", buffer: Buffer.from("proxies: []") });
+  await eventually(page, "导入操作挂起", () => page.evaluate(() => !!window.__cb.completeImport));
+  await gotoNav(page, "节点", ".cb-view-proxies");
+  await gotoNav(page, "配置", ".cb-view-profiles");
+  await page.evaluate(() => window.__cb.completeImport({ id: "p-imported", name: "Imported", kind: "local", override_ids: [] }));
+  await sleep(150);
+  assert(await page.locator('.cb-view-profiles button[aria-busy="true"]').count() === 0, "旧导入完成不干扰新实例 busy 状态");
+
+  await page.evaluate(() => {
+    window.__cb.pendingOwner = null;
+    window.__cb.setCommands({
+      subscribe_connections: ({ subscriber }) => new Promise(resolve => {
+        window.__cb.finishSubscribe = () => { window.__cb.pendingOwner = subscriber; resolve(); };
+      }),
+      unsubscribe_connections: ({ subscriber }) => {
+        if (window.__cb.pendingOwner === subscriber) window.__cb.pendingOwner = null;
+      },
+    });
+  });
+  await gotoNav(page, "监测", ".cb-view-connections");
+  await eventually(page, "订阅仍在等待", () => page.evaluate(() => !!window.__cb.finishSubscribe));
+  await gotoNav(page, "配置", ".cb-view-profiles");
+  await page.evaluate(() => window.__cb.finishSubscribe());
+  await eventually(page, "迟到订阅必须释放自身身份", () => page.evaluate(() => window.__cb.pendingOwner === null));
+  await assertNoUnknownCommands(page);
+}
+
 // ---------------------------------------------------------------- 编排
 const SCENARIOS = [
+  { id: 10, name: "暂停订阅稳定、关闭校正与配置旧读取", fn: scenarioConnectionPause },
   { id: 1, name: "配置快切忽略同名节点旧结果", fn: scenarioProfileSwitch },
   { id: 2, name: "测速取消后停止派发", fn: scenarioCancelStopsDispatch },
   { id: 3, name: "诊断原样本/恢复样本与导出白名单", fn: scenarioDiagnostics },
   { id: 4, name: "默认/最小窗口控件可见性（中英文 × 明暗）", fn: scenarioWindowControls },
+  { id: 5, name: "快照连续恢复与失败后重试", fn: scenarioSnapshotRecovery },
+  { id: 6, name: "共享通道订阅身份与迟到退订（IPC 模拟）", fn: scenarioStreamOwnership },
+  { id: 7, name: "异步失败通知归属、恢复与端口引导", fn: scenarioAsyncErrors },
+  { id: 8, name: "监听注册失败在挂载期间处理", fn: scenarioRegistrationFailure },
+  { id: 9, name: "语言切换后的既有轮询使用新语言", fn: scenarioPollingLanguage },
 ];
 
 async function main() {

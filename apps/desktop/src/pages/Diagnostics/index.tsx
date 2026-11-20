@@ -256,17 +256,21 @@ export default function DiagnosticsPage({
           return;
         }
         await ipc.coreStart();
+      } else if (row.fix === "restart_core") {
+        await ipc.coreRestart();
+      } else if (row.fix === "enable_sysproxy") {
+        await ipc.diagnosisEnableSysproxy();
       }
-      if (row.fix === "restart_core") await ipc.coreRestart();
-      if (row.fix === "enable_sysproxy") await ipc.diagnosisEnableSysproxy();
       void notify.resolve("diagnostics-fix");
-      await run();
     } catch (error) {
+      // 重启/系统代理的结果归后端；前端只报告自身拥有的启动失败。
+      // 所有分支失败后仍复检，避免重复通知同一个故障。
       if (row.fix === "start_core") notify.error(error, "diagnostics-fix");
     } finally {
       fixingRef.current = false;
       if (active.current) setFixing(null);
     }
+    await run();
   };
 
   const results = running ? progress : report?.rows;
@@ -280,7 +284,7 @@ export default function DiagnosticsPage({
   const summaryText = summaryOpen ? [
     report ? shareText(report, appVersion, stale || runFailed) : null,
     fault ? faultEvidenceText(fault) : null,
-    previousFault ? `Previous fault record\n${faultEvidenceText(previousFault)}` : null,
+    previousFault ? `${t("fault.previous")}\n${faultEvidenceText(previousFault)}` : null,
   ].filter(Boolean).join("\n\n") : null;
   const resultTitle = running
     ? t("diag.progress", { done: progress.length, total: DIAG_STEPS.length })

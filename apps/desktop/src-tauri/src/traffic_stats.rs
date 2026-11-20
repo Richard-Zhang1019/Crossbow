@@ -1,12 +1,13 @@
 //! #567 本地流量统计：按域名/出口节点的日累计聚合与 TopN 查询。
 //!
-//! 数据源：mihomo /connections WS 帧——常驻低频采样（约 5s 解析一帧，
+//! 数据源：mihomo /connections WS 帧——常驻低频采样（逐帧解析（通常 1Hz），
 //! 与页面连接订阅互不相干）；帧内 upload/download 是连接累计值，这里
 //! 维护上一帧基准算增量，连接从帧中消失即视为关闭、基准随手清理。
 //! 存储：数据目录 traffic-stats.json，日桶按**本地日期**切割（跨天 =
 //! 换 key），节流落盘（≥30s 且有增量），启动加载，保留窗口默认 30 天。
 //!
-//! 性能边界：跳帧不丢增量（累计值语义），高连接数下解析频率固定、
+//! 采样快照并非账单：连接在两个快照之间创建并结束时仍可能遗漏。
+//! 性能边界：解析频率随内核快照（通常 1Hz），高连接数下
 //! 单帧成本线性于连接数且只做哈希累加；落盘节流，UI 只读聚合结果。
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -19,16 +20,13 @@ use serde::{Deserialize, Serialize};
 
 /// 统计保留窗口（本地日）。窗口外的桶在落盘前裁剪。
 pub(crate) const RETENTION_DAYS: u32 = 30;
-/// 采样解析最小间隔：mihomo 帧为 1Hz 全量连接列表，累计值语义下跳帧
-/// 不丢增量，5s 一帧显著压低高连接数下的解析开销。
-pub(crate) const STATS_PARSE_MIN_INTERVAL: Duration = Duration::from_secs(5);
 /// 落盘最小间隔（有增量才写）。
 const FLUSH_MIN_INTERVAL: Duration = Duration::from_secs(30);
 /// TopN 条数。
 const TOPN: usize = 10;
 
 /// 单条连接的上一帧累计基准。
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 struct ConnBasis {
     up: u64,
     down: u64,
@@ -44,12 +42,15 @@ struct DayBuckets {
 
 #[derive(Default, Serialize, Deserialize)]
 struct StatsFile {
+    #[serde(default)]
+    basis: HashMap<String, ConnBasis>,
     /// 本地日期（YYYY-MM-DD，ISO 排序即时间序）→ 桶。
     days: BTreeMap<String, DayBuckets>,
 }
 
 #[derive(Serialize)]
 struct StatsFileRef<'a> {
+    basis: &'a HashMap<String, ConnBasis>,
     days: &'a BTreeMap<String, DayBuckets>,
 }
 
@@ -149,24 +150,26 @@ fn local_today() -> String {
 impl TrafficStats {
     pub(crate) fn open(data_dir: &Path) -> Self {
         let path = data_dir.join("traffic-stats.json");
-        let days = match fs::read(&path) {
-            Ok(bytes) => {
-                serde_json::from_slice::<StatsFile>(&bytes)
-                    .unwrap_or_default()
-                    .days
-            }
-            // 首次/损坏都从空表开始：统计是锦上添花，不能挡启动
-            Err(_) => BTreeMap::new(),
-        };
-        Self {
+        crate::platform::fs_perms::ensure_private(&path);
+        let mut saved = fs::read(&path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<StatsFile>(&bytes).ok())
+            .unwrap_or_default();
+        let previous_days = saved.days.len();
+        let cutoff = window_start(&local_today(), RETENTION_DAYS);
+        saved.days.retain(|day, _| day >= &cutoff);
+        let expired = saved.days.len() != previous_days;
+        let stats = Self {
             path,
             inner: Mutex::new(StatsInner {
-                days,
-                basis: HashMap::new(),
-                dirty: false,
+                days: saved.days,
+                basis: saved.basis,
+                dirty: expired,
                 last_flush: None,
             }),
-        }
+        };
+        stats.flush_if_due(true);
+        stats
     }
 
     /// 聚合一帧：增量 = 当前累计 − 上一帧基准（saturating，计数器回退
@@ -183,6 +186,9 @@ impl TrafficStats {
             let basis = inner.basis.entry(item.id.clone()).or_default();
             let up = item.up.saturating_sub(basis.up);
             let down = item.down.saturating_sub(basis.down);
+            if basis.up != item.up || basis.down != item.down {
+                changed = true;
+            }
             basis.up = item.up;
             basis.down = item.down;
             if up == 0 && down == 0 {
@@ -196,7 +202,9 @@ impl TrafficStats {
             n[0] += up;
             n[1] += down;
         }
+        let previous_count = inner.basis.len();
         inner.basis.retain(|id, _| seen.contains(id.as_str()));
+        changed |= previous_count != inner.basis.len();
         if changed {
             inner.dirty = true;
         }
@@ -214,6 +222,10 @@ impl TrafficStats {
     /// 节流落盘：有增量且距上次 ≥30s 才写；`force` 供核心停止/退订时
     /// 跳过时间闸。写入前按保留窗口裁剪。
     pub(crate) fn flush_if_due(&self, force: bool) {
+        self.flush_on_date(force, &local_today());
+    }
+
+    fn flush_on_date(&self, force: bool, today: &str) {
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         if !inner.dirty {
             return;
@@ -225,20 +237,18 @@ impl TrafficStats {
         {
             return;
         }
-        // 保留窗口锚定数据中最新 day（BTreeMap 有序，恒为业务上的今天），
-        // 而非真实系统时钟：写入方（ingest 用 local_today）正常时两者一致；
-        // 时钟回拨/时区差或测试注入固定日期时，锚真实时钟会把「数据里仍在
-        // 窗口内语义的条目」裁掉（#581 CI 实挂：UTC 日期晚于测试固定日期
-        // 一天，窗口错位导致 32 天 > 30）。
-        if let Some(latest) = inner.days.keys().next_back() {
-            let cutoff = window_start(latest, RETENTION_DAYS);
-            if !cutoff.is_empty() {
-                inner.days.retain(|day, _| day.as_str() >= cutoff.as_str());
-            }
-        }
-        let payload = serde_json::to_vec(&StatsFileRef { days: &inner.days }).unwrap_or_default();
+        // 按真实本地日期清理；测试显式传时钟，不用陈旧样本日期迁就测试。
+        let cutoff = window_start(today, RETENTION_DAYS);
+        inner.days.retain(|day, _| day >= &cutoff);
+        let payload = match serde_json::to_vec(&StatsFileRef {
+            days: &inner.days,
+            basis: &inner.basis,
+        }) {
+            Ok(payload) => payload,
+            Err(_) => return,
+        };
         // 写失败保持 dirty 下轮再试；统计不应打扰用户
-        if fs::write(&self.path, payload).is_ok() {
+        if crate::platform::fs_perms::write_private(&self.path, &payload).is_ok() {
             inner.dirty = false;
         }
         inner.last_flush = Some(Instant::now());
@@ -320,6 +330,53 @@ mod tests {
     fn open_temp() -> (TrafficStats, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
         (TrafficStats::open(dir.path()), dir)
+    }
+
+    #[test]
+    fn reload_keeps_live_connection_basis_without_counting_it_twice() {
+        let (stats, dir) = open_temp();
+        let day = local_today();
+        stats.apply_frame(&[item("c1", 100, 200, "a.com", "HK")], &day);
+        stats.flush_if_due(true);
+        let reopened = TrafficStats::open(dir.path());
+        reopened.apply_frame(&[item("c1", 110, 240, "a.com", "HK")], &day);
+        let report = reopened.topn_with_today(1, &day);
+        assert_eq!((report.domains[0].up, report.domains[0].down), (110, 240));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(dir.path().join("traffic-stats.json"))
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+        }
+    }
+
+    #[test]
+    fn short_connection_seen_between_long_samples_is_counted() {
+        let (stats, _dir) = open_temp();
+        stats.apply_frame(&[], "2026-11-20");
+        stats.apply_frame(&[item("short", 5, 10, "short.com", "HK")], "2026-11-20");
+        stats.apply_frame(&[], "2026-11-20");
+        assert_eq!(stats.topn_with_today(1, "2026-11-20").domains[0].down, 10);
+    }
+
+    #[test]
+    fn reopening_prunes_expired_data_without_new_traffic() {
+        let (stats, dir) = open_temp();
+        let old_day = window_start(&local_today(), 40);
+        stats.apply_frame(&[item("old", 1, 2, "old.com", "HK")], &old_day);
+        stats.flush_on_date(true, &old_day);
+        let reopened = TrafficStats::open(dir.path());
+        assert!(reopened.inner.lock().unwrap().days.is_empty());
+        let saved: StatsFile =
+            serde_json::from_slice(&fs::read(dir.path().join("traffic-stats.json")).unwrap())
+                .unwrap();
+        assert!(saved.days.is_empty());
     }
 
     #[test]
@@ -452,7 +509,7 @@ mod tests {
             stats.apply_frame(&[item("c1", 10, 0, "a.com", "HK-01")], &day);
         }
         stats.apply_frame(&[item("c1", 10, 0, "a.com", "HK-01")], today);
-        stats.flush_if_due(true);
+        stats.flush_on_date(true, today);
         let file = fs::read_to_string(dir.path().join("traffic-stats.json")).unwrap();
         let saved: StatsFile = serde_json::from_str(&file).unwrap();
         assert!(saved.days.len() <= RETENTION_DAYS as usize);

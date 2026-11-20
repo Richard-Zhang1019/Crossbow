@@ -118,7 +118,7 @@ impl AppState {
             .clear();
     }
 
-    /// #567：解析一帧 /connections 并聚合（常驻采样线程每 5s 喂一帧）。
+    /// #567：解析一帧 /connections 并聚合（常驻采样线程逐帧喂入）。
     pub fn traffic_stats_ingest(&self, txt: &str) {
         self.traffic_stats.ingest(txt);
     }

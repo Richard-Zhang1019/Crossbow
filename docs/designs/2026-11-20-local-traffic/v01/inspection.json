@@ -1,0 +1,1399 @@
+{
+ "url": "/tmp/pr581-after/preview.html",
+ "at": "2026-11-20T07:06:16.324Z",
+ "allow": [
+  "contrast"
+ ],
+ "viewports": [
+  {
+   "width": 1440,
+   "height": 900,
+   "load": "load",
+   "screens": 1,
+   "filled": [
+    0.58
+   ],
+   "motion": {
+    "elements": 0,
+    "css": 0,
+    "transitions": 0,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "page": {
+     "height": 900,
+     "screens": 1,
+     "words": 143,
+     "img": 0,
+     "video": 0,
+     "canvas": 0,
+     "svg": 4,
+     "sections": 3,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 0,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "流量统计",
+     "words": 1,
+     "chars": 4,
+     "lines": 1,
+     "size": 22,
+     "vw": 1.5,
+     "font": "-apple-system",
+     "weight": 650,
+     "tracking": 0,
+     "leading": 1.3,
+     "top": 151,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "h1": {
+     "text": "流量统计",
+     "words": 1,
+     "lines": 1,
+     "size": 22,
+     "font": "-apple-system"
+    },
+    "headings": [
+     {
+      "text": "3.0 GB",
+      "words": 2,
+      "chars": 6,
+      "lines": 1,
+      "size": 34,
+      "vw": 2.4,
+      "font": "-apple-system",
+      "weight": 600,
+      "tracking": -0.029,
+      "leading": 1.2,
+      "upper": true,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.07,
+      "top": 265,
+      "tag": "strong",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 1,
+     "maxLines": 1,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": null,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "-apple-system",
+       "share": 1,
+       "mono": false
+      }
+     ],
+     "familyCount": 1,
+     "sizes": [
+      11,
+      12,
+      13,
+      14,
+      16,
+      22,
+      34
+     ],
+     "sizeCount": 7,
+     "notLoaded": [],
+     "body": null,
+     "measureChars": null,
+     "max": {
+      "size": 34,
+      "vw": 2.4,
+      "font": "-apple-system",
+      "text": "3.0 GB"
+     },
+     "monoShare": 0,
+     "monoProseShare": 0,
+     "monoFamilies": [],
+     "monoSamples": [],
+     "microLabels": 0,
+     "microLabelShare": 0,
+     "microSamples": [],
+     "upperShare": 0.46,
+     "centerShare": 0.08,
+     "smallText": 5
+    },
+    "eyebrows": [
+     {
+      "text": "近 7 天 · 已观测流量",
+      "above": "3.0 GB",
+      "upper": false,
+      "tracked": false,
+      "mono": false,
+      "pill": false,
+      "size": 12,
+      "top": 239
+     }
+    ],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#eef0f5",
+     "bodyBgHsl": {
+      "h": 223,
+      "s": 0.26,
+      "l": 0.95
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#eef0f5",
+       "top": 0,
+       "hsl": {
+        "h": 223,
+        "s": 0.26,
+        "l": 0.95
+       }
+      },
+      {
+       "color": "#ffffff",
+       "top": 88,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 1
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#596777",
+       "share": 0.66
+      },
+      {
+       "color": "#242b37",
+       "share": 0.34
+      },
+      {
+       "color": "#ffffff",
+       "share": 0.01
+      }
+     ],
+     "button": {
+      "bg": "#ffffff",
+      "hsl": {
+       "h": 0,
+       "s": 0,
+       "l": 1
+      },
+      "fg": "#596777"
+     },
+     "lowContrast": [
+      {
+       "text": "近 7 天",
+       "ratio": 1.1,
+       "need": 4.5,
+       "size": 12,
+       "fg": "#ffffff",
+       "bg": "#f0f2f7"
+      }
+     ]
+    },
+    "buttons": {
+     "count": 2,
+     "inHero": 2,
+     "radius": 7,
+     "height": 34,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "验证订阅A",
+      "诊断"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 0,
+     "shadowSamples": [],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 11,
+     "hairlineSamples": [
+      "nav.cb-subnav 1358px",
+      "section.cb-stats-overview 1358px",
+      "div.cb-stats-plot 1018px",
+      "div.cb-stats-entry 650px",
+      "div.cb-stats-entry 650px"
+     ],
+     "outlinedBoxes": 1,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 1,
+     "boxRadius": 16,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": []
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 0,
+     "fixed": false,
+     "height": 60,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": []
+   },
+   "layout": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "pageH": 900,
+    "margins": {
+     "left": 41,
+     "right": 41
+    },
+    "sections": [
+     {
+      "sel": "section.cb-stats-overview",
+      "tag": "section",
+      "top": 216,
+      "height": 226,
+      "words": 25,
+      "media": 0,
+      "middle": 125,
+      "heading": {
+       "text": "3.0 GB",
+       "size": 34,
+       "tag": "strong"
+      },
+      "left": 41,
+      "right": 41,
+      "textLeft": 41,
+      "textRight": 41,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "div.cb-stats-rankings",
+      "tag": "div",
+      "top": 454,
+      "height": 371,
+      "words": 85,
+      "media": 0,
+      "middle": 453,
+      "heading": {
+       "text": "域名 Top 10",
+       "size": 14,
+       "tag": "h2"
+      },
+      "left": 41,
+      "right": 41,
+      "textLeft": 41,
+      "textRight": 41,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "流量统计",
+      "size": 22,
+      "top": 151,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 41,
+      "n": 2
+     },
+     {
+      "x": 303,
+      "n": 1
+     },
+     {
+      "x": 736,
+      "n": 1
+     }
+    ],
+    "leftBlocks": 4,
+    "bodySize": 16,
+    "stage": false,
+    "explains": false,
+    "slivers": [],
+    "voidShare": 0.14,
+    "voidBox": {
+     "x": 900,
+     "y": 420,
+     "w": 420,
+     "h": 420
+    }
+   },
+   "app": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "dark": false,
+    "ground": "#eef0f5",
+    "sidebar": null,
+    "topbar": null,
+    "canvas": {
+     "left": 41,
+     "right": 40
+    },
+    "hero": {
+     "text": "流量统计",
+     "words": 1,
+     "chars": 4,
+     "lines": 1,
+     "size": 22,
+     "vw": 1.5,
+     "font": "-apple-system",
+     "weight": 650,
+     "tracking": 0,
+     "leading": 1.3,
+     "top": 151,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "charts": 2,
+    "layout": {
+     "panels": 9,
+     "firstScreen": 9,
+     "ragged": [],
+     "voids": []
+    },
+    "tiles": 0,
+    "panels": {
+     "count": 9,
+     "radii": [
+      [
+       0,
+       9
+      ]
+     ],
+     "heavyBorders": 0,
+     "borderSamples": [],
+     "heavyShadows": 0,
+     "softShadows": 0,
+     "shadowSamples": [],
+     "glass": 0
+    },
+    "chips": {
+     "count": 0,
+     "hues": 0,
+     "samples": []
+    },
+    "numbers": {
+     "cells": 0,
+     "leftAligned": 0,
+     "figures": 23,
+     "tabularShare": 1,
+     "kpiMax": 34
+    },
+    "rows": null,
+    "chartHues": 0,
+    "placeholders": [],
+    "type": {
+     "under13": 0.65,
+     "tiny": 0,
+     "tinySamples": [],
+     "sizes": [
+      11,
+      12,
+      13,
+      14,
+      16,
+      22,
+      34
+     ]
+    },
+    "title": {
+     "text": "流量统计",
+     "size": 22,
+     "top": 151
+    },
+    "colourShare": 0.006
+   },
+   "consoleErrors": []
+  },
+  {
+   "width": 1120,
+   "height": 700,
+   "load": "load",
+   "screens": 1,
+   "filled": [
+    0.52
+   ],
+   "motion": {
+    "elements": 0,
+    "css": 0,
+    "transitions": 0,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 1120,
+     "h": 700
+    },
+    "page": {
+     "height": 700,
+     "screens": 1,
+     "words": 143,
+     "img": 0,
+     "video": 0,
+     "canvas": 0,
+     "svg": 4,
+     "sections": 3,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 0,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "流量统计",
+     "words": 1,
+     "chars": 4,
+     "lines": 1,
+     "size": 22,
+     "vw": 2,
+     "font": "-apple-system",
+     "weight": 650,
+     "tracking": 0,
+     "leading": 1.3,
+     "top": 134,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "h1": {
+     "text": "流量统计",
+     "words": 1,
+     "lines": 1,
+     "size": 22,
+     "font": "-apple-system"
+    },
+    "headings": [
+     {
+      "text": "3.0 GB",
+      "words": 2,
+      "chars": 6,
+      "lines": 1,
+      "size": 34,
+      "vw": 3,
+      "font": "-apple-system",
+      "weight": 600,
+      "tracking": -0.029,
+      "leading": 1.2,
+      "upper": true,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.09,
+      "top": 245,
+      "tag": "strong",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 1,
+     "maxLines": 1,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": null,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "-apple-system",
+       "share": 1,
+       "mono": false
+      }
+     ],
+     "familyCount": 1,
+     "sizes": [
+      11,
+      12,
+      13,
+      14,
+      16,
+      22,
+      34
+     ],
+     "sizeCount": 7,
+     "notLoaded": [],
+     "body": null,
+     "measureChars": null,
+     "max": {
+      "size": 34,
+      "vw": 3,
+      "font": "-apple-system",
+      "text": "3.0 GB"
+     },
+     "monoShare": 0,
+     "monoProseShare": 0,
+     "monoFamilies": [],
+     "monoSamples": [],
+     "microLabels": 0,
+     "microLabelShare": 0,
+     "microSamples": [],
+     "upperShare": 0.46,
+     "centerShare": 0.08,
+     "smallText": 5
+    },
+    "eyebrows": [
+     {
+      "text": "近 7 天 · 已观测流量",
+      "above": "3.0 GB",
+      "upper": false,
+      "tracked": false,
+      "mono": false,
+      "pill": false,
+      "size": 12,
+      "top": 219
+     }
+    ],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#eef0f5",
+     "bodyBgHsl": {
+      "h": 223,
+      "s": 0.26,
+      "l": 0.95
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#eef0f5",
+       "top": 0,
+       "hsl": {
+        "h": 223,
+        "s": 0.26,
+        "l": 0.95
+       }
+      },
+      {
+       "color": "#ffffff",
+       "top": 80,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 1
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#596777",
+       "share": 0.66
+      },
+      {
+       "color": "#242b37",
+       "share": 0.34
+      },
+      {
+       "color": "#ffffff",
+       "share": 0.01
+      }
+     ],
+     "button": {
+      "bg": "#ffffff",
+      "hsl": {
+       "h": 0,
+       "s": 0,
+       "l": 1
+      },
+      "fg": "#596777"
+     },
+     "lowContrast": [
+      {
+       "text": "近 7 天",
+       "ratio": 1.1,
+       "need": 4.5,
+       "size": 12,
+       "fg": "#ffffff",
+       "bg": "#f0f2f7"
+      }
+     ]
+    },
+    "buttons": {
+     "count": 2,
+     "inHero": 2,
+     "radius": 7,
+     "height": 34,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "验证订阅A",
+      "诊断"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 0,
+     "shadowSamples": [],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 11,
+     "hairlineSamples": [
+      "nav.cb-subnav 1054px",
+      "section.cb-stats-overview 1051px",
+      "div.cb-stats-plot 711px",
+      "div.cb-stats-entry 496px",
+      "div.cb-stats-entry 496px"
+     ],
+     "outlinedBoxes": 1,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 1,
+     "boxRadius": 16,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": []
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 0,
+     "fixed": false,
+     "height": 52,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": []
+   },
+   "layout": {
+    "viewport": {
+     "w": 1120,
+     "h": 700
+    },
+    "pageH": 700,
+    "margins": {
+     "left": 33,
+     "right": 35
+    },
+    "sections": [
+     {
+      "sel": "section.cb-stats-overview",
+      "tag": "section",
+      "top": 196,
+      "height": 226,
+      "words": 25,
+      "media": 0,
+      "middle": 125,
+      "heading": {
+       "text": "3.0 GB",
+       "size": 34,
+       "tag": "strong"
+      },
+      "left": 35,
+      "right": 35,
+      "textLeft": 35,
+      "textRight": 35,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "div.cb-stats-rankings",
+      "tag": "div",
+      "top": 432,
+      "height": 203,
+      "words": 52,
+      "media": 0,
+      "middle": 299,
+      "heading": {
+       "text": "域名 Top 10",
+       "size": 14,
+       "tag": "h2"
+      },
+      "left": 35,
+      "right": 35,
+      "textLeft": 35,
+      "textRight": 35,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "流量统计",
+      "size": 22,
+      "top": 134,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 35,
+      "n": 2
+     },
+     {
+      "x": 297,
+      "n": 1
+     },
+     {
+      "x": 576,
+      "n": 1
+     }
+    ],
+    "leftBlocks": 4,
+    "bodySize": 16,
+    "stage": false,
+    "explains": false,
+    "slivers": [],
+    "voidShare": 0.08,
+    "voidBox": {
+     "x": 373,
+     "y": 93,
+     "w": 467,
+     "h": 140
+    }
+   },
+   "app": {
+    "viewport": {
+     "w": 1120,
+     "h": 700
+    },
+    "dark": false,
+    "ground": "#eef0f5",
+    "sidebar": null,
+    "topbar": null,
+    "canvas": {
+     "left": 33,
+     "right": 35
+    },
+    "hero": {
+     "text": "流量统计",
+     "words": 1,
+     "chars": 4,
+     "lines": 1,
+     "size": 22,
+     "vw": 2,
+     "font": "-apple-system",
+     "weight": 650,
+     "tracking": 0,
+     "leading": 1.3,
+     "top": 134,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "charts": 2,
+    "layout": {
+     "panels": 9,
+     "firstScreen": 7,
+     "ragged": [],
+     "voids": []
+    },
+    "tiles": 0,
+    "panels": {
+     "count": 9,
+     "radii": [
+      [
+       0,
+       9
+      ]
+     ],
+     "heavyBorders": 0,
+     "borderSamples": [],
+     "heavyShadows": 0,
+     "softShadows": 0,
+     "shadowSamples": [],
+     "glass": 0
+    },
+    "chips": {
+     "count": 0,
+     "hues": 0,
+     "samples": []
+    },
+    "numbers": {
+     "cells": 0,
+     "leftAligned": 0,
+     "figures": 23,
+     "tabularShare": 1,
+     "kpiMax": 34
+    },
+    "rows": null,
+    "chartHues": 0,
+    "placeholders": [],
+    "type": {
+     "under13": 0.65,
+     "tiny": 0,
+     "tinySamples": [],
+     "sizes": [
+      11,
+      12,
+      13,
+      14,
+      16,
+      22,
+      34
+     ]
+    },
+    "title": {
+     "text": "流量统计",
+     "size": 22,
+     "top": 134
+    },
+    "colourShare": 0.01
+   },
+   "consoleErrors": []
+  },
+  {
+   "width": 880,
+   "height": 550,
+   "load": "load",
+   "screens": 1,
+   "filled": [
+    0.65
+   ],
+   "motion": {
+    "elements": 0,
+    "css": 0,
+    "transitions": 0,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 880,
+     "h": 550
+    },
+    "page": {
+     "height": 550,
+     "screens": 1,
+     "words": 136,
+     "img": 0,
+     "video": 0,
+     "canvas": 0,
+     "svg": 4,
+     "sections": 3,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 0,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "流量统计",
+     "words": 1,
+     "chars": 4,
+     "lines": 1,
+     "size": 22,
+     "vw": 2.5,
+     "font": "-apple-system",
+     "weight": 650,
+     "tracking": 0,
+     "leading": 1.3,
+     "top": 133,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "h1": {
+     "text": "流量统计",
+     "words": 1,
+     "lines": 1,
+     "size": 22,
+     "font": "-apple-system"
+    },
+    "headings": [
+     {
+      "text": "3.0 GB",
+      "words": 2,
+      "chars": 6,
+      "lines": 1,
+      "size": 30,
+      "vw": 3.4,
+      "font": "-apple-system",
+      "weight": 600,
+      "tracking": -0.033,
+      "leading": 1.2,
+      "upper": true,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.1,
+      "top": 213,
+      "tag": "strong",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 1,
+     "maxLines": 1,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": null,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "-apple-system",
+       "share": 1,
+       "mono": false
+      }
+     ],
+     "familyCount": 1,
+     "sizes": [
+      11,
+      12,
+      13,
+      14,
+      16,
+      22,
+      30
+     ],
+     "sizeCount": 7,
+     "notLoaded": [],
+     "body": null,
+     "measureChars": null,
+     "max": {
+      "size": 30,
+      "vw": 3.4,
+      "font": "-apple-system",
+      "text": "3.0 GB"
+     },
+     "monoShare": 0,
+     "monoProseShare": 0,
+     "monoFamilies": [],
+     "monoSamples": [],
+     "microLabels": 0,
+     "microLabelShare": 0,
+     "microSamples": [],
+     "upperShare": 0.48,
+     "centerShare": 0.08,
+     "smallText": 4
+    },
+    "eyebrows": [
+     {
+      "text": "近 7 天 · 已观测流量",
+      "above": "3.0 GB",
+      "upper": false,
+      "tracked": false,
+      "mono": false,
+      "pill": false,
+      "size": 12,
+      "top": 187
+     }
+    ],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#eef0f5",
+     "bodyBgHsl": {
+      "h": 223,
+      "s": 0.26,
+      "l": 0.95
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#eef0f5",
+       "top": 0,
+       "hsl": {
+        "h": 223,
+        "s": 0.26,
+        "l": 0.95
+       }
+      },
+      {
+       "color": "#ffffff",
+       "top": 80,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 1
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#596777",
+       "share": 0.64
+      },
+      {
+       "color": "#242b37",
+       "share": 0.35
+      },
+      {
+       "color": "#ffffff",
+       "share": 0.01
+      }
+     ],
+     "button": {
+      "bg": "#ffffff",
+      "hsl": {
+       "h": 0,
+       "s": 0,
+       "l": 1
+      },
+      "fg": "#596777"
+     },
+     "lowContrast": [
+      {
+       "text": "近 7 天",
+       "ratio": 1.1,
+       "need": 4.5,
+       "size": 12,
+       "fg": "#ffffff",
+       "bg": "#f0f2f7"
+      }
+     ]
+    },
+    "buttons": {
+     "count": 2,
+     "inHero": 2,
+     "radius": 7,
+     "height": 34,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "验证订阅A",
+      "诊断"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 0,
+     "shadowSamples": [],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 11,
+     "hairlineSamples": [
+      "nav.cb-subnav 814px",
+      "section.cb-stats-overview 822px",
+      "div.cb-stats-plot 510px",
+      "div.cb-stats-entry 382px",
+      "div.cb-stats-entry 382px"
+     ],
+     "outlinedBoxes": 1,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 1,
+     "boxRadius": 16,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": []
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 0,
+     "fixed": false,
+     "height": 52,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": []
+   },
+   "layout": {
+    "viewport": {
+     "w": 880,
+     "h": 550
+    },
+    "pageH": 550,
+    "margins": {
+     "left": 29,
+     "right": 24
+    },
+    "sections": [
+     {
+      "sel": "section.cb-stats-overview",
+      "tag": "section",
+      "top": 172,
+      "height": 164,
+      "words": 25,
+      "media": 0,
+      "middle": 97,
+      "heading": {
+       "text": "3.0 GB",
+       "size": 30,
+       "tag": "strong"
+      },
+      "left": 29,
+      "right": 29,
+      "textLeft": 29,
+      "textRight": 29,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "div.cb-stats-rankings",
+      "tag": "div",
+      "top": 344,
+      "height": 143,
+      "words": 38,
+      "media": 0,
+      "middle": 193,
+      "heading": {
+       "text": "域名 Top 10",
+       "size": 14,
+       "tag": "h2"
+      },
+      "left": 29,
+      "right": 29,
+      "textLeft": 29,
+      "textRight": 29,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "流量统计",
+      "size": 22,
+      "top": 133,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 29,
+      "n": 2
+     },
+     {
+      "x": 263,
+      "n": 1
+     },
+     {
+      "x": 456,
+      "n": 1
+     }
+    ],
+    "leftBlocks": 4,
+    "bodySize": 16,
+    "stage": false,
+    "explains": false,
+    "slivers": [],
+    "voidShare": 0,
+    "voidBox": null
+   },
+   "app": {
+    "viewport": {
+     "w": 880,
+     "h": 550
+    },
+    "dark": false,
+    "ground": "#eef0f5",
+    "sidebar": null,
+    "topbar": null,
+    "canvas": {
+     "left": 29,
+     "right": 29
+    },
+    "hero": {
+     "text": "流量统计",
+     "words": 1,
+     "chars": 4,
+     "lines": 1,
+     "size": 22,
+     "vw": 2.5,
+     "font": "-apple-system",
+     "weight": 650,
+     "tracking": 0,
+     "leading": 1.3,
+     "top": 133,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "charts": 0,
+    "layout": {
+     "panels": 9,
+     "firstScreen": 5,
+     "ragged": [],
+     "voids": []
+    },
+    "tiles": 0,
+    "panels": {
+     "count": 9,
+     "radii": [
+      [
+       0,
+       9
+      ]
+     ],
+     "heavyBorders": 0,
+     "borderSamples": [],
+     "heavyShadows": 0,
+     "softShadows": 0,
+     "shadowSamples": [],
+     "glass": 0
+    },
+    "chips": {
+     "count": 0,
+     "hues": 0,
+     "samples": []
+    },
+    "numbers": {
+     "cells": 0,
+     "leftAligned": 0,
+     "figures": 23,
+     "tabularShare": 1,
+     "kpiMax": 30
+    },
+    "rows": null,
+    "chartHues": 0,
+    "placeholders": [],
+    "type": {
+     "under13": 0.66,
+     "tiny": 0,
+     "tinySamples": [],
+     "sizes": [
+      11,
+      12,
+      13,
+      14,
+      16,
+      22,
+      30
+     ]
+    },
+    "title": {
+     "text": "流量统计",
+     "size": 22,
+     "top": 133
+    },
+    "colourShare": 0.01
+   },
+   "consoleErrors": []
+  }
+ ],
+ "findings": [
+  {
+   "level": "WARN",
+   "id": "tiny-text",
+   "width": 1440,
+   "message": "65% of the text is under 13px.",
+   "fix": "Data and labels read at 13–14px; keep 11–12px for sublines and axis ticks.",
+   "alsoAt": [
+    1120,
+    880
+   ]
+  }
+ ],
+ "images": [
+  {
+   "viewport": "desktop",
+   "width": 1440,
+   "fold": "/tmp/pr581-inspect/desktop-1440-fold.jpg",
+   "pages": [
+    "/tmp/pr581-inspect/desktop-1440-page-01.jpg"
+   ],
+   "film": []
+  },
+  {
+   "viewport": "desktop",
+   "width": 1120,
+   "fold": "/tmp/pr581-inspect/desktop-1120-fold.jpg",
+   "pages": [
+    "/tmp/pr581-inspect/desktop-1120-page-01.jpg"
+   ],
+   "film": []
+  },
+  {
+   "viewport": "tablet",
+   "width": 880,
+   "fold": "/tmp/pr581-inspect/tablet-fold.jpg",
+   "pages": [
+    "/tmp/pr581-inspect/tablet-page-01.jpg"
+   ],
+   "film": []
+  }
+ ]
+}

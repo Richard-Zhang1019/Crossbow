@@ -201,8 +201,10 @@ pub(crate) async fn core_restart(app: AppHandle, state: State<'_, AppState>) -> 
     result
 }
 #[tauri::command]
-pub(crate) async fn core_start(state: State<'_, AppState>) -> Result<(), String> {
-    start_core(&state).and_then(|()| wait_core_running(&state))
+pub(crate) async fn core_start(
+    state: State<'_, AppState>,
+) -> Result<(), crate::engine::manager::CoreStartError> {
+    start_core_checked(&state).and_then(|()| wait_core_running(&state).map_err(Into::into))
 }
 /// 节点旗帜补全开关。
 /// 切换内核引擎（mihomo / singbox）。运行中则热重启；切换目标未安装则报错。

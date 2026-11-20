@@ -8,6 +8,8 @@ const dict: Record<Lang, Record<string, string>> = {
     "ov.create": "新建覆写",
     "ov.createAction": "创建",
     "ov.cancel": "取消",
+    "ov.loadFailed": "覆写读取失败，请重试",
+    "ov.retry": "重试",
     "ov.type": "覆写类型",
     "ov.hint": "使用脚本或 Merge 补丁调整配置，并按需绑定到订阅。",
     "logs.levels":"日志级别",
@@ -304,6 +306,16 @@ const dict: Record<Lang, Record<string, string>> = {
     "section.general": "通用",
     "nav.diagnostics": "诊断",
     "nav.stats": "统计",
+    "stats.localHint": "本机记录 · 最近 30 天 · 不上传云端",
+    "stats.observed": "已观测流量",
+    "stats.download": "下载",
+    "stats.upload": "上传",
+    "stats.refresh": "刷新统计",
+    "stats.share": "占本期总量",
+    "stats.sampleNote": "按内核连接快照累计；短连接及采样间隙可能遗漏，不作为精确用量账单。",
+    "stats.loading": "正在读取统计…",
+    "stats.previous": "显示上次读取结果",
+    "stats.emptyTitle": "还没有流量记录",
     "stats.title": "流量统计",
     "stats.hint": "按域名与出口节点累计的本地统计，仅存于本机。",
     "stats.range": "统计范围",
@@ -600,6 +612,8 @@ const dict: Record<Lang, Record<string, string>> = {
     "ov.create": "New override",
     "ov.createAction": "Create",
     "ov.cancel": "Cancel",
+    "ov.loadFailed": "Failed to load overrides, please retry",
+    "ov.retry": "Retry",
     "ov.type": "Override type",
     "ov.hint": "Adjust configurations with scripts or Merge patches and bind them to profiles.",
     "logs.levels":"Log levels",
@@ -875,6 +889,16 @@ const dict: Record<Lang, Record<string, string>> = {
     "section.general": "General",
     "nav.diagnostics": "Diagnostics",
     "nav.stats": "Stats",
+    "stats.localHint": "Stored on this device · Last 30 days · Never uploaded",
+    "stats.observed": "Observed traffic",
+    "stats.download": "Download",
+    "stats.upload": "Upload",
+    "stats.refresh": "Refresh statistics",
+    "stats.share": "Share of period",
+    "stats.sampleNote": "Aggregated from core snapshots. Short connections and sampling gaps may be missed; not a billing meter.",
+    "stats.loading": "Loading statistics…",
+    "stats.previous": "Showing previous results",
+    "stats.emptyTitle": "No traffic recorded yet",
     "stats.title": "Traffic stats",
     "stats.hint": "Local per-domain and per-node totals, stored on this device only.",
     "stats.range": "Range",
@@ -1247,6 +1271,10 @@ export function initLang() {
   ipc
     .getUiSettings()
     .then((u) => setLang((u.lang as Lang) ?? "zh"))
+    .catch(() => {}); // 读取失败保持默认语言，设置页可再改
+  // 应用生命周期监听：模块单例存活期间永不退订（有意为之）；
+  // 注册失败则语言固定为默认，避免未处理 rejection（#562-7）
+  ipc
+    .onLang((l) => setLang((l as Lang) ?? "zh"))
     .catch(() => {});
-  ipc.onLang((l) => setLang((l as Lang) ?? "zh"));
 }

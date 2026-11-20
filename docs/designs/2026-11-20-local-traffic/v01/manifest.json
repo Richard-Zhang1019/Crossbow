@@ -1,0 +1,29 @@
+{
+  "date": "2026-11-20",
+  "version": "v01",
+  "status": "implemented-awaiting-user-review",
+  "issue": 567,
+  "pr": 581,
+  "baseline": "64244cfd5bad90450bb82325f59d4d52623675e2",
+  "sources": [
+    "apps/desktop/src/pages/Stats/index.tsx",
+    "apps/desktop/src/pages/Stats/Stats.css",
+    "apps/desktop/src/i18n/i18n.ts",
+    "scripts/dev/verify-stats.mjs"
+  ],
+  "previews": [
+    "previews/before.png",
+    "previews/dark.png",
+    "previews/wide.png",
+    "previews/empty.png",
+    "previews/light.png",
+    "previews/error.png",
+    "previews/small.png"
+  ],
+  "input": "User screenshot and request to redesign PR #581 statistics page",
+  "style": {
+    "name": "framed-sheet",
+    "seed": 1912770209
+  },
+  "validation": "Production components with mock IPC; native acceptance pending"
+}

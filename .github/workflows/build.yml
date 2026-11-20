@@ -108,6 +108,7 @@ jobs:
         run: |
           node --experimental-strip-types --test \
             apps/desktop/src/lib/stateReliability.test.mjs \
+            apps/desktop/src/lib/unlisten.test.mjs \
             apps/desktop/src/lib/workflow.test.mjs \
             apps/desktop/src/layouts/layout.test.mjs \
             apps/desktop/src/components/Button/buttonUsage.test.mjs \
@@ -122,7 +123,9 @@ jobs:
         id: desktop-scenarios
         env:
           CB_VERIFY_ARTIFACTS_ROOT: ${{ runner.temp }}/crossbow-desktop-evidence
-        run: pnpm verify:desktop
+        run: |
+          pnpm verify:desktop
+          node scripts/dev/verify-stats.mjs
       - uses: actions/upload-artifact@v7
         if: failure() && steps.desktop-scenarios.outcome == 'failure'
         with:
@@ -174,13 +177,15 @@ jobs:
       - run: cargo test --locked -p crossbow-core
       - run: cargo test --locked -p crossbow-service
       - run: cargo test --locked --lib -p crossbow-desktop
-      - run: node --experimental-strip-types --test apps/desktop/src/components/NodeName/nodeFlags.test.mjs apps/desktop/src/components/FitItems/fitGrid.test.mjs apps/desktop/src/pages/Logs/logHistory.test.mjs apps/desktop/src/pages/Diagnostics/report.test.mjs apps/desktop/src/pages/Proxies/nodeDelay.test.mjs
+      - run: node --experimental-strip-types --test apps/desktop/src/lib/unlisten.test.mjs apps/desktop/src/components/NodeName/nodeFlags.test.mjs apps/desktop/src/components/FitItems/fitGrid.test.mjs apps/desktop/src/pages/Logs/logHistory.test.mjs apps/desktop/src/pages/Home/firstConnection.test.mjs apps/desktop/src/pages/Diagnostics/report.test.mjs apps/desktop/src/pages/Proxies/nodeDelay.test.mjs
       - name: Reproducible desktop scenarios
         id: desktop-scenarios
         if: needs.changes.outputs.frontend == 'true'
         env:
           CB_VERIFY_ARTIFACTS_ROOT: ${{ runner.temp }}/crossbow-desktop-evidence
-        run: pnpm verify:desktop
+        run: |
+          pnpm verify:desktop
+          node scripts/dev/verify-stats.mjs
       - uses: actions/upload-artifact@v7
         if: failure() && steps.desktop-scenarios.outcome == 'failure'
         with:
@@ -303,7 +308,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Node flag display tests
-        run: node --experimental-strip-types --test apps/desktop/src/components/NodeName/nodeFlags.test.mjs apps/desktop/src/pages/Logs/logHistory.test.mjs apps/desktop/src/pages/Diagnostics/report.test.mjs apps/desktop/src/pages/Proxies/nodeDelay.test.mjs
+        run: node --experimental-strip-types --test apps/desktop/src/lib/unlisten.test.mjs apps/desktop/src/components/NodeName/nodeFlags.test.mjs apps/desktop/src/pages/Logs/logHistory.test.mjs apps/desktop/src/pages/Home/firstConnection.test.mjs apps/desktop/src/pages/Diagnostics/report.test.mjs apps/desktop/src/pages/Proxies/nodeDelay.test.mjs
 
       - name: Desktop backend tests
         run: cargo test --locked --lib --manifest-path apps/desktop/src-tauri/Cargo.toml
