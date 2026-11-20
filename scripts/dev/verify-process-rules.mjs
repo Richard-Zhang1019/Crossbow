@@ -131,9 +131,8 @@ try {
       memory: 0,
     }),
   );
-  await page
-    .getByRole("button", { name: "为此进程创建分流规则", exact: true })
-    .click();
+  await page.locator(".cb-connection-row").getByRole("button", { name: "操作", exact: true }).click();
+  await page.locator(".cb-row-menu").getByRole("button", { name: "规则", exact: true }).click();
   const preset = page.getByRole("dialog").getByRole("textbox");
   await preset.waitFor();
   assert.equal(

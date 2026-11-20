@@ -140,7 +140,6 @@ export default function ConnectionsPage() {
                 <span className="text-right">{t("col.down")}</span>
                 <span className="text-right">{t("col.elapsed")}</span>
                 <span>{t("col.actions")}</span>
-                <span />
               </div>
             }
             empty={
