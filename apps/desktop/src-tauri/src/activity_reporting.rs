@@ -75,11 +75,11 @@ impl Reporter {
     }
 
     pub(crate) fn enabled(&self) -> bool {
-        self.state.lock().unwrap().enabled
+        self.state.lock().unwrap_or_else(|e| e.into_inner()).enabled
     }
 
     pub(crate) fn set_enabled(&self, enabled: bool) -> io::Result<()> {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         if state.enabled != enabled {
             let next = DailyState {
                 enabled,
@@ -98,7 +98,7 @@ impl Reporter {
     }
 
     fn reserve(&self, now: u64, proxy_port: impl FnOnce() -> Option<u16>) -> Option<Attempt> {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let day = beijing_day(now);
         if !state.enabled || day < state.day || (day == state.day && state.succeeded) {
             return None;
@@ -153,7 +153,7 @@ impl Reporter {
     }
 
     fn record_success(&self, attempt: &Attempt) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         if state.day == attempt.day && state.daily_id == attempt.daily_id {
             state.succeeded = true;
             // Keep success in memory if saving fails. The server also deduplicates.
@@ -171,7 +171,7 @@ fn mixed_port_when_proxy_ready(state: &AppState) -> Option<u16> {
         return None;
     }
     let (tun_enabled, mixed_port) = {
-        let store = state.store.lock().unwrap();
+        let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         let engine = &store.data().engine;
         (engine.tun_enable, engine.mixed_port)
     };

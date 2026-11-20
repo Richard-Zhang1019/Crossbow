@@ -6,7 +6,7 @@ import NodeName from "@/components/NodeName";
 import { nodeNameText } from "@/components/NodeName/nodeFlags";
 import { notify, notificationText } from "@/notifications/service";
 import { useOperationNotice } from "@/notifications/NotificationProvider";
-import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import {
   CORE_MODES,
   ipc,
@@ -19,13 +19,14 @@ import {
   type PlatformCapabilities,
 } from "@/services/ipc";
 import { fmtBytes } from "@/lib/format";
+import { subscriptionCleanup, unsubscribe } from "@/lib/unlisten";
 import { useT } from "@/i18n/i18n";
 import { Icon } from "@/components/Icon";
 import { ConnectionFlow } from "@/components/ConnectionFlow";
 
 import { cumulativeTotals, createReadGate } from "@/lib/stateReliability";
 import { navigateTo, type NavigationTarget } from "@/lib/workflow";
-import { nextSetupStep, readSetupProgress, writeSetupProgress, type SetupProgress } from "./firstConnection";
+import { isPortUnavailable, nextSetupStep, readSetupProgress, writeSetupProgress, type SetupProgress } from "./firstConnection";
 
 const POINTS = 120;
 
@@ -56,7 +57,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
   const [busy, setBusy] = useState(false);
   const [setupProgress, setSetupProgress] = useState(readSetupProgress);
   const [setupOperation, setSetupOperation] = useState<"download" | "start" | "verify" | null>(null);
-  const [portConflict, setPortConflict] = useState(false);
+  const [portConflict, setPortConflict] = useState<number | null>(null);
   const [verification, setVerification] = useState<{ revision: number; profileId: string | null; reachable: boolean } | null>(null);
   const verifyAction = useRef<HTMLButtonElement>(null);
   const verifyStatus = useRef<HTMLSpanElement>(null);
@@ -69,6 +70,9 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
   const [outbound, setOutbound] = useState<OutboundInfo | null>(null);
   const mounted = useRef(true);
   const subscriptionGeneration = useRef(0);
+  // 本页面实例在后端共享通道里的订阅方标识：traffic/connections 由
+  // 概览与连接页共享，后端按订阅方登记与移除（#555），卸载只移除自己。
+  const subscriber = useMemo(() => `home:${crypto.randomUUID()}`, []);
 
   const readGate = useRef(createReadGate());
   const [known, setKnown] = useState<Set<string>>(new Set());
@@ -246,26 +250,30 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
     const subscribe = Promise.all([un1, un2, un3, un4, un5, untun]).then(() => {
       if (!active || subscriptionGeneration.current !== generation) return;
       return Promise.allSettled([
-        ipc.subscribeTraffic(),
-        ipc.subscribeConnections(),
+        ipc.subscribeTraffic(subscriber),
+        ipc.subscribeConnections(subscriber),
       ]);
+    }).catch(error => {
+      if (active) notify.error(error, "home-events");
     });
 
     return () => {
       active = false;
       mounted.current = false;
       for (const un of [un1, un2, un3, un4, un5, untun])
-        void un.then((f) => f());
+        unsubscribe(un);
       // React StrictMode immediately mounts this page again in development.
       // Wait for in-flight subscribe commands, then let the new generation
       // decide whether the backend streams should remain active.
+      // 守卫只覆盖本页自身的重挂载：跨页（连接页已订阅同一通道）时
+      // 后端按订阅方集合移除（release），晚到的退订不会误杀别人的流（#555）。
       void subscribe
         .catch(() => {})
         .finally(() => {
           queueMicrotask(() => {
             if (subscriptionGeneration.current === generation) {
-              ipc.unsubscribeTraffic().catch(() => {});
-              ipc.unsubscribeConnections().catch(() => {});
+              ipc.unsubscribeTraffic(subscriber).catch(() => {});
+              ipc.unsubscribeConnections(subscriber).catch(() => {});
             }
           });
         });
@@ -274,8 +282,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
 
   useEffect(()=>{const changed=()=>void refresh();window.addEventListener("cb:profile-switched",changed);return()=>window.removeEventListener("cb:profile-switched",changed)},[refresh]);
   useEffect(() => {
-    const off = ipc.onEngineChanged(() => void refresh());
-    return () => void off.then(unlisten => unlisten());
+    return subscriptionCleanup(ipc.onEngineChanged(() => void refresh()));
   }, [refresh]);
   useEffect(() => {
     if (installNotice?.kind === "success") void refresh();
@@ -288,8 +295,8 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
     const timer = window.setInterval(() => {
       if (!mounted.current) return;
       void refresh();
-      ipc.subscribeTraffic().catch(() => {});
-      ipc.subscribeConnections().catch(() => {});
+      ipc.subscribeTraffic(subscriber).catch(() => {});
+      ipc.subscribeConnections(subscriber).catch(() => {});
     }, 30_000);
     return () => window.clearInterval(timer);
   }, [refresh]);
@@ -375,7 +382,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
     verification.profileId === activeId && canControl && core.state === "Running" ? verification : null;
   const downloadRunning = installNotice?.kind === "progress";
   const downloadFailed = setupStep === "download" && installNotice?.kind === "error";
-  const portBlocked = setupStep === "start" && portConflict;
+  const portBlocked = setupStep === "start" && portConflict === mixedPort;
   const verificationFailed = setupStep === "verify" && currentVerification?.reachable === false;
   const verifying = setupOperation === "verify";
   const showVerifyAction = setupStep === "verify";
@@ -407,12 +414,13 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
           // Download failures and progress use the backend operation notice.
         }
       } else if (operation === "start") {
-        setPortConflict(false);
+        setPortConflict(null);
         await notify.run("setup-core-start", t("setup.startAction"), async () => {
           try {
             await ipc.coreStart();
           } catch (error) {
-            if (mounted.current) setPortConflict(String(error).includes("无法绑定"));
+            // 只消费本次启动在实际绑定失败处给出的分类，不作迟到的端口探测。
+            if (mounted.current) setPortConflict(isPortUnavailable(error, mixedPort) ? mixedPort ?? null : null);
             throw error;
           }
         }, undefined, { feedback: "error-only", titleKey: "setup.startAction" });
@@ -655,7 +663,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
               <div className="cb-mode-control">
                 <p>{t("studio.mode")}</p>
                 <SegmentedControl label={t("studio.mode")} value={known.has("mode")?mode:""} disabled={busy||!known.has("mode")||readErrors.has("mode")}
-                  options={CORE_MODES.map(m=>({value:m.id,label:t(`mode.${m.id}`)}))}
+                  options={CORE_MODES.map(m=>({value:m,label:t(`mode.${m}`)}))}
                   onChange={value=>{if(!value)return;void notify.run("core-mode",notificationText("core.mode"),()=>ipc.setCoreMode(value as CoreMode),undefined,{feedback:"error-only"})}}/>
 
               </div>

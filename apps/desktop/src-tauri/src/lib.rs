@@ -410,22 +410,32 @@ struct TrafficHistoryEntry {
 /// 总开关：开启 = 确保内核运行 + 设置系统代理；关闭 = 还原系统代理（内核保持）。
 /// 网络场景引擎（#566）复用同一链路（journal/操作锁/内核启动语义）。
 pub(crate) fn toggle_sysproxy_state(state: &AppState) -> Result<(), String> {
+    change_sysproxy_state(state, None)
+}
+
+fn change_sysproxy_state(state: &AppState, desired: Option<bool>) -> Result<(), String> {
     state.exit.ensure_open()?;
     // Reject before starting a core or changing any persistent state.
     if !platform::capabilities().system_proxy {
         return Err("当前平台仅支持显式 HTTP/SOCKS 代理，尚未支持系统代理接管".into());
     }
-    if !state.sysproxy.status().enabled && state.core().status() != CoreStatus::Running {
+    let enabled = state.sysproxy.status().enabled;
+    if desired.unwrap_or(!enabled) && !enabled && state.core().status() != CoreStatus::Running {
         start_core(state)?;
         wait_core_running(state)?;
     }
     let _operation = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
     state.exit.ensure_open()?;
+    let enabled = state.sysproxy.status().enabled;
+    let enable = desired.unwrap_or(!enabled);
+    if enabled == enable {
+        return Ok(());
+    }
     let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
     let port = store.data().engine.mixed_port;
     let tun_enabled = store.data().engine.tun_enable;
     drop(store);
-    if state.sysproxy.status().enabled {
+    if !enable {
         if tun_enabled {
             state.sysproxy.disable_during_tun()
         } else {
@@ -1162,7 +1172,15 @@ mod tests {
         std::fs::create_dir(directory.path().join("store.json.tmp")).unwrap();
         let store = Mutex::new(store);
         assert!(restore_store(&store, &before).is_err());
-        assert_eq!(store.lock().unwrap().data().engine.mixed_port, 7897);
+        assert_eq!(
+            store
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .data()
+                .engine
+                .mixed_port,
+            7897
+        );
         assert_eq!(
             Store::open(directory.path())
                 .unwrap()

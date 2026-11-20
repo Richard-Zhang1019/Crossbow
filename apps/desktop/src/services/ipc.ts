@@ -100,6 +100,8 @@ export interface SysProxyStatus {
 
 /** SSID 网络场景状态（#566）：规则表 + 当前网络 + 生效场景。 */
 export interface ScenesStatus {
+  supported?: boolean;
+  networkState?: "available" | "disconnected" | "unavailable";
   rules: Record<string, string>;
   /** 当前关联的 Wi-Fi；null = 无 Wi-Fi 或定位权限缺失。 */
   currentSsid: string | null;
@@ -247,13 +249,11 @@ export interface GroupView {
   nodes: NodeView[];
 }
 
-export const CORE_MODES = [
-  { id: "direct", label: "直连" },
-  { id: "rule", label: "规则" },
-  { id: "global", label: "全局" },
-] as const;
+// #563：仅保留语义 id，文案统一走 i18n（mode.*）——内置中文 label 是
+// 无人消费的死数据，误导后来者以为 label 在用。
+export const CORE_MODES = ["direct", "rule", "global"] as const;
 
-export type CoreMode = (typeof CORE_MODES)[number]["id"];
+export type CoreMode = (typeof CORE_MODES)[number];
 
 export interface CoreBinaryInfo {
   path: string;
@@ -377,7 +377,17 @@ export const ipc = {
     listen<boolean>("tun://health-notice", (e) => cb(e.payload)),
   setActiveProfile: (id: string) => invoke<void>("set_active_profile", { id }),
   removeProfile: (id: string) => invoke<void>("remove_profile", { id }),
-  coreStart: () => invoke<void>("core_start"),
+  coreStart: async () => {
+    try {
+      await invoke<void>("core_start");
+    } catch (error) {
+      // 保留 Error.message 给现有通知调用方，分类字段供首次连接引导使用。
+      if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
+        throw Object.assign(new Error(error.message), error);
+      }
+      throw error;
+    }
+  },
   coreRestart: () => invoke<void>("core_restart"),
   logsSettings: () =>
     invoke<{ save_enabled: boolean; retention_days: number }>("logs_settings"),
@@ -446,11 +456,16 @@ export const ipc = {
   exportLogLines: (lines:string[]) => invoke<boolean>("export_log_lines",{lines}),
   currentOutbound: () => invoke<OutboundInfo>("current_outbound"),
   closeConnection: (id: string) => invoke<void>("close_connection", { id }),
-  subscribeTraffic: () => invoke<void>("subscribe_traffic"),
-  unsubscribeTraffic: () => invoke<void>("unsubscribe_traffic"),
-  subscribeConnections: (includeProcesses = false) =>
-    invoke<void>("subscribe_connections", { includeProcesses }),
-  unsubscribeConnections: () => invoke<void>("unsubscribe_connections"),
+  // traffic/connections 是多页面共享通道：subscriber 标识页面实例，
+  // 后端按订阅方登记/移除，最后一个订阅方离开才真正停流（#555）。
+  subscribeTraffic: (subscriber: string) =>
+    invoke<void>("subscribe_traffic", { subscriber }),
+  unsubscribeTraffic: (subscriber: string) =>
+    invoke<void>("unsubscribe_traffic", { subscriber }),
+  subscribeConnections: (subscriber: string, includeProcesses = false) =>
+    invoke<void>("subscribe_connections", { subscriber, includeProcesses }),
+  unsubscribeConnections: (subscriber: string) =>
+    invoke<void>("unsubscribe_connections", { subscriber }),
   subscribeLogs: (subscriber: string) => invoke<LogSnapshot>("subscribe_logs", { subscriber }),
   clearLogs: () => invoke<LogSnapshot>("clear_logs"),
   unsubscribeLogs: (subscriber: string) => invoke<void>("unsubscribe_logs", { subscriber }),

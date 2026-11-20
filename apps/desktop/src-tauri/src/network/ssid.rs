@@ -5,24 +5,51 @@
 //! 或失败）——一律按未授权处理返回 None，场景功能保持不干预，设置页给出
 //! 授权提示。Windows/Linux 的 SSID 读取随各平台验收单独补。
 
-/// 当前关联的 Wi-Fi SSID；无 Wi-Fi、接口探测失败或定位权限缺失时为 None。
-pub(crate) fn current_ssid() -> Option<String> {
+#[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub(crate) enum Observation {
+    Known(String),
+    Disconnected,
+    Unavailable,
+}
+
+pub(crate) fn observe() -> Observation {
     #[cfg(target_os = "macos")]
     {
-        let device = wifi_device()?;
+        let Some(device) = wifi_device() else {
+            return Observation::Unavailable;
+        };
         let output = std::process::Command::new("/usr/sbin/networksetup")
-            .arg("-getairportnetwork")
-            .arg(&device)
-            .output()
-            .ok()?;
-        if !output.status.success() {
-            return None;
+            .args(["-getairportnetwork", &device])
+            .output();
+        if let Ok(output) = output {
+            if output.status.success() {
+                if let Some(name) = parse_current_ssid(&String::from_utf8_lossy(&output.stdout)) {
+                    return Observation::Known(name);
+                }
+            }
         }
-        parse_current_ssid(&String::from_utf8_lossy(&output.stdout))
+        // Privacy-denied SSID reads can resemble an unassociated Wi-Fi. Only
+        // restore on physical-link inactivity; otherwise keep current takeover.
+        let inactive = std::process::Command::new("/sbin/ifconfig")
+            .arg(device)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .is_some_and(|o| {
+                String::from_utf8_lossy(&o.stdout)
+                    .lines()
+                    .any(|l| l.trim() == "status: inactive")
+            });
+        if inactive {
+            Observation::Disconnected
+        } else {
+            Observation::Unavailable
+        }
     }
     #[cfg(not(target_os = "macos"))]
     {
-        None
+        Observation::Unavailable
     }
 }
 
@@ -45,9 +72,9 @@ fn wifi_device() -> Option<String> {
 /// 占位符）时返回 None。
 #[cfg(target_os = "macos")]
 fn parse_current_ssid(text: &str) -> Option<String> {
-    let line = text.lines().next()?.trim();
-    let ssid = line.strip_prefix("Current Wi-Fi Network: ")?.trim();
-    if ssid.is_empty() || ssid.starts_with('<') {
+    let line = text.lines().next()?.trim_end_matches('\r');
+    let ssid = line.strip_prefix("Current Wi-Fi Network: ")?;
+    if ssid.trim().is_empty() || ssid == "<wifi-ssid>" {
         return None;
     }
     Some(ssid.to_string())
@@ -90,6 +117,14 @@ mod tests {
         assert_eq!(
             parse_current_ssid("Current Wi-Fi Network: Home-5G\n"),
             Some("Home-5G".to_string())
+        );
+        assert_eq!(
+            parse_current_ssid("Current Wi-Fi Network:  Home \n"),
+            Some(" Home ".to_string())
+        );
+        assert_eq!(
+            parse_current_ssid("Current Wi-Fi Network: <Home>\n"),
+            Some("<Home>".to_string())
         );
         // 无定位权限时的占位符
         assert_eq!(

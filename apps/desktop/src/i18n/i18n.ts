@@ -8,6 +8,8 @@ const dict: Record<Lang, Record<string, string>> = {
     "ov.create": "新建覆写",
     "ov.createAction": "创建",
     "ov.cancel": "取消",
+    "ov.loadFailed": "覆写读取失败，请重试",
+    "ov.retry": "重试",
     "ov.type": "覆写类型",
     "ov.hint": "使用脚本或 Merge 补丁调整配置，并按需绑定到订阅。",
     "logs.levels":"日志级别",
@@ -545,8 +547,25 @@ const dict: Record<Lang, Record<string, string>> = {
     "theme.dark": "深色",
     "settings.lang": "语言 / Language",
     "settings.systemSection": "系统",
+    "settings.scenes.addNetwork": "添加网络",
+    "settings.scenes.refresh": "刷新网络状态",
+    "settings.scenes.currentLabel": "当前连接",
+    "settings.scenes.wifiName": "Wi-Fi 名称",
+    "settings.scenes.rulesLabel": "网络场景规则",
+    "settings.scenes.connected": "当前连接",
+    "settings.scenes.followGlobal": "跟随全局",
+    "settings.scenes.pending": "等待场景生效",
+    "settings.scenes.unsupported": "当前平台暂未支持自动场景",
+    "settings.scenes.disconnected": "未连接 Wi-Fi",
+    "settings.scenes.unavailable": "Wi-Fi 名称暂不可用",
+    "settings.scenes.loadFailed": "无法读取网络场景，请重试",
+    "settings.scenes.loading": "正在读取网络…",
+    "settings.scenes.empty": "还没有网络规则。未配置的网络会保持全局设置。",
+    "settings.scenes.behavior": "离开已配置的 Wi-Fi 后，恢复切换前的接管方式。",
+    "settings.scenes.proxyHint": "代理会沿用进入场景前的接管偏好，不会额外启用 TUN。",
+    "settings.scenes.save": "保存规则",
     "settings.scenes.title": "网络场景",
-    "settings.scenes.hint": "把常去的 Wi-Fi 绑定到固定动作，连接时自动切换，无需手动开关。",
+    "settings.scenes.hint": "为常用 Wi-Fi 设置接管方式，连接时自动切换。",
     "settings.scenes.current": "当前网络：",
     "settings.scenes.notInScene": "未在场景中",
     "settings.scenes.activeDirect": "已按场景直连",
@@ -600,6 +619,8 @@ const dict: Record<Lang, Record<string, string>> = {
     "ov.create": "New override",
     "ov.createAction": "Create",
     "ov.cancel": "Cancel",
+    "ov.loadFailed": "Failed to load overrides, please retry",
+    "ov.retry": "Retry",
     "ov.type": "Override type",
     "ov.hint": "Adjust configurations with scripts or Merge patches and bind them to profiles.",
     "logs.levels":"Log levels",
@@ -1152,8 +1173,25 @@ const dict: Record<Lang, Record<string, string>> = {
     "theme.dark": "Dark",
     "settings.lang": "语言 / Language",
     "settings.systemSection": "System",
+    "settings.scenes.addNetwork": "Add network",
+    "settings.scenes.refresh": "Refresh network status",
+    "settings.scenes.currentLabel": "Connected network",
+    "settings.scenes.wifiName": "Wi-Fi name",
+    "settings.scenes.rulesLabel": "Network scene rules",
+    "settings.scenes.connected": "Connected",
+    "settings.scenes.followGlobal": "Follow global",
+    "settings.scenes.pending": "Scene not applied",
+    "settings.scenes.unsupported": "Automatic scenes are not supported on this platform yet",
+    "settings.scenes.disconnected": "Wi-Fi disconnected",
+    "settings.scenes.unavailable": "Wi-Fi name unavailable",
+    "settings.scenes.loadFailed": "Could not load network scenes. Try again.",
+    "settings.scenes.loading": "Reading network…",
+    "settings.scenes.empty": "No network rules yet. Unconfigured networks keep global settings.",
+    "settings.scenes.behavior": "Leaving a configured Wi-Fi restores the previous takeover mode.",
+    "settings.scenes.proxyHint": "Proxy uses your prior takeover preference and never enables TUN as an extra mode.",
+    "settings.scenes.save": "Save rule",
     "settings.scenes.title": "Network scenes",
-    "settings.scenes.hint": "Bind a network to a fixed action; Crossbow switches it for you when that Wi-Fi connects.",
+    "settings.scenes.hint": "Choose a takeover mode for each Wi-Fi. Crossbow applies it when connected.",
     "settings.scenes.current": "Current network:",
     "settings.scenes.notInScene": "Not in a scene",
     "settings.scenes.activeDirect": "Direct via scene",
@@ -1247,6 +1285,10 @@ export function initLang() {
   ipc
     .getUiSettings()
     .then((u) => setLang((u.lang as Lang) ?? "zh"))
+    .catch(() => {}); // 读取失败保持默认语言，设置页可再改
+  // 应用生命周期监听：模块单例存活期间永不退订（有意为之）；
+  // 注册失败则语言固定为默认，避免未处理 rejection（#562-7）
+  ipc
+    .onLang((l) => setLang((l as Lang) ?? "zh"))
     .catch(() => {});
-  ipc.onLang((l) => setLang((l as Lang) ?? "zh"));
 }

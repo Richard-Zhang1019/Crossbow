@@ -750,7 +750,13 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             eprintln!("system proxy recovery journal is unreadable; retaining it for next launch");
             return Ok(());
         }
-        if journal.is_none() && self.state.lock().unwrap().is_none() {
+        if journal.is_none()
+            && self
+                .state
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_none()
+        {
             // Crossbow 不拥有当前代理（含 TUN 激活期间），退出不动别人的设置。
             return Ok(());
         }
@@ -759,7 +765,10 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
                 let owned_port = if journal.port != 0 {
                     journal.port
                 } else {
-                    self.state.lock().unwrap().unwrap_or(0)
+                    self.state
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .unwrap_or(0)
                 };
                 let mut errors = Vec::new();
                 for (service, snapshot_before) in &journal.snapshot {
@@ -788,7 +797,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             other => {
                 let owned_port = other
                     .and_then(|j| (j.port != 0).then_some(j.port))
-                    .or_else(|| *self.state.lock().unwrap());
+                    .or_else(|| *self.state.lock().unwrap_or_else(|e| e.into_inner()));
                 let services = match self.backend.list_services() {
                     Ok(services) => services,
                     Err(error) => return Err(format!("列举网络服务失败：{error}")),
@@ -826,7 +835,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
                 return Err(format!("清理系统代理恢复日志失败：{error}"));
             }
         }
-        *self.state.lock().unwrap() = None;
+        *self.state.lock().unwrap_or_else(|e| e.into_inner()) = None;
         Ok(())
     }
 
@@ -1011,7 +1020,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             };
             return Err(format!("{error}{detail}"));
         }
-        *self.state.lock().unwrap() = Some(port);
+        *self.state.lock().unwrap_or_else(|e| e.into_inner()) = Some(port);
         Ok(())
     }
 
@@ -1088,7 +1097,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             };
             return Err(format!("开启系统代理失败：{error}{rollback}"));
         }
-        *self.state.lock().unwrap() = Some(port);
+        *self.state.lock().unwrap_or_else(|e| e.into_inner()) = Some(port);
         Ok(())
     }
 
@@ -1105,7 +1114,12 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
     /// 已持有代理操作锁的内部实现。
     fn disable_during_tun_locked(&self) -> Result<(), String> {
         crate::diagnostics::fault_evidence::invalidate();
-        if self.state.lock().unwrap().is_none() {
+        if self
+            .state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_none()
+        {
             return Ok(());
         }
         let journal = self
@@ -1164,7 +1178,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             };
             return Err(format!("关闭系统代理失败：{error}{rollback}"));
         }
-        *self.state.lock().unwrap() = None;
+        *self.state.lock().unwrap_or_else(|e| e.into_inner()) = None;
         Ok(())
     }
 
@@ -1251,7 +1265,13 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         if self.journal_path.exists() && journal.is_none() {
             return Err("系统代理恢复日志无法读取，未覆盖现有代理设置".into());
         }
-        if journal.is_none() && self.state.lock().unwrap().is_none() {
+        if journal.is_none()
+            && self
+                .state
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_none()
+        {
             // Crossbow does not own the current proxy. In particular, exiting
             // while TUN is active must not clear another client's settings.
             return Ok(());
@@ -1266,7 +1286,10 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
                 let owned_port = if journal.port != 0 {
                     journal.port
                 } else {
-                    self.state.lock().unwrap().unwrap_or(0)
+                    self.state
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .unwrap_or(0)
                 };
                 self.restore_owned_services(&journal.snapshot, owned_port)?;
                 Ok(())
@@ -1274,7 +1297,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             other => {
                 let owned_port = other
                     .and_then(|j| (j.port != 0).then_some(j.port))
-                    .or_else(|| *self.state.lock().unwrap());
+                    .or_else(|| *self.state.lock().unwrap_or_else(|e| e.into_inner()));
                 let services = self.backend.list_services()?;
                 let mut errors = Vec::new();
                 match owned_port {
@@ -1311,7 +1334,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
                 return Err(format!("清理系统代理恢复日志失败：{error}"));
             }
         }
-        *self.state.lock().unwrap() = None;
+        *self.state.lock().unwrap_or_else(|e| e.into_inner()) = None;
         Ok(())
     }
 
@@ -1335,7 +1358,11 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         !self.shutting_down.load(Ordering::SeqCst)
-            && self.state.lock().unwrap().is_none()
+            && self
+                .state
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_none()
             && !self.external_endpoints().is_empty()
     }
 
@@ -1354,7 +1381,12 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
             .operation
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        if self.state.lock().unwrap().is_some() {
+        if self
+            .state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_some()
+        {
             return Ok(());
         }
         let saved = match std::fs::read(self.tun_journal_path()) {
@@ -1401,7 +1433,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         let suspended = SuspendedSysProxy {
             snapshot,
             journal: std::fs::read(&self.journal_path).ok(),
-            enabled_port: *self.state.lock().unwrap(),
+            enabled_port: *self.state.lock().unwrap_or_else(|e| e.into_inner()),
             windows_suspended_from: BTreeMap::new(),
         };
         let journal = serde_json::to_vec(&suspended)
@@ -1419,7 +1451,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
                 .unwrap_or_default();
             return Err(format!("暂停系统代理失败：{error}{detail}"));
         }
-        *self.state.lock().unwrap() = None;
+        *self.state.lock().unwrap_or_else(|e| e.into_inner()) = None;
         let _ = std::fs::remove_file(&self.journal_path);
         Ok(suspended)
     }
@@ -1515,7 +1547,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
                 let _ = std::fs::remove_file(&self.journal_path);
             }
         }
-        *self.state.lock().unwrap() = suspended.enabled_port;
+        *self.state.lock().unwrap_or_else(|e| e.into_inner()) = suspended.enabled_port;
         std::fs::remove_file(self.tun_journal_path())
             .map_err(|error| format!("remove TUN proxy journal: {error}"))?;
         Ok(())
@@ -1568,7 +1600,12 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
     /// 已持有代理操作锁的内部实现。
     #[cfg_attr(target_os = "linux", allow(dead_code))]
     fn restore_after_tun_locked(&self) -> Result<(), String> {
-        if self.state.lock().unwrap().is_some() {
+        if self
+            .state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_some()
+        {
             return Ok(());
         }
         let path = self.tun_journal_path();
@@ -1714,7 +1751,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
     }
 
     pub fn status(&self) -> SysProxyStatus {
-        match *self.state.lock().unwrap() {
+        match *self.state.lock().unwrap_or_else(|e| e.into_inner()) {
             Some(port) => SysProxyStatus {
                 enabled: true,
                 port,
@@ -1734,7 +1771,7 @@ impl<B: SysProxyBackend> SysProxyManager<B> {
         if j.port == 0 {
             return None; // v1 兼容格式无端口信息，走 recover_stale 路径
         }
-        *self.state.lock().unwrap() = Some(j.port);
+        *self.state.lock().unwrap_or_else(|e| e.into_inner()) = Some(j.port);
         Some(j.port)
     }
 
@@ -1857,7 +1894,7 @@ mod tests {
         let operation = Arc::new(Mutex::new(()));
         let enabled = Arc::new(AtomicBool::new(true));
         let detected = Arc::new(AtomicBool::new(false));
-        let lock = operation.lock().unwrap();
+        let lock = operation.lock().unwrap_or_else(|e| e.into_inner());
         let (started_tx, started_rx) = mpsc::channel();
         let queued_op = operation.clone();
         let queued_flag = enabled.clone();
@@ -1945,7 +1982,12 @@ mod tests {
         manager.enable(7897).unwrap();
         manager.disable().unwrap();
         assert_eq!(
-            backend.inner.restored.lock().unwrap().get("Windows"),
+            backend
+                .inner
+                .restored
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get("Windows"),
             Some(&original)
         );
         let legacy: ServiceSnapshot =
@@ -2028,7 +2070,7 @@ mod tests {
             self.inner
                 .presets
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .insert(service.to_string(), snap);
             self
         }
@@ -2046,7 +2088,7 @@ mod tests {
             self.inner
                 .unattended_restore_on
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .push(service.to_string());
             self.restore_service(service, snap)
         }
@@ -2067,17 +2109,26 @@ mod tests {
                 host: "127.0.0.1".into(),
                 port,
             });
-            self.inner.current.lock().unwrap().insert(
-                service.to_string(),
-                ServiceSnapshot {
-                    web: endpoint.clone(),
-                    secure: endpoint.clone(),
-                    socks: endpoint,
-                    bypass: None,
-                    windows: None,
-                },
-            );
-            let before_enable = self.inner.before_enable.lock().unwrap().clone();
+            self.inner
+                .current
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert(
+                    service.to_string(),
+                    ServiceSnapshot {
+                        web: endpoint.clone(),
+                        secure: endpoint.clone(),
+                        socks: endpoint,
+                        bypass: None,
+                        windows: None,
+                    },
+                );
+            let before_enable = self
+                .inner
+                .before_enable
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone();
             if let Some(before_enable) = before_enable {
                 before_enable();
             }
@@ -2085,7 +2136,7 @@ mod tests {
                 .inner
                 .fail_on
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .iter()
                 .any(|s| s == service)
             {
@@ -2094,13 +2145,21 @@ mod tests {
             self.inner
                 .enabled
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .insert(service.to_string());
             Ok(())
         }
         fn disable_service(&self, service: &str) -> Result<(), String> {
-            self.inner.enabled.lock().unwrap().remove(service);
-            self.inner.current.lock().unwrap().remove(service);
+            self.inner
+                .enabled
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(service);
+            self.inner
+                .current
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(service);
             Ok(())
         }
         fn service_snapshot(&self, service: &str) -> Result<ServiceSnapshot, String> {
@@ -2108,20 +2167,26 @@ mod tests {
                 .inner
                 .snapshot_fail_on
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .iter()
                 .any(|name| name == service)
             {
                 return Err(format!("snapshot failed on {service}"));
             }
-            if let Some(current) = self.inner.current.lock().unwrap().get(service) {
+            if let Some(current) = self
+                .inner
+                .current
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get(service)
+            {
                 return Ok(current.clone());
             }
             Ok(self
                 .inner
                 .presets
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .get(service)
                 .cloned()
                 .unwrap_or_default())
@@ -2130,24 +2195,28 @@ mod tests {
             self.inner
                 .restored
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .insert(service.to_string(), snap.clone());
             self.inner
                 .current
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .insert(service.to_string(), snap.clone());
             if self
                 .inner
                 .restore_fail_on
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .iter()
                 .any(|name| name == service)
             {
                 return Err(format!("restore failed on {service}"));
             }
-            self.inner.enabled.lock().unwrap().remove(service);
+            self.inner
+                .enabled
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(service);
             Ok(())
         }
     }
@@ -2173,13 +2242,41 @@ mod tests {
         for _ in 0..3 {
             assert!(manager.external_proxy_conflict_for_tun());
         }
-        assert!(backend.inner.enabled.lock().unwrap().contains("Wi-Fi"));
+        assert!(backend
+            .inner
+            .enabled
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains("Wi-Fi"));
         assert!(!manager.tun_journal_path().exists());
         assert!(!dir.path().join("journal.json").exists());
     }
 
     fn manager_with(backend: FakeBackend, dir: &tempfile::TempDir) -> FakeManager {
         SysProxyManager::new(backend, dir.path().join("journal.json"))
+    }
+
+    #[test]
+    fn poisoned_proxy_state_allows_status_and_exit_restore() {
+        let dir = tempfile::tempdir().unwrap();
+        let backend = FakeBackend::new(&["Wi-Fi"]);
+        let manager = manager_with(backend.clone(), &dir);
+        manager.enable(7898).unwrap();
+        let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = manager.state.lock().unwrap_or_else(|e| e.into_inner());
+            panic!("poison proxy state");
+        }));
+        assert!(poisoned.is_err());
+        assert!(manager.state.is_poisoned());
+        assert!(manager.status().enabled);
+        manager.prepare_exit(false).unwrap();
+        assert!(!manager.status().enabled);
+        assert!(backend
+            .inner
+            .restored
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key("Wi-Fi"));
     }
 
     #[test]
@@ -2199,7 +2296,7 @@ mod tests {
             .inner
             .current
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .insert("Wi-Fi".into(), current.clone());
         assert_eq!(
             manager.inspect(7898).unwrap(),
@@ -2216,7 +2313,7 @@ mod tests {
             .inner
             .snapshot_fail_on
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .push("Ethernet".into());
         assert!(manager.inspect(7898).is_err());
         assert!(manager.enable_from_diagnosis(7898).is_err());
@@ -2238,7 +2335,7 @@ mod tests {
             .inner
             .current
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .insert("Office WLAN".into(), ServiceSnapshot::default());
         backend.enable_service("Ethernet", 9000).unwrap();
         let foreign = backend.service_snapshot("Ethernet").unwrap();
@@ -2275,7 +2372,7 @@ mod tests {
                 .inner
                 .current
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .insert("Wi-Fi".into(), mixed.clone());
             assert_eq!(
                 manager.reapply_primary("Wi-Fi", 7898).unwrap(),
@@ -2295,7 +2392,7 @@ mod tests {
             .inner
             .current
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .insert("Wi-Fi".into(), pac.clone());
         assert_eq!(
             manager.reapply_primary("Wi-Fi", 7898).unwrap(),
@@ -2317,9 +2414,14 @@ mod tests {
             .inner
             .current
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .insert("Wi-Fi".into(), partial.clone());
-        backend.inner.fail_on.lock().unwrap().push("Wi-Fi".into());
+        backend
+            .inner
+            .fail_on
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push("Wi-Fi".into());
         let journal = std::fs::read(&manager.journal_path).unwrap();
         assert!(manager
             .reapply_primary("Wi-Fi", 7898)
@@ -2329,7 +2431,12 @@ mod tests {
         assert_eq!(backend.service_snapshot("Ethernet").unwrap(), ethernet);
         assert_eq!(std::fs::read(&manager.journal_path).unwrap(), journal);
         assert!(manager.status().enabled);
-        backend.inner.fail_on.lock().unwrap().clear();
+        backend
+            .inner
+            .fail_on
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
         assert_eq!(
             manager.reapply_primary("Wi-Fi", 7898).unwrap(),
             RecoveryProxyState::Owned
@@ -2350,10 +2457,15 @@ mod tests {
             .inner
             .snapshot_fail_on
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .push("Wi-Fi".into());
         assert!(manager.reapply_primary("Wi-Fi", 7898).is_err());
-        backend.inner.snapshot_fail_on.lock().unwrap().clear();
+        backend
+            .inner
+            .snapshot_fail_on
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
         manager.shutting_down.store(true, Ordering::SeqCst);
         assert!(manager.reapply_primary("Wi-Fi", 7898).is_err());
         manager.shutting_down.store(false, Ordering::SeqCst);
@@ -2371,7 +2483,7 @@ mod tests {
         let backend = FakeBackend::new(&["Wi-Fi"]);
         let manager = Arc::new(manager_with(backend.clone(), &dir));
         manager.enable(7898).unwrap();
-        let operation = manager.operation.lock().unwrap();
+        let operation = manager.operation.lock().unwrap_or_else(|e| e.into_inner());
         let queued = manager.clone();
         let worker = std::thread::spawn(move || queued.reapply_primary("Wi-Fi", 7898));
         // 模拟先取得操作锁的关闭事务；后来的恢复必须在锁内重新读取意图。
@@ -2399,7 +2511,7 @@ mod tests {
             .inner
             .current
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .insert("New Ethernet".into(), ServiceSnapshot::default());
         manager.reapply_primary("New Ethernet", 7898).unwrap();
         let new = manager.read_journal().unwrap();
@@ -2455,7 +2567,11 @@ mod tests {
     fn enable_all_failed_is_error() {
         let dir = tempfile::tempdir().unwrap();
         let b = FakeBackend::new(&["Wi-Fi"]);
-        b.inner.fail_on.lock().unwrap().push("Wi-Fi".into());
+        b.inner
+            .fail_on
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push("Wi-Fi".into());
         let mgr = manager_with(b, &dir);
         assert!(mgr.enable(7897).is_err());
         assert!(!mgr.status().enabled);
@@ -2466,12 +2582,30 @@ mod tests {
     fn partial_enable_failure_restores_all_services() {
         let dir = tempfile::tempdir().unwrap();
         let backend = FakeBackend::new(&["Ethernet", "Wi-Fi"]);
-        backend.inner.fail_on.lock().unwrap().push("Wi-Fi".into());
+        backend
+            .inner
+            .fail_on
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push("Wi-Fi".into());
         let mgr = manager_with(backend.clone(), &dir);
         assert!(mgr.enable(7897).is_err());
         assert!(!mgr.status().enabled);
-        assert!(backend.inner.enabled.lock().unwrap().is_empty());
-        assert_eq!(backend.inner.restored.lock().unwrap().len(), 2);
+        assert!(backend
+            .inner
+            .enabled
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty());
+        assert_eq!(
+            backend
+                .inner
+                .restored
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .len(),
+            2
+        );
         assert!(!dir.path().join("journal.json").exists());
     }
 
@@ -2480,19 +2614,42 @@ mod tests {
     fn failed_rollback_keeps_journal_and_retry_recovers() {
         let dir = tempfile::tempdir().unwrap();
         let backend = FakeBackend::new(&["Ethernet", "Wi-Fi"]);
-        backend.inner.fail_on.lock().unwrap().push("Wi-Fi".into());
+        backend
+            .inner
+            .fail_on
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push("Wi-Fi".into());
         backend
             .inner
             .restore_fail_on
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .push("Ethernet".into());
         let mgr = manager_with(backend.clone(), &dir);
         assert!(mgr.enable(7897).unwrap_err().contains("回滚未完成"));
         assert!(dir.path().join("journal.json").exists());
-        assert_eq!(backend.inner.restored.lock().unwrap().len(), 2);
-        backend.inner.fail_on.lock().unwrap().clear();
-        backend.inner.restore_fail_on.lock().unwrap().clear();
+        assert_eq!(
+            backend
+                .inner
+                .restored
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .len(),
+            2
+        );
+        backend
+            .inner
+            .fail_on
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+        backend
+            .inner
+            .restore_fail_on
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
         mgr.enable(7897).unwrap();
         assert!(mgr.status().enabled);
         mgr.disable().unwrap();
@@ -2517,22 +2674,32 @@ mod tests {
             .inner
             .current
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .insert("Wi-Fi".into(), ServiceSnapshot::default());
         backend
             .inner
             .restore_fail_on
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .push("Wi-Fi".into());
 
         assert!(manager.restore_after_failed_tun(suspended).is_err());
         assert!(dir.path().join("tun-proxy-journal.json").exists());
 
-        backend.inner.restore_fail_on.lock().unwrap().clear();
+        backend
+            .inner
+            .restore_fail_on
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
         manager.retry_restore(false, true).unwrap();
         assert!(!dir.path().join("tun-proxy-journal.json").exists());
-        assert!(backend.inner.enabled.lock().unwrap().is_empty());
+        assert!(backend
+            .inner
+            .enabled
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty());
         assert_eq!(backend.service_snapshot("Wi-Fi").unwrap(), original);
     }
 
@@ -2588,14 +2755,19 @@ mod tests {
             .inner
             .restore_fail_on
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .push("Wi-Fi".into());
 
         assert!(manager.retry_restore(false, false).is_err());
         assert!(dir.path().join("journal.json").exists());
         assert!(manager.status().enabled);
 
-        backend.inner.restore_fail_on.lock().unwrap().clear();
+        backend
+            .inner
+            .restore_fail_on
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
         manager.retry_restore(false, false).unwrap();
         assert!(!dir.path().join("journal.json").exists());
         assert!(!manager.status().enabled);
@@ -2611,9 +2783,17 @@ mod tests {
         let (entered_tx, entered_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
         let release_rx = Mutex::new(release_rx);
-        *backend.inner.before_enable.lock().unwrap() = Some(Arc::new(move || {
+        *backend
+            .inner
+            .before_enable
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(move || {
             entered_tx.send(()).unwrap();
-            release_rx.lock().unwrap().recv().unwrap();
+            release_rx
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .recv()
+                .unwrap();
         }));
         let manager = Arc::new(manager_with(backend.clone(), &dir));
         let enabling = manager.clone();
@@ -2633,7 +2813,12 @@ mod tests {
         cleanup.join().unwrap().unwrap();
         assert!(!completed_early, "清理不能越过等待中的授权");
         assert!(journal_preserved, "授权结束前必须保留恢复快照");
-        assert!(backend.inner.enabled.lock().unwrap().is_empty());
+        assert!(backend
+            .inner
+            .enabled
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty());
         assert!(!manager.status().enabled);
         assert!(!dir.path().join("journal.json").exists());
     }
@@ -2646,7 +2831,12 @@ mod tests {
         let manager = manager_with(backend.clone(), &dir);
         manager.begin_shutdown();
         assert!(manager.enable(7897).unwrap_err().contains("正在退出"));
-        assert!(backend.inner.enabled.lock().unwrap().is_empty());
+        assert!(backend
+            .inner
+            .enabled
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty());
         assert!(!dir.path().join("journal.json").exists());
     }
 
@@ -2661,7 +2851,7 @@ mod tests {
             .inner
             .restore_fail_on
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .push("Wi-Fi".into());
         if cfg!(target_os = "macos") {
             manager.prepare_exit(false).unwrap();
@@ -2674,7 +2864,12 @@ mod tests {
         assert!(manager.status().enabled);
         assert!(dir.path().join("journal.json").exists());
         assert!(!manager.shutting_down.load(Ordering::SeqCst));
-        backend.inner.restore_fail_on.lock().unwrap().clear();
+        backend
+            .inner
+            .restore_fail_on
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
         manager.enable(7897).unwrap();
         manager.prepare_exit(false).unwrap();
         assert!(!manager.status().enabled);
@@ -2698,7 +2893,12 @@ mod tests {
             .unwrap_err()
             .contains("手动"));
         assert_eq!(std::fs::read(manager.tun_journal_path()).unwrap(), before);
-        assert!(backend.inner.restored.lock().unwrap().is_empty());
+        assert!(backend
+            .inner
+            .restored
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty());
         backend
             .inner
             .restore_needs_auth
@@ -2728,8 +2928,18 @@ mod tests {
             .unwrap_err()
             .contains("手动"));
         assert_eq!(std::fs::read(manager.tun_journal_path()).unwrap(), before);
-        assert!(backend.inner.enabled.lock().unwrap().contains("Wi-Fi"));
-        assert!(backend.inner.restored.lock().unwrap().is_empty());
+        assert!(backend
+            .inner
+            .enabled
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains("Wi-Fi"));
+        assert!(backend
+            .inner
+            .restored
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty());
     }
 
     /// 授权等待期间开始退出，稍后成功的写入须回滚而不能报告已开启。
@@ -2742,9 +2952,17 @@ mod tests {
         let (entered_tx, entered_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
         let release_rx = Mutex::new(release_rx);
-        *backend.inner.before_enable.lock().unwrap() = Some(Arc::new(move || {
+        *backend
+            .inner
+            .before_enable
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(move || {
             entered_tx.send(()).unwrap();
-            release_rx.lock().unwrap().recv().unwrap();
+            release_rx
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .recv()
+                .unwrap();
         }));
         let manager = Arc::new(manager_with(backend.clone(), &dir));
         let enabling = manager.clone();
@@ -2753,7 +2971,12 @@ mod tests {
         manager.begin_shutdown();
         release_tx.send(()).unwrap();
         assert!(enable.join().unwrap().unwrap_err().contains("正在退出"));
-        assert!(backend.inner.enabled.lock().unwrap().is_empty());
+        assert!(backend
+            .inner
+            .enabled
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty());
         assert!(!manager.status().enabled);
         assert!(!dir.path().join("journal.json").exists());
     }
@@ -2779,9 +3002,17 @@ mod tests {
         let (entered_tx, entered_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
         let release_rx = Mutex::new(release_rx);
-        *backend.inner.before_enable.lock().unwrap() = Some(Arc::new(move || {
+        *backend
+            .inner
+            .before_enable
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(move || {
             entered_tx.send(()).unwrap();
-            release_rx.lock().unwrap().recv().unwrap();
+            release_rx
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .recv()
+                .unwrap();
         }));
         let enabling = manager.clone();
         let enable = std::thread::spawn(move || enabling.enable_during_tun(7897));
@@ -2792,7 +3023,12 @@ mod tests {
         enable.join().unwrap().unwrap();
         assert!(!cleanup.join().unwrap());
         assert!(manager.status().enabled);
-        assert!(backend.inner.enabled.lock().unwrap().contains("Wi-Fi"));
+        assert!(backend
+            .inner
+            .enabled
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains("Wi-Fi"));
         assert!(dir.path().join("journal.json").exists());
         assert!(!manager.tun_journal_path().exists());
     }
@@ -2832,7 +3068,11 @@ mod tests {
         mgr.enable(7897).unwrap();
         mgr.disable().unwrap();
 
-        let restored = backend.inner.restored.lock().unwrap();
+        let restored = backend
+            .inner
+            .restored
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let snap = restored.get("Wi-Fi").expect("restore called");
         assert_eq!(
             snap.web,
@@ -2852,7 +3092,11 @@ mod tests {
         let mgr = manager_with(backend.clone(), &dir);
         mgr.enable(7897).unwrap();
         mgr.disable().unwrap();
-        let restored = backend.inner.restored.lock().unwrap();
+        let restored = backend
+            .inner
+            .restored
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let snap = restored.get("Wi-Fi").expect("restore called");
         assert_eq!(*snap, ServiceSnapshot::default());
         assert!(!dir.path().join("journal.json").exists());
@@ -3025,7 +3269,11 @@ mod tests {
 
             mgr.prepare_exit(false).unwrap();
 
-            let restored = backend.inner.restored.lock().unwrap();
+            let restored = backend
+                .inner
+                .restored
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             let snap = restored.get("Wi-Fi").unwrap();
             assert_eq!(snap.web.as_ref().unwrap().port, live_port);
             assert!(!dir.path().join("journal.json").exists());
@@ -3052,7 +3300,11 @@ mod tests {
 
             mgr.prepare_exit_unattended_for_test(false).unwrap();
 
-            let restored = backend.inner.restored.lock().unwrap();
+            let restored = backend
+                .inner
+                .restored
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             let snap = restored.get("Wi-Fi").unwrap();
             assert!(
                 snap.web.is_none() && snap.secure.is_none() && snap.socks.is_none(),
@@ -3070,7 +3322,7 @@ mod tests {
                 .inner
                 .restore_fail_on
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .push("Wi-Fi".into());
             let mgr = manager_with(backend.clone(), &dir);
             mgr.enable(7898).unwrap();
@@ -3093,7 +3345,7 @@ mod tests {
                 .inner
                 .snapshot_fail_on
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .push("Wi-Fi".into());
 
             mgr.prepare_exit_unattended_for_test(false).unwrap();
@@ -3122,7 +3374,7 @@ mod tests {
                 .inner
                 .current
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .insert("Wi-Fi".into(), ServiceSnapshot::default());
 
             mgr.prepare_exit_unattended_for_test(true).unwrap();
@@ -3132,7 +3384,7 @@ mod tests {
                     .inner
                     .unattended_restore_on
                     .lock()
-                    .unwrap()
+                    .unwrap_or_else(|e| e.into_inner())
                     .as_slice(),
                 ["Wi-Fi"]
             );
@@ -3153,19 +3405,24 @@ mod tests {
                 .inner
                 .current
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .insert("Wi-Fi".into(), external_snapshot(7890));
 
             mgr.prepare_exit(false).unwrap();
 
             // restore_service 未被调用——第三方配置保留
-            assert!(backend.inner.restored.lock().unwrap().is_empty());
+            assert!(backend
+                .inner
+                .restored
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_empty());
             assert_eq!(
                 backend
                     .inner
                     .current
                     .lock()
-                    .unwrap()
+                    .unwrap_or_else(|e| e.into_inner())
                     .get("Wi-Fi")
                     .unwrap()
                     .web
@@ -3194,17 +3451,27 @@ mod tests {
                 .inner
                 .current
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .insert("Wi-Fi".into(), external_snapshot(7890));
             {
                 let mgr = manager_with(backend.clone(), &dir);
                 mgr.recover_stale();
             }
-            assert!(backend.inner.restored.lock().unwrap().is_empty());
+            assert!(backend
+                .inner
+                .restored
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_empty());
             assert!(!dir.path().join("journal.json").exists());
 
             // 归属未变场景：重建 journal 再 recover → 还原
-            backend.inner.current.lock().unwrap().remove("Wi-Fi");
+            backend
+                .inner
+                .current
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove("Wi-Fi");
             {
                 let mgr = manager_with(backend.clone(), &dir);
                 mgr.enable(7898).unwrap();
@@ -3213,7 +3480,11 @@ mod tests {
                 let mgr = manager_with(backend.clone(), &dir);
                 mgr.recover_stale();
             }
-            let restored = backend.inner.restored.lock().unwrap();
+            let restored = backend
+                .inner
+                .restored
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             assert_eq!(
                 restored.get("Wi-Fi").unwrap().web.as_ref().unwrap().port,
                 7890
@@ -3235,12 +3506,16 @@ mod tests {
                 .inner
                 .current
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .insert("Ethernet".into(), external_snapshot(7890));
 
             mgr.prepare_exit(false).unwrap();
 
-            let restored = backend.inner.restored.lock().unwrap();
+            let restored = backend
+                .inner
+                .restored
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             assert!(restored.contains_key("Wi-Fi"));
             assert!(!restored.contains_key("Ethernet"));
         }
@@ -3259,18 +3534,23 @@ mod tests {
                 .inner
                 .current
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .insert("Wi-Fi".into(), external_snapshot(7890));
 
             mgr.restore_after_failed_tun(suspended).unwrap();
 
-            assert!(backend.inner.restored.lock().unwrap().is_empty());
+            assert!(backend
+                .inner
+                .restored
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_empty());
             assert_eq!(
                 backend
                     .inner
                     .current
                     .lock()
-                    .unwrap()
+                    .unwrap_or_else(|e| e.into_inner())
                     .get("Wi-Fi")
                     .unwrap()
                     .web
@@ -3298,8 +3578,18 @@ mod tests {
             .unwrap();
             let mgr = manager_with(backend.clone(), &dir);
             assert!(mgr.recover_stale());
-            assert!(backend.inner.enabled.lock().unwrap().is_empty());
-            assert!(backend.inner.restored.lock().unwrap().is_empty());
+            assert!(backend
+                .inner
+                .enabled
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_empty());
+            assert!(backend
+                .inner
+                .restored
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_empty());
             assert!(!dir.path().join("journal.json").exists());
         }
 
@@ -3320,12 +3610,16 @@ mod tests {
                 .inner
                 .current
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .insert("Ethernet".into(), external_snapshot(7890));
 
             mgr.prepare_exit(false).unwrap();
 
-            let enabled = backend.inner.enabled.lock().unwrap();
+            let enabled = backend
+                .inner
+                .enabled
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             assert!(!enabled.contains("Wi-Fi"));
             assert!(enabled.contains("Ethernet"));
         }
@@ -3343,7 +3637,7 @@ mod tests {
                 .inner
                 .snapshot_fail_on
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .push("Wi-Fi".into());
 
             assert!(mgr.restore_after_failed_tun(suspended).is_err());

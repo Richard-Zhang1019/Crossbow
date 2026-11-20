@@ -228,6 +228,10 @@ const copy = {
   ],
   "scene.failed": ["网络场景切换未完成", "Network scene switch did not complete"],
   "scene.restore": ["网络场景恢复", "Network scene restore"],
+  "sysproxy.restorePending": [
+    "TUN 已关闭，但系统代理未能恢复到之前的状态",
+    "TUN was turned off, but the system proxy could not be restored",
+  ],
 } as const;
 export function notificationText(
   code: string,

@@ -30,9 +30,15 @@ pub(crate) fn render_current(
     }
 }
 
-/// 渲染当前档案并启动内核；已在运行时报错（用 `restart_core`）。
+/// 渲染当前档案并确保内核运行；替换运行中的内核使用 `core_restart`。
 /// 安全模式（safe_mode）下跳过覆写链。
 pub(crate) fn start_core(state: &AppState) -> Result<(), String> {
+    start_core_checked(state).map_err(|error| error.message)
+}
+
+pub(crate) fn start_core_checked(
+    state: &AppState,
+) -> Result<(), crate::engine::manager::CoreStartError> {
     state.exit.ensure_open()?;
     let _op = state.core_op.lock().unwrap_or_else(|e| e.into_inner());
     state.exit.ensure_open()?;
@@ -40,10 +46,10 @@ pub(crate) fn start_core(state: &AppState) -> Result<(), String> {
     // Starting means ensure-running, never stop/reject an already healthy core.
     match state.core().status() {
         CoreStatus::Running => return Ok(()),
-        CoreStatus::Starting => return wait_core_running(state),
+        CoreStatus::Starting => return wait_core_running(state).map_err(Into::into),
         _ => {}
     }
-    start_core_locked(state)
+    start_core_locked_checked(state)
 }
 
 /// A successful spawn only means the process exists. Do not expose TUN or
@@ -66,6 +72,12 @@ pub(crate) fn wait_core_running(state: &AppState) -> Result<(), String> {
 
 /// 调用方必须已持有 core_op（start_core / restart_core 入口）。
 pub(crate) fn start_core_locked(state: &AppState) -> Result<(), String> {
+    start_core_locked_checked(state).map_err(|error| error.message)
+}
+
+fn start_core_locked_checked(
+    state: &AppState,
+) -> Result<(), crate::engine::manager::CoreStartError> {
     let safe = state.safe_mode.load(std::sync::atomic::Ordering::SeqCst);
     let is_singbox = {
         let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
@@ -73,7 +85,22 @@ pub(crate) fn start_core_locked(state: &AppState) -> Result<(), String> {
     };
     let need = if is_singbox { "sing-box" } else { "mihomo" };
     #[cfg(target_os = "linux")]
-    let _ = ensure_engine_binary(state, need)?;
+    {
+        // Linux 服务端永远跑安装时钉定的副本（linux_service::binary_path 的
+        // CORE 常量，当前固定 mihomo）；GUI 的 ensure_engine_binary 只保证
+        // 数据目录副本就绪，并不影响服务实际运行的内核。二者不一致时
+        // （GUI 切到 sing-box），配置由错误内核渲染必然启动失败且难以
+        // 排查——显式报错，而不是静默跑错内核、仅靠 TUN 场景的
+        // engine==Mihomo 门兜底（#560）。
+        let service_core = crate::network::linux_service::binary_path();
+        if !crate::engine::download::is_core_bin(&service_core, need) {
+            return Err(format!(
+                "Linux 系统服务当前固定运行 mihomo（{}），无法以 {need} 启动；请切回 mihomo 引擎后再启动",
+                service_core.display()
+            ));
+        }
+        ensure_engine_binary(state, need)?;
+    }
     #[cfg(not(target_os = "linux"))]
     let mut binary = ensure_engine_binary(state, need)?;
     let rendered = render_current(state, !safe)?;
@@ -116,7 +143,7 @@ pub(crate) fn start_core_locked(state: &AppState) -> Result<(), String> {
             if !state.sysproxy.status().enabled {
                 let _ = state.sysproxy.suspend_for_tun()?;
             }
-            return state.core().start(&rendered.config, &rt);
+            return state.core().start_checked(&rendered.config, &rt);
         }
         #[cfg(target_os = "windows")]
         {
@@ -134,9 +161,11 @@ pub(crate) fn start_core_locked(state: &AppState) -> Result<(), String> {
             if !state.sysproxy.status().enabled {
                 let _ = state.sysproxy.suspend_for_tun()?;
             }
-            return state
-                .core()
-                .start_with_spawner(&rendered.config, &rt, Box::new(spawner));
+            return state.core().start_with_spawner_checked(
+                &rendered.config,
+                &rt,
+                Box::new(spawner),
+            );
         }
         #[cfg(target_os = "linux")]
         {
@@ -156,9 +185,11 @@ pub(crate) fn start_core_locked(state: &AppState) -> Result<(), String> {
                 wireguard_coexist,
             )?;
             let spawner = crate::network::linux_service::make_core_spawner(wireguard_coexist)?;
-            return state
-                .core()
-                .start_with_spawner(&rendered.config, &rt, Box::new(spawner));
+            return state.core().start_with_spawner_checked(
+                &rendered.config,
+                &rt,
+                Box::new(spawner),
+            );
         }
         #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
@@ -169,7 +200,7 @@ pub(crate) fn start_core_locked(state: &AppState) -> Result<(), String> {
     {
         ensure_unprivileged_core_binary(state, need, binary)?;
     }
-    state.core().start(&rendered.config, &rt)
+    state.core().start_checked(&rendered.config, &rt)
 }
 
 pub(crate) fn missing_core_error(need: &str) -> String {
