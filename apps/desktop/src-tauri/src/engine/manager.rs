@@ -30,6 +30,41 @@ pub enum CoreStatus {
     Crashed(String),
 }
 
+/// 启动失败的机器可读分类；文案和状态回调仍保留原始诊断详情。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CoreStartError {
+    pub kind: &'static str,
+    pub message: String,
+    pub port: Option<u16>,
+}
+
+impl CoreStartError {
+    fn port_unavailable(port: u16, message: String) -> Self {
+        Self {
+            kind: "portUnavailable",
+            message,
+            port: Some(port),
+        }
+    }
+}
+
+impl From<String> for CoreStartError {
+    fn from(message: String) -> Self {
+        Self {
+            kind: "startFailed",
+            message,
+            port: None,
+        }
+    }
+}
+
+impl From<&str> for CoreStartError {
+    fn from(message: &str) -> Self {
+        message.to_string().into()
+    }
+}
+
 /// 可调参数；测试用短超时。
 #[derive(Debug, Clone)]
 pub struct CoreOptions {
@@ -560,21 +595,41 @@ impl CoreManager {
         inner.child.as_ref().map(|c| c.id()).or(inner.external_pid)
     }
 
-    /// 启动内核。`base_config` 是渲染后的订阅配置（未经运行时注入）。
+    /// 测试保留旧的字符串错误接口；生产启动链使用结构化错误。
+    #[cfg(test)]
     pub fn start(&self, base_config: &str, engine_rt: &RuntimeConfig) -> Result<(), String> {
+        self.start_checked(base_config, engine_rt)
+            .map_err(|error| error.message)
+    }
+
+    pub(crate) fn start_checked(
+        &self,
+        base_config: &str,
+        engine_rt: &RuntimeConfig,
+    ) -> Result<(), CoreStartError> {
         self.start_internal(base_config, engine_rt, None)
     }
 
-    /// 服务托管变体（Windows/Linux TUN）：「拉起进程」外包给特权服务，
-    /// 端口/密钥生成、配置注入、就绪探测与状态簿记与常规路径完全一致。
-    // macOS 非 test 构建不用服务托管路径；Windows/Linux 运行时与 mac 测试都要
-    #[cfg(any(windows, target_os = "linux", test))]
+    /// 测试保留旧的字符串错误接口；服务托管生产链走 checked 变体。
+    #[cfg(test)]
     pub fn start_with_spawner(
         &self,
         base_config: &str,
         engine_rt: &RuntimeConfig,
         spawner: CoreSpawner,
     ) -> Result<(), String> {
+        self.start_with_spawner_checked(base_config, engine_rt, spawner)
+            .map_err(|error| error.message)
+    }
+
+    /// 服务托管只替换进程拉起方式；端口检查、就绪探测与错误分类复用常规启动链。
+    #[cfg(any(windows, target_os = "linux", test))]
+    pub(crate) fn start_with_spawner_checked(
+        &self,
+        base_config: &str,
+        engine_rt: &RuntimeConfig,
+        spawner: CoreSpawner,
+    ) -> Result<(), CoreStartError> {
         self.start_internal(base_config, engine_rt, Some(spawner))
     }
 
@@ -583,7 +638,7 @@ impl CoreManager {
         base_config: &str,
         engine_rt: &RuntimeConfig,
         spawner: Option<CoreSpawner>,
-    ) -> Result<(), String> {
+    ) -> Result<(), CoreStartError> {
         let _lifecycle = self
             .shared
             .lifecycle
@@ -592,7 +647,8 @@ impl CoreManager {
         let result = self.start_attempt(base_config, engine_rt, spawner);
         if let Err(error) = &result {
             if self.status() == CoreStatus::Starting {
-                self.shared.notify(CoreStatus::Crashed(error.clone()));
+                self.shared
+                    .notify(CoreStatus::Crashed(error.message.clone()));
             }
         }
         result
@@ -603,14 +659,14 @@ impl CoreManager {
         base_config: &str,
         engine_rt: &RuntimeConfig,
         spawner: Option<CoreSpawner>,
-    ) -> Result<(), String> {
+    ) -> Result<(), CoreStartError> {
         // 上一次尝试还在探测中（Starting）：先收掉再启动，避免新配置写入后
         // 被旧探测超时路径误杀/误报。
         if self.status() == CoreStatus::Starting && !self.stop_locked() {
             return Err("无法确认上一次启动的内核已退出，已中止新启动".into());
         }
         if !matches!(self.status(), CoreStatus::Stopped | CoreStatus::Crashed(_)) {
-            return Err(format!("core is {:?}, stop it first", self.status()));
+            return Err(format!("core is {:?}, stop it first", self.status()).into());
         }
         if !self.shared.binary_path.exists() {
             let msg = format!(
@@ -618,13 +674,13 @@ impl CoreManager {
                 self.shared.binary_path.display()
             );
             self.shared.notify(CoreStatus::Crashed(msg.clone()));
-            return Err(msg);
+            return Err(msg.into());
         }
         // 服务托管租约必须先请服务停。kill_child 对没有身份的活 PID 会直接拒绝，
         // 如果写在服务停止前面，SYSTEM 内核会把后续启动永久卡住（#343）。
         if let Err(msg) = self.shared.release_hosted_before_kill() {
             self.shared.notify(CoreStatus::Crashed(msg.clone()));
-            return Err(msg);
+            return Err(msg.into());
         }
         let has_tracked_process = {
             let inner = self.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
@@ -633,7 +689,7 @@ impl CoreManager {
         if has_tracked_process && !self.shared.kill_child() {
             let msg = crate::engine::restart::RESTART_BLOCKED.to_string();
             self.shared.notify(CoreStatus::Crashed(msg.clone()));
-            return Err(msg);
+            return Err(msg.into());
         }
         // 外部（上一实例轻量交接的）内核还活着：先收掉，避免端口冲突。
         // 先解除收养角色再杀，收养监视线程看到角色已换就静默退场，不会误报；
@@ -665,7 +721,7 @@ impl CoreManager {
                     descriptor.pid
                 );
                 self.shared.notify(CoreStatus::Crashed(msg.clone()));
-                return Err(msg);
+                return Err(msg.into());
             }
             let _ = std::fs::remove_file(Shared::descriptor_path(&self.shared.work_dir));
         }
@@ -780,7 +836,10 @@ impl CoreManager {
                     engine_rt.mixed_port
                 );
                 self.shared.notify(CoreStatus::Crashed(message.clone()));
-                return Err(message);
+                return Err(CoreStartError::port_unavailable(
+                    engine_rt.mixed_port,
+                    message,
+                ));
             }
         }
         // controller 端口避开 mixed，避免自相争抢
@@ -833,7 +892,7 @@ impl CoreManager {
                     Err(error) => {
                         self.shared
                             .notify(CoreStatus::Crashed(format!("服务拉起内核失败：{error}")));
-                        return Err(error);
+                        return Err(error.into());
                     }
                 };
                 // 描述文件必须记服务实际拉起的二进制。记成界面选中的另一份内核时，
@@ -2762,6 +2821,19 @@ pub fn free_port() -> Option<u16> {
 pub(crate) mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn startup_error_classification_does_not_depend_on_localized_text() {
+        let error = CoreStartError::port_unavailable(7897, "arbitrary bind detail".into());
+        let wire = serde_json::to_value(error).unwrap();
+        assert_eq!(wire["kind"], "portUnavailable");
+        assert_eq!(wire["port"], 7897);
+        assert_eq!(wire["message"], "arbitrary bind detail");
+        let other =
+            serde_json::to_value(CoreStartError::from("无法绑定 is only detail here")).unwrap();
+        assert_eq!(other["kind"], "startFailed");
+        assert!(other["port"].is_null());
+    }
 
     /// 收养死亡回调的测试桩：不做任何重建。
     fn noop_death() -> impl Fn() + Send + 'static {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { nextSetupStep } from "./firstConnection.ts";
+import { isPortUnavailable, nextSetupStep } from "./firstConnection.ts";
 
 const fresh = {
   progress: "pending",
@@ -33,4 +33,14 @@ test("verification waits for an explicit takeover on supported platforms", () =>
 test("established profiles and completed setup keep the regular overview", () => {
   assert.equal(step({ configured: true, progress: null }), null);
   assert.equal(step({ configured: true, progress: "complete" }), null);
+});
+
+
+test("only a typed bind failure for the current port shows the port guide", () => {
+  const conflict = { kind: "portUnavailable", message: "any localized details", port: 7897 };
+  assert.equal(isPortUnavailable(conflict, 7897), true);
+  assert.equal(isPortUnavailable(conflict, 7898), false);
+  assert.equal(isPortUnavailable({ kind: "startFailed", message: "无法绑定", port: null }, 7897), false);
+  assert.equal(isPortUnavailable("无法绑定", 7897), false);
+  assert.equal(isPortUnavailable(null, 7897), false);
 });

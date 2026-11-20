@@ -19,13 +19,14 @@ import {
   type PlatformCapabilities,
 } from "@/services/ipc";
 import { fmtBytes } from "@/lib/format";
+import { subscriptionCleanup, unsubscribe } from "@/lib/unlisten";
 import { useT } from "@/i18n/i18n";
 import { Icon } from "@/components/Icon";
 import { ConnectionFlow } from "@/components/ConnectionFlow";
 
 import { cumulativeTotals, createReadGate } from "@/lib/stateReliability";
 import { navigateTo, type NavigationTarget } from "@/lib/workflow";
-import { nextSetupStep, readSetupProgress, writeSetupProgress, type SetupProgress } from "./firstConnection";
+import { isPortUnavailable, nextSetupStep, readSetupProgress, writeSetupProgress, type SetupProgress } from "./firstConnection";
 
 const POINTS = 120;
 
@@ -56,7 +57,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
   const [busy, setBusy] = useState(false);
   const [setupProgress, setSetupProgress] = useState(readSetupProgress);
   const [setupOperation, setSetupOperation] = useState<"download" | "start" | "verify" | null>(null);
-  const [portConflict, setPortConflict] = useState(false);
+  const [portConflict, setPortConflict] = useState<number | null>(null);
   const [verification, setVerification] = useState<{ revision: number; profileId: string | null; reachable: boolean } | null>(null);
   const verifyAction = useRef<HTMLButtonElement>(null);
   const verifyStatus = useRef<HTMLSpanElement>(null);
@@ -252,13 +253,15 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
         ipc.subscribeTraffic(subscriber),
         ipc.subscribeConnections(subscriber),
       ]);
+    }).catch(error => {
+      if (active) notify.error(error, "home-events");
     });
 
     return () => {
       active = false;
       mounted.current = false;
       for (const un of [un1, un2, un3, un4, un5, untun])
-        void un.then((f) => f());
+        unsubscribe(un);
       // React StrictMode immediately mounts this page again in development.
       // Wait for in-flight subscribe commands, then let the new generation
       // decide whether the backend streams should remain active.
@@ -279,8 +282,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
 
   useEffect(()=>{const changed=()=>void refresh();window.addEventListener("cb:profile-switched",changed);return()=>window.removeEventListener("cb:profile-switched",changed)},[refresh]);
   useEffect(() => {
-    const off = ipc.onEngineChanged(() => void refresh());
-    return () => void off.then(unlisten => unlisten());
+    return subscriptionCleanup(ipc.onEngineChanged(() => void refresh()));
   }, [refresh]);
   useEffect(() => {
     if (installNotice?.kind === "success") void refresh();
@@ -380,7 +382,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
     verification.profileId === activeId && canControl && core.state === "Running" ? verification : null;
   const downloadRunning = installNotice?.kind === "progress";
   const downloadFailed = setupStep === "download" && installNotice?.kind === "error";
-  const portBlocked = setupStep === "start" && portConflict;
+  const portBlocked = setupStep === "start" && portConflict === mixedPort;
   const verificationFailed = setupStep === "verify" && currentVerification?.reachable === false;
   const verifying = setupOperation === "verify";
   const showVerifyAction = setupStep === "verify";
@@ -412,12 +414,13 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
           // Download failures and progress use the backend operation notice.
         }
       } else if (operation === "start") {
-        setPortConflict(false);
+        setPortConflict(null);
         await notify.run("setup-core-start", t("setup.startAction"), async () => {
           try {
             await ipc.coreStart();
           } catch (error) {
-            if (mounted.current) setPortConflict(String(error).includes("无法绑定"));
+            // 只消费本次启动在实际绑定失败处给出的分类，不作迟到的端口探测。
+            if (mounted.current) setPortConflict(isPortUnavailable(error, mixedPort) ? mixedPort ?? null : null);
             throw error;
           }
         }, undefined, { feedback: "error-only", titleKey: "setup.startAction" });
@@ -660,7 +663,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
               <div className="cb-mode-control">
                 <p>{t("studio.mode")}</p>
                 <SegmentedControl label={t("studio.mode")} value={known.has("mode")?mode:""} disabled={busy||!known.has("mode")||readErrors.has("mode")}
-                  options={CORE_MODES.map(m=>({value:m.id,label:t(`mode.${m.id}`)}))}
+                  options={CORE_MODES.map(m=>({value:m,label:t(`mode.${m}`)}))}
                   onChange={value=>{if(!value)return;void notify.run("core-mode",notificationText("core.mode"),()=>ipc.setCoreMode(value as CoreMode),undefined,{feedback:"error-only"})}}/>
 
               </div>
