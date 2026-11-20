@@ -60,6 +60,23 @@ export default function SceneRules() {
       window.removeEventListener("focus", onFocus);
     };
   }, [load]);
+  const requestLocation = useCallback(async () => {
+    try {
+      await ipc.requestSceneLocation();
+      await load();
+    } catch (error) {
+      notify.error(error, "scene-location");
+    }
+  }, [load]);
+
+  // 未发起过定位授权时自动触发一次系统框（挂载即用，无需找按钮）；
+  // 允许/拒绝后状态改变不再触发；弹窗未决时状态值不变，effect 不重跑。
+  useEffect(() => {
+    if (mounted.current && !readError && status?.location === "not_determined") {
+      void requestLocation();
+    }
+  }, [status?.location, readError, requestLocation]);
+
   const mutate = async (ssid: string, next: "direct" | "proxy" | null) => {
     if (operation.current) return;
     operation.current = true;
@@ -178,7 +195,20 @@ export default function SceneRules() {
         </div>
       )}
       {!current && !readError && status && !unsupported && (
-        <p className="cb-scene-access-note">{t("settings.scenes.noWifi")}</p>
+        status.location === "not_determined" ? (
+          <div className="cb-scene-access-note">
+            <p>{t("settings.scenes.locationHint")}</p>
+            <Button size="small" onClick={() => void requestLocation()}>
+              {t("settings.scenes.requestLocation")}
+            </Button>
+          </div>
+        ) : status.location === "denied" ? (
+          <p className="cb-scene-access-note">
+            {t("settings.scenes.locationDenied")}
+          </p>
+        ) : (
+          <p className="cb-scene-access-note">{t("settings.scenes.noWifi")}</p>
+        )
       )}
       {rules.length > 0 ? (
         <div

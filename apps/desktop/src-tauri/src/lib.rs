@@ -862,6 +862,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             platform_capabilities,
             commands::scene::network_scenes_get,
+            commands::scene::network_scene_request_location,
             commands::scene::network_scene_set,
             commands::scene::network_scene_remove,
             commands::rules::process_rules_get,
