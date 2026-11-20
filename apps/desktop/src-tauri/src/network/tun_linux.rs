@@ -14,12 +14,21 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
         Err(error) if enable => return Err(error),
         Err(_) => None, // Closing must still retry a disconnected service's cleanup.
     };
-    if actual == Some(enable) && enable == state.store.lock().unwrap().data().engine.tun_enable {
+    if actual == Some(enable)
+        && enable
+            == state
+                .store
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .data()
+                .engine
+                .tun_enable
+    {
         return Ok(());
     }
     if enable {
         let (engine, wireguard_coexist) = {
-            let store = state.store.lock().unwrap();
+            let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
             let engine = &store.data().engine;
             (engine.engine, engine.linux_wireguard_coexist)
         };
@@ -39,7 +48,13 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
     if !state.core().stop() {
         return Err("内核或网络资源未完全释放，TUN 状态未改变；请重试停止".into());
     }
-    state.store.lock().unwrap().data_mut().engine.tun_enable = enable;
+    state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data_mut()
+        .engine
+        .tun_enable = enable;
     if enable || was_running {
         let started = crate::start_core_locked(state)
             .and_then(|()| crate::wait_core_running(state))
@@ -55,7 +70,13 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
                     "TUN 切换失败：{error}；资源清理未确认，请重试关闭 TUN"
                 ));
             }
-            state.store.lock().unwrap().data_mut().engine.tun_enable = false;
+            state
+                .store
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .data_mut()
+                .engine
+                .tun_enable = false;
             let recovery = if enable && was_running {
                 crate::start_core_locked(state).and_then(|()| crate::wait_core_running(state))
             } else {
@@ -64,7 +85,7 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
             let saved = state
                 .store
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .save()
                 .map_err(|e| e.to_string());
             return Err(format!(
@@ -84,7 +105,7 @@ pub fn toggle_tun(state: &AppState, enable: bool) -> Result<(), String> {
     state
         .store
         .lock()
-        .unwrap()
+        .unwrap_or_else(|e| e.into_inner())
         .save()
         .map_err(|e| e.to_string())
 }
@@ -97,7 +118,7 @@ pub fn set_wireguard_coexist(state: &AppState, enabled: bool) -> Result<(), Stri
     if crate::network::linux_service::status()?.is_some() {
         return Err("请关闭 TUN 并确认网络已恢复后再更改 WireGuard 共存设置".into());
     }
-    let mut store = state.store.lock().unwrap();
+    let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
     let previous = store.data().engine.linux_wireguard_coexist;
     let tun_enabled = store.data().engine.tun_enable;
     if previous != enabled || tun_enabled {

@@ -40,24 +40,24 @@ impl Notifier {
             .name("linux-notifications".into())
             .spawn(move || {
                 run(&worker, on_open, on_dismiss);
-                worker.0.lock().unwrap().finished = true;
+                worker.0.lock().unwrap_or_else(|e| e.into_inner()).finished = true;
                 worker.1.notify_all();
             })
         {
             eprintln!("Crossbow system notification worker unavailable: {error}");
-            shared.0.lock().unwrap().finished = true;
+            shared.0.lock().unwrap_or_else(|e| e.into_inner()).finished = true;
         }
         Self(shared)
     }
 
     pub fn update(&self, reminder: Option<Reminder>) {
-        self.0 .0.lock().unwrap().reminder = reminder;
+        self.0 .0.lock().unwrap_or_else(|e| e.into_inner()).reminder = reminder;
         self.0 .1.notify_all();
     }
 
     /// Exit may wait briefly for withdrawal, never for an unbounded thread join.
     pub fn shutdown(&self) {
-        let mut pending = self.0 .0.lock().unwrap();
+        let mut pending = self.0 .0.lock().unwrap_or_else(|e| e.into_inner());
         pending.stop = true;
         self.0 .1.notify_all();
         let _ = self
@@ -206,7 +206,7 @@ fn run(
     let mut retry = Instant::now();
     let mut logged = false;
     loop {
-        let pending = shared.0.lock().unwrap();
+        let pending = shared.0.lock().unwrap_or_else(|e| e.into_inner());
         if pending.stop {
             drop(pending);
             if let Some(d) = daemon.as_mut() {

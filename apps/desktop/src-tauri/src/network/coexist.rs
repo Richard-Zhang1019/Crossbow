@@ -406,7 +406,7 @@ pub fn detect(state: &crate::AppState) -> Vec<CoexistFinding> {
     let wireguard_coexist = state
         .store
         .lock()
-        .unwrap()
+        .unwrap_or_else(|e| e.into_inner())
         .data()
         .engine
         .linux_wireguard_coexist;

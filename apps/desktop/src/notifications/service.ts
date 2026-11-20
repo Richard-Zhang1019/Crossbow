@@ -214,6 +214,10 @@ const copy = {
     "连续多次健康检测失败，已关闭 TUN。请检查网络或更换节点。",
     "Repeated health checks failed. TUN was turned off. Check the network or change nodes.",
   ],
+  "sysproxy.restorePending": [
+    "TUN 已关闭，但系统代理未能恢复到之前的状态",
+    "TUN was turned off, but the system proxy could not be restored",
+  ],
 } as const;
 export function notificationText(
   code: string,

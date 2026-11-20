@@ -6,7 +6,7 @@ import NodeName from "@/components/NodeName";
 import { nodeNameText } from "@/components/NodeName/nodeFlags";
 import { notify, notificationText } from "@/notifications/service";
 import { useOperationNotice } from "@/notifications/NotificationProvider";
-import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import {
   CORE_MODES,
   ipc,
@@ -70,6 +70,9 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
   const [outbound, setOutbound] = useState<OutboundInfo | null>(null);
   const mounted = useRef(true);
   const subscriptionGeneration = useRef(0);
+  // 本页面实例在后端共享通道里的订阅方标识：traffic/connections 由
+  // 概览与连接页共享，后端按订阅方登记与移除（#555），卸载只移除自己。
+  const subscriber = useMemo(() => `home:${crypto.randomUUID()}`, []);
 
   const readGate = useRef(createReadGate());
   const [known, setKnown] = useState<Set<string>>(new Set());
@@ -247,8 +250,8 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
     const subscribe = Promise.all([un1, un2, un3, un4, un5, untun]).then(() => {
       if (!active || subscriptionGeneration.current !== generation) return;
       return Promise.allSettled([
-        ipc.subscribeTraffic(),
-        ipc.subscribeConnections(),
+        ipc.subscribeTraffic(subscriber),
+        ipc.subscribeConnections(subscriber),
       ]);
     }).catch(error => {
       if (active) notify.error(error, "home-events");
@@ -262,13 +265,15 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
       // React StrictMode immediately mounts this page again in development.
       // Wait for in-flight subscribe commands, then let the new generation
       // decide whether the backend streams should remain active.
+      // 守卫只覆盖本页自身的重挂载：跨页（连接页已订阅同一通道）时
+      // 后端按订阅方集合移除（release），晚到的退订不会误杀别人的流（#555）。
       void subscribe
         .catch(() => {})
         .finally(() => {
           queueMicrotask(() => {
             if (subscriptionGeneration.current === generation) {
-              ipc.unsubscribeTraffic().catch(() => {});
-              ipc.unsubscribeConnections().catch(() => {});
+              ipc.unsubscribeTraffic(subscriber).catch(() => {});
+              ipc.unsubscribeConnections(subscriber).catch(() => {});
             }
           });
         });
@@ -290,8 +295,8 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
     const timer = window.setInterval(() => {
       if (!mounted.current) return;
       void refresh();
-      ipc.subscribeTraffic().catch(() => {});
-      ipc.subscribeConnections().catch(() => {});
+      ipc.subscribeTraffic(subscriber).catch(() => {});
+      ipc.subscribeConnections(subscriber).catch(() => {});
     }, 30_000);
     return () => window.clearInterval(timer);
   }, [refresh]);
