@@ -299,10 +299,13 @@ impl Shared {
                         Err(_error) => {
                             // An interrupted wait must retain ownership for the next tick.
                             #[cfg(unix)]
-                            if _error.raw_os_error() == Some(libc::ECHILD) {
-                                return false;
+                            {
+                                _error.raw_os_error() != Some(libc::ECHILD)
                             }
-                            true
+                            #[cfg(not(unix))]
+                            {
+                                true
+                            }
                         }
                     });
                     if children.is_empty() {
