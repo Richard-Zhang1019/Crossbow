@@ -920,6 +920,7 @@ pub fn run() {
             unsubscribe_logs,
             get_ui_settings,
             get_engine_config,
+            lan_addresses,
             set_theme,
             logs_settings,
             set_logs_save,

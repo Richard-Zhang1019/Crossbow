@@ -50,6 +50,11 @@ export interface SiteResult {
 
 export type CoreState = "Stopped" | "Starting" | "Running" | "Crashed";
 
+export interface LanAddress {
+  interface: string;
+  address: string;
+}
+
 export interface CoreStatus {
   state: CoreState;
   message?: string;
@@ -452,6 +457,7 @@ export const ipc = {
   setLinuxWireguardCoexist: (enabled: boolean) =>
     invoke<void>("set_linux_wireguard_coexist", { enabled }),
   setAllowLan: (enabled: boolean) => invoke<void>("set_allow_lan", { enabled }),
+  lanAddresses: () => invoke<LanAddress[]>("lan_addresses"),
   autostartStatus: () => invoke<boolean>("autostart_status"),
   autostartSet: (enable: boolean) => invoke<void>("autostart_set", { enable }),
   coreVersion: () => invoke<string>("core_version"),

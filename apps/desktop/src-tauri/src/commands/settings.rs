@@ -1,6 +1,40 @@
 // 自动生成自 lib.rs 的 command 分域提取（#423）。use crate::* 引入根模块项。
 use crate::*;
+use std::{collections::BTreeSet, net::IpAddr};
 use tauri::{AppHandle, Emitter, Manager, State};
+
+#[derive(serde::Serialize)]
+pub(crate) struct LanAddress {
+    interface: String,
+    address: String,
+}
+
+#[tauri::command]
+pub(crate) fn lan_addresses() -> Result<Vec<LanAddress>, String> {
+    let interfaces = if_addrs::get_if_addrs().map_err(|error| error.to_string())?;
+    Ok(interfaces
+        .into_iter()
+        .filter(if_addrs::Interface::is_oper_up)
+        .filter_map(|interface| match interface.ip() {
+            IpAddr::V4(address)
+                if !address.is_unspecified()
+                    && !address.is_loopback()
+                    && !address.is_link_local()
+                    && !address.is_multicast()
+                    && !address.is_broadcast() =>
+            {
+                Some((interface.name, address))
+            }
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .map(|(interface, address)| LanAddress {
+            interface,
+            address: address.to_string(),
+        })
+        .collect())
+}
 
 #[tauri::command]
 pub(crate) fn autostart_set(app: AppHandle, enable: bool) -> Result<(), String> {
