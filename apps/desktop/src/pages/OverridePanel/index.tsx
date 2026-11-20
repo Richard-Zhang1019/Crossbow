@@ -42,6 +42,7 @@ export default function OverridePanel({
     try {
       setOverrides(await ipc.listOverrides());
       setLoadError(false);
+      void notify.resolve("override-load");
     } catch (error) {
       setLoadError(true);
       notify.error(error, "override-load");

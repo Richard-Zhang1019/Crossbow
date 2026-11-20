@@ -367,9 +367,17 @@ export const ipc = {
     listen<boolean>("tun://health-notice", (e) => cb(e.payload)),
   setActiveProfile: (id: string) => invoke<void>("set_active_profile", { id }),
   removeProfile: (id: string) => invoke<void>("remove_profile", { id }),
-  coreStart: () => invoke<void>("core_start"),
-  /** #563：混合端口是否被占用（端口冲突引导判定，替代后端文案子串匹配） */
-  portHasListener: (port: number) => invoke<boolean>("probe_port_listener", { port }),
+  coreStart: async () => {
+    try {
+      await invoke<void>("core_start");
+    } catch (error) {
+      // 保留 Error.message 给现有通知调用方，分类字段供首次连接引导使用。
+      if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
+        throw Object.assign(new Error(error.message), error);
+      }
+      throw error;
+    }
+  },
   coreRestart: () => invoke<void>("core_restart"),
   logsSettings: () =>
     invoke<{ save_enabled: boolean; retention_days: number }>("logs_settings"),

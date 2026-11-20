@@ -263,8 +263,9 @@ export default function DiagnosticsPage({
       }
       void notify.resolve("diagnostics-fix");
     } catch (error) {
-      // 三个 fix 分支统一上报；失败仍复检刷新报告展示真实状态（#562-10）
-      notify.error(error, "diagnostics-fix");
+      // 重启/系统代理的结果归后端；前端只报告自身拥有的启动失败。
+      // 所有分支失败后仍复检，避免重复通知同一个故障。
+      if (row.fix === "start_core") notify.error(error, "diagnostics-fix");
     } finally {
       fixingRef.current = false;
       if (active.current) setFixing(null);

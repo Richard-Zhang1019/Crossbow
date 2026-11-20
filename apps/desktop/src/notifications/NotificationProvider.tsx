@@ -11,7 +11,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { currentLang, initLang, useT } from "@/i18n/i18n";
-import { unsubscribe } from "@/lib/unlisten";
+import { subscriptionCleanup } from "@/lib/unlisten";
 import { ProgressRing } from "@/components/ProgressRing";
 import { Icon } from "@/components/Icon";
 import { ipc } from "@/services/ipc";
@@ -755,7 +755,7 @@ export function NotificationWindow() {
         if (alive) apply(settings.theme);
       })
       .catch(() => {});
-    const off = ipc.onTheme(apply);
+    const cleanup = subscriptionCleanup(ipc.onTheme(apply));
     const media = matchMedia("(prefers-color-scheme: dark)");
     const changed = () =>
       void ipc
@@ -765,7 +765,7 @@ export function NotificationWindow() {
     media.addEventListener("change", changed);
     return () => {
       alive = false;
-      unsubscribe(off);
+      cleanup();
       media.removeEventListener("change", changed);
     };
   }, []);
