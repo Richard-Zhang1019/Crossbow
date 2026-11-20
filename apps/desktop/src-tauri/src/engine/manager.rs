@@ -75,8 +75,8 @@ struct Inner {
     /// 收养进程的可执行文件身份；对外部 PID 发信号/提权前必须校验。
     external_binary: Option<PathBuf>,
     /// 杀不确认（进程仍存活）时保留的句柄：进程随后自行退出后由
-    /// reap_dead_children 回收，避免 unix 僵尸留到 GUI 退出才回收（#560）。
-    reaps: Vec<Child>,
+    /// 后台回收线程回收，避免 unix 僵尸留到 GUI 退出才回收（#560）。
+    reaps: Arc<Mutex<Vec<Child>>>,
 }
 
 /// 线程间共享状态；CoreManager 可 Clone。
@@ -278,20 +278,43 @@ impl Shared {
         Ok(Some((pid, port, secret)))
     }
 
-    /// 收尸（#560）：杀不确认时保留的句柄，在内核自行退出后 try_wait
-    /// 回收——否则 unix 僵尸要等到 GUI 退出才被回收。仍存活的保留待下次。
-    fn reap_dead_children(&self) {
-        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        inner.reaps.retain_mut(|child| match child.try_wait() {
-            Ok(Some(_)) => false, // 已退出，收尸完成
-            Ok(None) => true,     // 仍存活，保留句柄
-            Err(_) => false,      // 查询失败（句柄已失效），丢弃
-        });
+    fn defer_reap(&self, child: Child) {
+        let pending = self
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .reaps
+            .clone();
+        let mut children = pending.lock().unwrap_or_else(|e| e.into_inner());
+        let start_worker = children.is_empty();
+        children.push(child);
+        drop(children);
+        if start_worker {
+            crate::lifecycle::authorization::spawn_background(move || loop {
+                {
+                    let mut children = pending.lock().unwrap_or_else(|e| e.into_inner());
+                    children.retain_mut(|child| match child.try_wait() {
+                        Ok(Some(_)) => false,
+                        Ok(None) => true,
+                        Err(_error) => {
+                            // An interrupted wait must retain ownership for the next tick.
+                            #[cfg(unix)]
+                            if _error.raw_os_error() == Some(libc::ECHILD) {
+                                return false;
+                            }
+                            true
+                        }
+                    });
+                    if children.is_empty() {
+                        return;
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(200));
+            });
+        }
     }
 
     fn kill_child(&self) -> bool {
-        // 先收上一轮遗留：external_pid 路径杀掉的进程若尚未收尸，此刻回收。
-        self.reap_dead_children();
         let (child, external) = {
             let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
             let child = inner.child.take();
@@ -341,10 +364,10 @@ impl Shared {
             } else {
                 // Preserve enough identity to retry safely. Keep the child
                 // handle in the reaper set: if the process exits on its own
-                // later, reap_dead_children collects it instead of leaving a
+                // later, the background reaper collects it instead of leaving a
                 // zombie until GUI exit（#560）.
+                self.defer_reap(child);
                 let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-                inner.reaps.push(child);
                 inner.external_pid = Some(pid);
                 inner.external_binary = Some(self.binary_path.clone());
                 inner.detached = false;
@@ -412,7 +435,7 @@ impl CoreManager {
                     detached: false,
                     external_pid: None,
                     external_binary: None,
-                    reaps: Vec::new(),
+                    reaps: Arc::default(),
                 }),
             }),
         }
@@ -537,8 +560,6 @@ impl CoreManager {
             .lifecycle
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        // 启动前收尸：上一轮杀不确认、随后自行退出的句柄在此回收（#560）。
-        self.shared.reap_dead_children();
         let result = self.start_attempt(base_config, engine_rt, spawner);
         if let Err(error) = &result {
             if self.status() == CoreStatus::Starting {
@@ -1033,8 +1054,6 @@ impl CoreManager {
 
     /// 调用方已持有 lifecycle；启动替换 Starting 批次时也走同一条停止路径。
     fn stop_locked(&self) -> bool {
-        // 停止前收尸：上一轮杀不确认、随后自行退出的句柄在此回收（#560）。
-        self.shared.reap_dead_children();
         #[cfg(target_os = "linux")]
         {
             self.shared
@@ -1891,7 +1910,11 @@ fn terminate_verified_process(pid: u32, expected: &Path) -> Option<bool> {
             pid,
         );
         if handle.is_null() {
-            return Some(GetLastError() == ERROR_INVALID_PARAMETER);
+            return if GetLastError() == ERROR_INVALID_PARAMETER {
+                Some(false)
+            } else {
+                None
+            };
         }
         let mut buf = [0_u16; 1024];
         let mut len = buf.len() as u32;
@@ -2678,6 +2701,55 @@ pub(crate) mod tests {
     /// 收养死亡回调的测试桩：不做任何重建。
     fn noop_death() -> impl Fn() + Send + 'static {
         || {}
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn verified_termination_rejects_foreign_image_and_handles_missing_pid() {
+        assert_eq!(
+            terminate_verified_process(std::process::id(), Path::new("unrelated-missing-core.exe")),
+            None
+        );
+        assert_eq!(
+            terminate_verified_process(0, Path::new("unused.exe")),
+            Some(false)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn deferred_child_is_reaped_without_another_core_operation() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = CoreManager::new(PathBuf::new(), dir.path().into());
+        let child = std::process::Command::new("/bin/sh")
+            .args(["-c", "sleep 0.05"])
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let pending = manager
+            .shared
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .reaps
+            .clone();
+        manager.shared.defer_reap(child);
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while !pending.lock().unwrap_or_else(|e| e.into_inner()).is_empty() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "background reaper did not finish"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(
+            unsafe { libc::waitpid(pid as i32, std::ptr::null_mut(), libc::WNOHANG) },
+            -1
+        );
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ECHILD)
+        );
     }
 
     #[test]

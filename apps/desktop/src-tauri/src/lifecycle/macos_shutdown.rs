@@ -1,10 +1,10 @@
 //! Dock 和系统退出请求也必须经过可取消的网络恢复。
 
 use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
+    atomic::{AtomicU64, Ordering},
     OnceLock,
 };
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use objc2::{
     runtime::{AnyObject, ClassBuilder, Sel},
@@ -14,20 +14,14 @@ use objc2_app_kit::{NSApplication, NSApplicationTerminateReply};
 use tauri::{AppHandle, Manager};
 
 static APP: OnceLock<AppHandle> = OnceLock::new();
-static PENDING: AtomicBool = AtomicBool::new(false);
-/// 本次挂起请求的发起时刻（unix ms）：交付丢失看门狗的计时起点（#559）。
-static PENDING_AT: AtomicU64 = AtomicU64::new(0);
-/// 交付看门狗超时：超过即认为「进行中的那轮退出必然经 finish_process_exit
-/// 交付 reply」的隐含前提已被打破（准备线程 panic / run_on_main_thread
-/// 失败），主动放行系统关机。宁可残留代理（下次启动由
-/// clear_stale_system_proxy_early 自愈）也不能挂死系统。
-const REPLY_TIMEOUT_MS: u64 = 10_000;
+static PENDING: AtomicU64 = AtomicU64::new(0);
+static NEXT_REQUEST: AtomicU64 = AtomicU64::new(1);
+const REPLY_TIMEOUT: Duration = Duration::from_secs(10);
 
-fn now_unix_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
+fn take_request(pending: &AtomicU64, request: u64) -> bool {
+    pending
+        .compare_exchange(request, 0, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
 }
 
 /// 原生退出等待准备结果，保留系统注销或关机请求的后续处理。
@@ -37,8 +31,7 @@ extern "C" fn should_terminate(
     _: *mut NSApplication,
 ) -> NSApplicationTerminateReply {
     if let Some(app) = APP.get() {
-        let first = !PENDING.swap(true, Ordering::SeqCst);
-        if !first {
+        if PENDING.load(Ordering::SeqCst) != 0 {
             // 上一轮仍在等交付且看门狗未超时：不再重复发起（request_process_exit
             // 的 begin()==false 本就是 no-op），维持 TerminateLater（#369 review P3）。
             return NSApplicationTerminateReply::TerminateLater;
@@ -47,12 +40,13 @@ extern "C" fn should_terminate(
             .try_state::<crate::AppState>()
             .is_some_and(|state| state.exit.ready())
         {
-            PENDING.store(false, Ordering::SeqCst);
+            PENDING.store(0, Ordering::SeqCst);
             return NSApplicationTerminateReply::TerminateNow;
         }
-        PENDING_AT.store(now_unix_ms(), Ordering::SeqCst);
+        let request = NEXT_REQUEST.fetch_add(1, Ordering::SeqCst);
+        PENDING.store(request, Ordering::SeqCst);
         crate::request_process_exit(app, None);
-        spawn_reply_watchdog(app.clone());
+        spawn_reply_watchdog(app.clone(), request);
         return NSApplicationTerminateReply::TerminateLater;
     }
     NSApplicationTerminateReply::TerminateCancel
@@ -62,38 +56,33 @@ extern "C" fn should_terminate(
 /// 进行中的退出准备必然经 `finish_process_exit` 交付 reply。准备线程 panic
 /// 或 `run_on_main_thread` 失败都会打破该前提——PENDING 永真、系统注销/
 /// 关机永久挂起。看门狗超时后在主线程补交付 reply 放行。
-fn spawn_reply_watchdog(app: AppHandle) {
+fn spawn_reply_watchdog(app: AppHandle, request: u64) {
     std::thread::spawn(move || {
-        let deadline = PENDING_AT.load(Ordering::SeqCst) + REPLY_TIMEOUT_MS;
-        while now_unix_ms() < deadline {
-            if !PENDING.load(Ordering::SeqCst) {
-                return; // 已正常交付
-            }
-            std::thread::sleep(Duration::from_millis(200));
-        }
-        if !PENDING.load(Ordering::SeqCst) {
+        // A monotonic delay and immutable generation prevent an old watchdog
+        // from claiming a request started after cancellation.
+        std::thread::sleep(REPLY_TIMEOUT);
+        if PENDING.load(Ordering::SeqCst) != request {
             return;
         }
-        eprintln!(
-            "shutdown watchdog: exit reply overdue ({REPLY_TIMEOUT_MS}ms); allowing system terminate, leftover proxy state heals on next launch"
-        );
         let main = app.clone();
-        let _ = app.run_on_main_thread(move || {
-            if PENDING.swap(false, Ordering::SeqCst) {
-                // ExitState 复位：那轮准备已丢失，不再占用退出通道。
+        if let Err(error) = app.run_on_main_thread(move || {
+            if take_request(&PENDING, request) {
+                eprintln!("shutdown watchdog: exit reply overdue; allowing system terminate");
                 if let Some(state) = main.try_state::<crate::AppState>() {
                     state.exit.cancel();
                 }
                 let mtm = MainThreadMarker::new().expect("退出结果必须在主线程交付");
                 NSApplication::sharedApplication(mtm).replyToApplicationShouldTerminate(true);
             }
-        });
+        }) {
+            eprintln!("shutdown watchdog: failed to deliver timeout reply: {error}");
+        }
     });
 }
 
 /// 在主线程回复挂起的原生请求，恢复成功才允许系统继续退出。
 pub(crate) fn complete(allow: bool) -> bool {
-    if !PENDING.swap(false, Ordering::SeqCst) {
+    if PENDING.swap(0, Ordering::SeqCst) == 0 {
         return false;
     }
     let mtm = MainThreadMarker::new().expect("退出结果必须在主线程交付");
@@ -127,4 +116,20 @@ pub(crate) fn install(app: &AppHandle) -> Result<(), String> {
     // SAFETY: 主线程中把委托换为其无新增字段的子类；继承所有原有方法与布局。
     unsafe { AnyObject::set_class(object, class) };
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cancelled_watchdog_cannot_complete_a_new_request() {
+        let pending = AtomicU64::new(1);
+        assert!(take_request(&pending, 1));
+        pending.store(2, Ordering::SeqCst);
+        assert!(!take_request(&pending, 1));
+        assert_eq!(pending.load(Ordering::SeqCst), 2);
+        assert!(take_request(&pending, 2));
+        assert!(!take_request(&pending, 2));
+    }
 }
