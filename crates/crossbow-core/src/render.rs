@@ -59,15 +59,24 @@ pub fn render_config_with(
         config = crate::emoji::enrich_flags(&config)
             .map_err(|e| RenderError::InvalidYaml(e.to_string()))?;
     }
-    // 引擎目标格式：sing-box 输出 JSON；mihomo 输出 YAML
+    // 按进程分流规则（#570）：前插到订阅规则之前；不参与覆写链
+    // （安全模式跳过覆写链时进程规则依然生效），目标策略失效的规则
+    // 防御性丢弃，避免订阅更新后内核因未知策略启动失败。
     let config = match store.engine.engine {
-        crate::model::Engine::SingBox => crate::singbox_convert::convert_to_singbox(
-            &config,
-            store.engine.mixed_port,
-            store.engine.allow_lan,
-        )
-        .map_err(|e| RenderError::InvalidYaml(e.to_string()))?,
-        crate::model::Engine::Mihomo => config,
+        crate::model::Engine::SingBox => {
+            let json = crate::singbox_convert::convert_to_singbox(
+                &config,
+                store.engine.mixed_port,
+                store.engine.allow_lan,
+            )
+            .map_err(|e| RenderError::InvalidYaml(e.to_string()))?;
+            crate::process_rules::inject_json(&json, &store.process_rules)
+                .map_err(|e| RenderError::InvalidYaml(e.to_string()))?
+        }
+        crate::model::Engine::Mihomo => {
+            crate::process_rules::inject_yaml(&config, &store.process_rules)
+                .map_err(|e| RenderError::InvalidYaml(e.to_string()))?
+        }
     };
     Ok(Rendered {
         config,

@@ -1,0 +1,20 @@
+{
+  "date": "2026-11-20",
+  "version": "v01",
+  "status": "implemented-awaiting-review",
+  "issue": 570,
+  "pr": 582,
+  "baseline": "9d75883246a330b07a85314987ac0c2fb0b2f3f0",
+  "merge": "0f1aeb8",
+  "data": "sanitized IPC fixtures, production React components",
+  "files": [
+    "source.zip",
+    "SPEC.md",
+    "previews/before.png",
+    "previews/editor-en-small.png",
+    "previews/failed-save.png",
+    "previews/empty.png",
+    "previews/light.png",
+    "previews/dark-small.png"
+  ]
+}

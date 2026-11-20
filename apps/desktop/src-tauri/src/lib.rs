@@ -848,6 +848,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             platform_capabilities,
+            commands::rules::process_rules_get,
+            commands::rules::process_rule_set,
+            commands::rules::process_rule_remove,
             notifications::notification_publish,
             notifications::notification_snapshot,
             notifications::notification_dismiss,
