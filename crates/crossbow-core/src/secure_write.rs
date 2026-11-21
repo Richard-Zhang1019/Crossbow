@@ -16,7 +16,9 @@
 //! - **边界**：只处理 Crossbow 拥有的路径；目标为符号链接/目录时明确
 //!   拒绝，不跟随、不覆盖；不递归触碰用户其他文件；失败不写日志内容。
 
-use std::fs::{self, File, OpenOptions};
+#[cfg(unix)]
+use std::fs::File;
+use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
@@ -32,6 +34,7 @@ pub(crate) enum IoStep {
     Write,
     Sync,
     Rename,
+    #[cfg(unix)]
     ParentSync,
     Cleanup,
 }
@@ -274,7 +277,7 @@ mod tests {
         std::os::unix::fs::symlink(&target, &link).unwrap();
         assert!(write_private_atomic(&link, b"overwrite").is_err());
         assert_eq!(fs::read(&target).unwrap(), b"keep");
-        assert!(write_private_atomic(&dir.path(), b"dir").is_err());
+        assert!(write_private_atomic(dir.path(), b"dir").is_err());
     }
 
     /// #596 验收：注入各阶段失败——旧文件或新文件至少一个完整可解析，
@@ -312,11 +315,29 @@ mod tests {
         assert_eq!(fs::read(&path).unwrap(), br#"{"next":2}"#);
     }
 
+    #[test]
+    fn ensure_private_rejects_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("t");
+        fs::write(&target, b"x").unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).unwrap();
+        let link = dir.path().join("l");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert!(ensure_private(&link).is_err());
+        // 符号链接目标未被触碰（不跟随）
+        assert_eq!(mode(&target), 0o644);
+        assert_eq!(fs::read(&target).unwrap(), b"x");
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+
     /// Windows 平台替换语义（#596 验收「Unix 与 Windows 替换测试分别
     /// 记录」）：std::fs::rename 在 Windows 带 REPLACE_EXISTING 语义，
     /// 覆盖既有目标成功；权限由用户目录 ACL 继承保证（无 POSIX mode）。
     /// CI windows job 是本测试的验证环境。
-    #[cfg(windows)]
     #[test]
     fn windows_replace_overwrites_existing_target() {
         let dir = tempfile::tempdir().unwrap();
@@ -331,19 +352,5 @@ mod tests {
             .filter(|e| e.file_name().to_string_lossy().contains(".tmp"))
             .collect();
         assert!(leftovers.is_empty());
-    }
-
-    #[test]
-    fn ensure_private_rejects_symlink() {
-        let dir = tempfile::tempdir().unwrap();
-        let target = dir.path().join("t");
-        fs::write(&target, b"x").unwrap();
-        fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).unwrap();
-        let link = dir.path().join("l");
-        std::os::unix::fs::symlink(&target, &link).unwrap();
-        assert!(ensure_private(&link).is_err());
-        // 符号链接目标未被触碰（不跟随）
-        assert_eq!(mode(&target), 0o644);
-        assert_eq!(fs::read(&target).unwrap(), b"x");
     }
 }
