@@ -1180,7 +1180,8 @@ mod tests {
         // Inject a deterministic I/O failure（#596 后写入走随机独占临时
         // 文件，注入改用 secure_write 故障开关；write 阶段失败同样在
         // root 下确定性成立）。
-        let _inject = crossbow_core::secure_write::inject_at(2);
+        let _inject =
+            crossbow_core::secure_write::inject_path_at(&directory.path().join("store.json"), 2);
         let store = Mutex::new(store);
         assert!(restore_store(&store, &before).is_err());
         assert_eq!(

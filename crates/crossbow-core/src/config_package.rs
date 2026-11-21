@@ -424,17 +424,16 @@ mod tests {
         assert_eq!((report.added_profiles, report.added_overrides), (2, 2));
         assert_eq!(store.data().active_profile.as_deref(), Some("sample-local"));
         // #596 后写入走随机独占临时文件——注入改用 secure_write 的
-        // 故障开关（write 阶段失败，持注入锁），验证写失败保留原 store。
-        let _inject = crate::secure_write::inject_at(2);
+        // 仅主文件的 partial-write 阶段注入失败，验证成功快照与旧库保留。
+        let _inject = crate::secure_write::inject_path_at(&dir.path().join("store.json"), 2);
         let save_result = store.save();
         assert!(save_result.is_err());
 
         let reopened = Store::open(dir.path()).unwrap();
         assert_eq!(reopened.data().active_profile.as_deref(), Some("previous"));
         assert_eq!(reopened.data().profiles.len(), 1);
-        // 注入点在 rotate 的快照写入（第 2 步）：快照未写出属预期——
-        // 核心保证是主文件未被触碰。
-        assert_eq!(reopened.snapshots().unwrap().len(), 0);
+        // The snapshot completes; the primary file's partial write fails.
+        assert_eq!(reopened.snapshots().unwrap().len(), 1);
     }
 
     #[test]
