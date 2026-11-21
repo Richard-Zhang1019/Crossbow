@@ -480,6 +480,24 @@ fn ws_headers(p: &ClashProxy, value: &Value) -> Result<Value, ConvertError> {
 }
 
 fn convert_proxy(p: &ClashProxy) -> Result<Value, ConvertError> {
+    // Newly imported TCP links need the same non-lossy boundary as WS links.
+    // Do not acknowledge a protocol/TLS setting that this converter drops.
+    let fields: &[&str] = match p.kind.as_str() {
+        "vless" => &["flow", "reality-opts", "client-fingerprint"],
+        "vmess" => &["client-fingerprint"],
+        "hysteria2" => &["obfs", "obfs-password"],
+        _ => &[],
+    };
+    for field in fields {
+        if p.extra.get(*field).is_some_and(|value| match value {
+            Value::Null | Value::Bool(false) => false,
+            Value::String(s) => !s.is_empty(),
+            Value::Object(map) => !map.is_empty(),
+            _ => true,
+        }) {
+            return Err(proxy_option_error(p, field));
+        }
+    }
     let transport = match p.network.as_deref() {
         None | Some("" | "tcp") => None,
         Some("ws") if matches!(p.kind.as_str(), "vless" | "vmess") => Some(ws_transport(p)?),

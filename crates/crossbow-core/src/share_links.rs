@@ -21,6 +21,17 @@ fn decode(s: &str) -> Result<String> {
     Err(bad("无效 Base64 编码"))
 }
 fn unescape(s: &str) -> Result<String> {
+    let bytes = s.as_bytes();
+    for (index, byte) in bytes.iter().enumerate() {
+        if *byte == b'%'
+            && (index + 2 >= bytes.len()
+                || !bytes[index + 1..=index + 2]
+                    .iter()
+                    .all(u8::is_ascii_hexdigit))
+        {
+            return Err(bad("无效 URL 转义"));
+        }
+    }
     percent_encoding::percent_decode_str(s)
         .decode_utf8()
         .map(|s| s.into_owned())
@@ -231,12 +242,22 @@ fn uri(line: &str) -> Result<Value> {
         ],
     };
     let mut params = std::collections::BTreeMap::new();
-    for (key, value) in u.query_pairs() {
-        if !known.contains(&key.as_ref()) {
+    // url::query_pairs uses lossy UTF-8 decoding. Authentication and TLS fields
+    // must never be accepted after replacement characters changed their bytes.
+    for pair in u
+        .query()
+        .unwrap_or("")
+        .split('&')
+        .filter(|pair| !pair.is_empty())
+    {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        let key = unescape(&key.replace('+', " "))?;
+        let value = unescape(&value.replace('+', " "))?;
+        if !known.contains(&key.as_str()) {
             // Parameter names are untrusted too. Only identify known capability
             // names; never reflect arbitrary query data in user-facing errors.
-            let field = match key.as_ref() {
-                "type" | "zero_rtt" | "unknownParam" => key.as_ref(),
+            let field = match key.as_str() {
+                "type" | "zero_rtt" | "unknownParam" => key.as_str(),
                 _ => "未知查询参数",
             };
             return Err(bad(&format!("该协议参数 {field} 暂不支持")));
@@ -312,7 +333,7 @@ fn uri(line: &str) -> Result<Value> {
                 node["password"] = json!(password);
             }
             _ => {
-                // hy2://<auth>@host:port（单段密码；user:pass 双段为歧义，拒绝）
+                // Scoped subset: single auth only; protocol-defined userpass is not implemented.
                 if u.password().is_some() {
                     return Err(bad("hy2 认证应为单段 auth，密码中的冒号需 URL 转义"));
                 }
@@ -457,7 +478,7 @@ fn uri(line: &str) -> Result<Value> {
                     return Err(bad("vless REALITY sid 无效"));
                 }
                 node["tls"] = json!(true);
-                let mut reality = json!({ "public-key": pbk });
+                let mut reality = json!({ "public-key": URL_SAFE_NO_PAD.encode(&key) });
                 if !get("sid").is_empty() {
                     reality["short-id"] = json!(get("sid"));
                 }
@@ -582,6 +603,58 @@ pub fn normalize(content: &str) -> Result<String> {
 mod tests {
     use super::*;
     const ID: &str = "00000000-0000-4000-8000-000000000001";
+    #[test]
+    fn credentials_and_query_values_use_strict_url_decoding() {
+        for link in [
+            "hy2://secret%GG@host:443",
+            "hy2://secret%@host:443",
+            "hy2://secret@host:443?obfs=salamander&obfs-password=%FF",
+            "hy2://secret@host:443?sni=%FF",
+            "hy2://secret@host:443#bad%GG",
+        ] {
+            let error = normalize(link).unwrap_err().to_string();
+            assert!(!error.contains("secret"));
+            assert!(!error.contains("%FF"));
+        }
+        let yaml = normalize("hy2://a%3Ab%40c@host?obfs=salamander&obfs-password=a%2Bb+c").unwrap();
+        let doc: Value = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(doc["proxies"][0]["password"], "a:b@c");
+        assert_eq!(doc["proxies"][0]["obfs-password"], "a+b c");
+    }
+
+    #[test]
+    fn reality_public_key_is_canonical_for_mihomo() {
+        let input = format!("vless://{ID}@host:443?security=reality&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA%3D");
+        let doc: Value = serde_yaml::from_str(&normalize(&input).unwrap()).unwrap();
+        assert_eq!(
+            doc["proxies"][0]["reality-opts"]["public-key"],
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        );
+    }
+
+    #[test]
+    fn new_protocol_fields_are_not_lost_in_singbox_conversion() {
+        for (link, field) in [
+            ("hy2://secret@host:443?obfs=salamander&obfs-password=PRIVATE_OBFS".to_string(), "obfs"),
+            (format!("vless://{ID}@host:443?security=reality&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"), "reality-opts"),
+            (format!("vless://{ID}@host:443?security=tls&flow=xtls-rprx-vision"), "flow"),
+            (format!("vless://{ID}@host:443?security=tls&fp=chrome"), "client-fingerprint"),
+        ] {
+            let yaml = normalize(&link).unwrap();
+            let error = crate::convert_to_singbox(&yaml, 7898, false, None).unwrap_err().to_string();
+            assert!(error.contains(field), "{error}");
+            assert!(!error.contains("secret"));
+            assert!(!error.contains("PRIVATE_OBFS"));
+        }
+        let yaml = normalize("hy2://secret@host:443?sni=server.test").unwrap();
+        let json: Value =
+            serde_json::from_str(&crate::convert_to_singbox(&yaml, 7898, false, None).unwrap())
+                .unwrap();
+        assert_eq!(json["outbounds"][0]["password"], "secret");
+        assert_eq!(json["outbounds"][0]["tls"]["server_name"], "server.test");
+        assert_eq!(json["outbounds"][0]["tls"]["insecure"], false);
+    }
+
     fn links() -> Vec<String> {
         vec![format!("ss://{}@ss.example:8388#SS",STANDARD_NO_PAD.encode("aes-128-gcm:p@ss:word")),
             format!("vmess://{}",STANDARD.encode(json!({"v":"2","ps":"VMess","add":"vm.example","port":"443","id":ID,"aid":"0","scy":"auto","net":"ws","type":"none","host":"front.example","path":"/ws","tls":"tls","sni":"front.example"}).to_string())),
