@@ -18,8 +18,11 @@ pub struct Store {
 impl Store {
     /// 从 `dir/store.json` 加载；不存在则创建默认存储。
     pub fn open(dir: &Path) -> Result<Self> {
-        fs::create_dir_all(dir)?;
+        // #595：数据目录与既有文件权限收敛（历史版本 umask 下落 0644/0755）；
+        // 失败为 best effort——权限收紧不阻断启动。
+        let _ = crate::secure_write::ensure_private_dir(dir);
         let path = dir.join("store.json");
+        let _ = crate::secure_write::ensure_private(&path);
         let data = if path.exists() {
             let raw = fs::read_to_string(&path)?;
             Self::load_str(&raw)?
@@ -56,21 +59,30 @@ impl Store {
         if self.path.exists() {
             self.rotate_snapshot()?;
         }
-        let tmp = self.path.with_extension("json.tmp");
-        fs::write(&tmp, serde_json::to_vec_pretty(&self.data)?)?;
-        fs::rename(&tmp, &self.path)?;
-        Ok(())
+        // #595/#596：私有原子写入（0600 + 独占临时文件 + 文件/父目录 sync
+        // + 失败清理），替代固定名 tmp 的裸 write+rename。
+        crate::secure_write::write_private_atomic(
+            &self.path,
+            &serde_json::to_vec_pretty(&self.data)?,
+        )
+        .map_err(Error::Io)
     }
 
     fn rotate_snapshot(&self) -> Result<()> {
         let snap_dir = self.path.parent().unwrap().join("snapshots");
-        fs::create_dir_all(&snap_dir)?;
+        // 专用目录 0700（#595）：快照含订阅内容，与主文件同一私有边界。
+        crate::secure_write::ensure_private_dir(&snap_dir)?;
         // 纳秒精度：同一秒内连续保存也不互相覆盖。
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        fs::copy(&self.path, snap_dir.join(format!("store-{ts}.json")))?;
+        // fs::copy 不设权限（umask 下落 0644），改为读 + 私有安全写入。
+        let contents = fs::read(&self.path)?;
+        crate::secure_write::write_private_atomic(
+            &snap_dir.join(format!("store-{ts}.json")),
+            &contents,
+        )?;
         let mut snaps: Vec<PathBuf> = fs::read_dir(&snap_dir)?
             .filter_map(|e| e.ok().map(|e| e.path()))
             .collect();

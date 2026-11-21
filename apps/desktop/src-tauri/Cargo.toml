@@ -37,7 +37,7 @@ tauri-plugin-deep-link = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-single-instance = "2"
 tokio = { version = "1", features = ["time"] }
-crossbow-core = { path = "../../../crates/crossbow-core" }
+crossbow-core = { path = "../../../crates/crossbow-core", features = ["test-io-inject"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -17,5 +17,8 @@ serde_yaml.workspace = true
 thiserror.workspace = true
 ureq = "2"
 
+[features]
+test-io-inject = []
+
 [dev-dependencies]
 tempfile = "3"

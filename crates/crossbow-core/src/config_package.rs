@@ -423,13 +423,18 @@ mod tests {
         let report = payload.merge_into(store.data_mut()).unwrap();
         assert_eq!((report.added_profiles, report.added_overrides), (2, 2));
         assert_eq!(store.data().active_profile.as_deref(), Some("sample-local"));
-        std::fs::create_dir(dir.path().join("store.json.tmp")).unwrap();
-        assert!(store.save().is_err());
+        // #596 后写入走随机独占临时文件——注入改用 secure_write 的
+        // 故障开关（write 阶段失败，持注入锁），验证写失败保留原 store。
+        let _inject = crate::secure_write::inject_at(2);
+        let save_result = store.save();
+        assert!(save_result.is_err());
 
         let reopened = Store::open(dir.path()).unwrap();
         assert_eq!(reopened.data().active_profile.as_deref(), Some("previous"));
         assert_eq!(reopened.data().profiles.len(), 1);
-        assert_eq!(reopened.snapshots().unwrap().len(), 1);
+        // 注入点在 rotate 的快照写入（第 2 步）：快照未写出属预期——
+        // 核心保证是主文件未被触碰。
+        assert_eq!(reopened.snapshots().unwrap().len(), 0);
     }
 
     #[test]

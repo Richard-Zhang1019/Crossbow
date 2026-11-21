@@ -13,6 +13,7 @@ pub mod render;
 pub mod rule_sets;
 pub mod runtime;
 pub mod script_override;
+pub mod secure_write;
 mod share_links;
 pub mod singbox_convert;
 pub mod store;

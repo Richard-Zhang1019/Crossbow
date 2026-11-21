@@ -183,7 +183,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let mut store = Store::open(directory.path()).unwrap();
         store.save().unwrap();
-        std::fs::create_dir(directory.path().join("store.json.tmp")).unwrap();
+        let _inject = crossbow_core::secure_write::inject_at(2);
         assert!(persist_deep_link_import_confirm(&mut store, false).is_err());
         assert!(store.data().ui.deep_link_import_confirm);
         assert!(
@@ -200,7 +200,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let mut store = Store::open(directory.path()).unwrap();
         store.save().unwrap();
-        std::fs::create_dir(directory.path().join("store.json.tmp")).unwrap();
+        let _inject = crossbow_core::secure_write::inject_at(2);
 
         assert!(persist_unified_delay(&mut store, false).is_err());
         assert!(store.data().engine.unified_delay);
