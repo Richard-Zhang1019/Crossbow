@@ -607,6 +607,18 @@ pub fn run() {
 
             let mut store = Store::open(&data_dir)
                 .map_err(|e| std::io::Error::other(format!("open store: {e}")))?;
+            // #594：启动恢复反馈——主文件损坏经快照/默认恢复时如实告知
+            // 来源与原因（通知系统已在上方 install，可直接发布）。
+            if let Some(report) = &store.recovery {
+                let mut notice = notifications::Notice::new(
+                    notifications::Kind::Warning,
+                    "store.recovered",
+                    "store-recovery",
+                );
+                notice.title_key = "store.recovered".to_string();
+                notice.description = report.reason.clone();
+                notifications::publish(app.handle(), notice);
+            }
             // Linux network authorization belongs to this desktop session.
             // A previous TUN preference never silently takes over after login.
             #[cfg(target_os = "linux")]
