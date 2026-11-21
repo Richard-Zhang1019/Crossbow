@@ -15,9 +15,10 @@ pub fn run_override_kind(
 ) -> Result<String, String> {
     match kind {
         OverrideKind::Merge => apply_merge(base_yaml, content).map_err(|e| e.to_string()),
-        OverrideKind::Script => {
-            crate::script_override::run_script(content, base_yaml).map_err(|e| e.to_string())
-        }
+        // #592：脚本经独立工作进程执行（墙钟 5s 强制 kill + Boa 预算），
+        // 校验/启动/编辑共用此入口，坏脚本不拖住配置操作
+        OverrideKind::Script => crate::script_override::run_script_via_worker(content, base_yaml)
+            .map_err(|e| e.to_string()),
     }
 }
 
