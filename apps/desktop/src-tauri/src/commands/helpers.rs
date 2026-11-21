@@ -67,11 +67,7 @@ pub(crate) fn import_url_blocking(
         .lock()
         .unwrap_or_else(|e| e.into_inner());
     let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-    store
-        .data_mut()
-        .add_profile(profile.clone())
-        .map_err(|e| e.to_string())?;
-    store.save().map_err(|e| e.to_string())?;
+    persist_imported_profile(&mut store, &profile)?;
     Ok(profile)
 }
 
@@ -101,12 +97,12 @@ pub(crate) fn import_content_blocking(
         .lock()
         .unwrap_or_else(|e| e.into_inner());
     let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-    store
-        .data_mut()
-        .add_profile(profile.clone())
-        .map_err(|e| e.to_string())?;
-    store.save().map_err(|e| e.to_string())?;
+    persist_imported_profile(&mut store, &profile)?;
     Ok(profile)
+}
+
+fn persist_imported_profile(store: &mut Store, profile: &Profile) -> Result<(), String> {
+    store.transaction(|data| data.add_profile(profile.clone()))
 }
 
 pub(crate) const PROFILE_REFRESH_SUPERSEDED: &str =
@@ -142,12 +138,9 @@ pub(crate) fn refresh_profile_blocking(
     let fetched = match fetched {
         Ok(f) => f,
         Err(e) => {
-            let _ = state
-                .store
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .data_mut()
-                .set_profile_outcome(
+            let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+            let _ = store.transaction(|data| {
+                data.set_profile_outcome(
                     id,
                     crossbow_core::UpdateOutcome {
                         ok: false,
@@ -155,18 +148,15 @@ pub(crate) fn refresh_profile_blocking(
                         detail: Some(e.to_string()),
                         at: now_secs(),
                     },
-                );
-            let _ = state.store.lock().unwrap_or_else(|e| e.into_inner()).save();
+                )
+            });
             return Err(e.to_string());
         }
     };
     if let Err(e) = validate_profile_content(&fetched.content) {
-        let _ = state
-            .store
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .data_mut()
-            .set_profile_outcome(
+        let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = store.transaction(|data| {
+            data.set_profile_outcome(
                 id,
                 crossbow_core::UpdateOutcome {
                     ok: false,
@@ -174,8 +164,8 @@ pub(crate) fn refresh_profile_blocking(
                     detail: Some(e.to_string()),
                     at: now_secs(),
                 },
-            );
-        let _ = state.store.lock().unwrap_or_else(|e| e.into_inner()).save();
+            )
+        });
         return Err(e.to_string());
     }
 
@@ -202,18 +192,12 @@ pub(crate) fn refresh_profile_blocking(
         })
     } else {
         let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-        store
-            .data_mut()
-            .update_profile_content(id, content, updated_at, traffic)?;
-        store.save().map_err(|e| e.to_string())
+        store.transaction(|data| data.update_profile_content(id, content, updated_at, traffic))
     };
     if let Err(error) = apply {
-        let _ = state
-            .store
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .data_mut()
-            .set_profile_outcome(
+        let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = store.transaction(|data| {
+            data.set_profile_outcome(
                 id,
                 crossbow_core::UpdateOutcome {
                     ok: false,
@@ -221,16 +205,13 @@ pub(crate) fn refresh_profile_blocking(
                     detail: Some(error.clone()),
                     at: now_secs(),
                 },
-            );
-        let _ = state.store.lock().unwrap_or_else(|e| e.into_inner()).save();
+            )
+        });
         return Err(error);
     }
-    let _ = state
-        .store
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .data_mut()
-        .set_profile_outcome(
+    let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+    let _ = store.transaction(|data| {
+        data.set_profile_outcome(
             id,
             crossbow_core::UpdateOutcome {
                 ok: true,
@@ -238,12 +219,10 @@ pub(crate) fn refresh_profile_blocking(
                 detail: None,
                 at: now_secs(),
             },
-        );
-    let _ = state.store.lock().unwrap_or_else(|e| e.into_inner()).save();
-    let profile = state
-        .store
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        )
+    });
+
+    let profile = store
         .data()
         .profile(id)
         .cloned()
@@ -260,4 +239,34 @@ pub(crate) fn override_affects_active(state: &AppState, override_id: &str) -> bo
         .as_deref()
         .and_then(|pid| store.data().profile(pid))
         .is_some_and(|profile| profile.override_ids.iter().any(|id| id == override_id))
+}
+
+#[cfg(test)]
+mod import_persistence_tests {
+    use super::*;
+
+    #[test]
+    fn remote_and_local_import_retry_only_publishes_one_profile() {
+        for kind in [ProfileKind::Remote, ProfileKind::Local] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("store.json");
+            let mut store = Store::open(dir.path()).unwrap();
+            store.save().unwrap();
+            let first = make_profile("failed".into(), "test".into(), kind, None);
+            let injection = crossbow_core::secure_write::inject_path_at(&path, 4);
+            assert!(persist_imported_profile(&mut store, &first).is_err());
+            drop(injection);
+            assert!(store.data().profiles.is_empty());
+            assert!(store.data().active_profile.is_none());
+            let retry = make_profile("retry".into(), "test".into(), kind, None);
+            persist_imported_profile(&mut store, &retry).unwrap();
+            assert_eq!(store.data().profiles.len(), 1);
+            assert_eq!(store.data().active_profile.as_deref(), Some("retry"));
+            let reopened = Store::open(dir.path()).unwrap();
+            assert_eq!(
+                serde_json::to_value(reopened.data()).unwrap(),
+                serde_json::to_value(store.data()).unwrap(),
+            );
+        }
+    }
 }

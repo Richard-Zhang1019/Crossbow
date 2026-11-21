@@ -194,28 +194,18 @@ fn update_metadata(
     state.exit.ensure_open()?;
     let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
     check_snapshot(store.data(), previous)?;
-    let set = store
-        .data_mut()
-        .rule_sets
-        .iter_mut()
-        .find(|s| s.id == previous.id)
-        .ok_or(SUPERSEDED)?;
-    set.last_error = error;
-    if let Some(at) = at {
-        set.updated_at = at;
-    }
-    if let Err(error) = store.save() {
-        if let Some(set) = store
-            .data_mut()
+    store.transaction(|data| {
+        let set = data
             .rule_sets
             .iter_mut()
-            .find(|s| s.id == previous.id)
-        {
-            *set = previous.clone();
+            .find(|set| set.id == previous.id)
+            .ok_or(SUPERSEDED)?;
+        set.last_error = error;
+        if let Some(at) = at {
+            set.updated_at = at;
         }
-        return Err(error.to_string());
-    }
-    Ok(())
+        Ok(())
+    })
 }
 pub(crate) fn refresh(state: &AppState, id: &str) -> Result<(), String> {
     let previous = snapshot(state, id)?;

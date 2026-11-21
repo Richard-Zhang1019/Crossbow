@@ -107,12 +107,10 @@ pub(crate) async fn network_scene_set(
         state.exit.ensure_open()?;
         {
             let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-            let before = store.data().scenes.rules.clone();
-            store.data_mut().scenes.rules.insert(ssid, action);
-            if let Err(error) = store.save() {
-                store.data_mut().scenes.rules = before;
-                return Err(error.to_string());
-            }
+            store.transaction(|data| {
+                data.scenes.rules.insert(ssid, action);
+                Ok(())
+            })?;
         }
         scenes::evaluate_and_apply(&app);
         Ok(())
@@ -131,12 +129,10 @@ pub(crate) async fn network_scene_remove(app: AppHandle, ssid: String) -> Result
         state.exit.ensure_open()?;
         {
             let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-            let before = store.data().scenes.rules.clone();
-            store.data_mut().scenes.rules.remove(&ssid);
-            if let Err(error) = store.save() {
-                store.data_mut().scenes.rules = before;
-                return Err(error.to_string());
-            }
+            store.transaction(|data| {
+                data.scenes.rules.remove(&ssid);
+                Ok(())
+            })?;
         }
         scenes::evaluate_and_apply(&app);
         Ok(())

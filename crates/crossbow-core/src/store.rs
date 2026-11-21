@@ -203,6 +203,48 @@ impl Store {
         &mut self.data
     }
 
+    /// Apply a non-runtime change under the caller's existing store lock.
+    /// Candidate state is published only after persistence. If replacement
+    /// happened before an error, attempt restoration and read the actual disk
+    /// state back, so an error never leaves a fictitious in-memory rollback.
+    pub fn transaction<T>(
+        &mut self,
+        edit: impl FnOnce(&mut StoreSchema) -> std::result::Result<T, String>,
+    ) -> std::result::Result<T, String> {
+        let mut candidate = Self {
+            path: self.path.clone(),
+            data: self.data.clone(),
+            recovery: None,
+        };
+        let result = edit(&mut candidate.data)?;
+        if let Err(error) = candidate.save() {
+            let expected =
+                serde_json::to_vec_pretty(&candidate.data).map_err(|error| error.to_string())?;
+            let disk = fs::read(&self.path);
+            let mut detail = format!("保存失败：{error}");
+            if disk.as_deref().ok() == Some(expected.as_slice()) {
+                let previous =
+                    serde_json::to_vec_pretty(&self.data).map_err(|error| error.to_string())?;
+                if let Err(restore) =
+                    crate::secure_write::write_private_atomic(&self.path, &previous)
+                {
+                    detail.push_str(&format!("；恢复写入未能确认完成：{restore}"));
+                }
+            }
+            match fs::read(&self.path) {
+                Ok(raw) => match Self::load_bytes(&raw) {
+                    Ok(actual) => self.data = actual,
+                    Err(_) => detail.push_str("；磁盘配置无法解析，请重新加载后确认状态"),
+                },
+                Err(read) if read.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => detail.push_str("；无法核实磁盘状态，请重新加载后确认"),
+            }
+            return Err(detail);
+        }
+        self.data = candidate.data;
+        Ok(result)
+    }
+
     /// 保存：先把现有文件轮转为快照，再原子写入（tmp + rename）。
     pub fn save(&mut self) -> Result<()> {
         self.data.schema_version = SCHEMA_VERSION;
@@ -655,5 +697,107 @@ mod tests {
                 .join("store-100.json")
                 .is_file());
         }
+    }
+}
+
+#[cfg(test)]
+mod transaction_tests {
+    use super::*;
+
+    fn profile(id: &str) -> crate::Profile {
+        crate::Profile {
+            id: id.into(),
+            name: id.into(),
+            kind: crate::ProfileKind::Local,
+            url: None,
+            content: "proxies: []".into(),
+            update_interval_min: 0,
+            override_ids: Vec::new(),
+            last_updated: None,
+            traffic: None,
+            last_update: None,
+        }
+    }
+
+    #[test]
+    fn failed_import_preserves_active_profile_and_retry_has_no_ghosts() {
+        for create_primary in [false, true] {
+            let last_stage = if cfg!(unix) { 5 } else { 4 };
+            for stage in 1..=last_stage {
+                let dir = tempfile::tempdir().unwrap();
+                let path = dir.path().join("store.json");
+                let mut store = Store::open(dir.path()).unwrap();
+                if create_primary {
+                    store.save().unwrap();
+                }
+                let before = serde_json::to_value(store.data()).unwrap();
+                let injection = crate::secure_write::inject_path_at(&path, stage);
+                assert!(store
+                    .transaction(|data| data.add_profile(profile("failed")))
+                    .is_err());
+                drop(injection);
+                assert_eq!(serde_json::to_value(store.data()).unwrap(), before);
+                let disk = Store::open(dir.path()).unwrap();
+                assert_eq!(serde_json::to_value(disk.data()).unwrap(), before);
+
+                store
+                    .transaction(|data| data.add_profile(profile("retry")))
+                    .unwrap();
+                assert_eq!(store.data().profiles.len(), 1);
+                assert_eq!(store.data().active_profile.as_deref(), Some("retry"));
+                assert!(store.data().profile("failed").is_none());
+                assert_eq!(
+                    serde_json::to_value(Store::open(dir.path()).unwrap().data()).unwrap(),
+                    serde_json::to_value(store.data()).unwrap()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn mutation_error_never_publishes_partial_candidate() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path()).unwrap();
+        let result: std::result::Result<(), String> = store.transaction(|data| {
+            data.add_profile(profile("partial"))?;
+            Err("validation failed".into())
+        });
+        assert!(result.is_err());
+        assert!(store.data().profiles.is_empty());
+        assert!(!dir.path().join("store.json").exists());
+    }
+
+    #[test]
+    fn override_bindings_and_preferences_roll_back_together() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("store.json");
+        let mut store = Store::open(dir.path()).unwrap();
+        store
+            .transaction(|data| data.add_profile(profile("active")))
+            .unwrap();
+        let before = serde_json::to_value(store.data()).unwrap();
+        let injection = crate::secure_write::inject_path_at(&path, 4);
+        let result = store.transaction(|data| {
+            data.overrides.push(crate::OverrideDef {
+                id: "override".into(),
+                name: "test".into(),
+                kind: crate::OverrideKind::Merge,
+                content: "{}".into(),
+                enabled: true,
+                last_error: None,
+            });
+            data.profiles[0].override_ids.push("override".into());
+            data.ui.lang = "en".into();
+            data.logs.save_enabled = !data.logs.save_enabled;
+            data.update.auto_check = !data.update.auto_check;
+            Ok(())
+        });
+        drop(injection);
+        assert!(result.is_err());
+        assert_eq!(serde_json::to_value(store.data()).unwrap(), before);
+        assert_eq!(
+            serde_json::to_value(Store::open(dir.path()).unwrap().data()).unwrap(),
+            before
+        );
     }
 }

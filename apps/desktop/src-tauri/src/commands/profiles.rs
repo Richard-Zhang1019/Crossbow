@@ -30,8 +30,7 @@ pub(crate) fn remove_profile(
 ) -> Result<(), String> {
     {
         let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-        store.data_mut().remove_profile(&id)?;
-        store.save().map_err(|e| e.to_string())?;
+        store.transaction(|data| data.remove_profile(&id))?;
     }
     refresh_tray(&app);
     Ok(())
@@ -57,14 +56,15 @@ pub(crate) fn set_profile_interval(
     interval_min: u32,
 ) -> Result<(), String> {
     let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-    let p = store
-        .data_mut()
-        .profiles
-        .iter_mut()
-        .find(|p| p.id == id)
-        .ok_or("profile not found")?;
-    p.update_interval_min = interval_min;
-    store.save().map_err(|e| e.to_string())?;
+    store.transaction(|data| {
+        let p = data
+            .profiles
+            .iter_mut()
+            .find(|p| p.id == id)
+            .ok_or("profile not found")?;
+        p.update_interval_min = interval_min;
+        Ok(())
+    })?;
     scheduler::clear_retry(&id);
     Ok(())
 }
@@ -82,14 +82,15 @@ pub(crate) fn rename_profile(
     }
     {
         let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-        let p = store
-            .data_mut()
-            .profiles
-            .iter_mut()
-            .find(|p| p.id == id)
-            .ok_or("profile not found")?;
-        p.name = name.to_string();
-        store.save().map_err(|e| e.to_string())?;
+        store.transaction(|data| {
+            let p = data
+                .profiles
+                .iter_mut()
+                .find(|p| p.id == id)
+                .ok_or("profile not found")?;
+            p.name = name.to_string();
+            Ok(())
+        })?;
     }
     refresh_tray(&app);
     Ok(())

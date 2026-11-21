@@ -49,8 +49,10 @@ pub(crate) fn set_logs_retention(state: State<AppState>, days: u32) -> Result<()
     }
     {
         let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-        store.data_mut().logs.retention_days = days;
-        store.save().map_err(|e| e.to_string())?;
+        store.transaction(|data| {
+            data.logs.retention_days = days;
+            Ok(())
+        })?;
     }
     // 立即按新保留期清理一次
     let dir = crate::diagnostics::log_files::logs_dir(&state.data_dir);
@@ -65,8 +67,10 @@ pub(crate) fn set_logs_save(
 ) -> Result<(), String> {
     {
         let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-        store.data_mut().logs.save_enabled = enabled;
-        store.save().map_err(|e| e.to_string())?;
+        store.transaction(|data| {
+            data.logs.save_enabled = enabled;
+            Ok(())
+        })?;
     }
     update_logs_persistence(&app);
     Ok(())
