@@ -321,22 +321,33 @@ fn uri(line: &str) -> Result<Value> {
         match scheme {
             "tuic" => {
                 // tuic://<uuid>:<password>@host:port
-                let password = u.password().ok_or_else(|| bad("tuic 缺少 password"))?;
-                let password = unescape(password)?;
-                if !uuid(&auth) {
+                // v2rayN escapes the entire UUID:password userinfo; NekoBox
+                // exports username/password separately. UUID fixes the split.
+                let (id, password) = if let Some(password) = u.password() {
+                    (auth.as_str(), unescape(password)?)
+                } else {
+                    let (id, password) = auth
+                        .split_once(':')
+                        .ok_or_else(|| bad("tuic 缺少 password"))?;
+                    (id, password.to_string())
+                };
+                if !uuid(id) {
                     return Err(bad("tuic UUID 无效"));
                 }
                 if password.is_empty() {
                     return Err(bad("tuic 密码不能为空"));
                 }
-                node["uuid"] = json!(auth);
+                node["uuid"] = json!(id);
                 node["password"] = json!(password);
             }
             _ => {
-                // Scoped subset: single auth only; protocol-defined userpass is not implemented.
-                if u.password().is_some() {
-                    return Err(bad("hy2 认证应为单段 auth，密码中的冒号需 URL 转义"));
-                }
+                // Official userpass syntax and escaped single auth are
+                // equivalent to a single mihomo password containing a colon.
+                let auth = if let Some(password) = u.password() {
+                    format!("{}:{}", auth, unescape(password)?)
+                } else {
+                    auth
+                };
                 if auth.is_empty() {
                     return Err(bad("hy2 缺少认证密码"));
                 }
@@ -776,8 +787,9 @@ mod tests {
             .contains("pinSHA256"));
         // 未知参数拒绝（不静默丢）
         assert!(normalize("hy2://a@hy.example:443?unknownParam=1#n").is_err());
-        // 双段认证歧义拒绝
-        assert!(normalize("hy2://user:pass@hy.example:443#n").is_err());
+        let paired: Value =
+            serde_yaml::from_str(&normalize("hy2://user:pass@hy.example:443#n").unwrap()).unwrap();
+        assert_eq!(paired["proxies"][0]["password"], "user:pass");
     }
 
     #[test]

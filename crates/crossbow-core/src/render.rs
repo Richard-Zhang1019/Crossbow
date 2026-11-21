@@ -101,6 +101,15 @@ pub fn render_config_with(
                 .map_err(|e| RenderError::InvalidYaml(e.to_string()))?
         }
         crate::model::Engine::Mihomo => {
+            // Native sing-box outbounds are not Clash proxies. Keep this
+            // boundary shared by import previews and engine switches.
+            let document: serde_yaml::Value = serde_yaml::from_str(&config)
+                .map_err(|_| RenderError::InvalidYaml("配置语法无效".into()))?;
+            if document.get("proxies").is_none()
+                && document.get("outbounds").is_some_and(|v| v.is_sequence())
+            {
+                return Err(RenderError::UnsupportedProfileFormat);
+            }
             let config = crate::rule_sets::inject_yaml(&config, &store.rule_sets)
                 .map_err(RenderError::InvalidYaml)?;
             let config = crate::process_rules::inject_yaml(&config, &store.process_rules)
@@ -162,6 +171,8 @@ pub enum RenderError {
     MissingProfile(String),
     #[error("invalid yaml: {0}")]
     InvalidYaml(String),
+    #[error("mihomo 无法读取原生 sing-box 配置；请使用 sing-box 内核或导入 Clash/mihomo 格式")]
+    UnsupportedProfileFormat,
     /// #593：顶层字段无法等价转换——切换明确拒绝并保持旧配置。
     #[error("切换到 sing-box 会丢失以下配置的解析语义：{fields}。{hint}")]
     UnsupportedFields { fields: String, hint: String },
@@ -228,6 +239,22 @@ mod tests {
             last_error: None,
         });
         assert!(validate_enabled_overrides(&s).is_empty());
+    }
+
+    #[test]
+    fn native_singbox_cannot_be_silently_accepted_by_mihomo() {
+        for content in [
+            r#"{"outbounds":[{"type":"trojan","tag":"test","server":"node.test","server_port":443,"password":"synthetic"}]}"#,
+            "outbounds:\n  - type: trojan\n    tag: test\n    server: node.test\n    server_port: 443\n    password: synthetic\n",
+        ] {
+            let mut store = fixture();
+            store.profiles[0].content = content.into();
+            store.profiles[0].override_ids.clear();
+            store.engine.engine = crate::Engine::SingBox;
+            assert!(render_config(&store).is_ok());
+            store.engine.engine = crate::Engine::Mihomo;
+            assert!(render_config(&store).is_err(), "native outbounds would be ignored by mihomo");
+        }
     }
 
     fn fixture() -> StoreSchema {

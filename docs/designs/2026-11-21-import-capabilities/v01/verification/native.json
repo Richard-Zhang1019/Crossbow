@@ -1,0 +1,60 @@
+{
+  "platform": "Darwin arm64",
+  "mihomo": "Mihomo Meta v1.19.32 darwin arm64 with go1.26.8 Wed Sep 30 17:00:14 UTC 2026",
+  "singbox": "sing-box version 1.14.2",
+  "records": [
+    {
+      "protocol": "hy2",
+      "tcp": true,
+      "udp": true,
+      "tls_verification": "local CA for Hy2/TUIC; REALITY public-key authentication"
+    },
+    {
+      "protocol": "tuic",
+      "tcp": true,
+      "udp": true,
+      "tls_verification": "local CA for Hy2/TUIC; REALITY public-key authentication"
+    },
+    {
+      "protocol": "reality",
+      "tcp": true,
+      "udp": true,
+      "tls_verification": "local CA for Hy2/TUIC; REALITY public-key authentication"
+    },
+    {
+      "protocol": "hy2-userpass",
+      "tcp": true,
+      "udp": true,
+      "tls_verification": "local CA for Hy2/TUIC; REALITY public-key authentication"
+    },
+    {
+      "protocol": "tuic-v2rayN",
+      "tcp": true,
+      "udp": true,
+      "tls_verification": "local CA for Hy2/TUIC; REALITY public-key authentication"
+    },
+    {
+      "protocol": "hy2-singbox",
+      "tcp": true,
+      "udp": true,
+      "tls_verification": "temporary process-local CA; no insecure flag"
+    },
+    {
+      "case": "reject-auth",
+      "rejected": true
+    },
+    {
+      "case": "reject-sni",
+      "rejected": true
+    },
+    {
+      "case": "reject-ca",
+      "rejected": true
+    },
+    {
+      "case": "reject-reality",
+      "rejected": true
+    }
+  ],
+  "boundary": "loopback controlled peers, public importer generated configs; no system proxy/TUN or public server"
+}

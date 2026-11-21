@@ -1,3 +1,4 @@
+import ImportCompatibility from "./ImportCompatibility";
 import {Input} from "@/components/Controls";
 import type { NavigationTarget } from "@/lib/workflow";
 import ConfigRecovery from "@/components/ConfigRecovery";
@@ -63,6 +64,7 @@ export default function ProfilesPage({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [url, setUrl] = useState("");
+  const [canImport, setCanImport] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [pkgBusy, setPkgBusy] = useState<"export" | "preview" | "import" | null>(null);
@@ -247,6 +249,7 @@ export default function ProfilesPage({
     if(focusProfileId&&selected?.id===focusProfileId){const frame=requestAnimationFrame(()=>document.getElementById("cb-profile-detail")?.focus());return()=>cancelAnimationFrame(frame);}
   },[focusProfileId,selected?.id]);
   const importUrl = async () => {
+    if (!canImport) return;
     if (await importProfiles([() => ipc.importProfileUrl(url.trim())]) && mounted.current) setUrl("");
   };
   return (
@@ -478,15 +481,16 @@ export default function ProfilesPage({
             autoCorrect="off"
             style={{ width: "100%", resize: "vertical", minHeight: 96, maxHeight: 240 }}
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
+            onChange={(e) => {setCanImport(false); setUrl(e.target.value);}}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && url.trim() && busy === null) {
+              if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && canImport && url.trim() && busy === null) {
                 e.preventDefault();
                 void importUrl();
               }
             }}
             className="cb-input cb-selectable"
           />
+          <ImportCompatibility content={url} onReady={setCanImport} />
           <div className="actions">
             <Button
               disabled={busy !== null}
@@ -495,7 +499,7 @@ export default function ProfilesPage({
               {t("profiles.importFile")}
             </Button>
             <Button variant="primary"
-              disabled={!url.trim() || busy !== null}
+              disabled={!canImport || !url.trim() || busy !== null}
               onClick={importUrl}
             >
               {busy === "import"
