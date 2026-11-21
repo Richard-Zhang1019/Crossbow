@@ -233,6 +233,10 @@ const copy = {
     "TUN 已关闭，但系统代理未能恢复到之前的状态",
     "TUN was turned off, but the system proxy could not be restored",
   ],
+  "store.recovered": [
+    "配置恢复结果",
+    "Configuration recovery result",
+  ],
 } as const;
 export function notificationText(
   code: string,
