@@ -20,6 +20,37 @@ const OVERLAY: &str = "notifications";
 const MAX_PENDING: usize = 30;
 const MAX_HISTORY: usize = 50;
 
+/// A fully exited GUI has no in-memory queue or AppHandle. Keep one structured
+/// result for the next launch and deliver the immediate system notification
+/// through the same notification service boundary.
+#[cfg(target_os = "macos")]
+pub(crate) fn publish_detached(data_dir: &std::path::Path, mut notice: Notice) {
+    notice.title = redact(&notice.title);
+    notice.description = redact(&notice.description);
+    notice.details = redact(&notice.details);
+    if let Ok(bytes) = serde_json::to_vec(&notice) {
+        let _ = crate::platform::fs_perms::write_private(
+            &data_dir.join("kernel-guard-result.json"),
+            &bytes,
+        );
+    }
+    let _ = notify_rust::Notification::new()
+        .summary(&notice.title)
+        .body(&notice.description)
+        .show();
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn resume_detached(app: &AppHandle, data_dir: &std::path::Path) {
+    let path = data_dir.join("kernel-guard-result.json");
+    if let Ok(bytes) = std::fs::read(&path) {
+        if let Ok(notice) = serde_json::from_slice::<Notice>(&bytes) {
+            publish(app, notice);
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {

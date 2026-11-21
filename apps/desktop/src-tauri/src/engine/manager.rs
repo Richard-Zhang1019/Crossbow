@@ -1905,7 +1905,7 @@ fn port_listeners_via_lsof(_port: u16) -> Vec<(u32, String)> {
 }
 
 #[cfg(target_os = "macos")]
-fn process_matches_binary(pid: u32, expected: &Path) -> Option<bool> {
+pub(crate) fn process_matches_binary(pid: u32, expected: &Path) -> Option<bool> {
     use std::ffi::CStr;
     use std::os::raw::{c_int, c_void};
 
@@ -2340,6 +2340,17 @@ fn allow_restart(shared: &Shared) -> bool {
 struct ControllerProbe {
     port: u16,
     secret: String,
+}
+
+/// The detached guard probes only the recorded loopback controller, never the
+/// system proxy or a remote destination. A listener alone cannot detect a hang.
+#[cfg(target_os = "macos")]
+pub(crate) fn retained_controller_ready(pid: u32, port: u16, secret: &str) -> bool {
+    ControllerProbe {
+        port,
+        secret: secret.to_owned(),
+    }
+    .wait_ready(Duration::from_secs(1), || false, || !pid_is_alive(pid))
 }
 
 impl ControllerProbe {

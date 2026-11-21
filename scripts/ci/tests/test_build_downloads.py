@@ -60,6 +60,57 @@ class BuildDownloadsTests(unittest.TestCase):
             self.assertEqual(build_desktop.main(), 1)
         self.assertEqual(spawn.call_count, 3)
 
+    def test_macos_dmg_failure_retries_only_bundling(self):
+        failure = 'failed to bundle project: error running bundle_dmg.sh\n'
+        with patch.object(build_desktop.sys, 'platform', 'darwin'), \
+             patch.object(build_desktop.subprocess, 'Popen', side_effect=[
+                 self.process(failure, 1), self.process('DMG built\n', 0),
+             ]) as spawn, patch.object(build_desktop, 'packaging_diagnostics') as diagnostics, \
+             patch('time.sleep'):
+            self.assertEqual(build_desktop.main(), 0)
+        first = spawn.call_args_list[0].args[0]
+        retry = spawn.call_args_list[1].args[0]
+        self.assertEqual(first[1:3], ['tauri', 'build'])
+        self.assertIn('--verbose', first)
+        self.assertEqual(retry[1:], ['tauri', 'bundle', '--config',
+                                    'tauri.ci.conf.json', '--bundles', 'dmg', '--verbose'])
+        diagnostics.assert_called_once()
+
+    def test_repeated_dmg_failure_returns_last_failure(self):
+        failure = 'failed to bundle project: error running bundle_dmg.sh\n'
+        with patch.object(build_desktop.sys, 'platform', 'darwin'), \
+             patch.object(build_desktop.subprocess, 'Popen', side_effect=[
+                 self.process(failure, 1), self.process(failure, 2), self.process(failure, 7),
+             ]) as spawn, patch.object(build_desktop, 'packaging_diagnostics') as diagnostics, \
+             patch('time.sleep') as sleep:
+            self.assertEqual(build_desktop.main(), 7)
+        self.assertEqual(spawn.call_count, 3)
+        self.assertEqual(diagnostics.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
+        self.assertTrue(all(call.args[0][2] == 'bundle' for call in spawn.call_args_list[1:]))
+
+    def test_other_platform_and_other_packaging_errors_are_not_dmg_retried(self):
+        for platform, output in [
+            ('win32', 'failed to bundle project: error running bundle_dmg.sh\n'),
+            ('darwin', 'failed to bundle project: code signing failed\n'),
+            ('darwin', 'error[E0433]: unresolved type\n'),
+        ]:
+            with self.subTest(platform=platform, output=output), \
+                 patch.object(build_desktop.sys, 'platform', platform), \
+                 patch.object(build_desktop.subprocess, 'Popen', return_value=self.process(output, 1)) as spawn, \
+                 patch.object(build_desktop, 'packaging_diagnostics') as diagnostics, \
+                 patch('time.sleep') as sleep:
+                self.assertEqual(build_desktop.main(), 1)
+                self.assertEqual(spawn.call_count, 1)
+                diagnostics.assert_not_called()
+                sleep.assert_not_called()
+
+    def test_diagnostic_failure_does_not_hide_packaging_failure(self):
+        with patch.object(build_desktop.subprocess, 'run', side_effect=
+                          build_desktop.subprocess.TimeoutExpired('hdiutil', 10)) as run:
+            build_desktop.packaging_diagnostics()
+        self.assertEqual(run.call_count, 2)
+
     def test_api_fallback_authenticates_metadata_and_asset_without_redirecting_token(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
