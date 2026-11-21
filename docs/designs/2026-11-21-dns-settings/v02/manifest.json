@@ -1,0 +1,35 @@
+{
+  "date": "2026-11-21",
+  "version": "v02",
+  "status": "implemented; reviewed locally; native DNS path/installed-app acceptance pending",
+  "issue": 598,
+  "pr": 617,
+  "base_commit": "38e83325f2a7fb369243ed15507b51a43cd5ea3a",
+  "before_commit": "31334118c4f71a10f7c19ce108914e606dcef153",
+  "source": "production components; loopback Vite and synthetic IPC; no real subscriptions or system networking",
+  "source_sha256": {
+    "apps/desktop/src/pages/Settings/DnsSettings.tsx": "8cc206c379a6c1e6bfc91641beb7e3ae2596229c820482b8f9f7e2a98d13111c",
+    "apps/desktop/src/pages/Settings/index.tsx": "7a21f2970fc774ace3987ff5754050880a0231e25a002118422952bd1fa4c220",
+    "apps/desktop/src/styles/layout.css": "0b863c8d11087e875985d37c715d74814001b8c26c65842aca35d77828525de0",
+    "apps/desktop/src/i18n/i18n.ts": "727d877c75fa39a674bf898eaf258e84b32e1821a5000df37466335dd7ca41d8",
+    "apps/desktop/src/components/Controls/index.tsx": "4f234fc3f45dfe016bb7e49447cabf2283deb25856064d16880e49cba738c163",
+    "apps/desktop/src/components/Controls/Controls.css": "1258846d94b48511c4135a1a3ac4708f0fd67e365a7a742f1b7403da4400945b",
+    "apps/desktop/src/components/SegmentedControl/index.tsx": "32b6d220b22eae6e842c8016bd2c51751b8642ce22afb25cc7478f2317752352",
+    "scripts/dev/verify-dns-settings.mjs": "9449bd1407e0bde876b87cb687a2dd184a4f2d6ff1f8fc6c886819374c726b1e",
+    "scripts/dev/verify-lib.mjs": "9d75b3422650bd9466dfdf470f0036d22477bfe00952ee1cdb0f7ae4dec91455"
+  },
+  "files": [
+    "SPEC.md",
+    "evidence.json",
+    "manifest.json",
+    "previews/apply-failed.png",
+    "previews/before-dark-small.png",
+    "previews/before-light.png",
+    "previews/dark-singbox-disabled.png",
+    "previews/dark-small-footer.png",
+    "previews/dark-small.png",
+    "previews/light-custom.png",
+    "previews/load-failed.png",
+    "source.zip"
+  ]
+}

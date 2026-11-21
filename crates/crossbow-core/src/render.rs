@@ -24,6 +24,8 @@ pub fn render_config_with(
     store: &StoreSchema,
     use_overrides: bool,
 ) -> Result<Rendered, RenderError> {
+    crate::dns_settings::validate_for_engine(&store.dns, store.engine.engine)
+        .map_err(RenderError::InvalidYaml)?;
     let profile_id = store
         .active_profile
         .as_deref()
@@ -71,6 +73,11 @@ pub fn render_config_with(
             let json = if document.get("proxies").is_none()
                 && document.get("outbounds").is_some_and(|v| v.is_array())
             {
+                if store.dns.mode == crate::dns_settings::DnsMode::Custom {
+                    return Err(RenderError::InvalidYaml(
+                        "原生 sing-box 配置暂不支持应用级自定义 DNS；请沿用配置中的 DNS".into(),
+                    ));
+                }
                 serde_json::to_string(&document)
                     .map_err(|e| RenderError::InvalidYaml(e.to_string()))?
             } else {

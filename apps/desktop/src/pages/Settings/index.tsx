@@ -539,7 +539,7 @@ export default function SettingsPage({
               )
             }
           />
-          <DnsSettingsCard />
+          <DnsSettingsCard engine={engine?.engine} />
         </Group><Group title={t("settings.scenes.title")}>
           <SceneRules />
         </Group></>

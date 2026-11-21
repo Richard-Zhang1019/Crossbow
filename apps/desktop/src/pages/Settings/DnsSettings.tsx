@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import SegmentedControl from "@/components/SegmentedControl";
 import { Button } from "@/components/Button";
 import { ControlRow, Input } from "@/components/Controls";
@@ -6,150 +6,102 @@ import { notify } from "@/notifications/service";
 import { ipc, type DnsMode, type DnsSettings } from "@/services/ipc";
 import { useT } from "@/i18n/i18n";
 
-/** 逗号/空格/换行分隔的上游列表 → 数组。 */
-const toList = (value: string) =>
-  value
-    .split(/[\n,，]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-
+const toList = (value: string) => value.split(/[\n,，]/).map(item => item.trim()).filter(Boolean);
 const join = (list: string[]) => list.join(", ");
+const signature = (dns: DnsSettings) => JSON.stringify([
+  dns.mode, dns.proxy_nameservers, dns.direct_nameservers, dns.bootstrap_nameservers,
+]);
+const equal = (a: DnsSettings, b: DnsSettings) => signature(a) === signature(b);
 
-/** #598 DNS 设置卡片：沿用订阅（默认零变更）/ 受控自定义双模式。 */
-export function DnsSettingsCard() {
+export function DnsSettingsCard({ engine }: { engine: "mihomo" | "singbox" | undefined }) {
   const t = useT();
   const [mode, setMode] = useState<DnsMode>("inherit");
   const [proxy, setProxy] = useState("");
   const [direct, setDirect] = useState("");
   const [bootstrap, setBootstrap] = useState("");
-  const [engine, setEngine] = useState<"mihomo" | "singbox">("mihomo");
-  const [loaded, setLoaded] = useState(false);
+  const [saved, setSaved] = useState<DnsSettings | null>(null);
   const [failed, setFailed] = useState(false);
   const [saving, setSaving] = useState(false);
-
-  const load = useCallback(async (silent = false) => {
+  const mounted = useRef(false);
+  const busy = useRef(false);
+  const generation = useRef(0);
+  const load = useCallback(async () => {
+    const request = ++generation.current;
+    setFailed(false);
     try {
-      const [dns, engineConfig] = await Promise.all([
-        ipc.getDnsSettings(),
-        ipc.getEngineConfig(),
-      ]);
+      const dns = await ipc.getDnsSettings();
+      if (!mounted.current || generation.current !== request) return;
       setMode(dns.mode);
       setProxy(join(dns.proxy_nameservers));
       setDirect(join(dns.direct_nameservers));
       setBootstrap(join(dns.bootstrap_nameservers));
-      setEngine(engineConfig.engine);
-      setFailed(false);
-      setLoaded(true);
+      setSaved(dns);
+      void notify.resolve("dns-settings-load");
     } catch (error) {
+      if (!mounted.current || generation.current !== request) return;
       setFailed(true);
-      if (!silent) notify.error(error, "dns-settings-load");
+      notify.error(error, "dns-settings-load");
     }
   }, []);
-
   useEffect(() => {
+    mounted.current = true;
     void load();
+    return () => { mounted.current = false; generation.current++; };
   }, [load]);
 
+  const draft: DnsSettings = {
+    mode,
+    proxy_nameservers: toList(proxy),
+    direct_nameservers: toList(direct),
+    bootstrap_nameservers: toList(bootstrap),
+  };
+  const dirty = saved !== null && !equal(saved, draft);
   const save = async () => {
-    if (saving) return;
+    if (busy.current || !dirty) return;
+    busy.current = true;
     setSaving(true);
     try {
-      const settings: DnsSettings = {
-        mode,
-        proxy_nameservers: toList(proxy),
-        direct_nameservers: toList(direct),
-        bootstrap_nameservers: toList(bootstrap),
-      };
-      await ipc.setDnsSettings(settings);
-      // 配置事务：渲染 + 内核热重载（渲染失败保留旧配置，回滚显示）
-      await ipc.applyOverrides();
+      // One backend transaction owns validation, runtime apply, persistence and rollback.
+      await ipc.setDnsSettings(draft);
+      if (mounted.current) setSaved(draft);
       notify.success(t("dns.saved"), "dns-settings");
-      await load(true);
     } catch (error) {
+      // The committed settings remain unchanged; keep this draft available to correct/retry.
       notify.error(error, "dns-settings");
-      await load(true); // 失败回滚到真实状态
     } finally {
-      setSaving(false);
+      busy.current = false;
+      if (mounted.current) setSaving(false);
     }
   };
 
-  return (
-    <div className="cb-dns-card">
+  return <div className="cb-dns-card">
+    <fieldset className="cb-dns-fields" disabled={!saved || !engine || saving} aria-busy={saving || (!saved && !failed)}>
       <ControlRow label={t("dns.mode")} hint={t("dns.modeHint")}>
-        <SegmentedControl
-          label={t("dns.mode")}
-          value={mode}
-          onChange={(value) => {
-            if (value === "inherit" || value === "custom") setMode(value);
-          }}
-          options={[
-            { value: "inherit", label: t("dns.modeInherit") },
-            { value: "custom", label: t("dns.modeCustom") },
-          ]}
-        />
+        <SegmentedControl label={t("dns.mode")} value={mode} onChange={setMode} options={[
+          { value: "inherit", label: t("dns.modeInherit") },
+          { value: "custom", label: t("dns.modeCustom") },
+        ]} />
       </ControlRow>
-      {mode === "custom" && (
-        <>
-          <ControlRow label={t("dns.proxy")} hint={t("dns.proxyHint")}>
-            <Input
-              value={proxy}
-              onChange={(e) => setProxy(e.target.value)}
-              placeholder={t("dns.upstreamPlaceholder")}
-              spellCheck={false}
-            />
-          </ControlRow>
-          <ControlRow label={t("dns.direct")} hint={t("dns.directHint")}>
-            <Input
-              value={direct}
-              onChange={(e) => setDirect(e.target.value)}
-              placeholder={t("dns.upstreamPlaceholder")}
-              spellCheck={false}
-            />
-          </ControlRow>
-          <ControlRow
-            label={t("dns.bootstrap")}
-            hint={
-              engine === "singbox"
-                ? t("dns.bootstrapSingboxHint")
-                : t("dns.bootstrapHint")
-            }
-          >
-            <Input
-              value={bootstrap}
-              onChange={(e) => setBootstrap(e.target.value)}
-              placeholder={t("dns.upstreamPlaceholder")}
-              disabled={engine === "singbox"}
-              spellCheck={false}
-            />
-          </ControlRow>
-        </>
-      )}
-      <ul className="cb-dns-notes">
-        <li>{t("dns.noteProxy")}</li>
-        <li>{t("dns.noteDirect")}</li>
-        <li>{t("dns.noteBootstrap")}</li>
-        <li>{t("dns.noteHosts")}</li>
-        <li>{t("dns.noteIpv6")}</li>
-        {engine === "singbox" && <li>{t("dns.noteSingbox")}</li>}
-      </ul>
-      {failed && !loaded && (
-        <p role="status">{t("dns.loadFailed")}</p>
-      )}
-      {loaded && (
-        <Button
-          size="small"
-          variant="primary"
-          loading={saving}
-          onClick={() => void save()}
-        >
-          {t("dns.save")}
-        </Button>
-      )}
-      {failed && loaded && (
-        <Button size="small" onClick={() => void load(false)}>
-          {t("dns.retry")}
-        </Button>
-      )}
-    </div>
-  );
+      {mode === "custom" && <>
+        <ControlRow label={t("dns.proxy")} hint={t("dns.proxyHint")}>
+          <Input value={proxy} onChange={e => setProxy(e.target.value)} placeholder={t("dns.upstreamPlaceholder")} spellCheck={false} />
+        </ControlRow>
+        <ControlRow label={t("dns.direct")} hint={t(engine === "singbox" ? "dns.directSingboxHint" : "dns.directHint")}>
+          <Input value={direct} onChange={e => setDirect(e.target.value)} placeholder={t("dns.upstreamPlaceholder")} spellCheck={false} />
+        </ControlRow>
+        <ControlRow label={t("dns.bootstrap")} hint={t(engine === "singbox" ? "dns.bootstrapSingboxHint" : "dns.bootstrapHint")}>
+          <Input value={bootstrap} onChange={e => setBootstrap(e.target.value)} placeholder={t("dns.upstreamPlaceholder")} disabled={engine === "singbox"} spellCheck={false} />
+        </ControlRow>
+        <p className="cb-setting-hint">{t(engine === "singbox" ? "dns.noteSingbox" : "dns.noteMihomo")}</p>
+        <p className="cb-setting-hint">{t("dns.noteIpv6")}</p>
+      </>}
+      {saved && <div className="cb-dns-actions">
+        <Button size="small" variant="primary" loading={saving} disabled={!dirty} onClick={() => void save()}>{t("dns.save")}</Button>
+      </div>}
+    </fieldset>
+    {failed && <div className="cb-dns-actions" role="status">
+      <span className="cb-setting-hint">{t("dns.loadFailed")}</span>
+      <Button size="small" onClick={() => void load()}>{t("dns.retry")}</Button>
+    </div>}
+  </div>;
 }

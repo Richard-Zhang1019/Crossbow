@@ -270,66 +270,40 @@ pub fn convert_to_singbox(
     // #598：自定义 DNS 时用户上游替换内置默认（代理业务带 detour、
     // 直连业务直连拨号）；沿用订阅/缺省保持内置（订阅自带 DNS 已被
     // 顶层守卫拒绝，无法证明等价）。
+    if let Some(dns) = dns {
+        crate::dns_settings::validate_for_engine(dns, crate::Engine::SingBox)
+            .map_err(ConvertError::Parse)?;
+    }
     let custom = dns.filter(|d| d.mode == crate::dns_settings::DnsMode::Custom);
-    let (dns_servers, dns_final, dns_resolver) = match custom {
-        Some(d) if !d.proxy_nameservers.is_empty() || !d.direct_nameservers.is_empty() => {
-            let mut servers = Vec::new();
-            let mut proxy_tags = Vec::new();
-            let mut local_tags = Vec::new();
-            for (index, raw) in d.proxy_nameservers.iter().enumerate() {
-                let upstream = crate::dns_settings::parse_upstream(raw).map_err(|e| {
-                    ConvertError::Parse(format!("自定义 DNS 上游非法（{raw}）：{e}"))
-                })?;
-                let tag = format!("proxy-dns-{index}");
-                let detour = if final_out != "DIRECT" {
-                    Some(final_out.as_str())
-                } else {
-                    None
-                };
-                servers.push(crate::dns_settings::upstream_singbox_json(
-                    &upstream, &tag, detour,
-                ));
-                proxy_tags.push(tag);
-            }
-            for (index, raw) in d.direct_nameservers.iter().enumerate() {
-                let upstream = crate::dns_settings::parse_upstream(raw).map_err(|e| {
-                    ConvertError::Parse(format!("自定义 DNS 上游非法（{raw}）：{e}"))
-                })?;
-                let tag = format!("local-dns-{index}");
-                servers.push(crate::dns_settings::upstream_singbox_json(
-                    &upstream, &tag, None,
-                ));
-                local_tags.push(tag);
-            }
-            let fallback = proxy_tags
-                .first()
-                .cloned()
-                .or_else(|| local_tags.first().cloned())
-                .unwrap_or_else(|| "proxy-dns".into());
-            let resolver = local_tags
-                .first()
-                .cloned()
-                .or_else(|| proxy_tags.first().cloned())
-                .unwrap_or_else(|| "local-dns".into());
-            (servers, fallback, resolver)
+    let mut dns_servers = if let Some(d) = custom {
+        let proxy = crate::dns_settings::parse_upstream(&d.proxy_nameservers[0])
+            .map_err(ConvertError::Parse)?;
+        let direct = crate::dns_settings::parse_upstream(&d.direct_nameservers[0])
+            .map_err(ConvertError::Parse)?;
+        let mut proxy_server =
+            crate::dns_settings::upstream_singbox_json(&proxy, "proxy-dns", None);
+        // Resolve a DoH/DoT hostname via the IP-based direct resolver, never itself.
+        if proxy.server.parse::<std::net::IpAddr>().is_err() {
+            proxy_server["domain_resolver"] = json!("local-dns");
         }
-        _ => {
-            let mut servers = vec![
-                json!({ "type": "https", "tag": "proxy-dns", "server": "8.8.8.8" }),
-                // 不带 detour：默认直连拨号；显式指向空 DIRECT 出站会被 sing-box 拒绝
-                json!({ "type": "udp", "tag": "local-dns", "server": "223.5.5.5" }),
-            ];
-            if final_out != "DIRECT" {
-                servers[0]["detour"] = json!(&final_out);
-            }
-            (servers, "proxy-dns".to_string(), "local-dns".to_string())
-        }
+        vec![
+            proxy_server,
+            crate::dns_settings::upstream_singbox_json(&direct, "local-dns", None),
+        ]
+    } else {
+        vec![
+            json!({ "type": "https", "tag": "proxy-dns", "server": "8.8.8.8" }),
+            json!({ "type": "udp", "tag": "local-dns", "server": "223.5.5.5" }),
+        ]
     };
+    if final_out != "DIRECT" {
+        dns_servers[0]["detour"] = json!(&final_out);
+    }
     let mut cfg = json!({
         "log": { "level": "info", "timestamp": true },
         "dns": {
             "servers": dns_servers,
-            "final": dns_final,
+            "final": "proxy-dns",
             "strategy": "prefer_ipv4"
         },
         "inbounds": [
@@ -346,7 +320,7 @@ pub fn convert_to_singbox(
             "final": final_out,
             "auto_detect_interface": true,
             // 1.12+ 域名解析出口：替代已移除的 DNS 规则 outbound 匹配项
-            "default_domain_resolver": dns_resolver
+            "default_domain_resolver": "local-dns"
         },
         "experimental": {
             "cache_file": { "enabled": true, "store_fakeip": false }

@@ -228,23 +228,85 @@ pub(crate) fn get_dns_settings(state: State<'_, AppState>) -> DnsSettings {
         .clone()
 }
 
-/// #598：写入 DNS 设置（校验先行，保存失败回滚内存态）。
-/// 配置生效走既有的 apply_overrides 事务（渲染失败保留旧配置与网络）。
+/// Validate, apply and persist once, so rollback owns the previous DNS snapshot.
 #[tauri::command]
-pub(crate) fn set_dns_settings(
+pub(crate) async fn set_dns_settings(
     state: State<'_, AppState>,
     settings: DnsSettings,
 ) -> Result<(), String> {
-    crossbow_core::dns_settings::validate(&settings)?;
-    let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-    let previous = store.data().dns.clone();
-    if previous == settings {
-        return Ok(());
+    commit_config_change_inner(
+        &state,
+        |data| {
+            let use_overrides = !state.safe_mode.load(std::sync::atomic::Ordering::SeqCst);
+            stage_dns_settings(data, settings, use_overrides)
+        },
+        false,
+    )
+}
+
+fn stage_dns_settings(
+    data: &mut crossbow_core::StoreSchema,
+    settings: DnsSettings,
+    use_overrides: bool,
+) -> Result<(), String> {
+    crossbow_core::dns_settings::validate_for_engine(&settings, data.engine.engine)?;
+    let mut candidate = data.clone();
+    candidate.dns = settings;
+    // PersistOnly transitions also need preflight: invalid settings must not
+    // break the next launch. No active profile is a valid initial setup state.
+    if candidate.active_profile.is_some() {
+        crossbow_core::render_config_with(&candidate, use_overrides)
+            .map_err(|error| error.to_string())?;
     }
-    store.data_mut().dns = settings;
-    if let Err(error) = store.save() {
-        store.data_mut().dns = previous;
-        return Err(error.to_string());
-    }
+    data.dns = candidate.dns;
     Ok(())
+}
+
+#[cfg(test)]
+mod dns_tests {
+    use super::*;
+    use crossbow_core::dns_settings::DnsMode;
+
+    #[test]
+    fn dns_preflight_rejects_native_json_without_mutating_saved_state() {
+        let mut data = crossbow_core::StoreSchema::default();
+        data.engine.engine = crossbow_core::Engine::SingBox;
+        data.active_profile = Some("native".into());
+        data.profiles.push(crossbow_core::Profile {
+            id: "native".into(),
+            name: "native".into(),
+            kind: crossbow_core::ProfileKind::Local,
+            url: None,
+            content: r#"{"outbounds":[{"type":"direct","tag":"DIRECT"}]}"#.into(),
+            update_interval_min: 0,
+            override_ids: vec![],
+            last_updated: None,
+            traffic: None,
+            last_update: None,
+        });
+        let before = serde_json::to_value(&data).unwrap();
+        let settings = DnsSettings {
+            mode: DnsMode::Custom,
+            proxy_nameservers: vec!["1.1.1.1".into()],
+            direct_nameservers: vec!["8.8.8.8".into()],
+            bootstrap_nameservers: vec![],
+        };
+        assert!(stage_dns_settings(&mut data, settings, true).is_err());
+        assert_eq!(serde_json::to_value(&data).unwrap(), before);
+    }
+
+    #[test]
+    fn unsupported_dns_is_rejected_even_before_importing_a_profile() {
+        let mut data = crossbow_core::StoreSchema::default();
+        data.engine.engine = crossbow_core::Engine::SingBox;
+        let before = data.dns.clone();
+        let invalid = DnsSettings {
+            mode: DnsMode::Custom,
+            proxy_nameservers: vec!["1.1.1.1".into()],
+            direct_nameservers: vec!["8.8.8.8".into()],
+            bootstrap_nameservers: vec!["9.9.9.9".into()],
+        };
+        assert!(stage_dns_settings(&mut data, invalid, true).is_err());
+        assert_eq!(data.dns, before);
+    }
 }

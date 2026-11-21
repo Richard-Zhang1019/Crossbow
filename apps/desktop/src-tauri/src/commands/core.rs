@@ -206,6 +206,7 @@ fn select_engine(
     target: crossbow_core::Engine,
     use_overrides: bool,
 ) -> Result<(), String> {
+    crossbow_core::dns_settings::validate_for_engine(&data.dns, target)?;
     if target == crossbow_core::Engine::SingBox && data.active_profile.is_some() {
         let mut candidate = data.clone();
         candidate.engine.engine = target;
@@ -243,6 +244,21 @@ mod engine_selection_tests {
         assert!(error.contains("dns"));
         assert!(!error.contains("10.0.0.1"));
         assert_eq!(serde_json::to_value(&data).unwrap(), before);
+    }
+
+    #[test]
+    fn engine_switch_cannot_silently_discard_bootstrap_dns_without_a_profile() {
+        let mut data = crossbow_core::StoreSchema {
+            dns: crossbow_core::dns_settings::DnsSettings {
+                mode: crossbow_core::dns_settings::DnsMode::Custom,
+                proxy_nameservers: vec!["1.1.1.1".into()],
+                direct_nameservers: vec!["8.8.8.8".into()],
+                bootstrap_nameservers: vec!["9.9.9.9".into()],
+            },
+            ..Default::default()
+        };
+        assert!(select_engine(&mut data, crossbow_core::Engine::SingBox, true).is_err());
+        assert_eq!(data.engine.engine, crossbow_core::Engine::Mihomo);
     }
 
     #[test]
