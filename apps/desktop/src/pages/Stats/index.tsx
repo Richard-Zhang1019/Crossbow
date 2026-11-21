@@ -21,7 +21,7 @@ function Ranking({ rows, total, nodes = false }: { rows: TrafficStatRow[]; total
         const bytes = row.up + row.down;
         const percent = total > 0 ? bytes / total * 100 : 0;
         return <div className="cb-stats-entry" key={row.key}>
-          <div className="cb-stats-entry-title"><span title={row.key}>{nodes ? <NodeName name={row.key} /> : row.key}</span><strong>{fmtBytes(bytes)}</strong></div>
+          <div className="cb-stats-entry-title"><span title={row.key}>{row.key === "__other__" ? t('stats.otherBucket') : nodes ? <NodeName name={row.key} /> : row.key}</span><strong>{fmtBytes(bytes)}</strong></div>
           <div className="cb-stats-entry-meta"><span>↑ {fmtBytes(row.up)}<span className="cb-stats-meta-down">↓ {fmtBytes(row.down)}</span></span><span>{percent.toFixed(1)}%</span></div>
           <div className="cb-stats-track" aria-hidden="true"><span style={{width:`${Math.min(percent,100)}%`}} /></div>
         </div>;
@@ -33,12 +33,18 @@ function Ranking({ rows, total, nodes = false }: { rows: TrafficStatRow[]; total
 export default function StatsPage() {
   const t = useT();
   const [days, setDays] = useState(7);
+  const [paused, setPaused] = useState<boolean | null>(null);
+  const [controlPending, setControlPending] = useState(false);
+  const controlBusy = useRef(false);
+  const controlRequest = useRef(0);
+  const [clearing, setClearing] = useState(false);
   const [result, setResult] = useState<{ days: number; report: TrafficStatsReport } | null>(null);
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
   const request = useRef(0);
   const load = useCallback(async (silent = false) => {
+    if (controlBusy.current) return;
     const id = ++request.current;
     if (!silent) { setLoading(true); setFailed(false); }
     try {
@@ -54,6 +60,52 @@ export default function StatsPage() {
       if (request.current === id) setLoading(false);
     }
   }, [days]);
+  const loadControl = useCallback(async () => {
+    const id = ++controlRequest.current;
+    try {
+      const control = await ipc.trafficStatsControl();
+      if (controlRequest.current !== id) return;
+      setPaused(control.paused);
+      if (control.warning) notify.error(control.warning, 'stats-control');
+      else void notify.resolve('stats-control');
+    } catch (error) {
+      if (controlRequest.current !== id) return;
+      setPaused(null); notify.error(error, 'stats-control');
+    }
+  }, []);
+  useEffect(() => {
+    void loadControl();
+    return () => { controlRequest.current++; };
+  }, [loadControl]);
+  const changeControl = async (clear: boolean) => {
+    if (controlBusy.current || (!clear && paused === null)) return;
+    controlBusy.current = true;
+    controlRequest.current++;
+    setControlPending(true);
+    setClearing(clear);
+    request.current++;
+    try {
+      if (clear) {
+        await ipc.clearTrafficStats();
+        setSelected(null);
+        setResult(null);
+        await loadControl();
+        notify.info(t('stats.cleared'), 'stats-clear');
+      } else {
+        await ipc.setTrafficStatsPaused(!paused);
+        setPaused(!paused);
+        notify.info(paused ? t('stats.resumed') : t('stats.pausedNotice'), 'stats-control');
+      }
+    } catch (error) {
+      notify.error(error, clear ? 'stats-clear' : 'stats-control');
+      await loadControl();
+    } finally {
+      controlBusy.current = false;
+      setControlPending(false);
+      setClearing(false);
+      void load(true);
+    }
+  };
   useEffect(() => {
     void load();
     const timer = window.setInterval(() => void load(true), 30_000);
@@ -77,8 +129,14 @@ export default function StatsPage() {
   const range = RANGES.find(r => r.days === days)!;
   return <div className="cb-stats-page" aria-busy={loading}>
     <header className="cb-stats-heading"><div><h1>{t('stats.title')}</h1><p>{t('stats.localHint')}</p></div>
-      <div className="cb-stats-controls"><SegmentedControl label={t('stats.range')} value={String(days)} onChange={v => {if(v){setDays(Number(v));setSelected(null);}}} options={RANGES.map(r => ({value:String(r.days),label:t(r.labelKey)}))}/><Button iconOnly aria-label={t('stats.refresh')} title={t('stats.refresh')} onClick={() => void load()} loading={loading}><Icon name="refresh" size={16}/></Button></div>
+      <div className="cb-stats-controls"><SegmentedControl label={t('stats.range')} value={String(days)} onChange={v => {if(v){setDays(Number(v));setSelected(null);}}} options={RANGES.map(r => ({value:String(r.days),label:t(r.labelKey)}))}/><Button iconOnly aria-label={t('stats.refresh')} title={t('stats.refresh')} onClick={() => { void load(); void loadControl(); }} disabled={controlPending} loading={loading}><Icon name="refresh" size={16}/></Button>
+        <div className="cb-stats-privacy">
+          <Button size="small" disabled={paused === null || controlPending} loading={controlPending && !clearing} onClick={() => void changeControl(false)}>{paused ? t('stats.resumeRecord') : t('stats.pauseRecord')}</Button>
+          <Button size="small" tone="danger" disabled={controlPending} loading={clearing} onClick={() => void changeControl(true)}>{t('stats.clearLocal')}</Button>
+        </div>
+      </div>
     </header>
+    {paused && <p className="cb-stats-paused-note" role="status">{t('stats.pausedActive')}</p>}
     {failed && <div className="cb-stats-read-state" role="status"><span>{t('stats.loadFailed')}{report ? ` · ${t('stats.previous')}` : ''}</span><Button size="small" onClick={() => void load()}>{t('stats.retry')}</Button></div>}
     {!report ? <div className="cb-stats-empty" role="status">{t(loading ? 'stats.loading' : failed ? 'stats.loadFailed' : 'stats.empty')}</div> : total === 0 ? <div className="cb-stats-empty" role="status"><Icon name="activity" size={24}/><h2>{t('stats.emptyTitle')}</h2><p>{t('stats.empty')}</p></div> : <>
       <section className="cb-stats-overview">

@@ -22,6 +22,33 @@ pub(crate) fn traffic_stats(
 ) -> traffic_stats::TrafficStatsReport {
     state.traffic_stats_topn(days.unwrap_or(7).clamp(1, 90))
 }
+
+/// #600：统计控制状态（暂停/恢复入口）。
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct StatsControl {
+    pub paused: bool,
+    pub warning: Option<String>,
+}
+
+#[tauri::command]
+pub(crate) fn traffic_stats_control(state: State<AppState>) -> StatsControl {
+    StatsControl {
+        paused: state.traffic_stats_paused(),
+        warning: state.traffic_stats_warning(),
+    }
+}
+
+#[tauri::command]
+pub(crate) fn traffic_stats_set_paused(state: State<AppState>, paused: bool) -> Result<(), String> {
+    state.traffic_stats_set_paused(paused)
+}
+
+/// #600：清除本地统计（内存与文件同步清空）。
+#[tauri::command]
+pub(crate) fn traffic_stats_clear(state: State<AppState>) -> Result<(), String> {
+    state.traffic_stats_clear()
+}
 #[tauri::command]
 pub(crate) fn open_logs_dir(state: State<AppState>) -> Result<(), String> {
     let dir = crate::diagnostics::log_files::logs_dir(&state.data_dir);

@@ -15,6 +15,7 @@
 
 | 日期 | 主题 | 版本 | 状态 | 文件 | 关联 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-11-21 | 本地统计隐私控制与容量边界 | v01 | 已实现，模拟通过；原生长跑待验 | [说明](2026-11-21-stats-controls/v01/SPEC.md) · [小窗口英文](2026-11-21-stats-controls/v01/previews/small-en.png) · [源稿](2026-11-21-stats-controls/v01/source.zip) | #600 / PR #619 |
 | 2026-11-21 | DNS 设置：原子应用、能力边界与紧凑编辑 | v02 | 已实现，本地/模拟通过；待原生网络验收 | [说明](2026-11-21-dns-settings/v02/SPEC.md) · [浅色](2026-11-21-dns-settings/v02/previews/light-custom.png) · [小窗口](2026-11-21-dns-settings/v02/previews/dark-small.png) · [源稿](2026-11-21-dns-settings/v02/source.zip) · [manifest](2026-11-21-dns-settings/v02/manifest.json) | #598 / PR #617 |
 | 2026-11-21 | DNS 设置卡片：节点引导/直连/代理区分 | v01 | 历史，已由 v02 替代 | [说明](2026-11-21-dns-settings/v01/SPEC.md) · [浅色自定义](2026-11-21-dns-settings/v01/previews/light-custom.png) · [深色 sing-box 禁用](2026-11-21-dns-settings/v01/previews/dark-singbox-disabled.png) · [源稿](2026-11-21-dns-settings/v01/source.zip) | #598 |
 | 2026-11-20 | 独立规则集：策略挂载、顺序与缓存 | v01 | 已实现，待评审/原生验收 | [说明](2026-11-20-rule-sets/v01/SPEC.md) · [浅色](2026-11-20-rule-sets/v01/previews/light.png) · [小窗口表单](2026-11-20-rule-sets/v01/previews/form-small.png) · [源稿](2026-11-20-rule-sets/v01/source.zip) | #571 |

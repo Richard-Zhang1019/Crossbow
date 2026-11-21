@@ -47,3 +47,13 @@
 .cb-stats-empty p {max-width:380px;text-align:center;line-height:1.6;}
 @media(max-height:650px){.cb-stats-page{gap:12px}.cb-stats-overview{padding:14px 0;gap:24px;grid-template-columns:210px minmax(0,1fr)}.cb-stats-chart-body{height:78px;margin-top:10px}.cb-stats-total>strong{font-size:30px}.cb-stats-total dl{margin-top:12px}.cb-stats-heading p{display:none}.cb-stats-entry{padding-block:10px}}
 @media(max-width:740px){.cb-stats-heading{align-items:flex-start;flex-direction:column}.cb-stats-overview{grid-template-columns:1fr;gap:20px}.cb-stats-rankings{grid-template-columns:1fr;flex:none}.cb-stats-ranking-list{max-height:260px}.cb-stats-page{overflow:auto}.cb-stats-footnote{padding-bottom:12px}}
+
+/* Privacy controls use the existing toolbar and shared button treatment. */
+.cb-stats-controls { flex-wrap:wrap; justify-content:flex-end; min-width:0; }
+.cb-stats-privacy { display:flex; align-items:center; gap:8px; }
+.cb-stats-heading { align-items:flex-start; }
+.cb-stats-paused-note { margin:0; font-size:var(--font-sm); color:var(--cb-text-dim); }
+@media (max-width:1100px) {
+  .cb-stats-heading { flex-wrap:wrap; }
+  .cb-stats-controls { flex-shrink:1; }
+}
