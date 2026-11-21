@@ -102,7 +102,34 @@ pub(crate) fn import_content_blocking(
 }
 
 fn persist_imported_profile(store: &mut Store, profile: &Profile) -> Result<(), String> {
-    store.transaction(|data| data.add_profile(profile.clone()))
+    store.transaction(|data| {
+        validate_import_candidate(data, profile)?;
+        data.add_profile(profile.clone())
+    })
+}
+
+/// Validate against the engine inside the same Store transaction as publication.
+/// Preview is advisory: import rechecks after any concurrent engine change.
+pub(crate) fn validate_import_candidate(
+    data: &crossbow_core::StoreSchema,
+    profile: &Profile,
+) -> Result<(), String> {
+    let mut candidate = data.clone();
+    candidate.profiles.push(profile.clone());
+    candidate.active_profile = Some(profile.id.clone());
+    crossbow_core::render_config(&candidate)
+        .map(|_| ())
+        .map_err(|_| {
+            match data.engine.engine {
+                crossbow_core::Engine::SingBox => {
+                    "当前 sing-box 转换能力无法保留此配置；请使用 mihomo 或移除不支持的功能"
+                }
+                crossbow_core::Engine::Mihomo => {
+                    "配置与当前 mihomo 设置不兼容，未导入；请检查配置和 DNS 设置"
+                }
+            }
+            .to_string()
+        })
 }
 
 pub(crate) const PROFILE_REFRESH_SUPERSEDED: &str =
@@ -246,19 +273,55 @@ mod import_persistence_tests {
     use super::*;
 
     #[test]
+    fn incompatible_import_preserves_active_profile_and_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path()).unwrap();
+        let mut old = make_profile("old".into(), "old".into(), ProfileKind::Local, None);
+        old.content = "proxies: []\nrules: ['MATCH,DIRECT']".into();
+        persist_imported_profile(&mut store, &old).unwrap();
+        let mut unsupported = make_profile(
+            "unsupported".into(),
+            "unsupported".into(),
+            ProfileKind::Local,
+            None,
+        );
+        unsupported.content = crossbow_core::subscription::normalize_profile_content(
+            "tuic://00000000-0000-4000-8000-000000000001:secret@host:443",
+        )
+        .unwrap();
+        // A successful advisory preview cannot bypass a later engine change.
+        validate_import_candidate(store.data(), &unsupported).unwrap();
+        store
+            .transaction(|data| {
+                data.engine.engine = crossbow_core::Engine::SingBox;
+                Ok(())
+            })
+            .unwrap();
+        let before = std::fs::read(dir.path().join("store.json")).unwrap();
+        let state = serde_json::to_value(store.data()).unwrap();
+        assert!(persist_imported_profile(&mut store, &unsupported).is_err());
+        assert_eq!(serde_json::to_value(store.data()).unwrap(), state);
+        assert_eq!(
+            std::fs::read(dir.path().join("store.json")).unwrap(),
+            before
+        );
+    }
+    #[test]
     fn remote_and_local_import_retry_only_publishes_one_profile() {
         for kind in [ProfileKind::Remote, ProfileKind::Local] {
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("store.json");
             let mut store = Store::open(dir.path()).unwrap();
             store.save().unwrap();
-            let first = make_profile("failed".into(), "test".into(), kind, None);
+            let mut first = make_profile("failed".into(), "test".into(), kind, None);
+            first.content = "proxies: []\nrules: ['MATCH,DIRECT']".into();
             let injection = crossbow_core::secure_write::inject_path_at(&path, 4);
             assert!(persist_imported_profile(&mut store, &first).is_err());
             drop(injection);
             assert!(store.data().profiles.is_empty());
             assert!(store.data().active_profile.is_none());
-            let retry = make_profile("retry".into(), "test".into(), kind, None);
+            let mut retry = make_profile("retry".into(), "test".into(), kind, None);
+            retry.content = first.content.clone();
             persist_imported_profile(&mut store, &retry).unwrap();
             assert_eq!(store.data().profiles.len(), 1);
             assert_eq!(store.data().active_profile.as_deref(), Some("retry"));

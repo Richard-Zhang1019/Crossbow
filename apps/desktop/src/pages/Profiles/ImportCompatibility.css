@@ -1,0 +1,9 @@
+.cb-import-compatibility { border-top:1px solid var(--cb-line); margin-top:16px; padding-top:12px; }
+.cb-import-compatibility-heading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; font-size:var(--font-sm); }
+.cb-import-compatibility-heading span { color:var(--cb-text-dim); overflow-wrap:anywhere; font-size:var(--font-xs); }
+.cb-import-compatibility table { width:100%; border-collapse:collapse; font-size:var(--font-sm); text-align:left; }
+.cb-import-compatibility caption { text-align:left; color:var(--cb-text-dim); font-size:var(--font-xs); padding:6px 0; }
+.cb-import-compatibility th,.cb-import-compatibility td { padding:7px 6px 7px 0; border-bottom:1px solid var(--cb-line); }
+.cb-import-compatibility th { font-weight:500; }
+
+.cb-import-compatibility summary { cursor:pointer; font-size:var(--font-sm); color:var(--cb-text-dim); padding:6px 0; }

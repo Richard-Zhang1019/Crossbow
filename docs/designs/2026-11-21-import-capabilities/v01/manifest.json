@@ -1,0 +1,76 @@
+{
+  "date": "2026-11-21",
+  "version": "v01",
+  "issue": 599,
+  "branch": "codex/599-import-capabilities",
+  "base_commit": "bdefbcfddb3b9364c545b8e370340544808637f3",
+  "status": "implemented; local, simulated UI and controlled native checks passed; review pending",
+  "input": "synthetic localhost/documentation endpoints; fixed upstream client export source structures; no user credentials",
+  "source_sha256": {
+    "apps/desktop/src/pages/Profiles/ImportCompatibility.tsx": "e30c59f1e28b23810e49e2240add147a39e6ecd2b7724df663f96ebb4f4b29c5",
+    "apps/desktop/src/pages/Profiles/ImportCompatibility.css": "833a3ae581d54ff2f08d517e897239feea2d097be64aa0b3555e02b0e5e56b28",
+    "apps/desktop/src/pages/Profiles/index.tsx": "60d9d943c333c53b53bfe1bcac2bc3cd3a34ace81d4edbc51da46cf8bfcb367d",
+    "apps/desktop/src/i18n/i18n.ts": "01b5048d9e2258ef620b45b49f39378335b8fb2d6d414d4b1811b5197402e52f",
+    "apps/desktop/src/services/ipc.ts": "57c69c3fea556fd510e5c4262cdc9cd824d8e07ae709f23e3dc1fbb88779e40b",
+    "apps/desktop/src-tauri/src/commands/profiles.rs": "60ae9b80d95e23633cc78b5e52a0d2cbe94de393c09e80c63dc7cdf1a844d7c8",
+    "apps/desktop/src-tauri/src/commands/helpers.rs": "2879868a61262653f67b0c75bbe606e606e37086d9333b9c21643750b2ddbcd7",
+    "crates/crossbow-core/src/share_links.rs": "816e788065870797cd921984f4653386dbfd29ede371b1fed09bf15388c0371d",
+    "crates/crossbow-core/tests/share_links_native.rs": "01b001c59aafd9ad1cda3f35b63325a7cf520f91908f2a7abdcdab6ac2b30cdd",
+    "crates/crossbow-core/tests/fixtures/share-links/clients.json": "262e4ee07e6b002de94edff092f22a245da27b2e130c5eb2e16c1e47455945c9",
+    "crates/crossbow-core/tests/fixtures/share-links/README.md": "aa2e75d3e524011a27d12f19cf45b122e163b19128962c60701034db4fd9d3e5",
+    "scripts/dev/verify-import-capabilities.mjs": "60aa5d3b2124e0ec40e95d22ac14214e2c291a435fef8c1dc8f3cf92ffda22f8",
+    "scripts/dev/verify-lib.mjs": "8569ebbef989e6d9833b6851f74f25cbe0ddde1cd7362508121a887140b78689",
+    "scripts/dev/verify-share-links-native.py": "2a1de0d86fcdd246b9b740a7c14a8aa72569133ab6e073a92c6aa0bd3fd4106d"
+  },
+  "artifacts": [
+    {
+      "path": "SPEC.md",
+      "sha256": "baba1c7bd94560c9ba5010a944ddf27dd57ca7617a9cd84b027d4d236e04cf40"
+    },
+    {
+      "path": "previews/before.png",
+      "sha256": "dfdd1d34d055de32616dcd41ec9bf7466a1870e7235056f0acfc4c048bb4871f"
+    },
+    {
+      "path": "previews/dark-small.png",
+      "sha256": "ba86285013381770fe62d8ea615c790aaab7e5aef81222a99c89cd6ad7a67393"
+    },
+    {
+      "path": "previews/expanded.png",
+      "sha256": "465ef0170a87fae12ebc6ecd98b85b375c1889466aa899777d8c047ecea24ae0"
+    },
+    {
+      "path": "previews/failed.png",
+      "sha256": "b49d6e7c1ab0436af5e99415466b7fc08e1fb88b69d035d2bd8fe13ea36a7222"
+    },
+    {
+      "path": "previews/light.png",
+      "sha256": "dc35a4b39baa51c9ae88d35a713a863654388bbd9dab3924530240d8fdc4ba69"
+    },
+    {
+      "path": "source.zip",
+      "sha256": "189e1da573a36335c154719b14cb3b6c5b5772392e1151cde61bec97f763919b"
+    },
+    {
+      "path": "verification/native.json",
+      "sha256": "1efaeda52e44b6a8d902f3015366a49d3d13e63f7db05d4a960785848ff86cce"
+    }
+  ],
+  "before_capture_base_commit": "ea79f13072cc42fd0b444010d090e7c2add3de69",
+  "verification": {
+    "desktop_tests_passed": 345,
+    "desktop_tests_ignored": 4,
+    "core_unit_passed": 174,
+    "frontend_tests_passed": 43,
+    "existing_ui_scenarios_passed": 10,
+    "import_ui": "passed production React + mocked IPC",
+    "native_positive_tcp_udp": 6,
+    "native_negative_rejections": 4,
+    "unverified": [
+      "native desktop full click flow",
+      "public peers and TUN",
+      "running exporting client apps",
+      "other platforms or engine versions"
+    ]
+  }
+}

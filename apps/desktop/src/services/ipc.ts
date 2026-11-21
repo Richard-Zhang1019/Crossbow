@@ -353,7 +353,16 @@ export interface PlatformCapabilities {
   app_update: boolean;
 }
 
+export interface ImportInspection {
+  engine: "mihomo" | "singbox";
+  tested_version: string;
+  status: "empty" | "remote" | "invalid" | "compatible" | "unsupported";
+  node_count: number;
+  protocols: string[];
+  capabilities: {protocol: "hy2" | "tuic" | "reality"; mihomo: "subset" | "limited" | "unsupported"; singbox: "subset" | "limited" | "unsupported"}[];
+}
 export const ipc = {
+  inspectProfileImport: (content: string) => invoke<ImportInspection>("inspect_profile_import", {content}),
   platformCapabilities: () => invoke<PlatformCapabilities>("platform_capabilities"),
   onUpdateState: (cb: (s: UpdateState | null) => void) =>
     listen<UpdateState | null>("update://state", (e) => cb(parsePayload<UpdateState | null>(e.payload))),

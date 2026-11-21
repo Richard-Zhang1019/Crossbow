@@ -933,6 +933,7 @@ pub fn run() {
             active_profile_id,
             import_profile_url,
             import_profile_content,
+            inspect_profile_import,
             import_profile_file,
             update_profile,
             set_profile_interval,
