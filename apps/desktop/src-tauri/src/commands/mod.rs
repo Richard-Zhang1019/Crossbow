@@ -7,6 +7,7 @@ pub mod monitor;
 pub mod overrides;
 pub mod profiles;
 pub mod proxies;
+pub mod rule_sets;
 pub mod rules;
 pub mod scene;
 pub mod settings;

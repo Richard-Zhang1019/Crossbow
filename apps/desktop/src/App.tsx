@@ -85,7 +85,7 @@ export default function App() {
   const [settingSection, setSettingSection] = useState<"network" | "appearance" | "logs" | "app">(
     "network",
   );
-  const [configTab, setConfigTab] = useState<"sources" | "overrides" | "process">("sources");
+  const [configTab, setConfigTab] = useState<"sources" | "overrides" | "process" | "rulesets">("sources");
   const [profileName, setProfileName] = useState("");
   const [appVersion, setAppVersion] = useState("");
   const [coreStatus, setCoreStatus] = useState<CoreStatus | null>(null);
@@ -371,6 +371,7 @@ export default function App() {
             >
               {t("studio.processRules")}
             </ButtonBase>
+            <ButtonBase className={configTab === "rulesets" ? "active" : ""} onClick={() => {setDestination(null);setConfigTab("rulesets");}}>{t("rs.title")}</ButtonBase>
           </nav>
         )}
         <div className={`cb-page-content cb-view-${page}`}>

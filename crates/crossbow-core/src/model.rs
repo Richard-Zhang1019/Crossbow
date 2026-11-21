@@ -192,6 +192,9 @@ pub struct StoreSchema {
     /// 失效（订阅更新后组名消失）的规则在渲染时防御性丢弃。
     #[serde(default)]
     pub process_rules: Vec<ProcessRule>,
+    /// Application-managed rule subscriptions and last-good local cache (#571).
+    #[serde(default)]
+    pub rule_sets: Vec<crate::rule_sets::RuleSet>,
 }
 
 /// SSID 网络场景（#566）：Wi-Fi 名称 → 进入该网络时的接管动作。
@@ -324,6 +327,7 @@ impl Default for StoreSchema {
             update: UpdateSettings::default(),
             scenes: NetworkScenes::default(),
             process_rules: Vec::new(),
+            rule_sets: Vec::new(),
         }
     }
 }
