@@ -29,6 +29,9 @@ pub enum ConvertError {
     NoProxies,
     #[error("解析失败：{0}")]
     Parse(String),
+    /// #593：顶层字段无法等价转换——明确拒绝，不静默丢语义。
+    #[error("切换到 sing-box 会丢失以下配置的解析语义：{fields}。{hint}")]
+    UnsupportedFields { fields: String, hint: String },
 }
 
 impl From<serde_yaml::Error> for ConvertError {
@@ -120,6 +123,57 @@ struct ClashGroup {
     other_fields: BTreeMap<String, Value>,
 }
 
+/// #593：顶层语义兼容门禁。转换器当前只等价处理节点/组/规则/规则集；
+/// 以下顶层字段携带解析语义（DNS 出口、内网域名映射、嗅探、TUN），
+/// 静默丢弃会让「切换成功」改变解析行为（DNS 泄漏/内网解析失败）——
+/// 明确拒绝并保持旧配置/运行内核，错误只报字段名，不回显值
+/// （内网地址可能敏感）。后续逐项扩充等价子集时放宽。
+fn check_unsupported_top_level(doc: &Value) -> Result<(), ConvertError> {
+    let mut unsupported: Vec<&'static str> = Vec::new();
+
+    // DNS 段整体拒绝：nameserver/默认上游/fake-ip/ipv6 语义均无法证明等价
+    // （转换器生成固定 8.8.8.8/223.5.5.5——企业/家庭内网 DNS 会被绕开）。
+    let dns = doc.get("dns");
+    if dns.is_some_and(|v| !v.is_null()) {
+        unsupported.push("dns（自定义 DNS 上游与分域名解析）");
+    }
+    // hosts：本地域名映射无 sing-box 等价实现
+    if doc
+        .get("hosts")
+        .and_then(|v| v.as_object())
+        .is_some_and(|m| !m.is_empty())
+    {
+        unsupported.push("hosts（本地域名映射）");
+    }
+    // sniffer：enable 显式关闭时 mihomo 侧无行为，转换丢弃无害
+    let sniffer_on = doc
+        .get("sniffer")
+        .and_then(|v| v.get("enable"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if sniffer_on {
+        unsupported.push("sniffer（域名嗅探）");
+    }
+    // tun：订阅自带 tun.enable=true 时由内核自行接管——转换丢弃会静默
+    // 失去 TUN；false/缺失放行（本应用的 TUN 开关独立管理）。
+    let tun_on = doc
+        .get("tun")
+        .and_then(|v| v.get("enable"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if tun_on {
+        unsupported.push("tun（内核自带 TUN 配置）");
+    }
+
+    if unsupported.is_empty() {
+        return Ok(());
+    }
+    Err(ConvertError::UnsupportedFields {
+        fields: unsupported.join("、"),
+        hint: "请保持 mihomo 内核，或在订阅中移除这些段后重试".to_string(),
+    })
+}
+
 /// Clash YAML → sing-box JSON（pretty）。
 pub fn convert_to_singbox(
     clash_yaml: &str,
@@ -128,6 +182,8 @@ pub fn convert_to_singbox(
 ) -> Result<String, ConvertError> {
     let doc: Value =
         serde_yaml::from_str(clash_yaml).map_err(|e| ConvertError::Parse(format!("yaml: {e}")))?;
+
+    check_unsupported_top_level(&doc)?;
 
     let proxies: Vec<ClashProxy> =
         serde_json::from_value(doc.get("proxies").cloned().ok_or(ConvertError::NoProxies)?)
@@ -911,6 +967,180 @@ rules:
   - GEOIP,CN,DIRECT
   - MATCH,节点选择
 "#;
+
+    // ---- #593：DNS/hosts 语义门禁 ----
+
+    /// issue 场景夹具：内网 DNS、nameserver-policy、hosts——转换必须
+    /// 明确拒绝（不再"成功但丢配置"），且错误不回显具体地址。
+    const INTERNAL_DNS: &str = r#"
+mixed-port: 7897
+dns:
+  nameserver: [10.11.12.13]
+  nameserver-policy: {'+.internal.example': 10.11.12.13}
+hosts:
+  db.internal.example: 10.1.1.9
+proxies:
+  - name: "HK-01"
+    type: ss
+    server: a.example.com
+    port: 8388
+    cipher: aes-128-gcm
+    password: pw1
+rules:
+  - MATCH,HK-01
+"#;
+
+    #[test]
+    fn internal_dns_and_hosts_are_rejected_without_echoing_values() {
+        let err = convert_to_singbox(INTERNAL_DNS, 7897, false).unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("dns"), "应点名 dns 字段：{message}");
+        assert!(message.contains("hosts"), "应点名 hosts 字段：{message}");
+        // 不回显敏感/内网值
+        assert!(
+            !message.contains("10.11.12.13"),
+            "不得回显内网 DNS：{message}"
+        );
+        assert!(!message.contains("10.1.1.9"), "不得回显内网映射：{message}");
+        assert!(message.contains("保持 mihomo"), "应给出处理建议：{message}");
+    }
+
+    #[test]
+    fn default_dns_without_custom_segments_still_converts() {
+        // 无 dns/hosts/sniffer/tun 段：转换器固定 DNS 是当前等价兜底，
+        // 行为不变（#593 验收「默认 DNS」）
+        let out = convert_to_singbox(SAMPLE, 7897, false).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert!(v["dns"]["servers"].is_array());
+    }
+
+    #[test]
+    fn empty_hosts_and_disabled_sniffer_pass() {
+        let yaml = r#"
+mixed-port: 7897
+hosts: {}
+sniffer:
+  enable: false
+tun:
+  enable: false
+proxies:
+  - name: "HK-01"
+    type: ss
+    server: a.example.com
+    port: 8388
+    cipher: aes-128-gcm
+    password: pw1
+rules:
+  - MATCH,HK-01
+"#;
+        convert_to_singbox(yaml, 7897, false).unwrap();
+    }
+
+    #[test]
+    fn enabled_sniffer_or_tun_are_rejected() {
+        let sniffer = r#"
+mixed-port: 7897
+sniffer:
+  enable: true
+proxies:
+  - name: "HK-01"
+    type: ss
+    server: a.example.com
+    port: 8388
+    cipher: aes-128-gcm
+    password: pw1
+rules:
+  - MATCH,HK-01
+"#;
+        let err = convert_to_singbox(sniffer, 7897, false).unwrap_err();
+        assert!(err.to_string().contains("sniffer"));
+
+        let tun = r#"
+mixed-port: 7897
+tun:
+  enable: true
+proxies:
+  - name: "HK-01"
+    type: ss
+    server: a.example.com
+    port: 8388
+    cipher: aes-128-gcm
+    password: pw1
+rules:
+  - MATCH,HK-01
+"#;
+        let err = convert_to_singbox(tun, 7897, false).unwrap_err();
+        assert!(err.to_string().contains("tun"));
+    }
+
+    #[test]
+    fn disabled_dns_is_still_rejected_conservatively() {
+        // dns.enable=false 时 mihomo 用系统解析——转换器固定公网 DNS 会
+        // 改变出口语义（泄漏企业 DNS），保守拒绝。
+        let yaml = r#"
+mixed-port: 7897
+dns:
+  enable: false
+proxies:
+  - name: "HK-01"
+    type: ss
+    server: a.example.com
+    port: 8388
+    cipher: aes-128-gcm
+    password: pw1
+rules:
+  - MATCH,HK-01
+"#;
+        let err = convert_to_singbox(yaml, 7897, false).unwrap_err();
+        assert!(err.to_string().contains("dns"));
+    }
+
+    #[test]
+    fn invalid_dns_type_is_rejected_without_panic() {
+        let yaml = r#"
+mixed-port: 7897
+dns: "broken-string-value"
+proxies:
+  - name: "HK-01"
+    type: ss
+    server: a.example.com
+    port: 8388
+    cipher: aes-128-gcm
+    password: pw1
+rules:
+  - MATCH,HK-01
+"#;
+        let err = convert_to_singbox(yaml, 7897, false).unwrap_err();
+        assert!(err.to_string().contains("dns"));
+    }
+
+    #[test]
+    fn renders_unsupported_fields_error_distinct_from_yaml_error() {
+        // render 层透传：UnsupportedFields 不伪装成 InvalidYaml
+        let mut store = crate::model::StoreSchema::default();
+        store.engine.engine = crate::model::Engine::SingBox;
+        store.profiles.push(crate::model::Profile {
+            id: "p".into(),
+            name: "p".into(),
+            kind: crate::model::ProfileKind::Local,
+            url: None,
+            content: INTERNAL_DNS.into(),
+            update_interval_min: 0,
+            override_ids: Vec::new(),
+            last_updated: None,
+            traffic: None,
+            last_update: None,
+        });
+        store.active_profile = Some("p".into());
+        let err = match crate::render::render_config(&store) {
+            Err(e) => e,
+            Ok(_) => panic!("expected UnsupportedFields error"),
+        };
+        assert!(matches!(
+            err,
+            crate::render::RenderError::UnsupportedFields { .. }
+        ));
+    }
 
     #[test]
     fn converts_core_structure() {
