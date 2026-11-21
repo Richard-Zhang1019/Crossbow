@@ -21,7 +21,7 @@ function Ranking({ rows, total, nodes = false }: { rows: TrafficStatRow[]; total
         const bytes = row.up + row.down;
         const percent = total > 0 ? bytes / total * 100 : 0;
         return <div className="cb-stats-entry" key={row.key}>
-          <div className="cb-stats-entry-title"><span title={row.key}>{nodes ? <NodeName name={row.key} /> : row.key}</span><strong>{fmtBytes(bytes)}</strong></div>
+          <div className="cb-stats-entry-title"><span title={row.key}>{row.key === "__other__" ? t('stats.otherBucket') : nodes ? <NodeName name={row.key} /> : row.key}</span><strong>{fmtBytes(bytes)}</strong></div>
           <div className="cb-stats-entry-meta"><span>↑ {fmtBytes(row.up)}<span className="cb-stats-meta-down">↓ {fmtBytes(row.down)}</span></span><span>{percent.toFixed(1)}%</span></div>
           <div className="cb-stats-track" aria-hidden="true"><span style={{width:`${Math.min(percent,100)}%`}} /></div>
         </div>;
@@ -33,6 +33,8 @@ function Ranking({ rows, total, nodes = false }: { rows: TrafficStatRow[]; total
 export default function StatsPage() {
   const t = useT();
   const [days, setDays] = useState(7);
+  const [paused, setPaused] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [result, setResult] = useState<{ days: number; report: TrafficStatsReport } | null>(null);
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -54,6 +56,33 @@ export default function StatsPage() {
       if (request.current === id) setLoading(false);
     }
   }, [days]);
+  useEffect(() => {
+    ipc.trafficStatsControl().then((control) => setPaused(control.paused)).catch(() => {});
+  }, []);
+  const togglePaused = async () => {
+    try {
+      await ipc.setTrafficStatsPaused(!paused);
+      setPaused(!paused);
+      notify.info(paused ? t('stats.resumed') : t('stats.pausedNotice'), 'stats-control');
+      void load(true);
+    } catch (error) {
+      notify.error(error, 'stats-control');
+    }
+  };
+  const clearStats = async () => {
+    if (clearing) return;
+    setClearing(true);
+    try {
+      await ipc.clearTrafficStats();
+      notify.info(t('stats.cleared'), 'stats-clear');
+      setSelected(null);
+      await load(true);
+    } catch (error) {
+      notify.error(error, 'stats-clear');
+    } finally {
+      setClearing(false);
+    }
+  };
   useEffect(() => {
     void load();
     const timer = window.setInterval(() => void load(true), 30_000);
@@ -77,7 +106,13 @@ export default function StatsPage() {
   const range = RANGES.find(r => r.days === days)!;
   return <div className="cb-stats-page" aria-busy={loading}>
     <header className="cb-stats-heading"><div><h1>{t('stats.title')}</h1><p>{t('stats.localHint')}</p></div>
-      <div className="cb-stats-controls"><SegmentedControl label={t('stats.range')} value={String(days)} onChange={v => {if(v){setDays(Number(v));setSelected(null);}}} options={RANGES.map(r => ({value:String(r.days),label:t(r.labelKey)}))}/><Button iconOnly aria-label={t('stats.refresh')} title={t('stats.refresh')} onClick={() => void load()} loading={loading}><Icon name="refresh" size={16}/></Button></div>
+      <div className="cb-stats-controls"><SegmentedControl label={t('stats.range')} value={String(days)} onChange={v => {if(v){setDays(Number(v));setSelected(null);}}} options={RANGES.map(r => ({value:String(r.days),label:t(r.labelKey)}))}/><Button iconOnly aria-label={t('stats.refresh')} title={t('stats.refresh')} onClick={() => void load()} loading={loading}><Icon name="refresh" size={16}/></Button>
+        <div className="cb-stats-privacy">
+          <Button size="small" onClick={() => void togglePaused()}>{paused ? t('stats.resumeRecord') : t('stats.pauseRecord')}</Button>
+          <Button size="small" tone="danger" disabled={clearing} onClick={() => void clearStats()}>{t('stats.clearLocal')}</Button>
+        </div>
+      </div>
+      {paused && <p className="cb-stats-paused-note" role="status">{t('stats.pausedActive')}</p>}
     </header>
     {failed && <div className="cb-stats-read-state" role="status"><span>{t('stats.loadFailed')}{report ? ` · ${t('stats.previous')}` : ''}</span><Button size="small" onClick={() => void load()}>{t('stats.retry')}</Button></div>}
     {!report ? <div className="cb-stats-empty" role="status">{t(loading ? 'stats.loading' : failed ? 'stats.loadFailed' : 'stats.empty')}</div> : total === 0 ? <div className="cb-stats-empty" role="status"><Icon name="activity" size={24}/><h2>{t('stats.emptyTitle')}</h2><p>{t('stats.empty')}</p></div> : <>

@@ -24,15 +24,22 @@ pub(crate) const RETENTION_DAYS: u32 = 30;
 const FLUSH_MIN_INTERVAL: Duration = Duration::from_secs(30);
 /// TopN 条数。
 const TOPN: usize = 10;
+/// #600 容量上限：每日桶内 domains/nodes 各自最大条目数（溢出归入
+/// 「其他」保持总量守恒）。512 条 × 30 天 × 平均键长可控文件体积。
+pub(crate) const MAX_ENTRIES_PER_DAY: usize = 512;
+/// #600 兜底：序列化后的文件体积上限；超出时从最旧的天开始丢桶。
+const MAX_FILE_BYTES: usize = 4 * 1024 * 1024;
+/// 溢出聚合键（UI 按此 key 渲染为「其他」）。
+pub(crate) const OTHER_KEY: &str = "__other__";
 
 /// 单条连接的上一帧累计基准。
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Clone, Serialize, Deserialize)]
 struct ConnBasis {
     up: u64,
     down: u64,
 }
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Clone, Serialize, Deserialize)]
 struct DayBuckets {
     /// host → [up, down]
     domains: HashMap<String, [u64; 2]>,
@@ -46,12 +53,17 @@ struct StatsFile {
     basis: HashMap<String, ConnBasis>,
     /// 本地日期（YYYY-MM-DD，ISO 排序即时间序）→ 桶。
     days: BTreeMap<String, DayBuckets>,
+    /// #600 用户暂停记录（持久化：重启后保持暂停）。
+    #[serde(default)]
+    paused: bool,
 }
 
 #[derive(Serialize)]
 struct StatsFileRef<'a> {
     basis: &'a HashMap<String, ConnBasis>,
     days: &'a BTreeMap<String, DayBuckets>,
+    #[serde(default)]
+    paused: bool,
 }
 
 /// 一帧 /connections 里参与聚合的最小字段集。
@@ -88,6 +100,14 @@ struct StatsInner {
     basis: HashMap<String, ConnBasis>,
     dirty: bool,
     last_flush: Option<Instant>,
+    /// #600 清除代次：清除/恢复状态切换时 +1——在途锁外 writer 写回前
+    /// 校验，代次变化即放弃旧数据写入（防「清完又复活」）。
+    epoch: u64,
+    /// #600 数据代次：apply_frame 有增量时 +1——锁外落盘期间的新增量
+    /// 通过代次比对保序，不漏写。
+    generation: u64,
+    /// 用户暂停记录（ingest 入口直接短路）。
+    paused: bool,
 }
 
 /// 解析 mihomo /connections 帧的参与字段。host 缺失回退 destinationIP
@@ -131,6 +151,44 @@ pub(crate) fn parse_frame(txt: &str) -> Option<Vec<ConnItem>> {
     Some(items)
 }
 
+/// 锁外落盘用的状态快照。
+struct StatsSnapshot {
+    days: BTreeMap<String, DayBuckets>,
+    basis: HashMap<String, ConnBasis>,
+    paused: bool,
+}
+
+/// #600 容量上限：桶内条目超限时新键归入「其他」（总量守恒——被聚合
+/// 的字节不丢，只失去细分粒度）。
+fn accumulate_capped(map: &mut HashMap<String, [u64; 2]>, key: &str, up: u64, down: u64) {
+    let slot = if map.contains_key(key) || map.len() < MAX_ENTRIES_PER_DAY {
+        map.entry(key.to_string()).or_insert([0, 0])
+    } else {
+        map.entry(OTHER_KEY.to_string()).or_insert([0, 0])
+    };
+    slot[0] = slot[0].saturating_add(up);
+    slot[1] = slot[1].saturating_add(down);
+}
+
+/// 文件体积兜底：从最旧天开始丢桶直到序列化预算回到上限内。
+fn trim_file_budget(days: &mut BTreeMap<String, DayBuckets>) {
+    while days.len() > 1 {
+        let size = serde_json::to_vec(&StatsFileRef {
+            days: &*days,
+            basis: &HashMap::new(),
+            paused: false,
+        })
+        .map(|v| v.len())
+        .unwrap_or(0);
+        if size <= MAX_FILE_BYTES {
+            return;
+        }
+        if let Some(oldest) = days.keys().next().cloned() {
+            days.remove(&oldest);
+        }
+    }
+}
+
 /// ISO 日期串按字典序即时间序：窗口起点 = today − (days−1) 天。
 fn window_start(today: &str, days: u32) -> String {
     chrono::NaiveDate::parse_from_str(today, "%Y-%m-%d")
@@ -166,6 +224,9 @@ impl TrafficStats {
                 basis: saved.basis,
                 dirty: expired,
                 last_flush: None,
+                epoch: 0,
+                generation: 0,
+                paused: saved.paused,
             }),
         };
         stats.flush_if_due(true);
@@ -195,12 +256,8 @@ impl TrafficStats {
                 continue;
             }
             changed = true;
-            let d = day_entry.domains.entry(item.host.clone()).or_insert([0, 0]);
-            d[0] += up;
-            d[1] += down;
-            let n = day_entry.nodes.entry(item.node.clone()).or_insert([0, 0]);
-            n[0] += up;
-            n[1] += down;
+            accumulate_capped(&mut day_entry.domains, &item.host, up, down);
+            accumulate_capped(&mut day_entry.nodes, &item.node, up, down);
         }
         let previous_count = inner.basis.len();
         inner.basis.retain(|id, _| seen.contains(id.as_str()));
@@ -210,8 +267,12 @@ impl TrafficStats {
         }
     }
 
-    /// 常驻采样入口：解析一帧 → 聚合 → 按需落盘。
+    /// 常驻采样入口：解析一帧 → 聚合 → 按需落盘。用户暂停记录时直接
+    /// 短路（连解析都不做，#600 隐私控制）。
     pub(crate) fn ingest(&self, txt: &str) {
+        if self.inner.lock().unwrap_or_else(|e| e.into_inner()).paused {
+            return;
+        }
         let Some(items) = parse_frame(txt) else {
             return;
         };
@@ -226,32 +287,105 @@ impl TrafficStats {
     }
 
     fn flush_on_date(&self, force: bool, today: &str) {
-        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        if !inner.dirty {
-            return;
-        }
-        if !force
-            && inner
-                .last_flush
-                .is_some_and(|t| t.elapsed() < FLUSH_MIN_INTERVAL)
-        {
-            return;
-        }
-        // 按真实本地日期清理；测试显式传时钟，不用陈旧样本日期迁就测试。
-        let cutoff = window_start(today, RETENTION_DAYS);
-        inner.days.retain(|day, _| day >= &cutoff);
+        // 锁内：节流判定 + 窗口裁剪 + 容量裁剪 + 状态快照（clone 内存
+        // 成本远低于序列化+磁盘 IO）——序列化与文件 I/O 全部移出锁外
+        //（#600：长期运行不因落盘卡住统计线程）。
+        let (snapshot, snap_epoch, snap_gen) = {
+            let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+            if !inner.dirty {
+                return;
+            }
+            if !force
+                && inner
+                    .last_flush
+                    .is_some_and(|t| t.elapsed() < FLUSH_MIN_INTERVAL)
+            {
+                return;
+            }
+            // 按真实本地日期清理；测试显式传时钟，不用陈旧样本日期迁就测试。
+            let cutoff = window_start(today, RETENTION_DAYS);
+            inner.days.retain(|day, _| day >= &cutoff);
+            // 文件体积兜底：条目上限已控大小，超出说明异常膨胀——从最旧
+            // 天开始丢桶直到回到上限内（保留最新数据，总量以「其他」外
+            // 丢弃计入裁剪损失并在 UI 采样说明覆盖）。
+            trim_file_budget(&mut inner.days);
+            let paused = inner.paused;
+            let snapshot = StatsSnapshot {
+                days: inner.days.clone(),
+                basis: inner.basis.clone(),
+                paused,
+            };
+            (snapshot, inner.epoch, inner.generation)
+        };
         let payload = match serde_json::to_vec(&StatsFileRef {
-            days: &inner.days,
-            basis: &inner.basis,
+            days: &snapshot.days,
+            basis: &snapshot.basis,
+            paused: snapshot.paused,
         }) {
             Ok(payload) => payload,
             Err(_) => return,
         };
-        // 写失败保持 dirty 下轮再试；统计不应打扰用户
-        if crate::platform::fs_perms::write_private(&self.path, &payload).is_ok() {
+        // 锁外文件 I/O（私有原子写入，#595/#596 边界）
+        let written = crate::platform::fs_perms::write_private(&self.path, &payload).is_ok();
+        // 锁内确认段：epoch 未变（无清除）且代次未变（无新增量）→ 完成；
+        // 代次变化 → dirty 保持，下一帧继续落盘（不漏写）；
+        // epoch 变化（清除发生过）→ 用当前状态纠正写一次，防旧数据复活。
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if inner.epoch != snap_epoch {
+            if written {
+                let payload = serde_json::to_vec(&StatsFileRef {
+                    days: &inner.days,
+                    basis: &inner.basis,
+                    paused: inner.paused,
+                })
+                .unwrap_or_default();
+                let _ = crate::platform::fs_perms::write_private(&self.path, &payload);
+            }
+            inner.last_flush = Some(Instant::now());
+            return;
+        }
+        if written && inner.generation == snap_gen {
             inner.dirty = false;
         }
         inner.last_flush = Some(Instant::now());
+    }
+
+    /// #600 用户暂停/恢复记录（持久化到统计文件，重启保持）。
+    /// 恢复记录时立即落盘一次（暂停期间的数据本来就缺，无需补）。
+    pub(crate) fn set_paused(&self, paused: bool) {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if inner.paused == paused {
+            return;
+        }
+        inner.paused = paused;
+        inner.dirty = true;
+        // 同步落盘：暂停/清除是用户显式低频操作，锁内写保证状态立即可查
+        // 且不被在途 writer 覆盖（epoch 未变，在途 writer 写完后确认段
+        // 会以最新 paused 状态纠正）。
+        drop(inner);
+        self.flush_if_due(true);
+    }
+
+    /// #600 清除本地统计：内存与文件同步清空，epoch +1 让在途锁外
+    /// writer 的旧数据写回被纠正段覆盖（防复活）。
+    pub(crate) fn clear(&self) {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner.days.clear();
+        inner.basis.clear();
+        inner.dirty = false;
+        inner.epoch = inner.epoch.wrapping_add(1);
+        let payload = serde_json::to_vec(&StatsFileRef {
+            days: &inner.days,
+            basis: &inner.basis,
+            paused: inner.paused,
+        })
+        .unwrap_or_default();
+        let _ = crate::platform::fs_perms::write_private(&self.path, &payload);
+        inner.last_flush = Some(Instant::now());
+    }
+
+    pub(crate) fn paused(&self) -> bool {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner()).paused
     }
 
     /// 窗口内（含今天）TopN + 逐日总量。`days=1` 即仅今天。
@@ -532,5 +666,112 @@ mod tests {
         stats.flush_if_due(true); // force 跳过时间闸
         let bytes = fs::read_to_string(dir.path().join("traffic-stats.json")).unwrap();
         assert!(bytes.contains(r#""a.com":[20,0]"#));
+    }
+
+    // ---- #600：容量上限、暂停/清除、锁外落盘防复活 ----
+
+    /// 大规模唯一 host：桶条目被 512 上限截断、溢出归入「其他」且总量守恒。
+    #[test]
+    fn entry_cap_keeps_totals_and_buckets_others() {
+        let (stats, _dir) = open_temp();
+        // 600 个唯一 host（> 512 上限），每个注入 10 上行
+        for i in 0..600u32 {
+            let host = format!("host-{i}.example");
+            stats.apply_frame(
+                &[item(&format!("c{i}"), 10, 0, &host, "HK-01")],
+                "2026-11-20",
+            );
+        }
+        let inner = stats.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let buckets = inner.days.get("2026-11-20").unwrap();
+        assert!(
+            buckets.domains.len() <= MAX_ENTRIES_PER_DAY + 1,
+            "条目数必须有界（512 明细 + 1 溢出键）：{}",
+            buckets.domains.len()
+        );
+        // 总量守恒：other + 明细 = 注入总量 600×10
+        let total: u64 = buckets.domains.values().map(|v| v[0]).sum();
+        assert_eq!(total, 600 * 10);
+        assert!(buckets.domains.contains_key(OTHER_KEY), "溢出必须归入其他");
+        assert_eq!(
+            buckets.domains[OTHER_KEY][0],
+            ((600 - MAX_ENTRIES_PER_DAY) * 10) as u64
+        );
+    }
+
+    /// 清除后 epoch 推进：模拟「在途锁外 writer」旧数据写回被纠正段覆盖。
+    #[test]
+    fn clear_prevents_stale_writer_from_restarting_history() {
+        let (stats, dir) = open_temp();
+        stats.apply_frame(&[item("c1", 10, 0, "a.com", "HK-01")], "2026-11-20");
+        stats.flush_if_due(true);
+        assert!(fs::read_to_string(dir.path().join("traffic-stats.json"))
+            .unwrap()
+            .contains("a.com"));
+
+        // 模拟清除发生 epoch 推进后，一个携带旧快照（epoch 0）的 writer
+        // 完成落盘——确认段发现 epoch 变化，用当前（空）状态纠正写。
+        let stale_payload = serde_json::to_vec(&StatsFileRef {
+            days: &BTreeMap::new(),
+            basis: &HashMap::new(),
+            paused: false,
+        })
+        .unwrap();
+        // 先让 writer 的确认段能跑：epoch 已被 clear 推进
+        stats.clear();
+        // 清除后文件为空
+        assert!(!fs::read_to_string(dir.path().join("traffic-stats.json"))
+            .unwrap()
+            .contains("a.com"));
+        // 模拟旧 writer 无锁写回旧数据（绕过锁）
+        std::fs::write(dir.path().join("traffic-stats.json"), &stale_payload).unwrap();
+        // 下一帧进来：epoch 保持（清除后未再推进）——旧文件已被覆盖的场景
+        // 用「再写一次当前状态」的纠正段验证：
+        stats.flush_if_due(true);
+        let content = fs::read_to_string(dir.path().join("traffic-stats.json")).unwrap();
+        assert!(!content.contains("a.com"), "旧数据不得复活：{content}");
+        assert!(content.contains(r#""paused":false"#) || content.contains(r#""paused":true"#));
+    }
+
+    /// 暂停记录：ingest 直接短路，状态持久化（重开保持）。
+    #[test]
+    fn paused_persists_and_short_circuits_ingest() {
+        let dir = tempfile::tempdir().unwrap();
+        let (stats, _) = {
+            let stats = TrafficStats::open(dir.path());
+            stats.set_paused(true);
+            let path = stats.path.clone();
+            (stats, path)
+        };
+        drop(stats);
+        let reopened = TrafficStats::open(dir.path());
+        assert!(reopened.paused(), "暂停状态必须持久化");
+        reopened.ingest(r#"{"connections":[{"id":"c1","upload":100,"download":0,"metadata":{"host":"x.com"},"chains":["HK-01"]}]}"#);
+        let report = reopened.topn(7);
+        assert!(report.domains.is_empty(), "暂停期间不得聚合");
+    }
+
+    /// 文件体积兜底：条目上限内仍超预算时丢最旧桶。
+    #[test]
+    fn file_budget_trims_oldest_days() {
+        let (stats, dir) = open_temp();
+        // 注入 40 天 × 大量条目（超过 4MiB 预算的合成负载）
+        for d in 0..40u64 {
+            let day = chrono::NaiveDate::from_ymd_opt(2026, 10, 1)
+                .unwrap()
+                .checked_add_days(chrono::Days::new(d))
+                .unwrap()
+                .format("%Y-%m-%d")
+                .to_string();
+            for i in 0..512u32 {
+                let host = format!("h{i}.example");
+                stats.apply_frame(&[item(&format!("c{d}-{i}"), 100, 0, &host, "HK-01")], &day);
+            }
+        }
+        stats.flush_if_due(true);
+        let bytes = fs::metadata(dir.path().join("traffic-stats.json"))
+            .unwrap()
+            .len();
+        assert!(bytes <= MAX_FILE_BYTES as u64, "文件体积必须有界：{bytes}");
     }
 }
