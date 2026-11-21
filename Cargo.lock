@@ -877,10 +877,11 @@ checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
 
 [[package]]
 name = "crossbow-core"
-version = "0.15.1"
+version = "0.15.2"
 dependencies = [
  "base64 0.22.1",
  "boa_engine",
+ "libc",
  "percent-encoding",
  "serde",
  "serde_json",
@@ -893,7 +894,7 @@ dependencies = [
 
 [[package]]
 name = "crossbow-desktop"
-version = "0.15.1"
+version = "0.15.2"
 dependencies = [
  "block2",
  "chrono",
@@ -940,7 +941,7 @@ dependencies = [
 
 [[package]]
 name = "crossbow-service"
-version = "0.15.1"
+version = "0.15.2"
 dependencies = [
  "libc",
  "serde_json",

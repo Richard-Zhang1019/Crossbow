@@ -3,18 +3,16 @@
 //! Store 配置与快照、desktop 的 journal/log 写入共用这一份实现——避免
 //! core 与 desktop 各自维护不一致的平台语义。保证：
 //!
-//! - **私有**：Unix 普通文件 0600（显式 mode + 旧文件收敛），专用目录
-//!   0700；Windows 依赖用户目录 ACL 继承（`C:\Users\<u>\AppData` 天然
-//!   仅本用户 + SYSTEM + 管理员可见），POSIX mode 无效也不需要。
-//! - **原子**：同目录随机名独占创建临时文件（`create_new` 天然拒绝
-//!   攻击者预置的 symlink 占位——已存在即失败，不存在 O_NOFOLLOW 需求）
-//!   → 全量写入 → 文件 `sync_all`（Windows 为 FlushFileBuffers）→
-//!   rename 原子替换 → 失败清理本次临时文件。
-//! - **耐久**：rename 后 Unix 尽力同步父目录（Linux 生效；macOS 对目录
-//!   fd 的 fsync 返回 EINVAL，忽略——APFS 日志承担目录项持久化；Windows
-//!   无目录 fsync API，依赖 NTFS 元数据日志）。
-//! - **边界**：只处理 Crossbow 拥有的路径；目标为符号链接/目录时明确
-//!   拒绝，不跟随、不覆盖；不递归触碰用户其他文件；失败不写日志内容。
+//! - Unix files are 0600 and owned directories 0700. Windows inherits the
+//!   parent directory ACL; this is not an explicit ACL migration guarantee.
+//! - An exclusively created temporary file is written and synced before rename.
+//!   Failures before rename keep the old target; failures after rename may leave
+//!   the complete new target installed and must still be reported to the caller.
+//! - Unix parent directory sync errors are reported, except when the filesystem
+//!   explicitly reports that directory sync is unsupported. Windows uses the
+//!   standard rename implementation without claiming power-loss guarantees.
+//! - Permission migration uses no-follow handles and only changes owned paths.
+//!   Tests inject failures; they do not simulate actual power loss.
 
 #[cfg(unix)]
 use std::fs::File;
@@ -44,14 +42,20 @@ pub(crate) enum IoStep {
 /// 退出路径（含断言 panic）时复位。
 #[cfg(any(test, feature = "test-io-inject"))]
 mod inject {
-    use std::cell::Cell;
+    use std::cell::{Cell, RefCell};
+    use std::path::{Path, PathBuf};
 
     thread_local! {
         static FAIL_AT: Cell<usize> = const { Cell::new(0) };
         static STEP: Cell<usize> = const { Cell::new(0) };
+        static TARGET: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+        static ACTIVE: Cell<bool> = const { Cell::new(true) };
     }
 
     pub(crate) fn step_gate(step: super::IoStep) -> Result<(), std::io::Error> {
+        if !ACTIVE.with(Cell::get) {
+            return Ok(());
+        }
         let n = STEP.with(|s| {
             let next = s.get() + 1;
             s.set(next);
@@ -69,12 +73,21 @@ mod inject {
         STEP.with(|s| s.set(0));
     }
 
+    pub(crate) fn begin_write(path: &Path) {
+        reset_steps();
+        ACTIVE.with(|active| {
+            active.set(TARGET.with(|target| target.borrow().as_ref().is_none_or(|p| p == path)));
+        });
+    }
+
     /// 持注入的 guard：离开任何退出路径时复位。
     pub struct InjectGuard;
 
     impl Drop for InjectGuard {
         fn drop(&mut self) {
             FAIL_AT.with(|f| f.set(0));
+            TARGET.with(|target| *target.borrow_mut() = None);
+            ACTIVE.with(|active| active.set(true));
             reset_steps();
         }
     }
@@ -82,15 +95,24 @@ mod inject {
     /// 注入第 `n` 个 IO 步骤失败（本线程），guard 释放时复位。
     pub fn inject_at(n: usize) -> InjectGuard {
         FAIL_AT.with(|f| f.set(n));
+        TARGET.with(|target| *target.borrow_mut() = None);
+        ACTIVE.with(|active| active.set(true));
         reset_steps();
         InjectGuard
+    }
+
+    /// Target a specific file so a successful snapshot does not consume the fixture.
+    pub fn inject_path_at(path: &Path, n: usize) -> InjectGuard {
+        let guard = inject_at(n);
+        TARGET.with(|target| *target.borrow_mut() = Some(path.to_owned()));
+        guard
     }
 }
 
 #[cfg(any(test, feature = "test-io-inject"))]
-pub use inject::inject_at;
-#[cfg(any(test, feature = "test-io-inject"))]
 use inject::step_gate;
+#[cfg(any(test, feature = "test-io-inject"))]
+pub use inject::{inject_at, inject_path_at};
 
 #[cfg(not(any(test, feature = "test-io-inject")))]
 fn step_gate(_step: IoStep) -> io::Result<()> {
@@ -121,7 +143,7 @@ fn unique_temp_path(target: &Path) -> PathBuf {
 /// 任何阶段都不破坏最后可用版本）。
 pub fn write_private_atomic(path: &Path, contents: &[u8]) -> io::Result<()> {
     #[cfg(any(test, feature = "test-io-inject"))]
-    inject::reset_steps();
+    inject::begin_write(path);
     // 目标边界：符号链接与目录明确拒绝（不跟随、不覆盖）
     match path.symlink_metadata() {
         Ok(meta) if !meta.is_file() => {
@@ -137,8 +159,7 @@ pub fn write_private_atomic(path: &Path, contents: &[u8]) -> io::Result<()> {
     let temp = unique_temp_path(path);
     // 独占创建：目标名被占位（含 symlink）即失败
     step_gate(IoStep::Create)?;
-    // 显式 mode 0600：任意 umask 下屏蔽位只可能去掉 group/other 权限，
-    // 0600 本就没有这些位——私有语义不变。
+    // Explicit private mode; supported umasks 022/002/077 preserve owner access.
     let mut file = {
         #[cfg(unix)]
         {
@@ -158,7 +179,13 @@ pub fn write_private_atomic(path: &Path, contents: &[u8]) -> io::Result<()> {
         }
     };
     let result = (|| -> io::Result<()> {
-        step_gate(IoStep::Write)?;
+        let write_check = step_gate(IoStep::Write);
+        // A write failure fixture leaves a partial temporary file to verify cleanup.
+        #[cfg(any(test, feature = "test-io-inject"))]
+        if write_check.is_err() {
+            file.write_all(&contents[..contents.len() / 2])?;
+        }
+        write_check?;
         file.write_all(contents)?;
         step_gate(IoStep::Sync)?;
         file.sync_all()
@@ -175,54 +202,90 @@ pub fn write_private_atomic(path: &Path, contents: &[u8]) -> io::Result<()> {
         let _ = fs::remove_file(&temp);
         return result;
     }
-    // 目录项持久化：Linux fsync 目录生效；macOS/Windows 平台语义见模块注释
     #[cfg(unix)]
-    if let Some(parent) = path.parent() {
-        if let Ok(dir) = File::open(parent) {
-            let _ = step_gate(IoStep::ParentSync).and_then(|()| dir.sync_all());
+    {
+        step_gate(IoStep::ParentSync)?;
+        let parent = path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let dir = File::open(parent)?;
+        if let Err(error) = dir.sync_all() {
+            // EINVAL/Unsupported are filesystem capabilities, not a blanket
+            // macOS exemption. EIO, permission and open errors must propagate.
+            if error.raw_os_error() != Some(libc::EINVAL)
+                && error.kind() != io::ErrorKind::Unsupported
+            {
+                return Err(error);
+            }
         }
     }
     Ok(())
 }
 
-/// 收敛既有文件权限到私有（Unix 0600；Windows 依赖目录 ACL，no-op）。
-/// 不跟随符号链接；失败为 best effort（调用方自决是否上报）。
+/// Tighten an existing regular file without following symlinks.
 pub fn ensure_private(path: &Path) -> io::Result<()> {
-    let meta = path.symlink_metadata()?;
-    if !meta.is_file() {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        let file = OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(path)?;
+        let meta = file.metadata()?;
+        if !meta.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "expected a regular file",
+            ));
+        }
+        if meta.permissions().mode() & 0o7777 != 0o600 {
+            file.set_permissions(fs::Permissions::from_mode(0o600))?;
+        }
+    }
+    #[cfg(not(unix))]
+    if !path.symlink_metadata()?.is_file() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "expected a regular file",
         ));
     }
-    #[cfg(unix)]
-    {
-        let mode = meta.permissions().mode() & 0o7777;
-        if mode != 0o600 {
-            fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = path;
-    }
     Ok(())
 }
 
-/// 专用目录权限收敛（Unix 0700；Windows no-op）。
+/// Prepare an owned directory; never chmod a symlink's target or existing parents.
 pub fn ensure_private_dir(dir: &Path) -> io::Result<()> {
-    fs::create_dir_all(dir)?;
+    match dir.symlink_metadata() {
+        Ok(meta) if !meta.is_dir() => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "expected a directory",
+            ));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            let mut builder = fs::DirBuilder::new();
+            builder.recursive(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                builder.mode(0o700);
+            }
+            builder.create(dir)?;
+        }
+        Err(error) => return Err(error),
+    }
     #[cfg(unix)]
     {
-        let meta = dir.symlink_metadata()?;
-        let mode = meta.permissions().mode() & 0o7777;
-        if mode != 0o700 {
-            fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
+        use std::os::unix::fs::OpenOptionsExt;
+        let handle = OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_DIRECTORY)
+            .open(dir)?;
+        let meta = handle.metadata()?;
+        if meta.permissions().mode() & 0o7777 != 0o700 {
+            handle.set_permissions(fs::Permissions::from_mode(0o700))?;
         }
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = dir;
     }
     Ok(())
 }
@@ -235,10 +298,28 @@ mod tests {
         path.metadata().unwrap().permissions().mode() & 0o777
     }
 
-    /// umask 022/002/077 下 0600 的保证来自显式 mode——屏蔽位只可能去掉
-    /// group/other 权限，而 0600 没有这些权限，任意 umask 下不变。
+    /// Change the process-wide umask only in isolated test subprocesses.
     #[test]
-    fn private_write_is_0600_under_any_umask() {
+    fn private_write_is_0600_under_supported_umasks() {
+        if let Ok(mask) = std::env::var("CROSSBOW_SECURE_WRITE_TEST_UMASK") {
+            let mask = u32::from_str_radix(&mask, 8).unwrap();
+            unsafe {
+                libc::umask(mask as libc::mode_t);
+            }
+        } else {
+            for mask in ["022", "002", "077"] {
+                let result = std::process::Command::new(std::env::current_exe().unwrap())
+                    .args([
+                        "--exact",
+                        "secure_write::tests::private_write_is_0600_under_supported_umasks",
+                    ])
+                    .env("CROSSBOW_SECURE_WRITE_TEST_UMASK", mask)
+                    .output()
+                    .unwrap();
+                assert!(result.status.success(), "mask {mask}: {:?}", result);
+            }
+            return;
+        }
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("store.json");
         write_private_atomic(&path, br#"{"v":1}"#).unwrap();
@@ -289,9 +370,8 @@ mod tests {
         fs::write(&path, br#"{"good":true}"#).unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
 
-        // 步骤序列：1 create / 2 write / 3 sync / 4 rename。parent-sync
-        // 不在注入矩阵：其失败在生产语义下是容忍的（macOS 目录 fsync
-        // 恒 EINVAL），仅目录项持久性降级，不产生数据损坏。
+        // 1 create / 2 partial write / 3 file sync / 4 rename.
+        // Post-rename directory sync has its own complete-new-file regression.
         for fail_at in 1..=4 {
             let _inject = inject_at(fail_at);
             let result = write_private_atomic(&path, br#"{"next":2}"#);
@@ -313,6 +393,29 @@ mod tests {
             "clean write after guard drop must succeed: {result:?}"
         );
         assert_eq!(fs::read(&path).unwrap(), br#"{"next":2}"#);
+    }
+
+    #[test]
+    fn private_directory_rejects_symlinks_without_chmod_target() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = root.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::set_permissions(&outside, fs::Permissions::from_mode(0o755)).unwrap();
+        let link = root.path().join("linked");
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+        assert!(ensure_private_dir(&link).is_err());
+        assert_eq!(mode(&outside), 0o755);
+    }
+
+    #[test]
+    fn parent_sync_failure_reports_error_after_complete_replacement() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("store.json");
+        fs::write(&path, br#"{"old":true}"#).unwrap();
+        let _inject = inject_at(5);
+        assert!(write_private_atomic(&path, br#"{"new":true}"#).is_err());
+        assert_eq!(fs::read(&path).unwrap(), br#"{"new":true}"#);
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
     }
 
     #[test]

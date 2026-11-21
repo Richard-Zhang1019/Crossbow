@@ -39,104 +39,96 @@ impl Store {
     /// （文件未坏只是读不了）不做恢复，错误向上传播以明确暴露。
     /// 未来 schema 同样向上传播——旧版本不得自动降级覆盖新数据。
     pub fn open(dir: &Path) -> Result<Self> {
-        // #595：数据目录与既有文件权限收敛（历史版本 umask 下落 0644/0755）；
-        // 失败为 best effort——权限收紧不阻断启动。
-        let _ = crate::secure_write::ensure_private_dir(dir);
+        crate::secure_write::ensure_private_dir(dir)?;
         let path = dir.join("store.json");
-        let _ = crate::secure_write::ensure_private(&path);
-
-        let primary = if path.exists() {
-            match fs::read_to_string(&path) {
-                Ok(raw) => match Self::load_str(&raw) {
-                    Ok(data) => {
-                        return Ok(Self {
-                            path,
-                            data,
-                            recovery: None,
-                        })
+        let present = match crate::secure_write::ensure_private(&path) {
+            Ok(()) => true,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(error) => return Err(error.into()),
+        };
+        let snapshots = dir.join("snapshots");
+        match snapshots.symlink_metadata() {
+            Ok(_) => {
+                crate::secure_write::ensure_private_dir(&snapshots)?;
+                for entry in fs::read_dir(&snapshots)? {
+                    let entry = entry?;
+                    if is_snapshot_name(&entry.file_name()) {
+                        crate::secure_write::ensure_private(&entry.path())?;
                     }
-                    // 未来 schema：绝不自动降级写回，向上暴露升级信息
-                    Err(error @ Error::SchemaTooNew { .. }) => return Err(error),
-                    // 仅解析失败进恢复路径
-                    Err(error) => Err(error),
-                },
-                // 权限/IO 类错误：文件未必损坏，恢复可能越权访问他人数据——
-                // 明确暴露，不隔离、不回落（#594 验收：确定结果）。
-                Err(error) => return Err(Error::Io(error)),
+                }
             }
-        } else {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        if present {
+            match Self::load_bytes(&fs::read(&path)?) {
+                Ok(data) => {
+                    return Ok(Self {
+                        path,
+                        data,
+                        recovery: None,
+                    })
+                }
+                Err(error @ Error::SchemaTooNew { .. }) => return Err(error),
+                Err(_) => {}
+            }
+        }
+
+        let mut recovered = None;
+        for snapshot in Self::snapshots_valid_sorted(dir)? {
+            let raw = fs::read(&snapshot)?;
+            match Self::load_bytes(&raw) {
+                Ok(data) => {
+                    recovered = Some((
+                        data,
+                        format!(
+                            "snapshot:{}",
+                            snapshot.file_name().unwrap().to_string_lossy()
+                        ),
+                    ));
+                    break;
+                }
+                Err(error @ Error::SchemaTooNew { .. }) => return Err(error),
+                Err(_) => {}
+            }
+        }
+        // A previous attempt may have quarantined the primary and then failed
+        // to write its replacement. Missing primary is not necessarily first run.
+        let previous_quarantine = fs::read_dir(dir)?
+            .map(|entry| entry.map(|entry| entry.file_name()))
+            .collect::<std::io::Result<Vec<_>>>()?
+            .into_iter()
+            .filter_map(|name| name.into_string().ok())
+            .filter(|name| name.starts_with("store.json.corrupt-"))
+            .max();
+        if !present && recovered.is_none() && previous_quarantine.is_none() {
             return Ok(Self {
                 path,
                 data: StoreSchema::default(),
                 recovery: None,
             });
-        };
-
-        // ---- 恢复路径（主文件解析失败/损坏）----
-        let report_reason = match primary {
-            Ok(data) => {
-                return Ok(Self {
-                    path,
-                    data,
-                    recovery: None,
-                })
-            }
-            Err(error) => format!("主文件解析失败：{error}"),
-        };
-
-        // 隔离损坏原件（原子 rename，保留可追溯；重启可重复恢复——
-        // 隔离后 store.json 不存在，下一轮恢复直接走快照/默认）。
-        let quarantined = Self::quarantine_corrupt(&path)?;
-
-        // 快照按文件名（纳秒时间戳）倒序 = 时间倒序，逐个校验
-        let mut recovered_source = String::new();
-        let mut recovered: Option<StoreSchema> = None;
-        for snapshot in Self::snapshots_valid_sorted(dir)? {
-            let raw = match fs::read_to_string(&snapshot) {
-                Ok(raw) => raw,
-                Err(_) => continue,
-            };
-            match Self::load_str(&raw) {
-                Ok(data) => {
-                    recovered_source = format!(
-                        "snapshot:{}",
-                        snapshot
-                            .file_name()
-                            .map(|n| n.to_string_lossy().into_owned())
-                            .unwrap_or_default()
-                    );
-                    recovered = Some(data);
-                    break;
-                }
-                Err(_) => continue,
-            }
         }
-
+        let quarantined = if present {
+            Self::quarantine_corrupt(&path)?
+        } else {
+            previous_quarantine
+        };
         let (data, source, reason) = match recovered {
-            Some(data) => {
-                // 恢复的快照写回为主文件（私有耐久写入，#595 边界）：
-                // 让磁盘状态与内存一致，避免下次启动再次走恢复。
-                crate::secure_write::write_private_atomic(
-                    &path,
-                    &serde_json::to_vec_pretty(&data)?,
-                )
-                .map_err(Error::Io)?;
-                (data, recovered_source, "已从快照恢复".to_string())
-            }
+            Some((data, source)) => (data, source, "主文件不可用，已从快照恢复"),
             None => (
                 StoreSchema::default(),
                 "default".to_string(),
-                "无可用快照，已从默认配置启动".to_string(),
+                "主文件不可用，无可用快照，已从默认配置启动",
             ),
         };
-        let reason = format!("{report_reason}；{reason}");
+        crate::secure_write::write_private_atomic(&path, &serde_json::to_vec_pretty(&data)?)?;
         Ok(Self {
             path,
             data,
             recovery: Some(RecoveryReport {
                 source,
                 quarantined_as: quarantined,
-                reason,
+                reason: reason.to_string(),
             }),
         })
     }
@@ -160,17 +152,19 @@ impl Store {
     /// 数据目录下的快照列表，文件名倒序（纳秒时间戳命名 = 时间倒序）。
     fn snapshots_valid_sorted(dir: &Path) -> Result<Vec<PathBuf>> {
         let snap_dir = dir.join("snapshots");
-        let mut snaps: Vec<PathBuf> = match fs::read_dir(&snap_dir) {
-            Ok(entries) => entries
-                .filter_map(|e| e.ok().map(|e| e.path()))
-                .filter(|p| {
-                    p.file_name()
-                        .map(|n| n.to_string_lossy().starts_with("store-"))
-                        .unwrap_or(false)
-                })
-                .collect(),
-            Err(_) => Vec::new(),
-        };
+        let mut snaps = Vec::new();
+        match fs::read_dir(&snap_dir) {
+            Ok(entries) => {
+                for entry in entries {
+                    let entry = entry?;
+                    if is_snapshot_name(&entry.file_name()) {
+                        snaps.push(entry.path());
+                    }
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
         snaps.sort();
         snaps.reverse();
         Ok(snaps)
@@ -178,13 +172,25 @@ impl Store {
 
     /// 解析并迁移存储内容；未来版本直接拒绝（防止旧程序写坏新数据）。
     pub fn load_str(raw: &str) -> Result<StoreSchema> {
-        let mut data: StoreSchema = serde_json::from_str(raw)?;
-        if data.schema_version > SCHEMA_VERSION {
+        Self::load_bytes(raw.as_bytes())
+    }
+
+    fn load_bytes(raw: &[u8]) -> Result<StoreSchema> {
+        #[derive(serde::Deserialize)]
+        struct Version {
+            #[serde(default)]
+            schema_version: u32,
+        }
+        // Inspect the version before interpreting fields that may have changed
+        // type or acquired new enum variants in a newer application.
+        let version: Version = serde_json::from_slice(raw)?;
+        if version.schema_version > SCHEMA_VERSION {
             return Err(Error::SchemaTooNew {
-                found: data.schema_version,
+                found: version.schema_version,
                 supported: SCHEMA_VERSION,
             });
         }
+        let mut data: StoreSchema = serde_json::from_slice(raw)?;
         data.migrate();
         Ok(data)
     }
@@ -227,10 +233,7 @@ impl Store {
             &snap_dir.join(format!("store-{ts}.json")),
             &contents,
         )?;
-        let mut snaps: Vec<PathBuf> = fs::read_dir(&snap_dir)?
-            .filter_map(|e| e.ok().map(|e| e.path()))
-            .collect();
-        snaps.sort();
+        let mut snaps = self.snapshots()?;
         while snaps.len() > MAX_SNAPSHOTS {
             let oldest = snaps.remove(0);
             let _ = fs::remove_file(oldest);
@@ -255,12 +258,25 @@ impl Store {
         if !snap_dir.exists() {
             return Ok(Vec::new());
         }
+        crate::secure_write::ensure_private_dir(&snap_dir)?;
         let mut snaps: Vec<PathBuf> = fs::read_dir(&snap_dir)?
-            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter_map(|e| e.ok())
+            .filter(|e| is_snapshot_name(&e.file_name()))
+            .filter(|e| e.file_type().is_ok_and(|kind| kind.is_file()))
+            .map(|e| e.path())
             .collect();
         snaps.sort();
         Ok(snaps)
     }
+}
+
+fn is_snapshot_name(name: &std::ffi::OsStr) -> bool {
+    name.to_str()
+        .and_then(|name| name.strip_prefix("store-"))
+        .and_then(|name| name.strip_suffix(".json"))
+        .is_some_and(|timestamp| {
+            !timestamp.is_empty() && timestamp.bytes().all(|b| b.is_ascii_digit())
+        })
 }
 
 #[cfg(test)]
@@ -295,6 +311,95 @@ mod tests {
         // 快照内容是上一次保存前的状态。
         let raw = fs::read_to_string(snaps.last().unwrap()).unwrap();
         assert!(raw.contains("\"p6\""));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_migrates_owned_legacy_snapshots_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let mut store = Store::open(root.path()).unwrap();
+        store.save().unwrap();
+        store.save().unwrap();
+        let snapshot = store.snapshots().unwrap().pop().unwrap();
+        let snapshots = root.path().join("snapshots");
+        let unrelated = snapshots.join("notes.txt");
+        fs::write(&unrelated, b"unrelated").unwrap();
+        for path in [&root.path().join("store.json"), &snapshot, &unrelated] {
+            fs::set_permissions(path, fs::Permissions::from_mode(0o644)).unwrap();
+        }
+        fs::set_permissions(&snapshots, fs::Permissions::from_mode(0o755)).unwrap();
+        Store::open(root.path()).unwrap();
+        assert_eq!(
+            snapshot.metadata().unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            snapshots.metadata().unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert_eq!(
+            unrelated.metadata().unwrap().permissions().mode() & 0o777,
+            0o644
+        );
+        assert_eq!(fs::read(&unrelated).unwrap(), b"unrelated");
+        for _ in 0..8 {
+            store.save().unwrap();
+        }
+        assert_eq!(store.snapshots().unwrap().len(), MAX_SNAPSHOTS);
+        assert_eq!(fs::read(&unrelated).unwrap(), b"unrelated");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_rejects_linked_store_and_snapshot_directories() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let root = tempfile::tempdir().unwrap();
+        let outside = root.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::set_permissions(&outside, fs::Permissions::from_mode(0o755)).unwrap();
+        let linked_store = root.path().join("linked-store");
+        symlink(&outside, &linked_store).unwrap();
+        assert!(Store::open(&linked_store).is_err());
+        let local = root.path().join("local");
+        fs::create_dir(&local).unwrap();
+        symlink(&outside, local.join("snapshots")).unwrap();
+        assert!(Store::open(&local).is_err());
+        assert_eq!(
+            outside.metadata().unwrap().permissions().mode() & 0o777,
+            0o755
+        );
+    }
+
+    #[test]
+    fn primary_file_failures_preserve_saved_data_and_completed_snapshot() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("store.json");
+        let mut store = Store::open(root.path()).unwrap();
+        store.data_mut().active_profile = Some("previous".into());
+        store.save().unwrap();
+        let before = fs::read(&path).unwrap();
+        store.data_mut().active_profile = Some("candidate".into());
+        for stage in 1..=4 {
+            let guard = crate::secure_write::inject_path_at(&path, stage);
+            assert!(store.save().is_err());
+            drop(guard);
+            assert_eq!(fs::read(&path).unwrap(), before);
+            assert_eq!(store.snapshots().unwrap().len(), stage);
+            for snapshot in store.snapshots().unwrap() {
+                assert_eq!(fs::read(snapshot).unwrap(), before);
+            }
+            assert_eq!(fs::read_dir(root.path()).unwrap().count(), 2);
+        }
+        store.save().unwrap();
+        assert_eq!(
+            Store::open(root.path())
+                .unwrap()
+                .data()
+                .active_profile
+                .as_deref(),
+            Some("candidate")
+        );
     }
 
     #[test]
@@ -449,6 +554,82 @@ mod tests {
                 .is_file());
         }
 
+        #[test]
+        fn future_schema_with_unknown_fields_is_not_quarantined() {
+            let dir = tempfile::tempdir().unwrap();
+            let raw = r#"{"schema_version":99,"engine":{"engine":"future-engine"}}"#;
+            fs::write(dir.path().join("store.json"), raw).unwrap();
+            assert!(matches!(
+                Store::open(dir.path()),
+                Err(Error::SchemaTooNew { .. })
+            ));
+            assert_eq!(
+                fs::read_to_string(dir.path().join("store.json")).unwrap(),
+                raw
+            );
+        }
+
+        #[test]
+        fn future_snapshot_blocks_downgrade_and_preserves_primary() {
+            let dir = tempfile::tempdir().unwrap();
+            seed_snapshots(
+                dir.path(),
+                &[
+                    (
+                        "store-200.json",
+                        r#"{"schema_version":99,"engine":{"engine":"future-engine"}}"#.into(),
+                    ),
+                    ("store-100.json", valid_schema_json("older")),
+                ],
+            );
+            fs::write(dir.path().join("store.json"), "{broken").unwrap();
+            assert!(matches!(
+                Store::open(dir.path()),
+                Err(Error::SchemaTooNew { .. })
+            ));
+            assert_eq!(
+                fs::read_to_string(dir.path().join("store.json")).unwrap(),
+                "{broken"
+            );
+        }
+
+        #[test]
+        fn recovery_report_does_not_include_invalid_field_values() {
+            let dir = tempfile::tempdir().unwrap();
+            fs::write(dir.path().join("store.json"),
+                r#"{"schema_version":2,"profiles":[],"overrides":[],"engine":{"engine":"PRIVATE-TOKEN"}}"#).unwrap();
+            let store = Store::open(dir.path()).unwrap();
+            let report = serde_json::to_string(&store.recovery).unwrap();
+            assert!(!report.contains("PRIVATE-TOKEN"));
+            assert_eq!(store.recovery.as_ref().unwrap().source, "default");
+            assert!(Store::open(dir.path()).unwrap().recovery.is_none());
+        }
+
+        #[test]
+        fn non_utf8_corruption_recovers_from_snapshot() {
+            let dir = tempfile::tempdir().unwrap();
+            seed_snapshots(
+                dir.path(),
+                &[("store-100.json", valid_schema_json("older"))],
+            );
+            fs::write(dir.path().join("store.json"), [0xff, 0xfe]).unwrap();
+            let store = Store::open(dir.path()).unwrap();
+            assert_eq!(store.data().active_profile.as_deref(), Some("older"));
+            assert!(store.recovery.is_some());
+        }
+
+        #[test]
+        fn unreadable_snapshot_is_not_treated_as_missing() {
+            let dir = tempfile::tempdir().unwrap();
+            fs::write(dir.path().join("store.json"), "{broken").unwrap();
+            fs::create_dir_all(dir.path().join("snapshots/store-200.json")).unwrap();
+            assert!(matches!(Store::open(dir.path()), Err(Error::Io(_))));
+            assert_eq!(
+                fs::read_to_string(dir.path().join("store.json")).unwrap(),
+                "{broken"
+            );
+        }
+
         /// 恢复写回失败（注入 rename 阶段）不破坏原件与快照；重启可重复恢复。
         #[test]
         fn recovery_write_failure_is_retryable_and_non_destructive() {
@@ -464,6 +645,9 @@ mod tests {
             drop(_inject);
             // 恢复写回失败 → Store::open 报错（不吞），数据仍在快照里
             assert!(result.is_err());
+            let reopened = Store::open(dir.path()).unwrap();
+            assert_eq!(reopened.data().active_profile.as_deref(), Some("older"));
+            assert!(reopened.recovery.is_some());
             // 原件已被隔离（第一次尝试的正常行为），快照完好——重启可重复恢复
             assert!(dir
                 .path()
