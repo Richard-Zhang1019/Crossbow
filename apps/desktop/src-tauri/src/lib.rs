@@ -557,6 +557,16 @@ fn restart_adopted_core_death(handle: AppHandle) -> impl Fn() + Send + 'static {
 /// 内核状态回调：UI 事件、托盘速率联动、崩溃时系统代理一致性守护。
 /// 换核/重装创建新 CoreManager 后必须重新挂载（ensure_engine_binary / core_install）。
 pub fn run() {
+    // #592 脚本覆写的工作进程模式：本二进制以 --script-worker 参数重入
+    // 自身，stdin 收 payload、stdout 出结果（见
+    // crossbow_core::script_override），不进入正常应用启动。
+    if std::env::args_os().nth(1).as_deref()
+        == Some(std::ffi::OsStr::new(
+            crossbow_core::script_override::WORKER_ARG,
+        ))
+    {
+        crossbow_core::script_override::script_worker_entry();
+    }
     // The tray helper only hosts AppKit. Startup diagnostics and proxy
     // recovery belong to the desktop process that owns the app state.
     #[cfg(target_os = "macos")]
