@@ -235,6 +235,9 @@ fn lock_app_instance(data_dir: &std::path::Path) -> std::io::Result<std::fs::Fil
 }
 
 fn acquire_app_instance(data_dir: &std::path::Path) -> std::io::Result<std::fs::File> {
+    #[cfg(target_os = "macos")]
+    let lock = lifecycle::kernel_guard::acquire_gui_instance(data_dir)?;
+    #[cfg(not(target_os = "macos"))]
     let lock = lock_app_instance(data_dir)?;
     crate::platform::fs_perms::write_private(
         &data_dir.join("app.pid"),
@@ -628,6 +631,8 @@ pub fn run() {
             // 轻量退出注册的内核守护 LaunchAgent，防陈旧代理驻留。
             #[cfg(target_os = "macos")]
             lifecycle::kernel_guard::unregister();
+            #[cfg(target_os = "macos")]
+            notifications::resume_detached(app.handle(), &data_dir);
 
             let mut store = Store::open(&data_dir)
                 .map_err(|e| std::io::Error::other(format!("open store: {e}")))?;
