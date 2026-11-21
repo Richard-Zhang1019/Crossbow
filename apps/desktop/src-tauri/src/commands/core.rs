@@ -183,8 +183,11 @@ pub(crate) async fn set_engine(
     }
     // 新引擎写进存储的时机在内核确认就绪之后。失败会退回旧引擎并拉起旧核。
     commit_config_change(&state, |data| {
-        data.engine.engine = target;
-        Ok(())
+        select_engine(
+            data,
+            target,
+            !state.safe_mode.load(std::sync::atomic::Ordering::SeqCst),
+        )
     })?;
     state.core().log_decision(&format!(
         "set_engine: -> {engine} status={:?}",
@@ -194,4 +197,58 @@ pub(crate) async fn set_engine(
     // 通知侧栏 footer 等跟随引擎的 UI 重新取标识
     let _ = app.emit("engine://changed", engine.clone());
     Ok(())
+}
+
+// Validate before persisting even when no core is running. A failed selection
+// must preserve the previous engine so the next launch can still use it.
+fn select_engine(
+    data: &mut crossbow_core::StoreSchema,
+    target: crossbow_core::Engine,
+    use_overrides: bool,
+) -> Result<(), String> {
+    if target == crossbow_core::Engine::SingBox && data.active_profile.is_some() {
+        let mut candidate = data.clone();
+        candidate.engine.engine = target;
+        crossbow_core::render_config_with(&candidate, use_overrides)
+            .map_err(|error| error.to_string())?;
+    }
+    data.engine.engine = target;
+    Ok(())
+}
+
+#[cfg(test)]
+mod engine_selection_tests {
+    use super::*;
+
+    #[test]
+    fn incompatible_dns_rejects_selection_before_engine_changes() {
+        let mut data = crossbow_core::StoreSchema {
+            active_profile: Some("clash".into()),
+            ..Default::default()
+        };
+        data.profiles.push(crossbow_core::Profile {
+            id: "clash".into(),
+            name: "clash".into(),
+            kind: crossbow_core::ProfileKind::Local,
+            url: None,
+            content: "dns: {nameserver: [10.0.0.1]}\nproxies: []\n".into(),
+            update_interval_min: 0,
+            override_ids: Vec::new(),
+            last_updated: None,
+            traffic: None,
+            last_update: None,
+        });
+        let before = serde_json::to_value(&data).unwrap();
+        let error = select_engine(&mut data, crossbow_core::Engine::SingBox, true).unwrap_err();
+        assert!(error.contains("dns"));
+        assert!(!error.contains("10.0.0.1"));
+        assert_eq!(serde_json::to_value(&data).unwrap(), before);
+    }
+
+    #[test]
+    fn engine_can_be_selected_before_importing_a_profile() {
+        let mut data = crossbow_core::StoreSchema::default();
+        select_engine(&mut data, crossbow_core::Engine::SingBox, true).unwrap();
+        assert_eq!(data.engine.engine, crossbow_core::Engine::SingBox);
+    }
 }

@@ -137,32 +137,26 @@ fn check_unsupported_top_level(doc: &Value) -> Result<(), ConvertError> {
     if dns.is_some_and(|v| !v.is_null()) {
         unsupported.push("dns（自定义 DNS 上游与分域名解析）");
     }
-    // hosts：本地域名映射无 sing-box 等价实现
-    if doc
-        .get("hosts")
-        .and_then(|v| v.as_object())
-        .is_some_and(|m| !m.is_empty())
-    {
-        unsupported.push("hosts（本地域名映射）");
+    // 空 hosts 不携带映射；其余类型必须拒绝，避免把损坏配置当成空映射。
+    if let Some(hosts) = doc.get("hosts").filter(|value| !value.is_null()) {
+        if !hosts.as_object().is_some_and(|mapping| mapping.is_empty()) {
+            unsupported.push("hosts（本地域名映射）");
+        }
     }
-    // sniffer：enable 显式关闭时 mihomo 侧无行为，转换丢弃无害
-    let sniffer_on = doc
-        .get("sniffer")
-        .and_then(|v| v.get("enable"))
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    if sniffer_on {
-        unsupported.push("sniffer（域名嗅探）");
-    }
-    // tun：订阅自带 tun.enable=true 时由内核自行接管——转换丢弃会静默
-    // 失去 TUN；false/缺失放行（本应用的 TUN 开关独立管理）。
-    let tun_on = doc
-        .get("tun")
-        .and_then(|v| v.get("enable"))
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    if tun_on {
-        unsupported.push("tun（内核自带 TUN 配置）");
+    for (key, label) in [
+        ("sniffer", "sniffer（域名嗅探）"),
+        ("tun", "tun（内核自带 TUN 配置）"),
+    ] {
+        let inactive = match doc.get(key) {
+            None | Some(Value::Null) => true,
+            Some(Value::Object(section)) => {
+                matches!(section.get("enable"), None | Some(Value::Bool(false)))
+            }
+            _ => false,
+        };
+        if !inactive {
+            unsupported.push(label);
+        }
     }
 
     if unsupported.is_empty() {
@@ -1140,6 +1134,59 @@ rules:
             err,
             crate::render::RenderError::UnsupportedFields { .. }
         ));
+    }
+
+    #[test]
+    fn unsupported_or_malformed_sections_are_rejected_without_values() {
+        for (key, value) in [
+            ("dns", "{ipv6: true}"),
+            ("dns", "{nameserver: ['2001:db8::53']}"),
+            ("hosts", "[private.invalid]"),
+            ("hosts", "'private.invalid'"),
+            ("sniffer", "{enable: 'true'}"),
+            ("sniffer", "{enable: 1}"),
+            ("sniffer", "'private.invalid'"),
+            ("tun", "{enable: 'false'}"),
+            ("tun", "{enable: null}"),
+            ("tun", "[private.invalid]"),
+        ] {
+            let input = format!("{SAMPLE}\n{key}: {value}\n");
+            let error = convert_to_singbox(&input, 7897, false).unwrap_err();
+            assert!(matches!(error, ConvertError::UnsupportedFields { .. }));
+            assert!(error.to_string().contains(key));
+            assert!(!error.to_string().contains("private.invalid"));
+        }
+    }
+
+    #[test]
+    fn native_singbox_dns_and_hosts_bypass_clash_conversion_gate() {
+        let mut store = crate::model::StoreSchema::default();
+        store.engine.engine = crate::model::Engine::SingBox;
+        store.active_profile = Some("native".into());
+        store.profiles.push(crate::model::Profile {
+            id: "native".into(),
+            name: "native".into(),
+            kind: crate::model::ProfileKind::Local,
+            url: None,
+            content: r#"{
+                "outbounds": [{"type":"direct","tag":"DIRECT"}],
+                "dns": {"servers":[{"type":"hosts","tag":"local","predefined":{
+                    "internal.invalid":"10.0.0.1"
+                }}]}
+            }"#
+            .into(),
+            update_interval_min: 0,
+            override_ids: Vec::new(),
+            last_updated: None,
+            traffic: None,
+            last_update: None,
+        });
+        let rendered = crate::render::render_config(&store).unwrap();
+        let document: Value = serde_json::from_str(&rendered.config).unwrap();
+        assert_eq!(
+            document["dns"]["servers"][0]["predefined"]["internal.invalid"],
+            "10.0.0.1"
+        );
     }
 
     #[test]
