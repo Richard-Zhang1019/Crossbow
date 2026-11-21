@@ -571,6 +571,7 @@ pub fn run() {
     }
     // #601 轻量退出后的内核守护模式：LaunchAgent 以 --kernel-guard 重入
     // 自身（macOS），周期探活并在内核死亡时仅恢复系统代理。
+    #[cfg(target_os = "macos")]
     if std::env::args_os().nth(1).as_deref()
         == Some(std::ffi::OsStr::new(lifecycle::kernel_guard::GUARD_ARG))
     {

@@ -233,17 +233,6 @@ mod imp {
 #[cfg(target_os = "macos")]
 pub(crate) use imp::{guard_main, register_and_start, unregister};
 
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    /// macOS 首发承诺：Windows 复用服务体系、Linux 复用既有 service 体系，
-    /// 守护实现随平台验收跟进（差异记录在 #601/设计文档）。
-    pub(crate) fn register_and_start(_data_dir: &std::path::Path) {}
-    pub(crate) fn unregister() {}
-    pub fn guard_main() -> ! {
-        std::process::exit(0);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::GuardAction;

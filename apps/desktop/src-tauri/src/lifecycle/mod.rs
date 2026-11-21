@@ -2,6 +2,7 @@
 pub mod authorization;
 #[cfg_attr(target_os = "linux", allow(dead_code))]
 pub(crate) mod exit_flow;
+#[cfg(target_os = "macos")]
 pub(crate) mod kernel_guard;
 #[cfg(target_os = "macos")]
 pub mod macos_shutdown;
