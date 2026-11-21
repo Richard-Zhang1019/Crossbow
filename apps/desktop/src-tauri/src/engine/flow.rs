@@ -351,7 +351,8 @@ pub(crate) fn commit_config_change_inner(
         .and_then(|id| after.profile(id));
     let verify_outbound = live.mihomo
         && after.engine.engine == crossbow_core::Engine::Mihomo
-        && (before.active_profile != after.active_profile
+        && (before.dns != after.dns
+            || before.active_profile != after.active_profile
             || old_content.map(|p| &p.content) != new_content.map(|p| &p.content));
     let mut transaction = ConfigChange {
         state,

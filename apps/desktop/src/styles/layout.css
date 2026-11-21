@@ -2664,3 +2664,13 @@ textarea:focus-visible,
   width: auto;
   min-width: 128px;
 }
+
+/* DNS editor shares setting rows, controls and theme tokens (#598). */
+.cb-dns-fields { border: 0; margin: 0; padding: 0; min-width: 0; }
+.cb-dns-card .cb-control-row .cb-input { width: 340px; max-width: 340px; flex: 0 1 340px; }
+.cb-dns-card > .cb-dns-fields > .cb-setting-hint { display: block; margin: 10px 0; overflow: visible; -webkit-line-clamp: unset; }
+.cb-dns-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 12px 0; }
+@media (max-width: 960px) {
+  .cb-dns-card .cb-control-row:has(.cb-text-input) { display: grid; grid-template-columns: 1fr; gap: 8px; }
+  .cb-dns-card .cb-control-row .cb-input { width: 100%; max-width: none; }
+}

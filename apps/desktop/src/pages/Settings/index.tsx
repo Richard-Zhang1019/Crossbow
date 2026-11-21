@@ -18,6 +18,7 @@ import type { NavigationTarget } from "@/lib/workflow";
 import { useT } from "@/i18n/i18n";
 import { PageHead } from "@/pages/Home";
 import { LanSharing } from "./LanSharing";
+import { DnsSettingsCard } from "./DnsSettings";
 
 
 /** 设置页（M0-S4）：内核端口/局域网、外观主题、开机自启、内核版本。 */
@@ -538,6 +539,7 @@ export default function SettingsPage({
               )
             }
           />
+          <DnsSettingsCard engine={engine?.engine} />
         </Group><Group title={t("settings.scenes.title")}>
           <SceneRules />
         </Group></>

@@ -1,7 +1,9 @@
 //! Private files written by the desktop. Windows uses the user's directory ACL.
 
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Seek, SeekFrom, Write};
+#[cfg(test)]
+use std::io::Write as _;
+use std::io::{self, Read, Seek, SeekFrom};
 use std::path::Path;
 
 #[cfg(unix)]
@@ -39,27 +41,10 @@ pub(crate) fn open_private_truncate(path: &Path) -> io::Result<File> {
 }
 
 /// Replace a snapshot or recovery journal only after writing its full contents.
+/// 实现已下沉 crossbow-core::secure_write（#595/#596 统一平台边界），
+/// 本封装保留 desktop 调用点与 O_NOFOLLOW 打开家族的桌面差异。
 pub(crate) fn write_private(path: &Path, contents: &[u8]) -> io::Result<()> {
-    match path.symlink_metadata() {
-        Ok(meta) if !meta.is_file() => {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "expected a regular file",
-            ));
-        }
-        Ok(_) => {}
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error),
-    }
-    let temp_path = path.with_file_name(format!(".crossbow-{}.tmp", uuid::Uuid::new_v4()));
-    let mut file = open_private(&temp_path, OpenOptions::new().create_new(true).write(true))?;
-    let result = file.write_all(contents).and_then(|()| file.sync_all());
-    drop(file);
-    let result = result.and_then(|()| fs::rename(&temp_path, path));
-    if result.is_err() {
-        let _ = fs::remove_file(temp_path);
-    }
-    result
+    crossbow_core::secure_write::write_private_atomic(path, contents)
 }
 
 /// Tighten legacy files without following symlinks. Startup treats failure as best effort.

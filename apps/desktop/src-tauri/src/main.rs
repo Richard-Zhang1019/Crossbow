@@ -2,6 +2,10 @@
 // macOS 不受影响；保留以保持跨平台模板一致性。
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[global_allocator]
+static ALLOCATOR: crossbow_core::worker_memory::WorkerAllocator =
+    crossbow_core::worker_memory::WorkerAllocator;
+
 fn main() {
     crossbow_desktop_lib::run()
 }

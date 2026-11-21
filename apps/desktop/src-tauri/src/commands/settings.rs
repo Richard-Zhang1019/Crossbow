@@ -183,7 +183,8 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let mut store = Store::open(directory.path()).unwrap();
         store.save().unwrap();
-        std::fs::create_dir(directory.path().join("store.json.tmp")).unwrap();
+        let _inject =
+            crossbow_core::secure_write::inject_path_at(&directory.path().join("store.json"), 2);
         assert!(persist_deep_link_import_confirm(&mut store, false).is_err());
         assert!(store.data().ui.deep_link_import_confirm);
         assert!(
@@ -200,7 +201,8 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let mut store = Store::open(directory.path()).unwrap();
         store.save().unwrap();
-        std::fs::create_dir(directory.path().join("store.json.tmp")).unwrap();
+        let _inject =
+            crossbow_core::secure_write::inject_path_at(&directory.path().join("store.json"), 2);
 
         assert!(persist_unified_delay(&mut store, false).is_err());
         assert!(store.data().engine.unified_delay);
@@ -211,5 +213,100 @@ mod tests {
                 .engine
                 .unified_delay
         );
+    }
+}
+
+/// #598：读取 DNS 设置。
+#[tauri::command]
+pub(crate) fn get_dns_settings(state: State<'_, AppState>) -> DnsSettings {
+    state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .dns
+        .clone()
+}
+
+/// Validate, apply and persist once, so rollback owns the previous DNS snapshot.
+#[tauri::command]
+pub(crate) async fn set_dns_settings(
+    state: State<'_, AppState>,
+    settings: DnsSettings,
+) -> Result<(), String> {
+    commit_config_change_inner(
+        &state,
+        |data| {
+            let use_overrides = !state.safe_mode.load(std::sync::atomic::Ordering::SeqCst);
+            stage_dns_settings(data, settings, use_overrides)
+        },
+        false,
+    )
+}
+
+fn stage_dns_settings(
+    data: &mut crossbow_core::StoreSchema,
+    settings: DnsSettings,
+    use_overrides: bool,
+) -> Result<(), String> {
+    crossbow_core::dns_settings::validate_for_engine(&settings, data.engine.engine)?;
+    let mut candidate = data.clone();
+    candidate.dns = settings;
+    // PersistOnly transitions also need preflight: invalid settings must not
+    // break the next launch. No active profile is a valid initial setup state.
+    if candidate.active_profile.is_some() {
+        crossbow_core::render_config_with(&candidate, use_overrides)
+            .map_err(|error| error.to_string())?;
+    }
+    data.dns = candidate.dns;
+    Ok(())
+}
+
+#[cfg(test)]
+mod dns_tests {
+    use super::*;
+    use crossbow_core::dns_settings::DnsMode;
+
+    #[test]
+    fn dns_preflight_rejects_native_json_without_mutating_saved_state() {
+        let mut data = crossbow_core::StoreSchema::default();
+        data.engine.engine = crossbow_core::Engine::SingBox;
+        data.active_profile = Some("native".into());
+        data.profiles.push(crossbow_core::Profile {
+            id: "native".into(),
+            name: "native".into(),
+            kind: crossbow_core::ProfileKind::Local,
+            url: None,
+            content: r#"{"outbounds":[{"type":"direct","tag":"DIRECT"}]}"#.into(),
+            update_interval_min: 0,
+            override_ids: vec![],
+            last_updated: None,
+            traffic: None,
+            last_update: None,
+        });
+        let before = serde_json::to_value(&data).unwrap();
+        let settings = DnsSettings {
+            mode: DnsMode::Custom,
+            proxy_nameservers: vec!["1.1.1.1".into()],
+            direct_nameservers: vec!["8.8.8.8".into()],
+            bootstrap_nameservers: vec![],
+        };
+        assert!(stage_dns_settings(&mut data, settings, true).is_err());
+        assert_eq!(serde_json::to_value(&data).unwrap(), before);
+    }
+
+    #[test]
+    fn unsupported_dns_is_rejected_even_before_importing_a_profile() {
+        let mut data = crossbow_core::StoreSchema::default();
+        data.engine.engine = crossbow_core::Engine::SingBox;
+        let before = data.dns.clone();
+        let invalid = DnsSettings {
+            mode: DnsMode::Custom,
+            proxy_nameservers: vec!["1.1.1.1".into()],
+            direct_nameservers: vec!["8.8.8.8".into()],
+            bootstrap_nameservers: vec!["9.9.9.9".into()],
+        };
+        assert!(stage_dns_settings(&mut data, invalid, true).is_err());
+        assert_eq!(data.dns, before);
     }
 }

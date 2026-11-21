@@ -12,7 +12,9 @@ use std::time::{Duration, Instant};
 
 use crate::engine::bridge::WsHub;
 use crossbow_core::subscription::{fetch_subscription, now_secs, validate_profile_content};
-use crossbow_core::{Profile, ProfileKind, RuntimeConfig, Store, UiSettings};
+use crossbow_core::{
+    dns_settings::DnsSettings, Profile, ProfileKind, RuntimeConfig, Store, UiSettings,
+};
 #[cfg(not(target_os = "macos"))]
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager};
@@ -557,6 +559,16 @@ fn restart_adopted_core_death(handle: AppHandle) -> impl Fn() + Send + 'static {
 /// 内核状态回调：UI 事件、托盘速率联动、崩溃时系统代理一致性守护。
 /// 换核/重装创建新 CoreManager 后必须重新挂载（ensure_engine_binary / core_install）。
 pub fn run() {
+    // #592 脚本覆写的工作进程模式：本二进制以 --script-worker 参数重入
+    // 自身，stdin 收 payload、stdout 出结果（见
+    // crossbow_core::script_override），不进入正常应用启动。
+    if std::env::args_os().nth(1).as_deref()
+        == Some(std::ffi::OsStr::new(
+            crossbow_core::script_override::WORKER_ARG,
+        ))
+    {
+        crossbow_core::script_override::script_worker_entry();
+    }
     // The tray helper only hosts AppKit. Startup diagnostics and proxy
     // recovery belong to the desktop process that owns the app state.
     #[cfg(target_os = "macos")]
@@ -607,6 +619,23 @@ pub fn run() {
 
             let mut store = Store::open(&data_dir)
                 .map_err(|e| std::io::Error::other(format!("open store: {e}")))?;
+            // #594：启动恢复反馈——主文件损坏经快照/默认恢复时如实告知
+            // 来源与原因（通知系统已在上方 install，可直接发布）。
+            if let Some(report) = &store.recovery {
+                let mut notice = notifications::Notice::new(
+                    notifications::Kind::Warning,
+                    "store.recovered",
+                    "store-recovery",
+                );
+                notice.title_key = "store.recovered".to_string();
+                notice.description = report.reason.clone();
+                notice.details = format!(
+                    "source={}\nquarantined={}",
+                    report.source,
+                    report.quarantined_as.as_deref().unwrap_or("none"),
+                );
+                notifications::publish(app.handle(), notice);
+            }
             // Linux network authorization belongs to this desktop session.
             // A previous TUN preference never silently takes over after login.
             #[cfg(target_os = "linux")]
@@ -918,6 +947,8 @@ pub fn run() {
             unsubscribe_traffic,
             traffic_history,
             traffic_stats,
+            get_dns_settings,
+            set_dns_settings,
             subscribe_connections,
             unsubscribe_connections,
             subscribe_logs,
@@ -1177,8 +1208,11 @@ mod tests {
         store.save().unwrap();
         let before = store.data().clone();
         store.data_mut().engine.mixed_port = 7898;
-        // Inject a deterministic I/O failure, also when tests run as root.
-        std::fs::create_dir(directory.path().join("store.json.tmp")).unwrap();
+        // Inject a deterministic I/O failure（#596 后写入走随机独占临时
+        // 文件，注入改用 secure_write 故障开关；write 阶段失败同样在
+        // root 下确定性成立）。
+        let _inject =
+            crossbow_core::secure_write::inject_path_at(&directory.path().join("store.json"), 2);
         let store = Mutex::new(store);
         assert!(restore_store(&store, &before).is_err());
         assert_eq!(

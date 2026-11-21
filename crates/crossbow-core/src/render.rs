@@ -24,6 +24,8 @@ pub fn render_config_with(
     store: &StoreSchema,
     use_overrides: bool,
 ) -> Result<Rendered, RenderError> {
+    crate::dns_settings::validate_for_engine(&store.dns, store.engine.engine)
+        .map_err(RenderError::InvalidYaml)?;
     let profile_id = store
         .active_profile
         .as_deref()
@@ -45,14 +47,13 @@ pub fn render_config_with(
     };
 
     let mut config = profile.content.clone();
+    let deadline = std::time::Instant::now() + crate::script_override::WORKER_TIMEOUT;
     for o in active {
-        config =
-            crate::override_patch::run_override_kind(o.kind, &o.content, &config).map_err(|e| {
-                RenderError::OverrideFailed {
-                    id: o.id.clone(),
-                    name: o.name.clone(),
-                    detail: e.to_string(),
-                }
+        config = crate::override_patch::run_override_before(o.kind, &o.content, &config, deadline)
+            .map_err(|e| RenderError::OverrideFailed {
+                id: o.id.clone(),
+                name: o.name.clone(),
+                detail: e.to_string(),
             })?;
     }
     if store.engine.flag_emoji {
@@ -72,6 +73,11 @@ pub fn render_config_with(
             let json = if document.get("proxies").is_none()
                 && document.get("outbounds").is_some_and(|v| v.is_array())
             {
+                if store.dns.mode == crate::dns_settings::DnsMode::Custom {
+                    return Err(RenderError::InvalidYaml(
+                        "原生 sing-box 配置暂不支持应用级自定义 DNS；请沿用配置中的 DNS".into(),
+                    ));
+                }
                 serde_json::to_string(&document)
                     .map_err(|e| RenderError::InvalidYaml(e.to_string()))?
             } else {
@@ -79,8 +85,15 @@ pub fn render_config_with(
                     &config,
                     store.engine.mixed_port,
                     store.engine.allow_lan,
+                    Some(&store.dns),
                 )
-                .map_err(|e| RenderError::InvalidYaml(e.to_string()))?
+                .map_err(|e| match e {
+                    // #593：语义不支持要原样透传，不伪装成 YAML 错误
+                    crate::singbox_convert::ConvertError::UnsupportedFields { fields, hint } => {
+                        RenderError::UnsupportedFields { fields, hint }
+                    }
+                    other => RenderError::InvalidYaml(other.to_string()),
+                })?
             };
             let json = crate::rule_sets::inject_json(&json, &store.rule_sets)
                 .map_err(RenderError::InvalidYaml)?;
@@ -90,7 +103,10 @@ pub fn render_config_with(
         crate::model::Engine::Mihomo => {
             let config = crate::rule_sets::inject_yaml(&config, &store.rule_sets)
                 .map_err(RenderError::InvalidYaml)?;
-            crate::process_rules::inject_yaml(&config, &store.process_rules)
+            let config = crate::process_rules::inject_yaml(&config, &store.process_rules)
+                .map_err(|e| RenderError::InvalidYaml(e.to_string()))?;
+            // #598：自定义 DNS 在渲染层注入用户上游（沿用订阅零改动）
+            crate::dns_settings::apply_mihomo_dns_patch(config, &store.dns)
                 .map_err(|e| RenderError::InvalidYaml(e.to_string()))?
         }
     };
@@ -103,6 +119,11 @@ pub fn render_config_with(
 /// 校验全部启用的覆写：按列表顺序对当前档案内容逐个执行，
 /// 返回失败的 (id, 错误)。不要求绑定——编辑即反馈。
 pub fn validate_enabled_overrides(store: &StoreSchema) -> Vec<(String, String)> {
+    validate_with_budget(store, crate::script_override::WORKER_TIMEOUT)
+}
+
+fn validate_with_budget(store: &StoreSchema, budget: std::time::Duration) -> Vec<(String, String)> {
+    let deadline = std::time::Instant::now() + budget;
     let base = store
         .active_profile
         .as_deref()
@@ -112,7 +133,14 @@ pub fn validate_enabled_overrides(store: &StoreSchema) -> Vec<(String, String)> 
     let mut config = base;
     let mut failures = Vec::new();
     for o in store.overrides.iter().filter(|o| o.enabled) {
-        match crate::override_patch::run_override_kind(o.kind, &o.content, &config) {
+        if std::time::Instant::now() >= deadline {
+            failures.push((
+                o.id.clone(),
+                "未校验：本次覆写处理预算已耗尽，请减少脚本或停用慢脚本后重试".into(),
+            ));
+            continue;
+        }
+        match crate::override_patch::run_override_before(o.kind, &o.content, &config, deadline) {
             Ok(next) => config = next,
             Err(e) => failures.push((o.id.clone(), e.to_string())),
         }
@@ -134,12 +162,43 @@ pub enum RenderError {
     MissingProfile(String),
     #[error("invalid yaml: {0}")]
     InvalidYaml(String),
+    /// #593：顶层字段无法等价转换——切换明确拒绝并保持旧配置。
+    #[error("切换到 sing-box 会丢失以下配置的解析语义：{fields}。{hint}")]
+    UnsupportedFields { fields: String, hint: String },
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::model::{OverrideDef, OverrideKind, Profile, ProfileKind};
+
+    #[test]
+    fn validation_deadline_marks_remaining_items_unchecked() {
+        let mut store = fixture();
+        store.overrides.clear();
+        for (id, content) in [
+            (
+                "slow",
+                "function main(c) { /(a+)+$/.test('a'.repeat(36)+'!'); return c; }",
+            ),
+            ("later", "function main(c) { return c; }"),
+        ] {
+            store.overrides.push(OverrideDef {
+                id: id.into(),
+                name: id.into(),
+                kind: OverrideKind::Script,
+                content: content.into(),
+                enabled: true,
+                last_error: None,
+            });
+        }
+        let started = std::time::Instant::now();
+        let failures = validate_with_budget(&store, std::time::Duration::from_millis(150));
+        assert_eq!(failures.len(), 2);
+        assert!(failures[0].1.contains("超时"));
+        assert!(failures[1].1.contains("未校验"));
+        assert!(started.elapsed() < std::time::Duration::from_secs(3));
+    }
 
     #[test]
     fn validate_flags_all_enabled_failures() {
