@@ -881,6 +881,7 @@ version = "0.15.2"
 dependencies = [
  "base64 0.22.1",
  "boa_engine",
+ "libc",
  "percent-encoding",
  "serde",
  "serde_json",

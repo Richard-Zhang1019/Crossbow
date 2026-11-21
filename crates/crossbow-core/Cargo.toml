@@ -17,3 +17,9 @@ serde_yaml.workspace = true
 thiserror.workspace = true
 ureq = "2"
 tempfile = "3"
+
+[features]
+test-io-inject = []
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
