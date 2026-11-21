@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 
 fn bad(reason: &str) -> Error {
     Error::Network(format!(
-        "分享订阅：{reason}（支持 ss/vmess/trojan/vless，TCP/WS/gRPC；不支持的参数不会被忽略）"
+        "分享订阅：{reason}（支持 ss/vmess/trojan/vless/hy2/tuic；TCP/WS/gRPC 仅限对应协议；不支持的参数不会被忽略）"
     ))
 }
 fn decode(s: &str) -> Result<String> {
@@ -21,6 +21,17 @@ fn decode(s: &str) -> Result<String> {
     Err(bad("无效 Base64 编码"))
 }
 fn unescape(s: &str) -> Result<String> {
+    let bytes = s.as_bytes();
+    for (index, byte) in bytes.iter().enumerate() {
+        if *byte == b'%'
+            && (index + 2 >= bytes.len()
+                || !bytes[index + 1..=index + 2]
+                    .iter()
+                    .all(u8::is_ascii_hexdigit))
+        {
+            return Err(bad("无效 URL 转义"));
+        }
+    }
     percent_encoding::percent_decode_str(s)
         .decode_utf8()
         .map(|s| s.into_owned())
@@ -156,8 +167,13 @@ fn uri(line: &str) -> Result<Value> {
     if scheme == "vmess" {
         return vmess(raw);
     }
-    if !matches!(scheme, "ss" | "trojan" | "vless") {
-        return Err(bad("未支持的 URI 协议"));
+    if !matches!(
+        scheme,
+        "ss" | "trojan" | "vless" | "hy2" | "hysteria2" | "tuic"
+    ) {
+        return Err(bad(
+            "未支持的 URI 协议；当前支持 ss/vmess/trojan/vless/hy2(hysteria2)/tuic",
+        ));
     }
     // Legacy SS encodes the entire method:password@host:port payload.
     let full;
@@ -175,30 +191,76 @@ fn uri(line: &str) -> Result<Value> {
         .ok_or_else(|| bad("缺少服务器地址"))?
         .trim_start_matches('[')
         .trim_end_matches(']');
-    let port = u
-        .port()
-        .filter(|p| *p > 0)
-        .ok_or_else(|| bad("缺少端口或端口无效"))?;
+    let port = match u.port() {
+        Some(port) if port > 0 => port,
+        None if matches!(scheme, "hy2" | "hysteria2") => 443,
+        _ => return Err(bad("缺少端口或端口无效")),
+    };
     if !matches!(u.path(), "" | "/") {
         return Err(bad("URI 路径未通过 path 查询参数指定"));
     }
+    let known: &[&str] = match scheme {
+        "hy2" | "hysteria2" => &["sni", "insecure", "obfs", "obfs-password", "pinSHA256"],
+        "tuic" => &[
+            "sni",
+            "alpn",
+            "congestion_control",
+            "udp_relay_mode",
+            "insecure",
+            "allow_insecure",
+            "allowInsecure",
+        ],
+        "vless" => &[
+            "type",
+            "security",
+            "sni",
+            "peer",
+            "host",
+            "path",
+            "serviceName",
+            "encryption",
+            "flow",
+            "allowInsecure",
+            "skip-cert-verify",
+            "pbk",
+            "sid",
+            "spx",
+            "fp",
+        ],
+        _ => &[
+            "type",
+            "security",
+            "sni",
+            "peer",
+            "host",
+            "path",
+            "serviceName",
+            "encryption",
+            "flow",
+            "allowInsecure",
+            "skip-cert-verify",
+        ],
+    };
     let mut params = std::collections::BTreeMap::new();
-    for (key, value) in u.query_pairs() {
-        if !matches!(
-            key.as_ref(),
-            "type"
-                | "security"
-                | "sni"
-                | "peer"
-                | "host"
-                | "path"
-                | "serviceName"
-                | "encryption"
-                | "flow"
-                | "allowInsecure"
-                | "skip-cert-verify"
-        ) {
-            return Err(bad("该协议包含暂不支持的 URI 参数"));
+    // url::query_pairs uses lossy UTF-8 decoding. Authentication and TLS fields
+    // must never be accepted after replacement characters changed their bytes.
+    for pair in u
+        .query()
+        .unwrap_or("")
+        .split('&')
+        .filter(|pair| !pair.is_empty())
+    {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        let key = unescape(&key.replace('+', " "))?;
+        let value = unescape(&value.replace('+', " "))?;
+        if !known.contains(&key.as_str()) {
+            // Parameter names are untrusted too. Only identify known capability
+            // names; never reflect arbitrary query data in user-facing errors.
+            let field = match key.as_str() {
+                "type" | "zero_rtt" | "unknownParam" => key.as_str(),
+                _ => "未知查询参数",
+            };
+            return Err(bad(&format!("该协议参数 {field} 暂不支持")));
         }
         if params.insert(key.to_string(), value.to_string()).is_some() {
             return Err(bad("重复的 URI 查询参数"));
@@ -245,12 +307,119 @@ fn uri(line: &str) -> Result<Value> {
             if !uuid(&id) || u.password().is_some() {
                 return Err(bad("vless UUID 无效"));
             }
-            if !matches!(get("encryption"), "" | "none") || !get("flow").is_empty() {
-                return Err(bad("vless encryption/flow 暂不支持"));
+            if !matches!(get("encryption"), "" | "none") {
+                return Err(bad("vless encryption 暂不支持"));
             }
             node["uuid"] = json!(id);
         }
+        "hy2" | "hysteria2" | "tuic" => {}
         _ => return Err(bad("未支持的 URI 协议")),
+    }
+    // ---- Hy2 / TUIC：UDP 类协议，无传输层参数（ws/grpc 等不存在）----
+    if matches!(scheme, "hy2" | "hysteria2" | "tuic") {
+        let auth = unescape(u.username())?;
+        match scheme {
+            "tuic" => {
+                // tuic://<uuid>:<password>@host:port
+                let password = u.password().ok_or_else(|| bad("tuic 缺少 password"))?;
+                let password = unescape(password)?;
+                if !uuid(&auth) {
+                    return Err(bad("tuic UUID 无效"));
+                }
+                if password.is_empty() {
+                    return Err(bad("tuic 密码不能为空"));
+                }
+                node["uuid"] = json!(auth);
+                node["password"] = json!(password);
+            }
+            _ => {
+                // Scoped subset: single auth only; protocol-defined userpass is not implemented.
+                if u.password().is_some() {
+                    return Err(bad("hy2 认证应为单段 auth，密码中的冒号需 URL 转义"));
+                }
+                if auth.is_empty() {
+                    return Err(bad("hy2 缺少认证密码"));
+                }
+                node["type"] = json!("hysteria2");
+                node["password"] = json!(auth);
+            }
+        }
+        let sni = get("sni");
+        if !sni.is_empty() {
+            node["sni"] = json!(sni);
+            node["servername"] = json!(sni);
+        }
+        if scheme == "tuic" {
+            match get("congestion_control") {
+                "" => {}
+                v @ ("bbr" | "cubic") => node["congestion-controller"] = json!(v),
+                _ => return Err(bad("tuic congestion_control 暂不支持")),
+            }
+            match get("udp_relay_mode") {
+                "" => {}
+                v @ ("native" | "quic") => node["udp-relay-mode"] = json!(v),
+                _ => return Err(bad("tuic udp_relay_mode 暂不支持")),
+            }
+            let alpn = get("alpn");
+            if !alpn.is_empty() {
+                let items: Vec<&str> = alpn
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                if items.is_empty() {
+                    return Err(bad("tuic alpn 为空"));
+                }
+                node["alpn"] = json!(items);
+            }
+            let mut insecure = None;
+            for key in ["insecure", "allow_insecure", "allowInsecure"] {
+                if let Some(value) = params.get(key) {
+                    let value = match value.as_str() {
+                        "1" | "true" => true,
+                        "0" | "false" => false,
+                        _ => return Err(bad("证书校验参数无效")),
+                    };
+                    if insecure.is_some_and(|previous| previous != value) {
+                        return Err(bad("URI 证书校验别名参数互相冲突"));
+                    }
+                    insecure = Some(value);
+                }
+            }
+            if let Some(value) = insecure {
+                node["skip-cert-verify"] = json!(value);
+            }
+        } else {
+            // hy2：混淆与证书校验
+            let insecure = get("insecure");
+            if !insecure.is_empty() {
+                node["skip-cert-verify"] = json!(match insecure {
+                    "1" | "true" => true,
+                    "0" | "false" => false,
+                    _ => return Err(bad("证书校验参数无效")),
+                });
+            }
+            match get("obfs") {
+                "" => {
+                    if !get("obfs-password").is_empty() {
+                        return Err(bad("hy2 obfs-password 需要 obfs=salamander"));
+                    }
+                }
+                "salamander" => {
+                    let obfs_pass = get("obfs-password");
+                    if obfs_pass.is_empty() {
+                        return Err(bad("hy2 obfs=salamander 缺少 obfs-password"));
+                    }
+                    node["obfs"] = json!("salamander");
+                    node["obfs-password"] = json!(obfs_pass);
+                }
+                _ => return Err(bad("hy2 obfs 暂不支持")),
+            }
+            if params.contains_key("pinSHA256") {
+                return Err(bad("hy2 pinSHA256（证书指纹固定）暂不支持"));
+            }
+        }
+        return Ok(node);
     }
     if scheme != "ss" {
         for (a, b) in [("sni", "peer"), ("allowInsecure", "skip-cert-verify")] {
@@ -258,11 +427,73 @@ fn uri(line: &str) -> Result<Value> {
                 return Err(bad("URI 别名参数互相冲突"));
             }
         }
-        if !matches!(get("security"), "" | "none" | "tls") {
-            return Err(bad("security 暂不支持（包括 REALITY），不会降级为明文"));
+        if scheme == "vless" {
+            if get("security") != "reality"
+                && ["pbk", "sid", "spx"]
+                    .iter()
+                    .any(|key| params.contains_key(*key))
+            {
+                return Err(bad("pbk/sid/spx 仅支持 REALITY"));
+            }
+            if !matches!(get("security"), "tls" | "reality")
+                && (!get("flow").is_empty() || params.contains_key("fp"))
+            {
+                return Err(bad("vless flow/fp 需要 TLS 或 REALITY"));
+            }
+            if !get("flow").is_empty() && !matches!(get("type"), "" | "tcp") {
+                return Err(bad("vless vision 仅支持 TCP 传输"));
+            }
+        }
+        // vless flow：仅 xtls-rprx-vision 有明确 mihomo 语义
+        if scheme == "vless" {
+            match get("flow") {
+                "" => {}
+                v @ "xtls-rprx-vision" => node["flow"] = json!(v),
+                _ => return Err(bad("vless flow 暂不支持")),
+            }
+        }
+        match (scheme, get("security")) {
+            (_, "" | "none" | "tls") => {}
+            ("vless", "reality") => {
+                // REALITY：pbk 必须、sid 可选、spx（spiderX）无 mihomo 映射
+                let pbk = get("pbk");
+                if pbk.is_empty() {
+                    return Err(bad("vless REALITY 缺少 pbk（public-key）"));
+                }
+                if !get("spx").is_empty() {
+                    return Err(bad("vless REALITY spx 参数暂不支持"));
+                }
+                let key = URL_SAFE_NO_PAD
+                    .decode(pbk)
+                    .or_else(|_| URL_SAFE.decode(pbk))
+                    .map_err(|_| bad("vless REALITY pbk 无效"))?;
+                if key.len() != 32 {
+                    return Err(bad("vless REALITY pbk 长度无效"));
+                }
+                let sid = get("sid");
+                if sid.len() > 16
+                    || sid.len() % 2 != 0
+                    || !sid.bytes().all(|byte| byte.is_ascii_hexdigit())
+                {
+                    return Err(bad("vless REALITY sid 无效"));
+                }
+                node["tls"] = json!(true);
+                let mut reality = json!({ "public-key": URL_SAFE_NO_PAD.encode(&key) });
+                if !get("sid").is_empty() {
+                    reality["short-id"] = json!(get("sid"));
+                }
+                node["reality-opts"] = reality;
+            }
+            _ => {
+                return Err(bad("security 暂不支持（REALITY 仅 vless），不会降级为明文"));
+            }
         }
         if scheme == "vless" {
-            node["tls"] = json!(get("security") == "tls");
+            node["tls"] = json!(matches!(get("security"), "tls" | "reality"));
+            // uTLS 指纹：mihomo client-fingerprint（tls/reality 均可携带）
+            if !get("fp").is_empty() {
+                node["client-fingerprint"] = json!(get("fp"));
+            }
         }
         let sni = if get("sni").is_empty() {
             get("peer")
@@ -372,6 +603,58 @@ pub fn normalize(content: &str) -> Result<String> {
 mod tests {
     use super::*;
     const ID: &str = "00000000-0000-4000-8000-000000000001";
+    #[test]
+    fn credentials_and_query_values_use_strict_url_decoding() {
+        for link in [
+            "hy2://secret%GG@host:443",
+            "hy2://secret%@host:443",
+            "hy2://secret@host:443?obfs=salamander&obfs-password=%FF",
+            "hy2://secret@host:443?sni=%FF",
+            "hy2://secret@host:443#bad%GG",
+        ] {
+            let error = normalize(link).unwrap_err().to_string();
+            assert!(!error.contains("secret"));
+            assert!(!error.contains("%FF"));
+        }
+        let yaml = normalize("hy2://a%3Ab%40c@host?obfs=salamander&obfs-password=a%2Bb+c").unwrap();
+        let doc: Value = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(doc["proxies"][0]["password"], "a:b@c");
+        assert_eq!(doc["proxies"][0]["obfs-password"], "a+b c");
+    }
+
+    #[test]
+    fn reality_public_key_is_canonical_for_mihomo() {
+        let input = format!("vless://{ID}@host:443?security=reality&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA%3D");
+        let doc: Value = serde_yaml::from_str(&normalize(&input).unwrap()).unwrap();
+        assert_eq!(
+            doc["proxies"][0]["reality-opts"]["public-key"],
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        );
+    }
+
+    #[test]
+    fn new_protocol_fields_are_not_lost_in_singbox_conversion() {
+        for (link, field) in [
+            ("hy2://secret@host:443?obfs=salamander&obfs-password=PRIVATE_OBFS".to_string(), "obfs"),
+            (format!("vless://{ID}@host:443?security=reality&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"), "reality-opts"),
+            (format!("vless://{ID}@host:443?security=tls&flow=xtls-rprx-vision"), "flow"),
+            (format!("vless://{ID}@host:443?security=tls&fp=chrome"), "client-fingerprint"),
+        ] {
+            let yaml = normalize(&link).unwrap();
+            let error = crate::convert_to_singbox(&yaml, 7898, false, None).unwrap_err().to_string();
+            assert!(error.contains(field), "{error}");
+            assert!(!error.contains("secret"));
+            assert!(!error.contains("PRIVATE_OBFS"));
+        }
+        let yaml = normalize("hy2://secret@host:443?sni=server.test").unwrap();
+        let json: Value =
+            serde_json::from_str(&crate::convert_to_singbox(&yaml, 7898, false, None).unwrap())
+                .unwrap();
+        assert_eq!(json["outbounds"][0]["password"], "secret");
+        assert_eq!(json["outbounds"][0]["tls"]["server_name"], "server.test");
+        assert_eq!(json["outbounds"][0]["tls"]["insecure"], false);
+    }
+
     fn links() -> Vec<String> {
         vec![format!("ss://{}@ss.example:8388#SS",STANDARD_NO_PAD.encode("aes-128-gcm:p@ss:word")),
             format!("vmess://{}",STANDARD.encode(json!({"v":"2","ps":"VMess","add":"vm.example","port":"443","id":ID,"aid":"0","scy":"auto","net":"ws","type":"none","host":"front.example","path":"/ws","tls":"tls","sni":"front.example"}).to_string())),
@@ -455,6 +738,202 @@ mod tests {
         assert_ne!(doc["proxies"][1]["name"], doc["proxies"][2]["name"]);
         assert_ne!(doc["proxies"][1]["name"], "DIRECT");
     }
+    // ---- #599：Hy2 / TUIC / VLESS REALITY / flow ----
+
+    #[test]
+    fn hy2_basic_and_obfs_roundtrip() {
+        let out = normalize("hy2://p%40ss@hy.example:443?sni=hy.example&insecure=1#HY2").unwrap();
+        let doc: Value = serde_yaml::from_str(&out).unwrap();
+        let node = &doc["proxies"][0];
+        assert_eq!(node["type"], "hysteria2");
+        assert_eq!(node["server"], "hy.example");
+        assert_eq!(node["port"], 443);
+        assert_eq!(node["password"], "p@ss", "URL 转义还原");
+        assert_eq!(node["sni"], "hy.example");
+        assert_eq!(node["skip-cert-verify"], true);
+        assert!(node.get("obfs").is_none());
+    }
+
+    #[test]
+    fn hy2_obfs_salamander_pairs_and_rejects_orphans() {
+        let out = normalize(
+            "hysteria2://auth@hy.example:443?obfs=salamander&obfs-password=ob&insecure=0#n",
+        )
+        .unwrap();
+        let doc: Value = serde_yaml::from_str(&out).unwrap();
+        assert_eq!(doc["proxies"][0]["obfs"], "salamander");
+        assert_eq!(doc["proxies"][0]["obfs-password"], "ob");
+        assert_eq!(doc["proxies"][0]["skip-cert-verify"], false);
+
+        // obfs-password 无 obfs → 冲突拒绝
+        assert!(normalize("hy2://a@hy.example:443?obfs-password=x#n").is_err());
+        // obfs 无 obfs-password → 拒绝
+        assert!(normalize("hy2://a@hy.example:443?obfs=salamander#n").is_err());
+        // pinSHA256 无 mihomo 映射 → 拒绝
+        assert!(normalize("hy2://a@hy.example:443?pinSHA256=ABCD#n")
+            .unwrap_err()
+            .to_string()
+            .contains("pinSHA256"));
+        // 未知参数拒绝（不静默丢）
+        assert!(normalize("hy2://a@hy.example:443?unknownParam=1#n").is_err());
+        // 双段认证歧义拒绝
+        assert!(normalize("hy2://user:pass@hy.example:443#n").is_err());
+    }
+
+    #[test]
+    fn tuic_fields_map_and_reject_unknown() {
+        let out = normalize(
+        "tuic://00000000-0000-4000-8000-000000000001:secret@tu.example:443?sni=tu.example&congestion_control=bbr&udp_relay_mode=native&alpn=h3,hq&insecure=1#TUIC",
+    )
+    .unwrap();
+        let doc: Value = serde_yaml::from_str(&out).unwrap();
+        let node = &doc["proxies"][0];
+        assert_eq!(node["type"], "tuic");
+        assert_eq!(node["uuid"], "00000000-0000-4000-8000-000000000001");
+        assert_eq!(node["password"], "secret");
+        assert_eq!(node["sni"], "tu.example");
+        assert_eq!(node["congestion-controller"], "bbr");
+        assert_eq!(node["udp-relay-mode"], "native");
+        assert_eq!(node["alpn"], serde_json::json!(["h3", "hq"]));
+        assert_eq!(node["skip-cert-verify"], true);
+
+        // 无效 UUID / 缺密码 / 非法拥塞控制 / 未知参数
+        assert!(normalize("tuic://not-a-uuid:pw@tu.example:443#n").is_err());
+        assert!(normalize("tuic://00000000-0000-4000-8000-000000000001@tu.example:443#n").is_err());
+        assert!(normalize(
+        "tuic://00000000-0000-4000-8000-000000000001:pw@tu.example:443?congestion_control=fast#n"
+    )
+    .unwrap_err()
+    .to_string()
+    .contains("congestion_control"));
+        assert!(normalize(
+            "tuic://00000000-0000-4000-8000-000000000001:pw@tu.example:443?zero_rtt=true#n"
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("zero_rtt"));
+    }
+
+    #[test]
+    fn vless_reality_and_vision_map_to_mihomo_fields() {
+        let out = normalize(
+        "vless://00000000-0000-4000-8000-000000000001@vl.example:443?encryption=none&security=reality&sni=vl.example&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sid=abcd&fp=chrome&flow=xtls-rprx-vision#REALITY",
+    )
+    .unwrap();
+        let doc: Value = serde_yaml::from_str(&out).unwrap();
+        let node = &doc["proxies"][0];
+        assert_eq!(node["type"], "vless");
+        assert_eq!(node["tls"], true);
+        assert_eq!(node["servername"], "vl.example");
+        assert_eq!(
+            node["reality-opts"]["public-key"],
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        );
+        assert_eq!(node["reality-opts"]["short-id"], "abcd");
+        assert_eq!(node["client-fingerprint"], "chrome");
+        assert_eq!(node["flow"], "xtls-rprx-vision");
+
+        // 缺 pbk / spx / 非 vision flow 拒绝
+        assert!(
+        normalize(
+            "vless://00000000-0000-4000-8000-000000000001@vl.example:443?security=reality&sni=vl.example#n"
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("pbk")
+    );
+        assert!(
+        normalize(
+            "vless://00000000-0000-4000-8000-000000000001@vl.example:443?security=reality&pbk=K&spx=/spider#n"
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("spx")
+    );
+        assert!(normalize(
+            "vless://00000000-0000-4000-8000-000000000001@vl.example:443?flow=xtls-rprx-splice#n"
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("flow"));
+    }
+
+    #[test]
+    fn hy2_tuic_reject_transport_parameters() {
+        // UDP 类协议没有 ws/grpc 传输层
+        assert!(normalize("hy2://a@hy.example:443?type=ws&path=/x#n")
+            .unwrap_err()
+            .to_string()
+            .contains("type"));
+        assert!(normalize(
+            "tuic://00000000-0000-4000-8000-000000000001:pw@tu.example:443?type=grpc#n"
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("type"));
+    }
+
+    #[test]
+    fn mixed_list_is_atomic_on_any_bad_line() {
+        // 一行 hy2 有效 + 一行未知协议 → 整批失败（不自动跳过坏节点）
+        let mixed = format!(
+            "hy2://a@hy.example:443#OK\nvless://bad-uri-line\n{}",
+            links()[0]
+        );
+        let err = normalize(&mixed).unwrap_err().to_string();
+        assert!(err.contains("URI 第 2 行"), "{err}");
+    }
+
+    #[test]
+    fn ipv6_server_and_url_escaped_name_roundtrip() {
+        let out = normalize("hy2://auth@[2001:db8::1]:8443?sni=h.example#[H2] 名称").unwrap();
+        let doc: Value = serde_yaml::from_str(&out).unwrap();
+        assert_eq!(doc["proxies"][0]["server"], "2001:db8::1");
+        assert_eq!(doc["proxies"][0]["port"], 8443);
+        assert_eq!(doc["proxies"][0]["name"], "[H2] 名称");
+    }
+
+    #[test]
+    fn hy2_default_port_and_tuic_security_aliases_are_validated() {
+        let doc: Value =
+            serde_yaml::from_str(&normalize("hy2://auth@h.example#n").unwrap()).unwrap();
+        assert_eq!(doc["proxies"][0]["port"], 443);
+        assert!(normalize("hy2://auth@h.example:0#n").is_err());
+        let base = "tuic://00000000-0000-4000-8000-000000000001:pw@h.example:443";
+        assert!(normalize(&format!("{base}?insecure=1&allowInsecure=0")).is_err());
+        let out = normalize(&format!("{base}?allow_insecure=0&allowInsecure=false")).unwrap();
+        let doc: Value = serde_yaml::from_str(&out).unwrap();
+        assert_eq!(doc["proxies"][0]["skip-cert-verify"], false);
+    }
+
+    #[test]
+    fn reality_and_vision_reject_incompatible_or_invalid_options() {
+        for query in [
+            "flow=xtls-rprx-vision",
+            "security=none&flow=xtls-rprx-vision",
+            "security=tls&flow=xtls-rprx-vision&type=ws",
+            "security=none&fp=chrome",
+            "security=tls&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "security=reality&pbk=bad",
+            "security=reality&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sid=xyz",
+        ] {
+            assert!(normalize(&format!("vless://{ID}@h.example:443?{query}")).is_err());
+        }
+    }
+
+    #[test]
+    fn unsupported_values_do_not_escape_into_errors() {
+        for link in [
+            "hy2://auth@h.example:443?obfs=PRIVATE_VALUE".to_string(),
+            format!("tuic://{ID}:pw@h.example:443?congestion_control=PRIVATE_VALUE"),
+            format!("vless://{ID}@h.example:443?security=tls&flow=PRIVATE_VALUE"),
+            "hy2://auth@h.example:443?PRIVATE_VALUE=1".to_string(),
+        ] {
+            let error = normalize(&link).unwrap_err().to_string();
+            assert!(!error.contains("PRIVATE_VALUE"), "{error}");
+        }
+    }
+
     #[test]
     fn failures_are_all_or_nothing_format_specific_and_credential_free() {
         let malformed = "trojan://VERY_SECRET@host.example:bad?token=SUBSCRIPTION_SECRET";
@@ -464,8 +943,12 @@ mod tests {
         assert!(error.contains("URI 第 2 行"));
         assert!(!error.contains("VERY_SECRET"));
         assert!(!error.contains("SUBSCRIPTION_SECRET"));
+        // REALITY 现已支持（#599）——但缺 pbk 仍拒绝（无歧义映射不静默丢）
+        let reality_err = normalize(&format!("vless://{ID}@host:443?security=reality"))
+            .unwrap_err()
+            .to_string();
+        assert!(reality_err.contains("pbk"), "{reality_err}");
         for link in [
-            format!("vless://{ID}@host:443?security=reality"),
             format!("vless://{ID}@host:443?type=quic"),
             "ss://YWVzLTEyOC1nY206cGFzcw@host:8388?plugin=obfs".into(),
         ] {
