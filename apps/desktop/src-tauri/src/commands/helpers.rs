@@ -307,6 +307,33 @@ mod import_persistence_tests {
         );
     }
     #[test]
+    fn native_singbox_import_rejects_wrong_engine_without_publication() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path()).unwrap();
+        let mut old = make_profile("old".into(), "old".into(), ProfileKind::Local, None);
+        old.content = "proxies: []\nrules: ['MATCH,DIRECT']".into();
+        persist_imported_profile(&mut store, &old).unwrap();
+        let mut native = make_profile("native".into(), "native".into(), ProfileKind::Local, None);
+        native.content = r#"{"outbounds":[{"type":"direct","tag":"direct"}]}"#.into();
+        let before = std::fs::read(dir.path().join("store.json")).unwrap();
+        let memory = serde_json::to_value(store.data()).unwrap();
+        assert!(persist_imported_profile(&mut store, &native).is_err());
+        assert_eq!(serde_json::to_value(store.data()).unwrap(), memory);
+        assert_eq!(
+            std::fs::read(dir.path().join("store.json")).unwrap(),
+            before
+        );
+        store
+            .transaction(|data| {
+                data.engine.engine = crossbow_core::Engine::SingBox;
+                Ok(())
+            })
+            .unwrap();
+        persist_imported_profile(&mut store, &native).unwrap();
+        assert_eq!(store.data().profiles.len(), 2);
+        assert_eq!(store.data().active_profile.as_deref(), Some("old"));
+    }
+    #[test]
     fn remote_and_local_import_retry_only_publishes_one_profile() {
         for kind in [ProfileKind::Remote, ProfileKind::Local] {
             let dir = tempfile::tempdir().unwrap();

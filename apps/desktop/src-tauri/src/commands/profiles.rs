@@ -288,6 +288,21 @@ mod import_inspection_tests {
         }
     }
     #[test]
+    fn native_singbox_format_is_not_reported_compatible_with_mihomo() {
+        let content = r#"{"outbounds":[{"type":"trojan","tag":"private-node","server":"node.test","server_port":443,"password":"PRIVATE_AUTH","tls":{"enabled":true}}]}"#;
+        let mut data = crossbow_core::StoreSchema::default();
+        assert_eq!(
+            inspect_import(&data, content, String::new()).status,
+            "unsupported"
+        );
+        data.engine.engine = crossbow_core::Engine::SingBox;
+        let report = inspect_import(&data, content, String::new());
+        assert_eq!(report.status, "compatible");
+        assert!(!serde_json::to_string(&report)
+            .unwrap()
+            .contains("PRIVATE_AUTH"));
+    }
+    #[test]
     fn malformed_mixed_and_remote_inputs_are_inspection_only() {
         let data = crossbow_core::StoreSchema::default();
         assert_eq!(

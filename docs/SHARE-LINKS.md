@@ -1,6 +1,6 @@
 # 分享链接支持与导入预检（#599 / PR #616）
 
-本地解析器通过 `subscription::normalize_profile_content` 生成 mihomo 配置，不使用在线转换服务。列表最多 8 MiB / 4096 节点；任一行失败整批失败。完整 Clash / sing-box 配置沿用各自格式，不套用 URI 字段白名单，但仍须通过当前引擎的渲染预检才能导入。
+本地解析器通过 `subscription::normalize_profile_content` 生成 mihomo 配置，不使用在线转换服务。列表最多 8 MiB / 4096 节点；任一行失败整批失败。完整 Clash / sing-box 配置沿用各自格式，不套用 URI 字段白名单，但仍须通过当前引擎的渲染预检才能导入。原生 sing-box 配置只能由 sing-box 内核读取；当前没有 sing-box → mihomo 转换，预检和引擎切换都会拒绝这一方向，避免 outbounds 被静默忽略。
 
 ## 能力范围
 
