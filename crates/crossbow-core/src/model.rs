@@ -195,6 +195,10 @@ pub struct StoreSchema {
     /// Application-managed rule subscriptions and last-good local cache (#571).
     #[serde(default)]
     pub rule_sets: Vec<crate::rule_sets::RuleSet>,
+    /// v3：DNS 配置（#598）。沿用订阅为默认，零行为变更；自定义模式在
+    /// 渲染层注入用户上游（用户设置 > 覆写 > 订阅 > TUN 运行时注入）。
+    #[serde(default)]
+    pub dns: crate::dns_settings::DnsSettings,
 }
 
 /// SSID 网络场景（#566）：Wi-Fi 名称 → 进入该网络时的接管动作。
@@ -328,6 +332,7 @@ impl Default for StoreSchema {
             scenes: NetworkScenes::default(),
             process_rules: Vec::new(),
             rule_sets: Vec::new(),
+            dns: Default::default(),
         }
     }
 }

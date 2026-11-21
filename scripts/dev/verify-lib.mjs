@@ -172,6 +172,7 @@ export function stubSource() {
     "sysproxy_status": { enabled: false, port: 7897 },
     "tun_status": { enabled: false, ready: true, coreRunning: true },
     "core_mode": "rule",
+    "get_dns_settings": { mode: "inherit", proxy_nameservers: [], direct_nameservers: [], bootstrap_nameservers: [] },
     "get_engine_config": {
       engine: "mihomo", mixed_port: 7897, allow_lan: false, flag_emoji: true,
       linux_wireguard_coexist: false, core_installed: true,

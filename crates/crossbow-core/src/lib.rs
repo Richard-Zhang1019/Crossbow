@@ -5,6 +5,7 @@
 //! 平台相关能力（进程管理、系统代理、NE 隧道）不在这里，由各壳实现。
 
 pub mod config_package;
+pub mod dns_settings;
 pub mod emoji;
 pub mod model;
 pub mod override_patch;

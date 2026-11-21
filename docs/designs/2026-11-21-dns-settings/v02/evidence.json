@@ -1,0 +1,11 @@
+{
+  "revision": "38e83325f2a7fb369243ed15507b51a43cd5ea3a",
+  "platform": "darwin",
+  "browser": "157.0.8103.79",
+  "source": "Production Settings/DnsSettings with synthetic IPC; no native networking",
+  "views": [
+    "1120x734 light zh",
+    "880x560 dark en"
+  ],
+  "failures": []
+}

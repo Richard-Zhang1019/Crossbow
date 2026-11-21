@@ -55,6 +55,19 @@ export interface LanAddress {
   address: string;
 }
 
+/// #598 DNS 配置：沿用订阅（inherit，零行为变更）或受控自定义。
+export type DnsMode = "inherit" | "custom";
+
+export interface DnsSettings {
+  mode: DnsMode;
+  /// 代理业务上游（经代理出站解析）
+  proxy_nameservers: string[];
+  /// 直连业务上游
+  direct_nameservers: string[];
+  /// 节点引导上游（仅 mihomo 支持）
+  bootstrap_nameservers: string[];
+}
+
 export interface CoreStatus {
   state: CoreState;
   message?: string;
@@ -449,6 +462,10 @@ export const ipc = {
     invoke<void>("set_linux_wireguard_coexist", { enabled }),
   setAllowLan: (enabled: boolean) => invoke<void>("set_allow_lan", { enabled }),
   lanAddresses: () => invoke<LanAddress[]>("lan_addresses"),
+  /** #598 DNS 配置：读取 / 保存（保存后需走 apply_overrides 事务生效） */
+  getDnsSettings: () => invoke<DnsSettings>("get_dns_settings"),
+  setDnsSettings: (settings: DnsSettings) =>
+    invoke<void>("set_dns_settings", { settings }),
   autostartStatus: () => invoke<boolean>("autostart_status"),
   autostartSet: (enable: boolean) => invoke<void>("autostart_set", { enable }),
   trafficHistory: () => invoke<{ up: number; down: number }[]>("traffic_history"),

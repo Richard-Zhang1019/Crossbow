@@ -12,7 +12,9 @@ use std::time::{Duration, Instant};
 
 use crate::engine::bridge::WsHub;
 use crossbow_core::subscription::{fetch_subscription, now_secs, validate_profile_content};
-use crossbow_core::{Profile, ProfileKind, RuntimeConfig, Store, UiSettings};
+use crossbow_core::{
+    dns_settings::DnsSettings, Profile, ProfileKind, RuntimeConfig, Store, UiSettings,
+};
 #[cfg(not(target_os = "macos"))]
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager};
@@ -945,6 +947,8 @@ pub fn run() {
             unsubscribe_traffic,
             traffic_history,
             traffic_stats,
+            get_dns_settings,
+            set_dns_settings,
             subscribe_connections,
             unsubscribe_connections,
             subscribe_logs,

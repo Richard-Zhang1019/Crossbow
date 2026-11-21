@@ -392,7 +392,7 @@ mod tests {
         );
         assert_eq!(doc["proxies"][3]["ws-opts"]["path"], "/ws");
         assert_eq!(doc["rules"][0], "MATCH,节点选择");
-        let sing = crate::convert_to_singbox(&yaml, 7898, false).unwrap();
+        let sing = crate::convert_to_singbox(&yaml, 7898, false, None).unwrap();
         let sing: Value = serde_json::from_str(&sing).unwrap();
         assert!(sing["outbounds"].as_array().unwrap().len() >= 4);
         for encoded in [STANDARD.encode(&input), URL_SAFE_NO_PAD.encode(&input)] {
@@ -425,7 +425,7 @@ mod tests {
         ] {
             let yaml = normalize(&input).unwrap();
             let sing: Value =
-                serde_json::from_str(&crate::convert_to_singbox(&yaml, 7898, false).unwrap())
+                serde_json::from_str(&crate::convert_to_singbox(&yaml, 7898, false, None).unwrap())
                     .unwrap();
             let node = sing["outbounds"]
                 .as_array()
