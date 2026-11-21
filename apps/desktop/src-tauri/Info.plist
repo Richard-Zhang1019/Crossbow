@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- #566 网络场景：读取当前 Wi-Fi 名称需要定位授权（macOS 14+）。
+         缺少该键时系统授权框不会出现，应用也无法进入定位服务列表。 -->
+    <key>NSLocationUsageDescription</key>
+    <string>Crossbow 需要读取当前 Wi-Fi 名称，以便按网络自动切换接管方式（网络场景）。</string>
+  </dict>
+</plist>

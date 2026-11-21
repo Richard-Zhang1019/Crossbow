@@ -104,6 +104,12 @@ export interface SysProxyStatus {
 }
 
 /** SSID 网络场景状态（#566）：规则表 + 当前网络 + 生效场景。 */
+export type LocationPermission =
+  | "authorized"
+  | "denied"
+  | "not_determined"
+  | "unsupported";
+
 export interface ScenesStatus {
   supported?: boolean;
   networkState?: "available" | "disconnected" | "unavailable";
@@ -111,6 +117,8 @@ export interface ScenesStatus {
   /** 当前关联的 Wi-Fi；null = 无 Wi-Fi 或定位权限缺失。 */
   currentSsid: string | null;
   activeScene: [string, string] | null;
+  /** 定位授权状态：not_determined 时展示请求入口，denied 引导系统设置。 */
+  location: LocationPermission;
 }
 
 export interface PackagePreview {
@@ -492,6 +500,8 @@ export const ipc = {
     invoke<void>("network_scene_set", { ssid, action }),
   removeNetworkScene: (ssid: string) =>
     invoke<void>("network_scene_remove", { ssid }),
+  requestSceneLocation: () =>
+    invoke<LocationPermission>("network_scene_request_location"),
   onCoreMode: (cb: (m: CoreMode) => void) =>
     listen<CoreMode>("core://mode", (e) => cb(e.payload)),
   onTraffic: (cb: (t: { up: number; down: number }) => void) =>
