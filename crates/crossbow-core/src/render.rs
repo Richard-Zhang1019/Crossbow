@@ -80,7 +80,13 @@ pub fn render_config_with(
                     store.engine.mixed_port,
                     store.engine.allow_lan,
                 )
-                .map_err(|e| RenderError::InvalidYaml(e.to_string()))?
+                .map_err(|e| match e {
+                    // #593：语义不支持要原样透传，不伪装成 YAML 错误
+                    crate::singbox_convert::ConvertError::UnsupportedFields { fields, hint } => {
+                        RenderError::UnsupportedFields { fields, hint }
+                    }
+                    other => RenderError::InvalidYaml(other.to_string()),
+                })?
             };
             let json = crate::rule_sets::inject_json(&json, &store.rule_sets)
                 .map_err(RenderError::InvalidYaml)?;
@@ -134,6 +140,9 @@ pub enum RenderError {
     MissingProfile(String),
     #[error("invalid yaml: {0}")]
     InvalidYaml(String),
+    /// #593：顶层字段无法等价转换——切换明确拒绝并保持旧配置。
+    #[error("切换到 sing-box 会丢失以下配置的解析语义：{fields}。{hint}")]
+    UnsupportedFields { fields: String, hint: String },
 }
 
 #[cfg(test)]
