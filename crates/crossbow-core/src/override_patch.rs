@@ -13,12 +13,32 @@ pub fn run_override_kind(
     content: &str,
     base_yaml: &str,
 ) -> Result<String, String> {
+    run_override_before(
+        kind,
+        content,
+        base_yaml,
+        std::time::Instant::now() + crate::script_override::WORKER_TIMEOUT,
+    )
+}
+
+pub(crate) fn run_override_before(
+    kind: OverrideKind,
+    content: &str,
+    base_yaml: &str,
+    deadline: std::time::Instant,
+) -> Result<String, String> {
+    let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+    if remaining.is_zero() {
+        return Err(crate::script_override::ScriptError::Timeout.to_string());
+    }
     match kind {
         OverrideKind::Merge => apply_merge(base_yaml, content).map_err(|e| e.to_string()),
         // #592：脚本经独立工作进程执行（墙钟 5s 强制 kill + Boa 预算），
         // 校验/启动/编辑共用此入口，坏脚本不拖住配置操作
-        OverrideKind::Script => crate::script_override::run_script_via_worker(content, base_yaml)
-            .map_err(|e| e.to_string()),
+        OverrideKind::Script => {
+            crate::script_override::run_script_with_timeout(content, base_yaml, remaining)
+                .map_err(|e| e.to_string())
+        }
     }
 }
 

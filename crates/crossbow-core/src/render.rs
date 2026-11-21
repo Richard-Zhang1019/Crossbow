@@ -45,14 +45,13 @@ pub fn render_config_with(
     };
 
     let mut config = profile.content.clone();
+    let deadline = std::time::Instant::now() + crate::script_override::WORKER_TIMEOUT;
     for o in active {
-        config =
-            crate::override_patch::run_override_kind(o.kind, &o.content, &config).map_err(|e| {
-                RenderError::OverrideFailed {
-                    id: o.id.clone(),
-                    name: o.name.clone(),
-                    detail: e.to_string(),
-                }
+        config = crate::override_patch::run_override_before(o.kind, &o.content, &config, deadline)
+            .map_err(|e| RenderError::OverrideFailed {
+                id: o.id.clone(),
+                name: o.name.clone(),
+                detail: e.to_string(),
             })?;
     }
     if store.engine.flag_emoji {
@@ -103,6 +102,11 @@ pub fn render_config_with(
 /// 校验全部启用的覆写：按列表顺序对当前档案内容逐个执行，
 /// 返回失败的 (id, 错误)。不要求绑定——编辑即反馈。
 pub fn validate_enabled_overrides(store: &StoreSchema) -> Vec<(String, String)> {
+    validate_with_budget(store, crate::script_override::WORKER_TIMEOUT)
+}
+
+fn validate_with_budget(store: &StoreSchema, budget: std::time::Duration) -> Vec<(String, String)> {
+    let deadline = std::time::Instant::now() + budget;
     let base = store
         .active_profile
         .as_deref()
@@ -112,7 +116,14 @@ pub fn validate_enabled_overrides(store: &StoreSchema) -> Vec<(String, String)> 
     let mut config = base;
     let mut failures = Vec::new();
     for o in store.overrides.iter().filter(|o| o.enabled) {
-        match crate::override_patch::run_override_kind(o.kind, &o.content, &config) {
+        if std::time::Instant::now() >= deadline {
+            failures.push((
+                o.id.clone(),
+                "未校验：本次覆写处理预算已耗尽，请减少脚本或停用慢脚本后重试".into(),
+            ));
+            continue;
+        }
+        match crate::override_patch::run_override_before(o.kind, &o.content, &config, deadline) {
             Ok(next) => config = next,
             Err(e) => failures.push((o.id.clone(), e.to_string())),
         }
@@ -140,6 +151,34 @@ pub enum RenderError {
 mod tests {
     use super::*;
     use crate::model::{OverrideDef, OverrideKind, Profile, ProfileKind};
+
+    #[test]
+    fn validation_deadline_marks_remaining_items_unchecked() {
+        let mut store = fixture();
+        store.overrides.clear();
+        for (id, content) in [
+            (
+                "slow",
+                "function main(c) { /(a+)+$/.test('a'.repeat(36)+'!'); return c; }",
+            ),
+            ("later", "function main(c) { return c; }"),
+        ] {
+            store.overrides.push(OverrideDef {
+                id: id.into(),
+                name: id.into(),
+                kind: OverrideKind::Script,
+                content: content.into(),
+                enabled: true,
+                last_error: None,
+            });
+        }
+        let started = std::time::Instant::now();
+        let failures = validate_with_budget(&store, std::time::Duration::from_millis(150));
+        assert_eq!(failures.len(), 2);
+        assert!(failures[0].1.contains("超时"));
+        assert!(failures[1].1.contains("未校验"));
+        assert!(started.elapsed() < std::time::Duration::from_secs(3));
+    }
 
     #[test]
     fn validate_flags_all_enabled_failures() {
