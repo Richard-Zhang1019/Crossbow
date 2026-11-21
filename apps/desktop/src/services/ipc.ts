@@ -472,11 +472,11 @@ export const ipc = {
   /** #567：本地流量统计 TopN + 逐日总量（days 含今天，1/7/30） */
   // #600：本地统计的暂停/清除控制
   trafficStatsControl: () =>
-    invoke<{ paused: boolean }>("traffic_stats_control"),
+    invoke<{ paused: boolean; warning?: string | null }>("traffic_stats_control"),
   setTrafficStatsPaused: (paused: boolean) =>
     invoke<void>("traffic_stats_set_paused", { paused }),
   clearTrafficStats: () => invoke<void>("traffic_stats_clear"),
-    trafficStats: (days: number) =>
+  trafficStats: (days: number) =>
     invoke<TrafficStatsReport>("traffic_stats", { days }),
   proxiesSnapshot: () => invoke<GroupView[]>("proxies_snapshot"),
   selectProxy: (group: string, name: string) =>

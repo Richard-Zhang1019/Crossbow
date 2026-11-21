@@ -12,6 +12,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -56,6 +57,8 @@ struct StatsFile {
     /// #600 用户暂停记录（持久化：重启后保持暂停）。
     #[serde(default)]
     paused: bool,
+    #[serde(default)]
+    rebaseline: bool,
 }
 
 #[derive(Serialize)]
@@ -64,6 +67,8 @@ struct StatsFileRef<'a> {
     days: &'a BTreeMap<String, DayBuckets>,
     #[serde(default)]
     paused: bool,
+    #[serde(default)]
+    rebaseline: bool,
 }
 
 /// 一帧 /connections 里参与聚合的最小字段集。
@@ -93,6 +98,10 @@ pub(crate) struct TrafficStatsReport {
 pub(crate) struct TrafficStats {
     path: PathBuf,
     inner: Mutex<StatsInner>,
+    writer: Mutex<()>,
+    load_warning: Mutex<Option<String>>,
+    #[cfg(test)]
+    before_write: Mutex<Option<std::sync::Arc<std::sync::Barrier>>>,
 }
 
 struct StatsInner {
@@ -100,14 +109,15 @@ struct StatsInner {
     basis: HashMap<String, ConnBasis>,
     dirty: bool,
     last_flush: Option<Instant>,
-    /// #600 清除代次：清除/恢复状态切换时 +1——在途锁外 writer 写回前
-    /// 校验，代次变化即放弃旧数据写入（防「清完又复活」）。
+    /// Sampling epoch: discard frames parsed before a pause/clear boundary.
+    /// The separate writer mutex orders file publications.
     epoch: u64,
     /// #600 数据代次：apply_frame 有增量时 +1——锁外落盘期间的新增量
     /// 通过代次比对保序，不漏写。
     generation: u64,
     /// 用户暂停记录（ingest 入口直接短路）。
     paused: bool,
+    rebaseline: bool,
 }
 
 /// 解析 mihomo /connections 帧的参与字段。host 缺失回退 destinationIP
@@ -156,11 +166,13 @@ struct StatsSnapshot {
     days: BTreeMap<String, DayBuckets>,
     basis: HashMap<String, ConnBasis>,
     paused: bool,
+    rebaseline: bool,
 }
 
 /// #600 容量上限：桶内条目超限时新键归入「其他」（总量守恒——被聚合
 /// 的字节不丢，只失去细分粒度）。
 fn accumulate_capped(map: &mut HashMap<String, [u64; 2]>, key: &str, up: u64, down: u64) {
+    let key = if key.len() > 512 { OTHER_KEY } else { key };
     let slot = if map.contains_key(key) || map.len() < MAX_ENTRIES_PER_DAY {
         map.entry(key.to_string()).or_insert([0, 0])
     } else {
@@ -177,6 +189,7 @@ fn trim_file_budget(days: &mut BTreeMap<String, DayBuckets>) {
             days: &*days,
             basis: &HashMap::new(),
             paused: false,
+            rebaseline: false,
         })
         .map(|v| v.len())
         .unwrap_or(0);
@@ -209,24 +222,64 @@ impl TrafficStats {
     pub(crate) fn open(data_dir: &Path) -> Self {
         let path = data_dir.join("traffic-stats.json");
         crate::platform::fs_perms::ensure_private(&path);
-        let mut saved = fs::read(&path)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<StatsFile>(&bytes).ok())
-            .unwrap_or_default();
+        // Permit bounded migration of old large files without unbounded allocation.
+        // Oversized history is preserved on disk and recording starts paused.
+        let budget = 64 * 1024 * 1024;
+        let oversized = fs::metadata(&path).is_ok_and(|meta| meta.len() > budget);
+        let mut bytes = Vec::new();
+        if !oversized {
+            if let Ok(file) = fs::File::open(&path) {
+                let _ = file.take(budget + 1).read_to_end(&mut bytes);
+            }
+        }
+        let oversized = oversized || bytes.len() as u64 > budget;
+        let mut saved = if oversized {
+            StatsFile {
+                paused: true,
+                rebaseline: true,
+                ..Default::default()
+            }
+        } else {
+            serde_json::from_slice::<StatsFile>(&bytes).unwrap_or_default()
+        };
+        saved.basis.retain(|key, _| key.len() <= 128);
+        if saved.basis.len() > 8192 {
+            saved.basis.clear();
+        }
+        for buckets in saved.days.values_mut() {
+            for map in [&mut buckets.domains, &mut buckets.nodes] {
+                let old = std::mem::take(map);
+                for (key, [up, down]) in old {
+                    accumulate_capped(map, &key, up, down);
+                }
+            }
+        }
         let previous_days = saved.days.len();
         let cutoff = window_start(&local_today(), RETENTION_DAYS);
-        saved.days.retain(|day, _| day >= &cutoff);
+        saved.days.retain(|day, _| {
+            day >= &cutoff
+                && day <= &local_today()
+                && chrono::NaiveDate::parse_from_str(day, "%Y-%m-%d").is_ok()
+        });
         let expired = saved.days.len() != previous_days;
+        let dirty = expired || !saved.days.is_empty();
         let stats = Self {
             path,
+            writer: Mutex::new(()),
+            load_warning: Mutex::new(oversized.then(|| {
+                "统计历史文件超过 64 MiB，已暂停记录并保留原文件；请备份后清除本地统计".into()
+            })),
+            #[cfg(test)]
+            before_write: Mutex::new(None),
             inner: Mutex::new(StatsInner {
                 days: saved.days,
                 basis: saved.basis,
-                dirty: expired,
+                dirty,
                 last_flush: None,
                 epoch: 0,
                 generation: 0,
                 paused: saved.paused,
+                rebaseline: saved.paused || saved.rebaseline,
             }),
         };
         stats.flush_if_due(true);
@@ -236,14 +289,51 @@ impl TrafficStats {
     /// 聚合一帧：增量 = 当前累计 − 上一帧基准（saturating，计数器回退
     /// 不产生负增量）；帧中消失的连接视为关闭，基准随手清理。
     /// `day` 为本地日期，跨天切割即换 key。
+    #[cfg(test)]
     pub(crate) fn apply_frame(&self, items: &[ConnItem], day: &str) {
         // 显式 &mut 拆字段借用：days 与 basis 的 entry 同时活跃（MutexGuard
         // 的 DerefMut 不会做字段级 borrow split）
+        self.apply_frame_epoch(items, day, None);
+    }
+
+    fn apply_frame_epoch(&self, items: &[ConnItem], day: &str, epoch: Option<u64>) {
         let inner: &mut StatsInner = &mut self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if inner.paused || epoch.is_some_and(|epoch| epoch != inner.epoch) {
+            return;
+        }
+        let cutoff = window_start(day, RETENTION_DAYS);
+        let old_len = inner.days.len();
+        inner
+            .days
+            .retain(|key, _| key >= &cutoff && key.as_str() <= day);
+        if inner.days.len() != old_len {
+            inner.dirty = true;
+            inner.generation = inner.generation.wrapping_add(1);
+        }
+        let items = &items[..items.len().min(8192)];
+        if inner.rebaseline {
+            inner.basis = items
+                .iter()
+                .filter(|item| item.id.len() <= 128)
+                .map(|item| {
+                    (
+                        item.id.clone(),
+                        ConnBasis {
+                            up: item.up,
+                            down: item.down,
+                        },
+                    )
+                })
+                .collect();
+            inner.rebaseline = false;
+            inner.dirty = true;
+            inner.generation = inner.generation.wrapping_add(1);
+            return;
+        }
         let seen: HashSet<&str> = items.iter().map(|item| item.id.as_str()).collect();
         let mut changed = false;
         let day_entry = inner.days.entry(day.to_string()).or_default();
-        for item in items {
+        for item in items.iter().filter(|item| item.id.len() <= 128) {
             let basis = inner.basis.entry(item.id.clone()).or_default();
             let up = item.up.saturating_sub(basis.up);
             let down = item.down.saturating_sub(basis.down);
@@ -263,6 +353,7 @@ impl TrafficStats {
         inner.basis.retain(|id, _| seen.contains(id.as_str()));
         changed |= previous_count != inner.basis.len();
         if changed {
+            inner.generation = inner.generation.wrapping_add(1);
             inner.dirty = true;
         }
     }
@@ -270,13 +361,19 @@ impl TrafficStats {
     /// 常驻采样入口：解析一帧 → 聚合 → 按需落盘。用户暂停记录时直接
     /// 短路（连解析都不做，#600 隐私控制）。
     pub(crate) fn ingest(&self, txt: &str) {
-        if self.inner.lock().unwrap_or_else(|e| e.into_inner()).paused {
-            return;
-        }
+        let epoch = {
+            let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+            if inner.paused {
+                drop(inner);
+                self.flush_if_due(false);
+                return;
+            }
+            inner.epoch
+        };
         let Some(items) = parse_frame(txt) else {
             return;
         };
-        self.apply_frame(&items, &local_today());
+        self.apply_frame_epoch(&items, &local_today(), Some(epoch));
         self.flush_if_due(false);
     }
 
@@ -287,101 +384,122 @@ impl TrafficStats {
     }
 
     fn flush_on_date(&self, force: bool, today: &str) {
-        // 锁内：节流判定 + 窗口裁剪 + 容量裁剪 + 状态快照（clone 内存
-        // 成本远低于序列化+磁盘 IO）——序列化与文件 I/O 全部移出锁外
-        //（#600：长期运行不因落盘卡住统计线程）。
-        let (snapshot, snap_epoch, snap_gen) = {
-            let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-            if !inner.dirty {
-                return;
-            }
-            if !force
-                && inner
-                    .last_flush
-                    .is_some_and(|t| t.elapsed() < FLUSH_MIN_INTERVAL)
-            {
-                return;
-            }
-            // 按真实本地日期清理；测试显式传时钟，不用陈旧样本日期迁就测试。
-            let cutoff = window_start(today, RETENTION_DAYS);
-            inner.days.retain(|day, _| day >= &cutoff);
-            // 文件体积兜底：条目上限已控大小，超出说明异常膨胀——从最旧
-            // 天开始丢桶直到回到上限内（保留最新数据，总量以「其他」外
-            // 丢弃计入裁剪损失并在 UI 采样说明覆盖）。
-            trim_file_budget(&mut inner.days);
-            let paused = inner.paused;
-            let snapshot = StatsSnapshot {
-                days: inner.days.clone(),
-                basis: inner.basis.clone(),
-                paused,
-            };
-            (snapshot, inner.epoch, inner.generation)
-        };
-        let payload = match serde_json::to_vec(&StatsFileRef {
-            days: &snapshot.days,
-            basis: &snapshot.basis,
-            paused: snapshot.paused,
-        }) {
-            Ok(payload) => payload,
-            Err(_) => return,
-        };
-        // 锁外文件 I/O（私有原子写入，#595/#596 边界）
-        let written = crate::platform::fs_perms::write_private(&self.path, &payload).is_ok();
-        // 锁内确认段：epoch 未变（无清除）且代次未变（无新增量）→ 完成；
-        // 代次变化 → dirty 保持，下一帧继续落盘（不漏写）；
-        // epoch 变化（清除发生过）→ 用当前状态纠正写一次，防旧数据复活。
-        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        if inner.epoch != snap_epoch {
-            if written {
-                let payload = serde_json::to_vec(&StatsFileRef {
-                    days: &inner.days,
-                    basis: &inner.basis,
-                    paused: inner.paused,
-                })
-                .unwrap_or_default();
-                let _ = crate::platform::fs_perms::write_private(&self.path, &payload);
-            }
-            inner.last_flush = Some(Instant::now());
-            return;
+        let _writer = self.writer.lock().unwrap_or_else(|e| e.into_inner());
+        if self.load_warning().is_none() {
+            let _ = self.write_current(force, today);
         }
-        if written && inner.generation == snap_gen {
+    }
+
+    // Caller owns writer, never inner during serialization or I/O. Controls
+    // serialize behind earlier writers, so no stale publish can follow success.
+    fn write_current(&self, force: bool, today: &str) -> Result<(), String> {
+        let (mut snapshot, generation) = {
+            let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+            if !inner.dirty
+                || (!force
+                    && inner
+                        .last_flush
+                        .is_some_and(|t| t.elapsed() < FLUSH_MIN_INTERVAL))
+            {
+                return Ok(());
+            }
+            let cutoff = window_start(today, RETENTION_DAYS);
+            inner
+                .days
+                .retain(|day, _| day >= &cutoff && day.as_str() <= today);
+            (
+                StatsSnapshot {
+                    days: inner.days.clone(),
+                    basis: inner.basis.clone(),
+                    paused: inner.paused,
+                    rebaseline: inner.rebaseline,
+                },
+                inner.generation,
+            )
+        };
+        trim_file_budget(&mut snapshot.days);
+        let encode = |snapshot: &StatsSnapshot| {
+            serde_json::to_vec(&StatsFileRef {
+                days: &snapshot.days,
+                basis: &snapshot.basis,
+                paused: snapshot.paused,
+                rebaseline: snapshot.rebaseline,
+            })
+            .map_err(|e| e.to_string())
+        };
+        let mut payload = encode(&snapshot)?;
+        // Include connection bases in the actual budget, not only daily buckets.
+        while payload.len() > MAX_FILE_BYTES {
+            if snapshot.days.len() > 1 {
+                snapshot.days.pop_first();
+            } else if !snapshot.basis.is_empty() {
+                snapshot.basis.clear();
+                snapshot.rebaseline = true;
+            } else {
+                return Err("统计文件超过容量上限".into());
+            }
+            payload = encode(&snapshot)?;
+        }
+        #[cfg(test)]
+        {
+            let barrier = self.before_write.lock().unwrap().take();
+            if let Some(barrier) = barrier {
+                barrier.wait();
+                barrier.wait();
+            }
+        }
+        crate::platform::fs_perms::write_private(&self.path, &payload)
+            .map_err(|e| e.to_string())?;
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if inner.generation == generation {
+            inner.days = snapshot.days;
             inner.dirty = false;
         }
         inner.last_flush = Some(Instant::now());
+        Ok(())
     }
 
-    /// #600 用户暂停/恢复记录（持久化到统计文件，重启保持）。
-    /// 恢复记录时立即落盘一次（暂停期间的数据本来就缺，无需补）。
-    pub(crate) fn set_paused(&self, paused: bool) {
-        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        if inner.paused == paused {
-            return;
+    pub(crate) fn set_paused(&self, paused: bool) -> Result<(), String> {
+        if let Some(error) = self.load_warning() {
+            return Err(error);
         }
-        inner.paused = paused;
-        inner.dirty = true;
-        // 同步落盘：暂停/清除是用户显式低频操作，锁内写保证状态立即可查
-        // 且不被在途 writer 覆盖（epoch 未变，在途 writer 写完后确认段
-        // 会以最新 paused 状态纠正）。
-        drop(inner);
-        self.flush_if_due(true);
+        let _writer = self.writer.lock().unwrap_or_else(|e| e.into_inner());
+        {
+            let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+            if inner.paused != paused {
+                inner.paused = paused;
+                inner.epoch = inner.epoch.wrapping_add(1);
+                inner.rebaseline = true;
+                inner.generation = inner.generation.wrapping_add(1);
+            }
+            inner.dirty = true;
+        }
+        // On write failure the safe in-memory pause remains; the caller reports
+        // failure and re-reads truth instead of promising restart persistence.
+        self.write_current(true, &local_today())
     }
 
-    /// #600 清除本地统计：内存与文件同步清空，epoch +1 让在途锁外
-    /// writer 的旧数据写回被纠正段覆盖（防复活）。
-    pub(crate) fn clear(&self) {
-        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        inner.days.clear();
-        inner.basis.clear();
-        inner.dirty = false;
-        inner.epoch = inner.epoch.wrapping_add(1);
-        let payload = serde_json::to_vec(&StatsFileRef {
-            days: &inner.days,
-            basis: &inner.basis,
-            paused: inner.paused,
-        })
-        .unwrap_or_default();
-        let _ = crate::platform::fs_perms::write_private(&self.path, &payload);
-        inner.last_flush = Some(Instant::now());
+    pub(crate) fn clear(&self) -> Result<(), String> {
+        let _writer = self.writer.lock().unwrap_or_else(|e| e.into_inner());
+        {
+            let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+            inner.days.clear();
+            inner.basis.clear();
+            inner.rebaseline = true;
+            inner.dirty = true;
+            inner.epoch = inner.epoch.wrapping_add(1);
+            inner.generation = inner.generation.wrapping_add(1);
+        }
+        self.write_current(true, &local_today())?;
+        *self.load_warning.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        Ok(())
+    }
+
+    pub(crate) fn load_warning(&self) -> Option<String> {
+        self.load_warning
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub(crate) fn paused(&self) -> bool {
@@ -699,38 +817,83 @@ mod tests {
         );
     }
 
-    /// 清除后 epoch 推进：模拟「在途锁外 writer」旧数据写回被纠正段覆盖。
     #[test]
-    fn clear_prevents_stale_writer_from_restarting_history() {
+    fn clear_waits_for_old_writer_and_does_not_recount_live_history() {
+        use std::sync::{Arc, Barrier};
         let (stats, dir) = open_temp();
-        stats.apply_frame(&[item("c1", 10, 0, "a.com", "HK-01")], "2026-11-20");
-        stats.flush_if_due(true);
-        assert!(fs::read_to_string(dir.path().join("traffic-stats.json"))
-            .unwrap()
-            .contains("a.com"));
+        let stats = Arc::new(stats);
+        stats.apply_frame(&[item("c1", 100, 0, "old.test", "HK")], &local_today());
+        let barrier = Arc::new(Barrier::new(2));
+        *stats.before_write.lock().unwrap() = Some(barrier.clone());
+        let writer = {
+            let stats = stats.clone();
+            std::thread::spawn(move || stats.flush_if_due(true))
+        };
+        barrier.wait();
+        let clear = {
+            let stats = stats.clone();
+            std::thread::spawn(move || stats.clear().unwrap())
+        };
+        barrier.wait();
+        writer.join().unwrap();
+        clear.join().unwrap();
+        let saved: StatsFile =
+            serde_json::from_slice(&fs::read(dir.path().join("traffic-stats.json")).unwrap())
+                .unwrap();
+        assert!(saved.days.is_empty());
+        let reopened = TrafficStats::open(dir.path());
+        reopened.apply_frame(&[item("c1", 500, 0, "old.test", "HK")], &local_today());
+        assert!(reopened.topn(1).domains.is_empty());
+        reopened.apply_frame(&[item("c1", 510, 0, "old.test", "HK")], &local_today());
+        assert_eq!(reopened.topn(1).domains[0].up, 10);
+    }
 
-        // 模拟清除发生 epoch 推进后，一个携带旧快照（epoch 0）的 writer
-        // 完成落盘——确认段发现 epoch 变化，用当前（空）状态纠正写。
-        let stale_payload = serde_json::to_vec(&StatsFileRef {
-            days: &BTreeMap::new(),
-            basis: &HashMap::new(),
-            paused: false,
-        })
-        .unwrap();
-        // 先让 writer 的确认段能跑：epoch 已被 clear 推进
-        stats.clear();
-        // 清除后文件为空
-        assert!(!fs::read_to_string(dir.path().join("traffic-stats.json"))
-            .unwrap()
-            .contains("a.com"));
-        // 模拟旧 writer 无锁写回旧数据（绕过锁）
-        std::fs::write(dir.path().join("traffic-stats.json"), &stale_payload).unwrap();
-        // 下一帧进来：epoch 保持（清除后未再推进）——旧文件已被覆盖的场景
-        // 用「再写一次当前状态」的纠正段验证：
+    #[test]
+    fn additions_during_io_remain_dirty_and_are_eventually_persisted() {
+        use std::sync::{Arc, Barrier};
+        let (stats, dir) = open_temp();
+        let stats = Arc::new(stats);
+        stats.apply_frame(&[item("c1", 10, 0, "a.test", "HK")], &local_today());
+        let barrier = Arc::new(Barrier::new(2));
+        *stats.before_write.lock().unwrap() = Some(barrier.clone());
+        let writer = {
+            let stats = stats.clone();
+            std::thread::spawn(move || stats.flush_if_due(true))
+        };
+        barrier.wait();
+        stats.apply_frame(&[item("c1", 20, 0, "a.test", "HK")], &local_today());
+        barrier.wait();
+        writer.join().unwrap();
+        assert!(stats.inner.lock().unwrap().dirty);
         stats.flush_if_due(true);
-        let content = fs::read_to_string(dir.path().join("traffic-stats.json")).unwrap();
-        assert!(!content.contains("a.com"), "旧数据不得复活：{content}");
-        assert!(content.contains(r#""paused":false"#) || content.contains(r#""paused":true"#));
+        assert_eq!(TrafficStats::open(dir.path()).topn(1).domains[0].up, 20);
+    }
+
+    #[test]
+    fn pause_excludes_intervening_cumulative_bytes_and_stale_frames() {
+        let (stats, _dir) = open_temp();
+        let day = local_today();
+        stats.apply_frame(&[item("c1", 10, 0, "a.test", "HK")], &day);
+        let epoch = stats.inner.lock().unwrap().epoch;
+        stats.set_paused(true).unwrap();
+        stats.apply_frame_epoch(&[item("c1", 100, 0, "a.test", "HK")], &day, Some(epoch));
+        stats.set_paused(false).unwrap();
+        stats.apply_frame(&[item("c1", 200, 0, "a.test", "HK")], &day);
+        stats.apply_frame(&[item("c1", 210, 0, "a.test", "HK")], &day);
+        assert_eq!(stats.topn(1).domains[0].up, 20);
+    }
+
+    #[test]
+    fn control_write_failures_are_reported_and_retryable() {
+        let (stats, dir) = open_temp();
+        fs::create_dir(&stats.path).unwrap();
+        assert!(stats.set_paused(true).is_err());
+        assert!(stats.paused());
+        assert!(stats.clear().is_err());
+        assert!(stats.inner.lock().unwrap().dirty);
+        fs::remove_dir(&stats.path).unwrap();
+        stats.flush_if_due(true);
+        assert!(TrafficStats::open(dir.path()).paused());
     }
 
     /// 暂停记录：ingest 直接短路，状态持久化（重开保持）。
@@ -739,7 +902,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (stats, _) = {
             let stats = TrafficStats::open(dir.path());
-            stats.set_paused(true);
+            stats.set_paused(true).unwrap();
             let path = stats.path.clone();
             (stats, path)
         };
@@ -751,27 +914,93 @@ mod tests {
         assert!(report.domains.is_empty(), "暂停期间不得聚合");
     }
 
-    /// 文件体积兜底：条目上限内仍超预算时丢最旧桶。
     #[test]
     fn file_budget_trims_oldest_days() {
         let (stats, dir) = open_temp();
-        // 注入 40 天 × 大量条目（超过 4MiB 预算的合成负载）
-        for d in 0..40u64 {
-            let day = chrono::NaiveDate::from_ymd_opt(2026, 10, 1)
-                .unwrap()
-                .checked_add_days(chrono::Days::new(d))
-                .unwrap()
+        let today = chrono::Local::now().date_naive();
+        for d in 0..30 {
+            let day = (today - chrono::Days::new(29 - d))
                 .format("%Y-%m-%d")
                 .to_string();
-            for i in 0..512u32 {
-                let host = format!("h{i}.example");
-                stats.apply_frame(&[item(&format!("c{d}-{i}"), 100, 0, &host, "HK-01")], &day);
-            }
+            let items: Vec<_> = (0..512)
+                .map(|i| {
+                    item(
+                        &format!("c{i}"),
+                        100 * (d + 1),
+                        0,
+                        &format!("{i:03}{}", "h".repeat(500)),
+                        &format!("{i:03}{}", "n".repeat(500)),
+                    )
+                })
+                .collect();
+            stats.apply_frame(&items, &day);
         }
         stats.flush_if_due(true);
-        let bytes = fs::metadata(dir.path().join("traffic-stats.json"))
+        let bytes = fs::read(dir.path().join("traffic-stats.json")).unwrap();
+        assert!(bytes.len() <= MAX_FILE_BYTES);
+        let saved: StatsFile = serde_json::from_slice(&bytes).unwrap();
+        assert!(
+            saved.days.len() < 30,
+            "fixture must really exercise the byte budget"
+        );
+        assert!(saved.days.contains_key(&local_today()));
+    }
+
+    #[test]
+    fn oversized_legacy_file_stays_untouched_until_explicit_clear() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("traffic-stats.json");
+        fs::File::create(&path)
             .unwrap()
-            .len();
-        assert!(bytes <= MAX_FILE_BYTES as u64, "文件体积必须有界：{bytes}");
+            .set_len(64 * 1024 * 1024 + 1)
+            .unwrap();
+        let stats = TrafficStats::open(dir.path());
+        assert!(stats.paused());
+        assert!(stats.load_warning().is_some());
+        assert!(stats.set_paused(false).is_err());
+        stats.flush_if_due(true);
+        assert_eq!(fs::metadata(&path).unwrap().len(), 64 * 1024 * 1024 + 1);
+        stats.clear().unwrap();
+        assert!(stats.load_warning().is_none());
+        assert!(fs::metadata(&path).unwrap().len() < MAX_FILE_BYTES as u64);
+    }
+
+    #[test]
+    #[ignore = "explicit local benchmark; timings are hardware dependent"]
+    fn capacity_latency_benchmark() {
+        let (stats, _dir) = open_temp();
+        let day = local_today();
+        let mut items: Vec<_> = (0..512)
+            .map(|i| item(&format!("c{i}"), 1, 1, &format!("host{i}.test"), "HK"))
+            .collect();
+        let mut aggregation = Vec::new();
+        let mut reads = Vec::new();
+        let mut flush = Vec::new();
+        for i in 1..=100 {
+            for item in &mut items {
+                item.up = i;
+                item.down = i;
+            }
+            let start = Instant::now();
+            stats.apply_frame(&items, &day);
+            aggregation.push(start.elapsed().as_micros());
+            let start = Instant::now();
+            stats.topn(30);
+            reads.push(start.elapsed().as_micros());
+            let start = Instant::now();
+            stats.flush_if_due(true);
+            flush.push(start.elapsed().as_micros());
+        }
+        for (name, mut values) in [
+            ("aggregation", aggregation),
+            ("read", reads),
+            ("flush", flush),
+        ] {
+            values.sort();
+            eprintln!(
+                "{name} P95={}us; 512 live connections, 100 iterations",
+                values[94]
+            );
+        }
     }
 }

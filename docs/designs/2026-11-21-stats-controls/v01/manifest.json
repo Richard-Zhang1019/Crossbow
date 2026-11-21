@@ -1,0 +1,29 @@
+{
+  "date": "2026-11-21",
+  "issue": 600,
+  "pr": 619,
+  "version": "v01",
+  "base": "3d62abcf998447618011a5c68cd833e2299339e8",
+  "source": "Production React components with synthetic IPC; no real user statistics",
+  "source_sha256": {
+    "apps/desktop/src/pages/Stats/index.tsx": "83ac7729e8c8274363f5afe9ae6e423c081f69e527d44b4c2988b92a4446536c",
+    "apps/desktop/src/pages/Stats/Stats.css": "3153b37933af7127a75128e47619d3dd458c32281351662aad789505623fe9c4",
+    "apps/desktop/src/i18n/i18n.ts": "45105192d896edc26f2ec2efaffdb460947a710cdeb8cc20c09b171355c2583a",
+    "apps/desktop/src/services/ipc.ts": "bb8a530d734f7a3e51a3a55bd63d7c6b0ffe92b9b2fb27042931152c607b7e88",
+    "scripts/dev/verify-stats.mjs": "413345e37e0f6b60bd3cf2ff12d0a227f534cf0f2854414a0fbe9d1b5d3f2cea"
+  },
+  "files": [
+    "SPEC.md",
+    "source.zip",
+    "manifest.json",
+    "previews/before.png",
+    "previews/dark.png",
+    "previews/wide.png",
+    "previews/empty.png",
+    "previews/light.png",
+    "previews/error.png",
+    "previews/small-en.png",
+    "previews/small.png",
+    "previews/paused.png"
+  ]
+}

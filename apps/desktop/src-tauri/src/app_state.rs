@@ -134,13 +134,17 @@ impl AppState {
     }
 
     /// #600：暂停/恢复本地流量记录（持久化到统计文件）。
-    pub fn traffic_stats_set_paused(&self, paused: bool) {
-        self.traffic_stats.set_paused(paused);
+    pub fn traffic_stats_set_paused(&self, paused: bool) -> Result<(), String> {
+        self.traffic_stats.set_paused(paused)
     }
 
-    /// #600：清除本地统计（内存与文件同步清空，epoch 防复活）。
-    pub fn traffic_stats_clear(&self) {
-        self.traffic_stats.clear();
+    /// #600：清除本地统计（串行写入防旧快照复活，epoch 丢弃旧帧）。
+    pub fn traffic_stats_clear(&self) -> Result<(), String> {
+        self.traffic_stats.clear()
+    }
+
+    pub fn traffic_stats_warning(&self) -> Option<String> {
+        self.traffic_stats.load_warning()
     }
 
     pub fn traffic_stats_paused(&self) -> bool {
