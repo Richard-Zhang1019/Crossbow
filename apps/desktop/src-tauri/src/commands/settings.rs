@@ -215,3 +215,36 @@ mod tests {
         );
     }
 }
+
+/// #598：读取 DNS 设置。
+#[tauri::command]
+pub(crate) fn get_dns_settings(state: State<'_, AppState>) -> DnsSettings {
+    state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .dns
+        .clone()
+}
+
+/// #598：写入 DNS 设置（校验先行，保存失败回滚内存态）。
+/// 配置生效走既有的 apply_overrides 事务（渲染失败保留旧配置与网络）。
+#[tauri::command]
+pub(crate) fn set_dns_settings(
+    state: State<'_, AppState>,
+    settings: DnsSettings,
+) -> Result<(), String> {
+    crossbow_core::dns_settings::validate(&settings)?;
+    let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+    let previous = store.data().dns.clone();
+    if previous == settings {
+        return Ok(());
+    }
+    store.data_mut().dns = settings;
+    if let Err(error) = store.save() {
+        store.data_mut().dns = previous;
+        return Err(error.to_string());
+    }
+    Ok(())
+}

@@ -79,6 +79,7 @@ pub fn render_config_with(
                     &config,
                     store.engine.mixed_port,
                     store.engine.allow_lan,
+                    Some(&store.dns),
                 )
                 .map_err(|e| match e {
                     // #593：语义不支持要原样透传，不伪装成 YAML 错误
@@ -96,7 +97,10 @@ pub fn render_config_with(
         crate::model::Engine::Mihomo => {
             let config = crate::rule_sets::inject_yaml(&config, &store.rule_sets)
                 .map_err(RenderError::InvalidYaml)?;
-            crate::process_rules::inject_yaml(&config, &store.process_rules)
+            let config = crate::process_rules::inject_yaml(&config, &store.process_rules)
+                .map_err(|e| RenderError::InvalidYaml(e.to_string()))?;
+            // #598：自定义 DNS 在渲染层注入用户上游（沿用订阅零改动）
+            crate::dns_settings::apply_mihomo_dns_patch(config, &store.dns)
                 .map_err(|e| RenderError::InvalidYaml(e.to_string()))?
         }
     };

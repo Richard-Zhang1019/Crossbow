@@ -2664,3 +2664,29 @@ textarea:focus-visible,
   width: auto;
   min-width: 128px;
 }
+
+/* DNS 设置卡片（#598） */
+.cb-dns-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 4px;
+}
+.cb-dns-card .cb-dns-notes {
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  color: var(--cb-text-dim);
+  font-size: var(--font-sm);
+  line-height: 1.5;
+  margin: 0;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--cb-surface);
+  border: 1px solid var(--cb-line);
+}
+.cb-dns-card .cb-dns-notes li::before {
+  content: "·";
+  margin-right: 6px;
+  color: var(--cb-faint);
+}

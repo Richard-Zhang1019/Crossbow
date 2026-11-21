@@ -169,10 +169,13 @@ fn check_unsupported_top_level(doc: &Value) -> Result<(), ConvertError> {
 }
 
 /// Clash YAML → sing-box JSON（pretty）。
+/// `dns`：DNS 设置（#598）——Custom 模式下用户上游替换内置默认
+/// （proxy-dns 经主出站 / local-dns 直连拨号）；None 或 Inherit 保持现状。
 pub fn convert_to_singbox(
     clash_yaml: &str,
     mixed_port: u16,
     allow_lan: bool,
+    dns: Option<&crate::dns_settings::DnsSettings>,
 ) -> Result<String, ConvertError> {
     let doc: Value =
         serde_yaml::from_str(clash_yaml).map_err(|e| ConvertError::Parse(format!("yaml: {e}")))?;
@@ -264,19 +267,69 @@ pub fn convert_to_singbox(
     let bind = if allow_lan { "::" } else { "127.0.0.1" };
     // 代理解析的 DNS 出口跟随 MATCH 主出站；指向 DIRECT 或省略 detour 都等于
     // 直连解析（sing-box 拒绝「detour 到空 direct 出站」）。
-    let mut dns_servers = vec![
-        json!({ "type": "https", "tag": "proxy-dns", "server": "8.8.8.8" }),
-        // 不带 detour：默认直连拨号；显式指向空 DIRECT 出站会被 sing-box 拒绝
-        json!({ "type": "udp", "tag": "local-dns", "server": "223.5.5.5" }),
-    ];
-    if final_out != "DIRECT" {
-        dns_servers[0]["detour"] = json!(&final_out);
-    }
+    // #598：自定义 DNS 时用户上游替换内置默认（代理业务带 detour、
+    // 直连业务直连拨号）；沿用订阅/缺省保持内置（订阅自带 DNS 已被
+    // 顶层守卫拒绝，无法证明等价）。
+    let custom = dns.filter(|d| d.mode == crate::dns_settings::DnsMode::Custom);
+    let (dns_servers, dns_final, dns_resolver) = match custom {
+        Some(d) if !d.proxy_nameservers.is_empty() || !d.direct_nameservers.is_empty() => {
+            let mut servers = Vec::new();
+            let mut proxy_tags = Vec::new();
+            let mut local_tags = Vec::new();
+            for (index, raw) in d.proxy_nameservers.iter().enumerate() {
+                let upstream = crate::dns_settings::parse_upstream(raw).map_err(|e| {
+                    ConvertError::Parse(format!("自定义 DNS 上游非法（{raw}）：{e}"))
+                })?;
+                let tag = format!("proxy-dns-{index}");
+                let detour = if final_out != "DIRECT" {
+                    Some(final_out.as_str())
+                } else {
+                    None
+                };
+                servers.push(crate::dns_settings::upstream_singbox_json(
+                    &upstream, &tag, detour,
+                ));
+                proxy_tags.push(tag);
+            }
+            for (index, raw) in d.direct_nameservers.iter().enumerate() {
+                let upstream = crate::dns_settings::parse_upstream(raw).map_err(|e| {
+                    ConvertError::Parse(format!("自定义 DNS 上游非法（{raw}）：{e}"))
+                })?;
+                let tag = format!("local-dns-{index}");
+                servers.push(crate::dns_settings::upstream_singbox_json(
+                    &upstream, &tag, None,
+                ));
+                local_tags.push(tag);
+            }
+            let fallback = proxy_tags
+                .first()
+                .cloned()
+                .or_else(|| local_tags.first().cloned())
+                .unwrap_or_else(|| "proxy-dns".into());
+            let resolver = local_tags
+                .first()
+                .cloned()
+                .or_else(|| proxy_tags.first().cloned())
+                .unwrap_or_else(|| "local-dns".into());
+            (servers, fallback, resolver)
+        }
+        _ => {
+            let mut servers = vec![
+                json!({ "type": "https", "tag": "proxy-dns", "server": "8.8.8.8" }),
+                // 不带 detour：默认直连拨号；显式指向空 DIRECT 出站会被 sing-box 拒绝
+                json!({ "type": "udp", "tag": "local-dns", "server": "223.5.5.5" }),
+            ];
+            if final_out != "DIRECT" {
+                servers[0]["detour"] = json!(&final_out);
+            }
+            (servers, "proxy-dns".to_string(), "local-dns".to_string())
+        }
+    };
     let mut cfg = json!({
         "log": { "level": "info", "timestamp": true },
         "dns": {
             "servers": dns_servers,
-            "final": "proxy-dns",
+            "final": dns_final,
             "strategy": "prefer_ipv4"
         },
         "inbounds": [
@@ -293,7 +346,7 @@ pub fn convert_to_singbox(
             "final": final_out,
             "auto_detect_interface": true,
             // 1.12+ 域名解析出口：替代已移除的 DNS 规则 outbound 匹配项
-            "default_domain_resolver": "local-dns"
+            "default_domain_resolver": dns_resolver
         },
         "experimental": {
             "cache_file": { "enabled": true, "store_fakeip": false }
@@ -986,7 +1039,7 @@ rules:
 
     #[test]
     fn internal_dns_and_hosts_are_rejected_without_echoing_values() {
-        let err = convert_to_singbox(INTERNAL_DNS, 7897, false).unwrap_err();
+        let err = convert_to_singbox(INTERNAL_DNS, 7897, false, None).unwrap_err();
         let message = err.to_string();
         assert!(message.contains("dns"), "应点名 dns 字段：{message}");
         assert!(message.contains("hosts"), "应点名 hosts 字段：{message}");
@@ -1003,7 +1056,7 @@ rules:
     fn default_dns_without_custom_segments_still_converts() {
         // 无 dns/hosts/sniffer/tun 段：转换器固定 DNS 是当前等价兜底，
         // 行为不变（#593 验收「默认 DNS」）
-        let out = convert_to_singbox(SAMPLE, 7897, false).unwrap();
+        let out = convert_to_singbox(SAMPLE, 7897, false, None).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
         assert!(v["dns"]["servers"].is_array());
     }
@@ -1027,7 +1080,7 @@ proxies:
 rules:
   - MATCH,HK-01
 "#;
-        convert_to_singbox(yaml, 7897, false).unwrap();
+        convert_to_singbox(yaml, 7897, false, None).unwrap();
     }
 
     #[test]
@@ -1046,7 +1099,7 @@ proxies:
 rules:
   - MATCH,HK-01
 "#;
-        let err = convert_to_singbox(sniffer, 7897, false).unwrap_err();
+        let err = convert_to_singbox(sniffer, 7897, false, None).unwrap_err();
         assert!(err.to_string().contains("sniffer"));
 
         let tun = r#"
@@ -1063,7 +1116,7 @@ proxies:
 rules:
   - MATCH,HK-01
 "#;
-        let err = convert_to_singbox(tun, 7897, false).unwrap_err();
+        let err = convert_to_singbox(tun, 7897, false, None).unwrap_err();
         assert!(err.to_string().contains("tun"));
     }
 
@@ -1085,7 +1138,7 @@ proxies:
 rules:
   - MATCH,HK-01
 "#;
-        let err = convert_to_singbox(yaml, 7897, false).unwrap_err();
+        let err = convert_to_singbox(yaml, 7897, false, None).unwrap_err();
         assert!(err.to_string().contains("dns"));
     }
 
@@ -1104,7 +1157,7 @@ proxies:
 rules:
   - MATCH,HK-01
 "#;
-        let err = convert_to_singbox(yaml, 7897, false).unwrap_err();
+        let err = convert_to_singbox(yaml, 7897, false, None).unwrap_err();
         assert!(err.to_string().contains("dns"));
     }
 
@@ -1151,7 +1204,7 @@ rules:
             ("tun", "[private.invalid]"),
         ] {
             let input = format!("{SAMPLE}\n{key}: {value}\n");
-            let error = convert_to_singbox(&input, 7897, false).unwrap_err();
+            let error = convert_to_singbox(&input, 7897, false, None).unwrap_err();
             assert!(matches!(error, ConvertError::UnsupportedFields { .. }));
             assert!(error.to_string().contains(key));
             assert!(!error.to_string().contains("private.invalid"));
@@ -1191,7 +1244,7 @@ rules:
 
     #[test]
     fn converts_core_structure() {
-        let out = convert_to_singbox(SAMPLE, 7897, false).unwrap();
+        let out = convert_to_singbox(SAMPLE, 7897, false, None).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
 
         // inbound
@@ -1240,7 +1293,7 @@ rules:
 
     #[test]
     fn allow_lan_binds_wildcard() {
-        let out = convert_to_singbox(SAMPLE, 7897, true).unwrap();
+        let out = convert_to_singbox(SAMPLE, 7897, true, None).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["inbounds"][0]["listen"], "::");
     }
@@ -1248,13 +1301,13 @@ rules:
     #[test]
     fn unsupported_proxy_fails_loudly() {
         let yaml = "proxies:\n  - name: x\n    type: snell\n    server: s\n    port: 1\n";
-        let err = convert_to_singbox(yaml, 7897, false).unwrap_err();
+        let err = convert_to_singbox(yaml, 7897, false, None).unwrap_err();
         assert!(matches!(err, ConvertError::UnsupportedProxy(ref t) if t == "snell"));
     }
 
     #[test]
     fn match_rule_becomes_final() {
-        let out = convert_to_singbox(SAMPLE, 7897, false).unwrap();
+        let out = convert_to_singbox(SAMPLE, 7897, false, None).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
         let rules = v["route"]["rules"].as_array().unwrap();
         // MATCH 不产生规则条目（用 final），这里应有 2 条
@@ -1280,7 +1333,7 @@ rules:
   - DOMAIN,api.ip.sb,REJECT
   - DOMAIN,api.ipapi.co,REJECT
   - MATCH,HK-01"#;
-        let out = convert_to_singbox(cfg, 7898, false).unwrap();
+        let out = convert_to_singbox(cfg, 7898, false, None).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
         let obs = v["outbounds"].as_array().unwrap();
         let tags: Vec<_> = obs.iter().map(|o| o["tag"].as_str().unwrap()).collect();
@@ -1306,7 +1359,7 @@ rules:
     password: p
 rules:
   - MATCH,REJECT"#;
-        let out = convert_to_singbox(cfg, 7898, false).unwrap();
+        let out = convert_to_singbox(cfg, 7898, false, None).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
         let reject = v["outbounds"]
             .as_array()
@@ -1320,7 +1373,7 @@ rules:
 
     #[test]
     fn no_deprecated_outbound_dns_rule() {
-        let out = convert_to_singbox(SAMPLE, 7897, false).unwrap();
+        let out = convert_to_singbox(SAMPLE, 7897, false, None).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
         assert_eq!(
             v["dns"]["rules"],
@@ -1334,7 +1387,7 @@ rules:
     // URL 走 gh-proxy 镜像；MATCH 主出站非 DIRECT 时作为 download_detour。
     #[test]
     fn rule_set_refs_get_remote_defs() {
-        let out = convert_to_singbox(SAMPLE, 7897, false).unwrap();
+        let out = convert_to_singbox(SAMPLE, 7897, false, None).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
         let defs = v["route"]["rule_set"]
             .as_array()
@@ -1359,7 +1412,7 @@ rules:
     #[test]
     fn direct_final_omits_detours() {
         let yaml = "proxies:\n  - name: a\n    type: ss\n    server: s\n    port: 1\n    cipher: aes-128-gcm\n    password: p\nrules:\n  - GEOIP,CN,DIRECT\n  - MATCH,DIRECT\n";
-        let out = convert_to_singbox(yaml, 7897, false).unwrap();
+        let out = convert_to_singbox(yaml, 7897, false, None).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
         assert!(v["dns"]["servers"][0].get("detour").is_none());
         assert!(v["route"]["rule_set"][0].get("download_detour").is_none());
@@ -1377,7 +1430,7 @@ rules:
     fn url_test_keeps_proxy_only_members_and_valid_tolerance() {
         for tolerance in [1, 120, 65535] {
             let yaml = url_test_config(&format!("    tolerance: {tolerance}\n"));
-            let out = convert_to_singbox(&yaml, 7897, false).unwrap();
+            let out = convert_to_singbox(&yaml, 7897, false, None).unwrap();
             let v: Value = serde_json::from_str(&out).unwrap();
             let auto = v["outbounds"]
                 .as_array()
@@ -1394,7 +1447,8 @@ rules:
     #[test]
     fn zero_and_default_tolerance_reject_semantic_change() {
         for tolerance in ["", "    tolerance: 0\n", "    tolerance: null\n"] {
-            let err = convert_to_singbox(&url_test_config(tolerance), 7897, false).unwrap_err();
+            let err =
+                convert_to_singbox(&url_test_config(tolerance), 7897, false, None).unwrap_err();
             assert!(
                 matches!(err, ConvertError::UnsupportedGroup(ref m)
                     if m.contains("auto") && m.contains("tolerance")
@@ -1416,7 +1470,7 @@ rules:
             "true",
         ] {
             let yaml = url_test_config(&format!("    tolerance: {tolerance}\n"));
-            let err = convert_to_singbox(&yaml, 7897, false).unwrap_err();
+            let err = convert_to_singbox(&yaml, 7897, false, None).unwrap_err();
             assert!(
                 matches!(err, ConvertError::InvalidGroup(ref m)
                     if m.contains("auto") && m.contains("tolerance")
@@ -1430,7 +1484,7 @@ rules:
     #[test]
     fn explicit_direct_member_survives() {
         let yaml = "proxies:\n  - name: a\n    type: ss\n    server: s\n    port: 1\n    cipher: aes-128-gcm\n    password: p\nproxy-groups:\n  - name: manual\n    type: select\n    proxies: [a, DIRECT]\nrules:\n  - MATCH,manual\n";
-        let out = convert_to_singbox(yaml, 7897, false).unwrap();
+        let out = convert_to_singbox(yaml, 7897, false, None).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
         let manual = v["outbounds"]
             .as_array()
@@ -1450,7 +1504,7 @@ rules:
             let yaml = format!(
                 "proxies:\n  - name: a\n    type: ss\n    server: s\n    port: 1\n    cipher: aes-128-gcm\n    password: p\nproxy-groups:\n  - name: 分流组\n    type: {kind}\n    proxies: [a]\nrules:\n  - MATCH,分流组\n"
             );
-            let err = convert_to_singbox(&yaml, 7897, false).unwrap_err();
+            let err = convert_to_singbox(&yaml, 7897, false, None).unwrap_err();
             assert!(
                 matches!(err, ConvertError::UnsupportedGroup(ref m) if m.contains("分流组") && m.contains(kind)),
                 "unexpected: {err}"
@@ -1462,14 +1516,14 @@ rules:
     #[test]
     fn empty_group_and_unknown_member_fail_locatably() {
         let empty = "proxies:\n  - name: a\n    type: ss\n    server: s\n    port: 1\n    cipher: aes-128-gcm\n    password: p\nproxy-groups:\n  - name: 空组\n    type: select\n    proxies: []\nrules:\n  - MATCH,空组\n";
-        let err = convert_to_singbox(empty, 7897, false).unwrap_err();
+        let err = convert_to_singbox(empty, 7897, false, None).unwrap_err();
         assert!(
             matches!(err, ConvertError::InvalidGroup(ref m) if m.contains("空组") && m.contains("没有成员")),
             "unexpected: {err}"
         );
 
         let unknown = "proxies:\n  - name: a\n    type: ss\n    server: s\n    port: 1\n    cipher: aes-128-gcm\n    password: p\nproxy-groups:\n  - name: 组\n    type: select\n    proxies: [ghost]\nrules:\n  - MATCH,组\n";
-        let err = convert_to_singbox(unknown, 7897, false).unwrap_err();
+        let err = convert_to_singbox(unknown, 7897, false, None).unwrap_err();
         assert!(
             matches!(err, ConvertError::InvalidGroup(ref m) if m.contains("组」") && m.contains("ghost")),
             "unexpected: {err}"
@@ -1480,7 +1534,7 @@ rules:
     #[test]
     fn malformed_proxy_groups_fail_loudly() {
         let yaml = "proxies:\n  - name: a\n    type: ss\n    server: s\n    port: 1\n    cipher: aes-128-gcm\n    password: p\nproxy-groups:\n  - name: 组\n    type: select\n    proxies: invalid\nrules:\n  - MATCH,组\n";
-        let err = convert_to_singbox(yaml, 7897, false).unwrap_err();
+        let err = convert_to_singbox(yaml, 7897, false, None).unwrap_err();
         assert!(
             matches!(err, ConvertError::Parse(ref m) if m.contains("proxy-groups")),
             "unexpected: {err}"
@@ -1493,7 +1547,7 @@ rules:
     #[test]
     fn issue_fixture_disable_udp_fails_locatably() {
         let yaml = "proxies:\n  - name: node-a\n    type: ss\n    server: s\n    port: 1\n    cipher: aes-128-gcm\n    password: p\n  - name: node-b\n    type: ss\n    server: s\n    port: 2\n    cipher: aes-128-gcm\n    password: p\nproxy-groups:\n  - {name: selected, type: select, proxies: [node-a], include-all-proxies: true, disable-udp: true}\n  - {name: auto, type: url-test, proxies: [node-a, node-b], tolerance: 120, interval: 10, expected-status: 204}\nrules:\n  - MATCH,selected\n";
-        let err = convert_to_singbox(yaml, 7897, false).unwrap_err();
+        let err = convert_to_singbox(yaml, 7897, false, None).unwrap_err();
         assert!(
             matches!(err, ConvertError::UnsupportedGroup(ref m)
                 if m.contains("selected") && m.contains("disable-udp")
@@ -1514,7 +1568,7 @@ proxy-groups:
   - {name: stale, type: select, proxies: [z, a], default-selected: missing}
 rules: ['MATCH,all']
 "#;
-        let out = convert_to_singbox(yaml, 7897, false).unwrap();
+        let out = convert_to_singbox(yaml, 7897, false, None).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
         for (tag, members, default) in [
             ("all", json!(["a", "z"]), "a"),
@@ -1535,7 +1589,7 @@ rules: ['MATCH,all']
     #[test]
     fn include_all_without_nodes_rejects_implicit_fallback() {
         let yaml = "proxies: []\nproxy-groups:\n  - {name: all, type: select, include-all-proxies: true}\nrules: ['MATCH,all']\n";
-        let err = convert_to_singbox(yaml, 7897, false).unwrap_err();
+        let err = convert_to_singbox(yaml, 7897, false, None).unwrap_err();
         assert!(
             matches!(err, ConvertError::UnsupportedGroup(ref m)
             if m.contains("all」") && m.contains("include-all-proxies = true")),
@@ -1565,7 +1619,7 @@ rules: ['MATCH,all']
             ("    empty-fallback: DIRECT\n", "empty-fallback", "DIRECT"),
         ] {
             let yaml = base.replace("{extra}", extra);
-            let err = convert_to_singbox(&yaml, 7897, false).unwrap_err();
+            let err = convert_to_singbox(&yaml, 7897, false, None).unwrap_err();
             assert!(
                 matches!(err, ConvertError::UnsupportedGroup(ref m)
                     if m.contains("组」") && m.contains(field) && m.contains(value)),
@@ -1585,7 +1639,7 @@ rules: ['MATCH,all']
             ("    max-failed-times: 1\n", "max-failed-times", "1"),
         ] {
             let yaml = base.replace("{extra}", extra);
-            let err = convert_to_singbox(&yaml, 7897, false).unwrap_err();
+            let err = convert_to_singbox(&yaml, 7897, false, None).unwrap_err();
             assert!(
                 matches!(err, ConvertError::UnsupportedGroup(ref m)
                     if m.contains("auto」") && m.contains(field) && m.contains(value)),
@@ -1605,7 +1659,7 @@ rules: ['MATCH,all']
             ("    interval: 3600\n", "3600s", json!("3600s")),
         ] {
             let yaml = base.replace("{extra}", extra);
-            let out = convert_to_singbox(&yaml, 7897, false).unwrap();
+            let out = convert_to_singbox(&yaml, 7897, false, None).unwrap();
             let v: Value = serde_json::from_str(&out).unwrap();
             let auto = v["outbounds"].as_array().unwrap().iter().find(|o| o["tag"] == "auto").unwrap();
             assert_eq!(auto["interval"], interval);
@@ -1615,7 +1669,7 @@ rules: ['MATCH,all']
 
         for bad_interval in ["-1", "1.5", "9223372037"] {
             let yaml = base.replace("{extra}", &format!("    interval: {bad_interval}\n"));
-            let err = convert_to_singbox(&yaml, 7897, false).unwrap_err();
+            let err = convert_to_singbox(&yaml, 7897, false, None).unwrap_err();
             assert!(
                 matches!(err, ConvertError::InvalidGroup(ref m)
                 if m.contains("auto」") && m.contains(&format!("interval={bad_interval}"))),
@@ -1633,7 +1687,7 @@ rules: ['MATCH,all']
             ("    interval: 300\n", "interval"),
         ] {
             let yaml = base.replace("{extra}", extra);
-            let err = convert_to_singbox(&yaml, 7897, false).unwrap_err();
+            let err = convert_to_singbox(&yaml, 7897, false, None).unwrap_err();
             assert!(
                 matches!(err, ConvertError::UnsupportedGroup(ref m)
                     if m.contains("manual」") && m.contains(field)),
@@ -1653,7 +1707,7 @@ rules:
   - MATCH,node
   - false
 "#;
-        let err = convert_to_singbox(base, 7897, false).unwrap_err();
+        let err = convert_to_singbox(base, 7897, false, None).unwrap_err();
         assert!(
             err.to_string().contains("第 2 条") && err.to_string().contains("bool"),
             "错误应指明第 2 条规则与实际类型：{err}"
@@ -1664,7 +1718,7 @@ rules:
     #[test]
     fn rules_section_wrong_type_fails() {
         let base = "rules: MATCH,node\nproxies: []\n";
-        let err = convert_to_singbox(base, 7897, false).unwrap_err();
+        let err = convert_to_singbox(base, 7897, false, None).unwrap_err();
         assert!(err.to_string().contains("rules 段类型错误"), "{err}");
     }
 
@@ -1674,17 +1728,19 @@ rules:
         // 缺省
         let no_rules = "proxies:\n  - {name: n, type: http, server: 127.0.0.1, port: 1}\n";
         let out: serde_json::Value =
-            serde_json::from_str(&convert_to_singbox(no_rules, 7897, false).unwrap()).unwrap();
+            serde_json::from_str(&convert_to_singbox(no_rules, 7897, false, None).unwrap())
+                .unwrap();
         assert_eq!(out["route"]["final"], "DIRECT");
         // 空列表
         let empty = "rules: []\nproxies:\n  - {name: n, type: http, server: 127.0.0.1, port: 1}\n";
         let out: serde_json::Value =
-            serde_json::from_str(&convert_to_singbox(empty, 7897, false).unwrap()).unwrap();
+            serde_json::from_str(&convert_to_singbox(empty, 7897, false, None).unwrap()).unwrap();
         assert_eq!(out["route"]["final"], "DIRECT");
         // 显式 MATCH,DIRECT
         let explicit = "rules:\n  - MATCH,DIRECT\nproxies:\n  - {name: n, type: http, server: 127.0.0.1, port: 1}\n";
         let out: serde_json::Value =
-            serde_json::from_str(&convert_to_singbox(explicit, 7897, false).unwrap()).unwrap();
+            serde_json::from_str(&convert_to_singbox(explicit, 7897, false, None).unwrap())
+                .unwrap();
         assert_eq!(out["route"]["final"], "DIRECT");
     }
 
@@ -1706,7 +1762,7 @@ rules:
             let yaml = format!(
                 "proxies: [{{name: node, type: http, server: 127.0.0.1, port: 9001}}]\nrules: {rules}"
             );
-            let err = convert_to_singbox(&yaml, 7897, false)
+            let err = convert_to_singbox(&yaml, 7897, false, None)
                 .unwrap_err()
                 .to_string();
             assert!(err.contains("第 1 条") && err.contains(expected), "{err}");
@@ -1731,7 +1787,7 @@ proxies:
 rules: ['MATCH,node']
 "#;
         let out: serde_json::Value =
-            serde_json::from_str(&convert_to_singbox(base, 7897, false).unwrap()).unwrap();
+            serde_json::from_str(&convert_to_singbox(base, 7897, false, None).unwrap()).unwrap();
         let proxy = &out["outbounds"][0];
         assert_eq!(proxy["type"], "vless");
         assert_eq!(proxy["transport"]["type"], "ws");
@@ -1753,7 +1809,7 @@ proxies:
 rules: ['MATCH,node']
 "#;
         let config: Value =
-            serde_json::from_str(&convert_to_singbox(base, 7897, false).unwrap()).unwrap();
+            serde_json::from_str(&convert_to_singbox(base, 7897, false, None).unwrap()).unwrap();
         assert_eq!(config["outbounds"][0]["transport"]["path"], "/");
     }
 
@@ -1772,7 +1828,7 @@ proxies:
       grpc-service-name: x
 rules: ['MATCH,node']
 "#;
-        let err = convert_to_singbox(base, 7897, false).unwrap_err();
+        let err = convert_to_singbox(base, 7897, false, None).unwrap_err();
         assert!(
             err.to_string().contains("network")
                 && err.to_string().contains("vless")
@@ -1807,7 +1863,8 @@ rules: ['MATCH,node']
             ),
         ] {
             let config: Value =
-                serde_json::from_str(&convert_to_singbox(&input, 7897, false).unwrap()).unwrap();
+                serde_json::from_str(&convert_to_singbox(&input, 7897, false, None).unwrap())
+                    .unwrap();
             let node = &config["outbounds"][0];
             assert_eq!(node["alter_id"], 4);
             assert_eq!(node["transport"]["headers"]["Host"], "ws.example.test");
@@ -1818,7 +1875,8 @@ rules: ['MATCH,node']
 
         let cleartext = yaml.replace("tls: true", "tls: false");
         let config: Value =
-            serde_json::from_str(&convert_to_singbox(&cleartext, 7897, false).unwrap()).unwrap();
+            serde_json::from_str(&convert_to_singbox(&cleartext, 7897, false, None).unwrap())
+                .unwrap();
         assert!(config["outbounds"][0].get("tls").is_none());
     }
 
@@ -1859,7 +1917,7 @@ rules: ['MATCH,node']
             let yaml = format!(
                 "proxies: [{{name: node, server: 127.0.0.1, port: 9001, {fields}}}]\nrules: ['MATCH,node']"
             );
-            let err = convert_to_singbox(&yaml, 7897, false)
+            let err = convert_to_singbox(&yaml, 7897, false, None)
                 .unwrap_err()
                 .to_string();
             assert!(err.contains("node") && err.contains(expected), "{err}");
@@ -1884,7 +1942,8 @@ rules: ['MATCH,node']
             base.replace("    type: vless", "    type: vless\n    network: tcp"),
         ] {
             let out: Value =
-                serde_json::from_str(&convert_to_singbox(&input, 7897, false).unwrap()).unwrap();
+                serde_json::from_str(&convert_to_singbox(&input, 7897, false, None).unwrap())
+                    .unwrap();
             assert!(out["outbounds"][0].get("transport").is_none());
         }
     }
