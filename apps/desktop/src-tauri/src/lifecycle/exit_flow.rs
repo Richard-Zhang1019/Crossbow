@@ -243,6 +243,11 @@ pub(crate) fn lightweight_process_exit(app: &AppHandle) {
         request_process_exit(app, None);
         return;
     };
+    // #601：注册内核守护（macOS LaunchAgent，轻量期探活——内核死亡时
+    // 仅恢复系统代理；失败只留日志不阻塞退出）
+    if let Some(state) = app.try_state::<AppState>() {
+        crate::lifecycle::kernel_guard::register_and_start(&state.data_dir);
+    }
     notify_lightweight_exit(app);
     // 交给独立线程延后退出：给系统通知一点投递时间，也不阻塞菜单线程
     let handle = app.clone();

@@ -569,6 +569,13 @@ pub fn run() {
     {
         crossbow_core::script_override::script_worker_entry();
     }
+    // #601 轻量退出后的内核守护模式：LaunchAgent 以 --kernel-guard 重入
+    // 自身（macOS），周期探活并在内核死亡时仅恢复系统代理。
+    if std::env::args_os().nth(1).as_deref()
+        == Some(std::ffi::OsStr::new(lifecycle::kernel_guard::GUARD_ARG))
+    {
+        lifecycle::kernel_guard::guard_main();
+    }
     // The tray helper only hosts AppKit. Startup diagnostics and proxy
     // recovery belong to the desktop process that owns the app state.
     #[cfg(target_os = "macos")]
@@ -616,6 +623,10 @@ pub fn run() {
             // Keep ownership until the exit event (or process termination).
             let instance_lock = acquire_app_instance(&data_dir)?;
             tidy_runtime_files(&data_dir);
+            // #601：轻量会话已结束（GUI 接管内核生命周期）——注销上一轮
+            // 轻量退出注册的内核守护 LaunchAgent，防陈旧代理驻留。
+            #[cfg(target_os = "macos")]
+            lifecycle::kernel_guard::unregister();
 
             let mut store = Store::open(&data_dir)
                 .map_err(|e| std::io::Error::other(format!("open store: {e}")))?;
