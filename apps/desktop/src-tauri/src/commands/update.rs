@@ -9,8 +9,10 @@ pub(crate) fn set_update_auto_download(
 ) -> Result<(), String> {
     {
         let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-        store.data_mut().update.auto_download = enabled;
-        store.save().map_err(|e| e.to_string())?;
+        store.transaction(|data| {
+            data.update.auto_download = enabled;
+            Ok(())
+        })?;
     }
     let mut u = state.update.lock().unwrap_or_else(|e| e.into_inner());
     u.auto_download = enabled;
@@ -20,8 +22,10 @@ pub(crate) fn set_update_auto_download(
 pub(crate) fn set_update_auto_check(state: State<AppState>, enabled: bool) -> Result<(), String> {
     {
         let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-        store.data_mut().update.auto_check = enabled;
-        store.save().map_err(|e| e.to_string())?;
+        store.transaction(|data| {
+            data.update.auto_check = enabled;
+            Ok(())
+        })?;
     }
     let mut u = state.update.lock().unwrap_or_else(|e| e.into_inner());
     u.auto_check = enabled;

@@ -23,8 +23,7 @@ pub(crate) async fn set_override_enabled(
         commit_config_change(&state, edit)?;
     } else {
         let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-        edit(store.data_mut())?;
-        store.save().map_err(|e| e.to_string())?;
+        store.transaction(edit)?;
     }
     Ok(())
 }
@@ -59,8 +58,7 @@ pub(crate) async fn toggle_override_binding(
         commit_config_change(&state, edit)?;
     } else {
         let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-        edit(store.data_mut())?;
-        store.save().map_err(|e| e.to_string())?;
+        store.transaction(edit)?;
     }
     Ok(())
 }
@@ -83,8 +81,7 @@ pub(crate) async fn remove_override(
         commit_config_change(&state, edit)?;
     } else {
         let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-        edit(store.data_mut())?;
-        store.save().map_err(|e| e.to_string())?;
+        store.transaction(edit)?;
     }
     refresh_tray(&app);
     Ok(())
@@ -115,8 +112,7 @@ pub(crate) fn update_override(
         commit_config_change(&state, edit)?;
     } else {
         let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-        edit(store.data_mut())?;
-        store.save().map_err(|e| e.to_string())?;
+        store.transaction(edit)?;
     }
     Ok(())
 }
@@ -131,16 +127,18 @@ pub(crate) async fn apply_overrides(state: State<'_, AppState>) -> Result<(), St
 pub(crate) async fn validate_overrides(state: State<'_, AppState>) -> Result<(), String> {
     let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
     let failures = crossbow_core::validate_enabled_overrides(store.data());
-    for (id, err) in &failures {
-        store.data_mut().set_override_error(id, Some(err.clone()));
-    }
-    // 清除本次校验通过的启用覆写的错误；停用的保留原状
-    for o in store.data_mut().overrides.iter_mut() {
-        if o.enabled && !failures.iter().any(|(id, _)| id == &o.id) {
-            o.last_error = None;
+    store.transaction(|data| {
+        for (id, err) in &failures {
+            data.set_override_error(id, Some(err.clone()));
         }
-    }
-    store.save().map_err(|e| e.to_string())?;
+        // 清除本次校验通过的启用覆写的错误；停用的保留原状
+        for o in data.overrides.iter_mut() {
+            if o.enabled && !failures.iter().any(|(id, _)| id == &o.id) {
+                o.last_error = None;
+            }
+        }
+        Ok(())
+    })?;
     if failures.is_empty() {
         Ok(())
     } else {
@@ -180,8 +178,10 @@ pub(crate) async fn create_override(
     };
     {
         let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-        store.data_mut().overrides.push(def.clone());
-        store.save().map_err(|e| e.to_string())?;
+        store.transaction(|data| {
+            data.overrides.push(def.clone());
+            Ok(())
+        })?;
     }
     refresh_tray(&app);
     Ok(def)

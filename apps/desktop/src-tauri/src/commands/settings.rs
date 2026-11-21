@@ -56,8 +56,10 @@ pub(crate) fn set_lang(app: AppHandle, state: State<AppState>, lang: String) -> 
     }
     {
         let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-        store.data_mut().ui.lang = lang.clone();
-        store.save().map_err(|e| e.to_string())?;
+        store.transaction(|data| {
+            data.ui.lang = lang.clone();
+            Ok(())
+        })?;
     }
     let _ = app.emit("ui://lang", lang);
     refresh_tray(&app);
@@ -66,8 +68,10 @@ pub(crate) fn set_lang(app: AppHandle, state: State<AppState>, lang: String) -> 
 #[tauri::command]
 pub(crate) fn set_lightweight_close(state: State<AppState>, enabled: bool) -> Result<(), String> {
     let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-    store.data_mut().ui.lightweight_close = enabled;
-    store.save().map_err(|e| e.to_string())?;
+    store.transaction(|data| {
+        data.ui.lightweight_close = enabled;
+        Ok(())
+    })?;
     Ok(())
 }
 #[tauri::command]
@@ -80,16 +84,13 @@ pub(crate) fn set_deep_link_import_confirm(
 }
 
 fn persist_deep_link_import_confirm(store: &mut Store, enabled: bool) -> Result<(), String> {
-    let previous = store.data().ui.deep_link_import_confirm;
-    if previous == enabled {
+    if store.data().ui.deep_link_import_confirm == enabled {
         return Ok(());
     }
-    store.data_mut().ui.deep_link_import_confirm = enabled;
-    if let Err(error) = store.save() {
-        store.data_mut().ui.deep_link_import_confirm = previous;
-        return Err(error.to_string());
-    }
-    Ok(())
+    store.transaction(|data| {
+        data.ui.deep_link_import_confirm = enabled;
+        Ok(())
+    })
 }
 
 #[tauri::command]
@@ -103,8 +104,10 @@ pub(crate) fn set_theme(
     }
     {
         let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-        store.data_mut().ui.theme = theme.clone();
-        store.save().map_err(|e| e.to_string())?;
+        store.transaction(|data| {
+            data.ui.theme = theme.clone();
+            Ok(())
+        })?;
     }
     if let Some(win) = app.get_webview_window("main") {
         apply_window_appearance(&win, &theme);
@@ -149,8 +152,10 @@ pub(crate) fn platform_capabilities() -> platform::Capabilities {
 #[tauri::command]
 pub(crate) fn set_flag_emoji(state: State<AppState>, enabled: bool) -> Result<(), String> {
     let mut store = state.store.lock().unwrap_or_else(|e| e.into_inner());
-    store.data_mut().engine.flag_emoji = enabled;
-    store.save().map_err(|e| e.to_string())?;
+    store.transaction(|data| {
+        data.engine.flag_emoji = enabled;
+        Ok(())
+    })?;
     Ok(())
 }
 
@@ -162,16 +167,13 @@ pub(crate) fn set_unified_delay(state: State<AppState>, enabled: bool) -> Result
 }
 
 fn persist_unified_delay(store: &mut Store, enabled: bool) -> Result<(), String> {
-    let previous = store.data().engine.unified_delay;
-    if previous == enabled {
+    if store.data().engine.unified_delay == enabled {
         return Ok(());
     }
-    store.data_mut().engine.unified_delay = enabled;
-    if let Err(error) = store.save() {
-        store.data_mut().engine.unified_delay = previous;
-        return Err(error.to_string());
-    }
-    Ok(())
+    store.transaction(|data| {
+        data.engine.unified_delay = enabled;
+        Ok(())
+    })
 }
 
 #[cfg(test)]
