@@ -6,6 +6,7 @@ import Select from "@/components/Select";
 import { unsubscribe } from "@/lib/unlisten";
 import { navigateTo, sortConnections, connectionDetails } from "@/lib/workflow";
 import { ButtonBase, Button } from "@/components/Button";
+import PopoverPanel from "@/components/PopoverPanel";
 import NodeName from "@/components/NodeName";
 import { nodeNameText } from "@/components/NodeName/nodeFlags";
 import { notify } from "@/notifications/service";
@@ -17,8 +18,11 @@ import { useT } from "@/i18n/i18n";
 import { PageHead } from "@/pages/Home";
 
 const ROW_H = 48;
+// 末列「操作」：单轨放 ⋯ 触发下拉菜单（规则/断开收进菜单，行内不放两个
+// 直露按钮）。grid 每子元素占一轨，轨道数必须与行内子元素数一致，
+// 否则多出的子元素会落到隐式第二行掉出 48px 行高（#573/#588）。
 const CONNECTION_COLUMNS =
-  "minmax(190px,2fr) 100px minmax(160px,1.2fr) 120px 80px 80px 60px 56px";
+  "minmax(190px,2fr) 100px minmax(160px,1.2fr) 120px 80px 80px 60px 44px";
 const PROCESS_COLUMNS = "minmax(200px,1.6fr) 90px 100px 100px 90px";
 
 /** 连接页：列表 / 按进程聚合双视图（内核 connections WS → Rust 节流聚合）。 */
@@ -135,7 +139,7 @@ export default function ConnectionsPage() {
                 <span className="text-right">{t("col.up")}</span>
                 <span className="text-right">{t("col.down")}</span>
                 <span className="text-right">{t("col.elapsed")}</span>
-                <span />
+                <span>{t("col.actions")}</span>
               </div>
             }
             empty={
@@ -252,20 +256,38 @@ function Row({ row, onClose, onInspect, onRule }: { row: ConnRow; onClose: () =>
       <span className="text-right">{fmtBytes(row.up)}</span>
       <span className="text-right">{fmtBytes(row.down)}</span>
       <span className="text-right">{fmtDuration(row.elapsed_ms)}</span>
-      <Button iconOnly size="small"
-        onClick={() => onRule(row.process)}
-        aria-label={t("pr.createFor")}
-        title={t("pr.createFor")}
+      <PopoverPanel
+        label={t("col.actions")}
+        className="cb-row-menu-panel"
+        trigger={
+          <ButtonBase className="cb-row-actions-trigger" aria-label={t("col.actions")}>
+            ⋯
+          </ButtonBase>
+        }
       >
-        ⟶
-      </Button>
-      <Button iconOnly size="small" tone="danger"
-        onClick={onClose}
-        aria-label={t("conn.close")}
-        title={t("conn.close")}
-      >
-        ✕
-      </Button>
+        {(close) => (
+          <div className="cb-row-menu">
+            <ButtonBase
+              className="cb-row-menu-item"
+              onClick={() => {
+                close();
+                onRule(row.process);
+              }}
+            >
+              {t("conn.rule")}
+            </ButtonBase>
+            <ButtonBase
+              className="cb-row-menu-item cb-row-menu-item-danger"
+              onClick={() => {
+                close();
+                onClose();
+              }}
+            >
+              {t("conn.close")}
+            </ButtonBase>
+          </div>
+        )}
+      </PopoverPanel>
     </div>
   );
 }

@@ -642,11 +642,13 @@ async function scenarioConnectionPause(page) {
   await frame([row]);
   await target.waitFor();
   await page.getByRole("button", { name: "暂停", exact: true }).click();
-  await target.getByRole("button", { name: "断开", exact: true }).click();
+  await target.getByRole("button", { name: "操作", exact: true }).click();
+  await page.locator(".cb-row-menu").getByRole("button", { name: "断开", exact: true }).click();
   await eventually(page, "失败请求已完成", async () => await calls(page, "close_connection") === 1);
   assert(await target.count() === 1, "关闭失败不能删行");
   await page.evaluate(() => window.__cb.setCommands({ close_connection: null }));
-  await target.getByRole("button", { name: "断开", exact: true }).click();
+  await target.getByRole("button", { name: "操作", exact: true }).click();
+  await page.locator(".cb-row-menu").getByRole("button", { name: "断开", exact: true }).click();
   await eventually(page, "关闭成功移除暂停行", async () => await target.count() === 0);
   await page.getByRole("button", { name: "已暂停（点击恢复）", exact: true }).click();
   assert(await target.count() === 0, "恢复不能从缓存复活已关闭行");
