@@ -67,6 +67,7 @@ export function parseNavigation(raw: string): NavigationTarget | null {
           "cb-config-recovery",
           "cb-import-profile",
           "cb-process-rule",
+          "cb-user-rule",
           "cb-first-connection",
         ].includes(v.control)
           ? v.control

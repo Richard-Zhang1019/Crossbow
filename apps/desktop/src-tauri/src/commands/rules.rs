@@ -150,3 +150,75 @@ pub(crate) fn process_rule_remove(state: State<'_, AppState>, id: String) -> Res
         Ok(())
     })
 }
+
+#[derive(Serialize)]
+pub(crate) struct UserRuleStatus {
+    overlaps: Vec<(usize, usize)>,
+    rules: Vec<crossbow_core::user_rules::UserRule>,
+    targets: Vec<String>,
+}
+#[tauri::command]
+pub(crate) fn user_rules_get(state: State<'_, AppState>) -> UserRuleStatus {
+    let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+    let targets = crossbow_core::render_config(store.data())
+        .ok()
+        .and_then(|r| serde_yaml::from_str::<serde_json::Value>(&r.config).ok())
+        .map(|d| crossbow_core::user_rules::targets(&d))
+        .unwrap_or_else(|| vec!["DIRECT".into(), "REJECT".into()]);
+    UserRuleStatus {
+        overlaps: crossbow_core::user_rules::overlaps(&store.data().user_rules, &targets),
+        rules: store.data().user_rules.clone(),
+        targets,
+    }
+}
+#[tauri::command]
+pub(crate) fn user_rules_set(
+    state: State<'_, AppState>,
+    expected: Vec<crossbow_core::user_rules::UserRule>,
+    mut rules: Vec<crossbow_core::user_rules::UserRule>,
+) -> Result<(), String> {
+    crossbow_core::user_rules::validate(&mut rules)?;
+    commit_config_change(&state, |data| replace_user_rules(data, &expected, rules))
+}
+fn replace_user_rules(
+    data: &mut crossbow_core::StoreSchema,
+    expected: &[crossbow_core::user_rules::UserRule],
+    rules: Vec<crossbow_core::user_rules::UserRule>,
+) -> Result<(), String> {
+    if data.user_rules != expected {
+        return Err("Rules changed; reload before saving / 规则已变化，请刷新后重试".into());
+    }
+    let targets = crossbow_core::render_config(data)
+        .ok()
+        .and_then(|r| serde_yaml::from_str::<serde_json::Value>(&r.config).ok())
+        .map(|d| crossbow_core::user_rules::targets(&d))
+        .unwrap_or_else(|| vec!["DIRECT".into(), "REJECT".into()]);
+    for rule in &rules {
+        if rule.enabled && !targets.contains(&rule.target) && !data.user_rules.contains(rule) {
+            return Err("Policy unavailable / 策略已失效".into());
+        }
+    }
+    data.user_rules = rules;
+    Ok(())
+}
+
+#[cfg(test)]
+mod user_rule_tests {
+    #[test]
+    fn stale_edit_and_unavailable_policy_preserve_existing_rules() {
+        use crossbow_core::user_rules::{Kind, UserRule};
+        let mut data = crossbow_core::StoreSchema::default();
+        let rule = UserRule {
+            id: "one".into(),
+            kind: Kind::Domain,
+            value: "example.com".into(),
+            target: "missing".into(),
+            enabled: true,
+        };
+        assert!(super::replace_user_rules(&mut data, &[], vec![rule.clone()]).is_err());
+        assert!(data.user_rules.is_empty());
+        data.user_rules = vec![rule];
+        assert!(super::replace_user_rules(&mut data, &[], vec![]).is_err());
+        assert_eq!(data.user_rules.len(), 1);
+    }
+}

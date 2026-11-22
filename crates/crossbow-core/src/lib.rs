@@ -19,6 +19,7 @@ mod share_links;
 pub mod singbox_convert;
 pub mod store;
 pub mod subscription;
+pub mod user_rules;
 pub mod worker_memory;
 
 pub use emoji::enrich_flags;
