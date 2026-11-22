@@ -11,6 +11,7 @@ import { ipc, type PackagePreview, type Profile, type ProfileStatus } from "@/se
 import Select from "@/components/Select";
 import OverridePanel from "@/pages/OverridePanel";
 import RuleSets from "@/components/RuleSets";
+import UserRules from "@/components/UserRules";
 import ProcessRules from "@/components/ProcessRules";
 import { useT } from "@/i18n/i18n";
 import FitItems from "@/components/FitItems";
@@ -51,7 +52,7 @@ function fmtTime(
 export default function ProfilesPage({
   tab = "sources", focusProfileId, navigationRequest,
 }: {
-  tab?: "sources" | "overrides" | "process" | "rulesets";
+  tab?: "sources" | "overrides" | "process" | "rulesets" | "user";
   focusProfileId?:string;
   navigationRequest?:NavigationTarget|null;
 }) {
@@ -260,9 +261,9 @@ export default function ProfilesPage({
             ? "studio.overrides"
             : tab === "process"
               ? "studio.processRules"
-              : tab === "rulesets" ? "rs.title" : "studio.sources",
+              : tab === "user" ? "ur.title" : tab === "rulesets" ? "rs.title" : "studio.sources",
         )}
-        meta={t(tab === "overrides" ? "ov.hint" : tab === "process" ? "pr.hint" : tab === "rulesets" ? "rs.hint" : "studio.configHint")}
+        meta={tab === "user" ? undefined : t(tab === "overrides" ? "ov.hint" : tab === "process" ? "pr.hint" : tab === "rulesets" ? "rs.hint" : "studio.configHint")}
       >
         {tab === "overrides" && <Button variant="primary" onClick={()=>setCreatingOverride(true)}>{t("ov.create")}</Button>}
         {tab === "sources" && (
@@ -383,7 +384,7 @@ export default function ProfilesPage({
           activeId={activeId}
           onChanged={refresh}
         />
-      ) : tab === "rulesets" ? <RuleSets /> : tab === "process" ? (
+      ) : tab === "user" ? <UserRules preset={navigationRequest?.control==="cb-user-rule"?navigationRequest.source:undefined} /> : tab === "rulesets" ? <RuleSets /> : tab === "process" ? (
         <ProcessRules
           presetProcess={
             navigationRequest?.control === "cb-process-rule"

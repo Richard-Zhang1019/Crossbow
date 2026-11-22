@@ -915,6 +915,8 @@ pub fn run() {
             commands::rule_sets::rule_set_save,
             commands::rule_sets::rule_set_update,
             commands::rule_sets::rule_set_change,
+            commands::rules::user_rules_get,
+            commands::rules::user_rules_set,
             commands::rules::process_rules_get,
             commands::rules::process_rule_set,
             commands::rules::process_rule_remove,

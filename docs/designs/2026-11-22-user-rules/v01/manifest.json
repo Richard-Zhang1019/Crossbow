@@ -1,0 +1,33 @@
+{
+  "date": "2026-11-22",
+  "version": "v01",
+  "issue": 605,
+  "base": "e068a681187454e91e19b62ef38218cab3182d43",
+  "status": "implemented; local/simulated/controlled native checked; review fixes applied (stale-edit guard + CI registration); native full lifecycle pending",
+  "source_sha256": {
+    "crates/crossbow-core/src/user_rules.rs": "f66f7b1391ac36307cf48d7899577c0ffc2a1e8ec6cd42b5d9df443e758966c3",
+    "crates/crossbow-core/src/model.rs": "1417630ad005c11a5abb8e3e81e92443a428d5a22246807b4971fb2f74d0842e",
+    "crates/crossbow-core/src/render.rs": "39a4e3e1c6d7daa8355f202a55135d8ccebaea7cf93b997799aa6186b9439a58",
+    "apps/desktop/src-tauri/src/commands/rules.rs": "f946de7027aa5e1fe2c0c956151f031caeab777bf7a969a8c9816edd5fa74949",
+    "apps/desktop/src/components/UserRules/index.tsx": "bab3ca39956e6be2c6b6857d68d7bef25df69487c8ab5bf1561e96b6967c16b5",
+    "apps/desktop/src/components/UserRules/UserRules.css": "8eaf3b7ee0fdeafc615f9097494e7691dd4779ecb5c1f63202c898b9529920a8",
+    "apps/desktop/src/components/ProcessRules/ProcessRules.css": "ac703ded12d4877efc5b215e6932b771884664ba8ed9bf173d3645748e4de781",
+    "apps/desktop/src/pages/Connections/index.tsx": "afe688c972b183e9c5444e66828d709dfb913899f4dafbd9e6812969694c2212",
+    "apps/desktop/src/pages/Profiles/index.tsx": "644b06b9fb91775b3500fea2bc8f944d2fbffeb4bd7b1c40722a71154265408d",
+    "apps/desktop/src/App.tsx": "010bfa2307f50cf1377a29f1f4abe0fedcbc0ea75ccbc939426a14d966c261a1",
+    "apps/desktop/src/services/ipc.ts": "d616105283a8e13a3ec645fc464d21e2d90d8b6a61d763edb3d254b6d07e3248",
+    "apps/desktop/src/i18n/i18n.ts": "68c9afc8a28df837963055fb43710c4b2355124ce10ad7eae31c14ee3b108679",
+    "scripts/dev/verify-user-rules.mjs": "f899c9a0ffd57e2c3698df2f920fd48eec74c508172346f8a3abd5b6ca7469cc"
+  },
+  "artifacts": {
+    "source.zip": "588d66bc9a6d82ab81d06da1018810d8a15488c0685fe268d97313c648756321",
+    "verify-native.py": "88f6b54afc372fe368d3dd61e10adaf47f6ac30707e79f82f18b77cd219e3852",
+    "SPEC.md": "0fa2381b6e6db4fd38366b554283779221258eccdd53fa3016b4e467c98c2baa",
+    "verification/native.json": "7c97fcb57a79b816de65b8cf5bee2ead56167270f69a8f1d85f18e97db2fc23b",
+    "previews/before.png": "e15cdb38c5d7cf0f60ee33e768cd33ccd0e205bcc5b6c5be6fef9789f7838549",
+    "previews/failed.png": "45224496c261b9bbcf1117d7c6c5e72dd2c6691193abe2253cb0a211d7db6eb8",
+    "previews/editor.png": "2f19f4a634c9bcbd916cf6367e49d966cb3ec5d237f4913cb893518017756237",
+    "previews/light.png": "f191421b7c87c31231a1eb5b7ae1e511df5e1a1bfad88e56ddc1df75597454c9",
+    "previews/dark-small.png": "6976be98d2221cb55264ea7a76b7756d84b478cb37ddbc582f11e77ea0753e1c"
+  }
+}

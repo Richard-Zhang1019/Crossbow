@@ -197,6 +197,7 @@ export default function ConnectionsPage() {
       {selected && <Dialog title={t("conn.details")} onClose={() => { clearCopyFeedback(); setInspected(null); }}>
         {!snapshot.rows.some(r=>r.id===selected.id) && <p className="cb-control-note">{t("conn.closedDetail")}</p>}
         <dl className="cb-connection-details">{Object.entries(connectionDetails(selected)).map(([key,value])=><div key={key}><dt>{t(({Target:"col.target",Network:"workflow.network",Type:"workflow.type",Rule:"col.rule",Chain:"col.chains",Process:"col.process",ID:"workflow.id"} as Record<string,string>)[key])}</dt><dd className="cb-selectable">{value||"—"}</dd><Button size="small" disabled={!value} onClick={()=>void copyDetails(value)} aria-label={`${t("workflow.copy")} ${t(({Target:"col.target",Network:"workflow.network",Type:"workflow.type",Rule:"col.rule",Chain:"col.chains",Process:"col.process",ID:"workflow.id"} as Record<string,string>)[key])}`}>{t("workflow.copy")}</Button></div>)}</dl>
+        <p className="cb-control-note">{t("ur.priority")}</p><Button onClick={()=>navigateTo({page:"profiles",control:"cb-user-rule",source:selected.host})}>{t("ur.fromConnection")}</Button>
         <div className="actions"><span role="status">{copied?t("workflow.copied"):""}</span><Button onClick={()=>void copyDetails(JSON.stringify({...connectionDetails(selected),upload:selected.up,download:selected.down,elapsed_ms:selected.elapsed_ms},null,2))}>{t("workflow.copyAll")}</Button></div>
       </Dialog>}
 
