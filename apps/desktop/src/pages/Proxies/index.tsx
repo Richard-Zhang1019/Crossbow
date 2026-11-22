@@ -348,8 +348,11 @@ export default function ProxiesPage() {
         <div className="cb-context-layout">
           <nav className="cb-context-nav" aria-label={t("studio.groups")}>
             <h2 className="cb-node-page-title">{t("studio.nodes")}</h2>
-            <div className="cb-node-custom-manage"><Button size="small" onClick={()=>setManageGroups(true)}>{t("cg.title")}</Button></div>
-            <p className="cb-node-nav-caption">{t("studio.groups")}</p>
+            {/* #634：管理入口与「策略组」标题同排，避免在标题与导航之间单占一行。 */}
+            <div className="cb-node-nav-head">
+              <p className="cb-node-nav-caption">{t("studio.groups")}</p>
+              <Button size="small" onClick={()=>setManageGroups(true)}>{t("cg.title")}</Button>
+            </div>
             <SearchField className="cb-group-search" label={t("layout.searchGroups")} placeholder={t("layout.searchGroups")} value={groupQuery} onChange={e=>setGroupQuery(e.target.value)}/>
             <div className="cb-context-scroll">
               {groups.filter(group=>group.name.toLowerCase().includes(groupQuery.trim().toLowerCase())).map((group) => (

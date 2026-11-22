@@ -10,3 +10,24 @@
 
 .cb-dialog .cb-custom-form label {margin:0}
 .cb-custom-form > .cb-control-note {margin:0}
+
+/* #634：来源信息与工具条同一行，说明分层折叠，编辑区动作常驻可达。 */
+.cb-custom-toolbar { gap: 12px; align-items: flex-start; }
+.cb-custom-source { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cb-custom-source small { color: var(--cb-text-dim); font-size: var(--font-xs); }
+.cb-custom-source strong { font-weight: 500; overflow-wrap: anywhere; }
+.cb-custom-summary { margin: 8px 0 0; }
+.cb-custom-help { margin: 6px 0 2px; }
+.cb-custom-help summary { width: fit-content; cursor: pointer; color: var(--cb-text-dim); font-size: var(--font-sm); padding-block: 4px; }
+.cb-custom-help summary:hover { color: var(--cb-text); }
+.cb-custom-help p { font-size: var(--font-sm); color: var(--cb-text-dim); margin: 6px 0; }
+.cb-custom-list-row p { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.cb-custom-form .cb-process-form-actions {
+  position: sticky;
+  bottom: -24px;
+  z-index: 1;
+  margin: 12px -24px -24px;
+  padding: 12px 24px;
+  background: var(--cb-floating);
+  border-top: 1px solid var(--cb-line);
+}

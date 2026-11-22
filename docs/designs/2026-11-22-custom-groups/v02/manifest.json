@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-22",
+  "version": "v02",
+  "issue": 634,
+  "supersedes": "v01",
+  "status": "implemented; production-component scenario and previews; review pending",
+  "source_sha256": {
+    "apps/desktop/src/pages/Proxies/index.tsx": "fc1d1ea4b0c8da9da0158d06faf874a2446299aeb14778192bf5a656fd1e1216",
+    "apps/desktop/src/pages/Proxies/Proxies.css": "6b28b112f53d9ba6753fe2c2beebc8c988a88de49bfc17851ff3f3846a58a312",
+    "apps/desktop/src/components/CustomGroups/index.tsx": "c8d5c902c9708ef44f6e348482b017d05c987d49d06e46cbd8c227613eca6ef9",
+    "apps/desktop/src/components/CustomGroups/CustomGroups.css": "fc86690ff63b73c1861305f546f4d0ae57a9018ff8f70d845aab4e33f5b44448",
+    "apps/desktop/src/i18n/i18n.ts": "a9b434288d3d3e698a2ee13b737e6533b9882698c38e3ab8a3cfebf55ffb53c5",
+    "scripts/dev/verify-custom-groups.mjs": "0da13d471e92b63573a42a5bd58b15300e5efd6a02667b9d2832bf4f72697d25"
+  },
+  "artifacts": {
+    "SPEC.md": "f0936b268edaa66db5c55b9ae80f51c110122254f04b3423c57491ac6b96b379",
+    "previews/after-dark-small.png": "d2ea4018e2cf1944810bf23f37143ef81d39d480b06160a0fba000e66124ac32",
+    "previews/after-editor-small.png": "bdda15d016043749c47af3897736c6149c4152e191adb35b40374b3ed905fb7a",
+    "previews/after-entry.png": "2ab8f53059fc0a2d7aa960f1e3e5a219b6fdfe7974ff664b07e66282ad02a3bb",
+    "previews/after-list.png": "f7f8da82b0df53068007bd9f2a754cec7edb9d653922e7a7c17dcc6373efb16a",
+    "previews/before-dark-small.png": "8c6193a109b23b0436a27f661cce9de553d9a4503c53e22542d895acda97b4b0",
+    "previews/before-list.png": "f1077f4254867b3a16b2b0f0231a775c2f35e2bd3d2c9026a58688e82698d549"
+  }
+}
