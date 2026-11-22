@@ -262,16 +262,24 @@ impl History {
                 Some("质量历史无法读取，原文件已保留；清空历史后可重新记录".into()),
             ),
         };
-        Self {
+        let mut document = document;
+        let before: usize = document.buckets.iter().map(|b| b.samples.len()).sum();
+        prune(&mut document, now_ms());
+        let after: usize = document.buckets.iter().map(|b| b.samples.len()).sum();
+        let history = Self {
             path,
             inner: Mutex::new(Inner {
                 document,
                 epoch: 0,
-                dirty: false,
+                dirty: before != after,
                 load_error,
                 save_error: None,
             }),
-        }
+        };
+        // Retention applies at startup, even when the Nodes page is never opened.
+        // Failed writes remain observable via save_error/pending_save.
+        let _ = history.flush();
+        history
     }
     pub(crate) fn epoch(&self) -> u64 {
         self.inner.lock().unwrap_or_else(|e| e.into_inner()).epoch
@@ -616,7 +624,7 @@ mod tests {
         assert!(doc.buckets.is_empty());
     }
     #[test]
-    fn expired_samples_are_removed_from_disk_on_query() {
+    fn expired_samples_are_removed_from_disk_on_startup_and_query() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("node-quality.json");
         let data = Document {
@@ -633,6 +641,8 @@ mod tests {
         };
         std::fs::write(&path, serde_json::to_vec(&data).unwrap()).unwrap();
         let h = History::open(dir.path());
+        let startup: Document = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert!(startup.buckets.is_empty());
         assert_eq!(h.report(Some(&scope()), "node").stored_samples, 0);
         let disk: Document = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert!(disk.buckets.is_empty());

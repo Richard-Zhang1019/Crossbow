@@ -144,7 +144,7 @@ pub(crate) async fn end_node_delay_test(app: AppHandle, task_id: String) -> Resu
             let mut notice = notifications::Notice::new(
                 notifications::Kind::Error,
                 "node-quality.save",
-                "node-quality",
+                "node-quality-storage",
             );
             notice.title_key = "proxies.quality.saveFailed".into();
             notice.details = error.clone();

@@ -23,7 +23,7 @@ export default function NodeQuality({nodes, initialNode, context, testing, onTes
   const [loading, setLoading] = useState(true), [failed, setFailed] = useState(false);
   const [saving, setSaving] = useState(false), [confirm, setConfirm] = useState(false);
   const alive = useRef(false), revision = useRef(0), pending = useRef(false), initialized = useRef(false);
-  const load = useCallback(async () => {
+  const load = useCallback(async (reportStorageError = true) => {
     const request = ++revision.current;
     setLoading(true);
     try {
@@ -34,7 +34,7 @@ export default function NodeQuality({nodes, initialNode, context, testing, onTes
         setTarget(next.targets.find(row => row.total > 0)?.target ?? next.testTargets[0]);
         initialized.current = true;
       }
-      if (next.storageError) notify.error(next.storageError, "node-quality-storage");
+      if (next.storageError && reportStorageError) notify.error(next.storageError, "node-quality-storage", t("proxies.quality.saveFailed"));
     } catch (error) {
       if (alive.current && request === revision.current) { setFailed(true); notify.error(error, "node-quality-read"); }
     } finally { if (alive.current && request === revision.current) setLoading(false); }
@@ -55,7 +55,7 @@ export default function NodeQuality({nodes, initialNode, context, testing, onTes
     pending.current = true; setSaving(true);
     try {
       const result = await notify.run("node-quality-control", t("proxies.quality.title"), action, undefined, {feedback: "error-only"});
-      if (alive.current) { if (result.ok) setConfirm(false); await load(); }
+      if (alive.current) { if (result.ok) setConfirm(false); await load(result.ok); }
     } finally { pending.current = false; if (alive.current) setSaving(false); }
   };
   const summary = report?.targets.find(row => row.target === target);

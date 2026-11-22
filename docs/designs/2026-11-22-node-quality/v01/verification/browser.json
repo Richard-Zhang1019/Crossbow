@@ -1,5 +1,5 @@
 {
-  "revision": "0a28caceb5f31357304546b090f78da663c9938e",
+  "revision": "336dad5e039cee7e3c75ddc516af4d922bc68240",
   "simulation": true,
   "before": false,
   "errors": [],
@@ -8,6 +8,7 @@
     "controlled-target",
     "separate-card-delay",
     "cancel",
+    "late-node-report",
     "pause-failure-real-state",
     "clear",
     "singbox-guard",

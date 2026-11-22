@@ -14,10 +14,13 @@ try {
   const targets=['google-http','google-https','cloudflare-https'];
   const empty=target=>({target,total:0,eligible:0,successes:0,timeouts:0,failures:0,controllerErrors:0,successRate:null,p50Ms:null,p95Ms:null,jitterMs:null,samples:[]});
   const sample={target:'google-http',total:8,eligible:7,successes:5,timeouts:2,failures:0,controllerErrors:1,successRate:5/7,p50Ms:30,p95Ms:120,jitterMs:45,samples:[{atMs:Date.now(),class:'controller',delayMs:null},{atMs:Date.now()-60000,class:'timeout',delayMs:null},{atMs:Date.now()-120000,class:'ok',delayMs:120},{atMs:Date.now()-180000,class:'ok',delayMs:30}]};
-  const fixture=window.__cb.quality={paused:false,cleared:false,failPause:false,hold:false,release:null,lastTarget:null,targets};
+  const fixture=window.__cb.quality={paused:false,cleared:false,failPause:false,hold:false,release:null,holdHistory:false,historyRelease:null,lastTarget:null,targets};
   window.__cb.setCommands({
    proxies_test_snapshot:{context:{revision:1,pid:4242},groups:[{name:'节点选择',kind:'Selector',now:nodes[0].name,nodes}]},
-   node_quality_report:({node})=>({paused:fixture.paused,epoch:0,retentionDays:7,capacity:8192,storedSamples:fixture.cleared?0:8,storageError:null,pendingSave:false,testTargets:fixture.targets,targets:targets.map(t=>t==='google-http'&&!fixture.cleared&&node===nodes[0].name?sample:empty(t))}),
+   node_quality_report:({node})=>{
+    const result={paused:fixture.paused,epoch:0,retentionDays:7,capacity:8192,storedSamples:fixture.cleared?0:8,storageError:null,pendingSave:false,testTargets:fixture.targets,targets:targets.map(t=>t==='google-http'&&!fixture.cleared&&node===nodes[0].name?sample:empty(t))};
+    return fixture.holdHistory&&node===nodes[0].name?new Promise(resolve=>{fixture.historyRelease=()=>resolve(result);}):result;
+   },
    node_quality_set_paused:({paused})=>{if(fixture.failPause)throw Error('synthetic write failure');fixture.paused=paused;},
    node_quality_clear:()=>{fixture.cleared=true;},
    begin_node_delay_test:({target})=>{fixture.lastTarget=target;return {id:'q-task',budgetMs:30000};},
@@ -57,6 +60,15 @@ try {
   assert(await dialog.getByRole('button',{name:'测一次',exact:true}).isDisabled());
   await p.evaluate(()=>{window.__cb.quality.targets=['google-http','google-https','cloudflare-https'];});
   await dialog.getByRole('button',{name:'刷新质量历史'}).click();
+  await p.evaluate(()=>window.__cb.quality.holdHistory=true);
+  await dialog.getByRole('button',{name:'刷新质量历史'}).click();await p.waitForFunction(()=>!!window.__cb.quality.historyRelease);
+  await dialog.locator('.cb-quality-toolbar .cb-select-trigger').click();
+  await p.getByRole('option',{name:'JP · 备用线路'}).click();
+  await dialog.getByText('0 次有效探测 · 0 次成功').waitFor();
+  await p.evaluate(()=>{window.__cb.quality.holdHistory=false;window.__cb.quality.historyRelease();});
+  await p.waitForTimeout(50);assert((await dialog.innerText()).includes('0 次有效探测 · 0 次成功'),'late report from previous node must not overwrite current node');
+  await dialog.locator('.cb-quality-toolbar .cb-select-trigger').click();await p.getByRole('option',{name:'HK · 稳定线路'}).click();
+  await dialog.getByText('71%',{exact:true}).waitFor();
   await dialog.getByRole('button',{name:'清空历史',exact:true}).click();await dialog.getByRole('button',{name:'确认清空',exact:true}).click();
   await dialog.getByText('0 次有效探测 · 0 次成功').waitFor();await shot('empty');
   await p.evaluate(()=>{window.__cb.quality.cleared=false;window.__cb.emit('ui://theme','dark');});
@@ -70,6 +82,6 @@ try {
   assert.equal(await p.evaluate(()=>window.__cb.calls.select_proxy||0),0);
  }
  assert.deepEqual(errors,[]);assert.deepEqual(await p.evaluate(()=>window.__cb.unknown),[]);
- writeFileSync(`${out}/checks.json`,JSON.stringify({revision:revision(),simulation:true,before,errors,checks:before?['baseline']:['no-automatic-probe','controlled-target','separate-card-delay','cancel','pause-failure-real-state','clear','singbox-guard','light-dark-en','small-window','focus-restore']},null,2));
+ writeFileSync(`${out}/checks.json`,JSON.stringify({revision:revision(),simulation:true,before,errors,checks:before?['baseline']:['no-automatic-probe','controlled-target','separate-card-delay','cancel','late-node-report','pause-failure-real-state','clear','singbox-guard','light-dark-en','small-window','focus-restore']},null,2));
  console.log(out);
 }finally{await browser.close();await vite.close();}
