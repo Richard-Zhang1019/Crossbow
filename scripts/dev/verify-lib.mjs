@@ -172,6 +172,7 @@ export function stubSource() {
     "sysproxy_status": { enabled: false, port: 7897 },
     "tun_status": { enabled: false, ready: true, coreRunning: true },
     "core_mode": "rule",
+    "inspect_profile_import": ({content}) => ({engine:"mihomo",tested_version:"mihomo v1.19.32",status:content.trim()?"compatible":"empty",node_count:1,protocols:[],capabilities:[{protocol:"hy2",mihomo:"subset",singbox:"limited"},{protocol:"tuic",mihomo:"subset",singbox:"unsupported"},{protocol:"reality",mihomo:"subset",singbox:"unsupported"}]}),
     "get_dns_settings": { mode: "inherit", proxy_nameservers: [], direct_nameservers: [], bootstrap_nameservers: [] },
     "get_engine_config": {
       engine: "mihomo", mixed_port: 7897, allow_lan: false, flag_emoji: true,

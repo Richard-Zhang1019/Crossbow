@@ -207,7 +207,7 @@ fn select_engine(
     use_overrides: bool,
 ) -> Result<(), String> {
     crossbow_core::dns_settings::validate_for_engine(&data.dns, target)?;
-    if target == crossbow_core::Engine::SingBox && data.active_profile.is_some() {
+    if data.active_profile.is_some() {
         let mut candidate = data.clone();
         candidate.engine.engine = target;
         crossbow_core::render_config_with(&candidate, use_overrides)
@@ -221,6 +221,29 @@ fn select_engine(
 mod engine_selection_tests {
     use super::*;
 
+    #[test]
+    fn native_singbox_rejects_mihomo_selection_before_engine_changes() {
+        let mut data = crossbow_core::StoreSchema::default();
+        data.engine.engine = crossbow_core::Engine::SingBox;
+        data.active_profile = Some("native".into());
+        data.profiles.push(crossbow_core::Profile {
+            id: "native".into(),
+            name: "native".into(),
+            kind: crossbow_core::ProfileKind::Local,
+            url: None,
+            content: r#"{"outbounds":[{"type":"direct","tag":"direct"}]}"#.into(),
+            update_interval_min: 0,
+            override_ids: vec![],
+            last_updated: None,
+            traffic: None,
+            last_update: None,
+        });
+        let before = serde_json::to_value(&data).unwrap();
+        let error = select_engine(&mut data, crossbow_core::Engine::Mihomo, true).unwrap_err();
+        assert!(error.contains("mihomo"));
+        assert_eq!(serde_json::to_value(&data).unwrap(), before);
+        select_engine(&mut data, crossbow_core::Engine::SingBox, true).unwrap();
+    }
     #[test]
     fn incompatible_dns_rejects_selection_before_engine_changes() {
         let mut data = crossbow_core::StoreSchema {

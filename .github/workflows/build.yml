@@ -126,6 +126,7 @@ jobs:
         run: |
           pnpm verify:desktop
           node scripts/dev/verify-stats.mjs
+          node scripts/dev/verify-import-capabilities.mjs
           node scripts/dev/verify-process-rules.mjs
           node scripts/dev/verify-scenes.mjs
           node scripts/dev/verify-lan.mjs
@@ -190,6 +191,7 @@ jobs:
         run: |
           pnpm verify:desktop
           node scripts/dev/verify-stats.mjs
+          node scripts/dev/verify-import-capabilities.mjs
           node scripts/dev/verify-process-rules.mjs
           node scripts/dev/verify-scenes.mjs
           node scripts/dev/verify-lan.mjs

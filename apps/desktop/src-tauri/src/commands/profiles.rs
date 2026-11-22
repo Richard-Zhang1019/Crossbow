@@ -146,3 +146,177 @@ pub(crate) async fn import_profile_url(
     refresh_tray(&app);
     Ok(profile)
 }
+
+/// Read-only, local inspection. Never returns input, nodes, hosts or credentials.
+#[derive(serde::Serialize)]
+pub(crate) struct ImportInspection {
+    engine: crossbow_core::Engine,
+    tested_version: String,
+    status: &'static str,
+    node_count: usize,
+    protocols: Vec<String>,
+    capabilities: Vec<ImportCapability>,
+}
+#[derive(serde::Serialize)]
+pub(crate) struct ImportCapability {
+    protocol: &'static str,
+    mihomo: &'static str,
+    singbox: &'static str,
+}
+#[tauri::command]
+pub(crate) async fn inspect_profile_import(
+    state: State<'_, AppState>,
+    content: String,
+) -> Result<ImportInspection, String> {
+    let data = state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .clone();
+    let version = format!(
+        "mihomo v1.19.32 / sing-box v{}",
+        crossbow_core::singbox_convert::SINGBOX_VERSION
+    );
+    tauri::async_runtime::spawn_blocking(move || inspect_import(&data, &content, version))
+        .await
+        .map_err(|_| "导入检查任务失败".to_string())
+}
+fn inspect_import(
+    data: &crossbow_core::StoreSchema,
+    content: &str,
+    version: String,
+) -> ImportInspection {
+    let mut report = ImportInspection {
+        engine: data.engine.engine,
+        tested_version: version,
+        status: "empty",
+        node_count: 0,
+        protocols: vec![],
+        capabilities: vec![
+            ImportCapability {
+                protocol: "hy2",
+                mihomo: "subset",
+                singbox: "limited",
+            },
+            ImportCapability {
+                protocol: "tuic",
+                mihomo: "subset",
+                singbox: "unsupported",
+            },
+            ImportCapability {
+                protocol: "reality",
+                mihomo: "subset",
+                singbox: "unsupported",
+            },
+        ],
+    };
+    let input = content.trim();
+    if input.len() > 8 * 1024 * 1024 {
+        report.status = "invalid";
+        return report;
+    }
+    if input.is_empty() {
+        return report;
+    }
+    if input.lines().count() == 1 && (input.starts_with("https://") || input.starts_with("http://"))
+    {
+        report.status = "remote";
+        return report;
+    }
+    let Ok(normalized) = crossbow_core::subscription::normalize_profile_content(input) else {
+        report.status = "invalid";
+        return report;
+    };
+    let document: serde_json::Value = serde_yaml::from_str(&normalized).unwrap_or_default();
+    if let Some(nodes) = document
+        .get("proxies")
+        .or_else(|| document.get("outbounds"))
+        .and_then(serde_json::Value::as_array)
+    {
+        report.node_count = nodes.len();
+        for node in nodes {
+            let protocol = node
+                .get("type")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("other");
+            let protocol = match protocol {
+                "hysteria2" => "hy2",
+                "vless" if node.get("reality-opts").is_some() => "reality",
+                "ss" | "vmess" | "trojan" | "vless" | "tuic" => protocol,
+                _ => "other",
+            };
+            if !report.protocols.iter().any(|p| p == protocol) {
+                report.protocols.push(protocol.into());
+            }
+        }
+    }
+    let mut profile = make_profile(
+        gen_id(),
+        "Compatibility preview".into(),
+        ProfileKind::Local,
+        None,
+    );
+    profile.content = normalized;
+    report.status = if validate_import_candidate(data, &profile).is_ok() {
+        "compatible"
+    } else {
+        "unsupported"
+    };
+    report
+}
+
+#[cfg(test)]
+mod import_inspection_tests {
+    use super::*;
+    #[test]
+    fn capability_rows_agree_with_actual_conversion_and_do_not_return_secrets() {
+        for (uri, protocol, singbox) in [
+            ("hy2://PRIVATE_AUTH@node.test:443", "hy2", true),
+            ("hy2://PRIVATE_AUTH@node.test:443?obfs=salamander&obfs-password=PRIVATE_OBFS", "hy2", false),
+            ("tuic://00000000-0000-4000-8000-000000000001:PRIVATE_AUTH@node.test:443", "tuic", false),
+            ("vless://00000000-0000-4000-8000-000000000001@node.test:443?security=reality&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "reality", false),
+        ] {
+            for engine in [crossbow_core::Engine::Mihomo,crossbow_core::Engine::SingBox] {
+                let mut data=crossbow_core::StoreSchema::default();data.engine.engine=engine;
+                let report=inspect_import(&data,uri,"test baseline".into());
+                assert_eq!(report.status,if engine==crossbow_core::Engine::Mihomo||singbox {"compatible"}else{"unsupported"});
+                assert_eq!(report.node_count,1);assert_eq!(report.protocols,[protocol]);
+                let serialized=serde_json::to_string(&report).unwrap();
+                for secret in ["PRIVATE_AUTH","PRIVATE_OBFS","node.test","hy2://"] {assert!(!serialized.contains(secret));}
+            }
+        }
+    }
+    #[test]
+    fn native_singbox_format_is_not_reported_compatible_with_mihomo() {
+        let content = r#"{"outbounds":[{"type":"trojan","tag":"private-node","server":"node.test","server_port":443,"password":"PRIVATE_AUTH","tls":{"enabled":true}}]}"#;
+        let mut data = crossbow_core::StoreSchema::default();
+        assert_eq!(
+            inspect_import(&data, content, String::new()).status,
+            "unsupported"
+        );
+        data.engine.engine = crossbow_core::Engine::SingBox;
+        let report = inspect_import(&data, content, String::new());
+        assert_eq!(report.status, "compatible");
+        assert!(!serde_json::to_string(&report)
+            .unwrap()
+            .contains("PRIVATE_AUTH"));
+    }
+    #[test]
+    fn malformed_mixed_and_remote_inputs_are_inspection_only() {
+        let data = crossbow_core::StoreSchema::default();
+        assert_eq!(
+            inspect_import(&data, "https://subscription.test/token", String::new()).status,
+            "remote"
+        );
+        assert_eq!(
+            inspect_import(&data, "hy2://secret@host:443\nbad", String::new()).status,
+            "invalid"
+        );
+        assert_eq!(
+            inspect_import(&data, "https://host\nhy2://secret@host", String::new()).status,
+            "invalid"
+        );
+        assert_eq!(inspect_import(&data, "", String::new()).status, "empty");
+    }
+}
