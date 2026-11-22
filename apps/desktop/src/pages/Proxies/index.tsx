@@ -4,13 +4,14 @@ import {SearchField} from "@/components/Controls";
 import PopoverPanel from "@/components/PopoverPanel";
 import {friendlyKind} from "@/layouts/layout";
 import "./Proxies.css";
+import NodeQuality from "./NodeQuality";
 import Select from "@/components/Select";
 import NodeName from "@/components/NodeName";
 import { nodeNameText } from "@/components/NodeName/nodeFlags";
 import { notify } from "@/notifications/service";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonBase } from "@/components/Button";
-import { ipc, type NodeDelayOutcome, type NodeDelayContext, type GroupView, type NodeView } from "@/services/ipc";
+import { ipc, type NodeQualityTarget, type NodeDelayOutcome, type NodeDelayContext, type GroupView, type NodeView } from "@/services/ipc";
 import { useT } from "@/i18n/i18n";
 import { PageHead } from "@/pages/Home";
 import SiteConnectivity from "@/components/SiteConnectivity";
@@ -199,7 +200,7 @@ export default function ProxiesPage() {
     if (!document.hidden && !selectionInFlight.current) void load(true);
   }, 5000);
 
-  const testNodes = async (name: string, nodeNames: string[]) => {
+  const testNodes = async (name: string, nodeNames: string[], target?: NodeQualityTarget) => {
     const context = testContext.current;
     if (!context || activeTest.current || nodeNames.length === 0) return;
     const previous = new Map(currentGroups.current.find(group => group.name === name)?.nodes
@@ -224,13 +225,14 @@ export default function ProxiesPage() {
       });
       if (!isMember(node)) return;
       if (result.class === "controller" || result.class === "failed") errors++;
+      if (target) return; // Quality probes must not replace the primary-target card/sort value.
       setResults(old => !task.cancelled && contextMatches() && isMember(node)
         ? new Map(old).set(key, { ...result, previousMs: task.previous.get(node) })
         : old);
     };
 
     try {
-      const ticket = await ipc.beginNodeDelayTest(context, nodeNames.length);
+      const ticket = await ipc.beginNodeDelayTest(context, nodeNames.length, target);
       if (!ticket) {
         if (current()) {
           for (const node of task.pending) apply(node, testOutcome("skipped"));
@@ -365,7 +367,8 @@ export default function ProxiesPage() {
           <div className="cb-nodes-workspace">
             {selectedGroup && (
               <GroupCard
-                key={selectedGroup.name}
+                key={`${selectedGroup.name}:${testContext.current?.revision}:${testContext.current?.pid}`}
+                context={testContext.current!}
                 group={selectedGroup}
                 automaticGroup={automaticGroup}
                 busy={testing !== null}
@@ -377,7 +380,7 @@ export default function ProxiesPage() {
                 onRestoreAutomatic={() => automaticGroup && restoreAutomatic(automaticGroup.name)}
                 onTest={() => testNodes(selectedGroup.name, selectedGroup.nodes.filter(n => !INFO_NAME.test(n.name)).map(n => n.name))}
                 onCancelTest={() => { if (testing) cancelTest(testing); }}
-                onTestNode={(node) => testNodes(selectedGroup.name, [node])}
+                onTestNode={(node, target) => testNodes(selectedGroup.name, [node], target)}
                 onSelect={(node) => select(selectedGroup.name, node)}
               />
             )}
@@ -394,6 +397,7 @@ export default function ProxiesPage() {
 }
 
 function GroupCard({
+  context,
   group,
   automaticGroup,
   busy,
@@ -408,6 +412,7 @@ function GroupCard({
   onSelect,
   onRestoreAutomatic,
 }: {
+  context: NodeDelayContext;
   group: GroupView;
   automaticGroup?: GroupView;
   busy: boolean;
@@ -418,12 +423,13 @@ function GroupCard({
   onTest: () => void;
   onCancelTest: () => void;
   onRefresh: () => void;
-  onTestNode: (node: string) => void;
+  onTestNode: (node: string, target?: NodeQualityTarget) => void;
   onSelect: (node: string) => void;
   onRestoreAutomatic: () => void;
 }) {
   const t = useT();
   const [query, setQuery] = useState("");
+  const [qualityOpen, setQualityOpen] = useState(false);
   const [region, setRegion] = useState("all");
   const [onlyAlive, setOnlyAlive] = useState(false);
   const [sortByLatency, setSortByLatency] = useState(false);
@@ -474,11 +480,14 @@ function GroupCard({
 
   return (
     <section className="cb-node-group">
+      {qualityOpen && realNodes.length > 0 && <NodeQuality nodes={realNodes} initialNode={group.now} context={context} testing={busy}
+        onTest={onTestNode} onCancel={onCancelTest} onClose={() => setQualityOpen(false)} />}
       <div className="cb-node-heading">
         <div className="cb-node-heading-copy">
           <h1><NodeName name={group.name} /><span>{realNodes.length} {t("proxies.nodeCount")}</span></h1>
         </div>
         <div className="cb-node-heading-actions">
+          {realNodes.length > 0 && <Button onClick={() => setQualityOpen(true)}>{t("proxies.quality.title")}</Button>}
           {infoNodes.length > 0 && <PopoverPanel label={t("proxies.subscriptionInfo")} trigger={<Button size="small">{t("proxies.subscriptionInfo")}</Button>}>{()=> <div className="cb-help-copy">{infoNodes.map(n=><p key={n.name}><NodeName name={n.name}/></p>)}</div>}</PopoverPanel>}
           <Button iconOnly className="cb-node-refresh" title={t("proxies.refresh")} aria-label={t("proxies.refresh")} onClick={onRefresh} disabled={busy || selecting !== null}><Icon name="refresh" /></Button>
           {busy ? (

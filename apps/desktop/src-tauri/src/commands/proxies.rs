@@ -41,6 +41,18 @@ pub(crate) struct NodeDelayTask {
     id: String,
     context: NodeDelayContext,
     deadline: Instant,
+    quality_scope: Option<crate::node_quality::Scope>,
+    quality_epoch: u64,
+    target: Option<crate::node_quality::Target>,
+    nodes: std::sync::Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+    node_limit: usize,
+}
+
+impl NodeDelayTask {
+    fn admit(&self, node: &str) -> bool {
+        let mut nodes = self.nodes.lock().unwrap_or_else(|e| e.into_inner());
+        node.len() <= 4096 && nodes.len() < self.node_limit && nodes.insert(node.to_owned())
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -64,11 +76,28 @@ pub(crate) fn begin_node_delay_test(
     state: State<AppState>,
     context: NodeDelayContext,
     node_count: usize,
+    target: Option<crate::node_quality::Target>,
 ) -> Option<NodeDelayTicket> {
     let _operation = state.core_op.try_lock().ok()?;
     if node_delay_context(&state) != Some(context) {
         return None;
     }
+    let engine = state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .engine
+        .engine;
+    if engine == crossbow_core::Engine::SingBox
+        && target.is_some_and(|t| t != crate::node_quality::Target::GoogleHttps)
+    {
+        return None;
+    }
+    let quality_scope = crate::node_quality::Scope::from_store(
+        state.store.lock().unwrap_or_else(|e| e.into_inner()).data(),
+    );
+    let quality_epoch = state.node_quality.epoch();
     let mut task = state
         .node_delay_task
         .lock()
@@ -85,6 +114,11 @@ pub(crate) fn begin_node_delay_test(
         id: id.clone(),
         context,
         deadline: Instant::now() + budget,
+        quality_scope,
+        quality_epoch,
+        target,
+        nodes: Default::default(),
+        node_limit: node_count.clamp(1, 4096),
     });
     Some(NodeDelayTicket {
         id,
@@ -93,14 +127,84 @@ pub(crate) fn begin_node_delay_test(
 }
 
 #[tauri::command]
-pub(crate) fn end_node_delay_test(state: State<AppState>, task_id: String) {
-    let mut task = state
-        .node_delay_task
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    if task.as_ref().is_some_and(|task| task.id == task_id) {
-        *task = None;
-    }
+pub(crate) async fn end_node_delay_test(app: AppHandle, task_id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        {
+            let mut task = state
+                .node_delay_task
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if task.as_ref().is_some_and(|task| task.id == task_id) {
+                *task = None;
+            }
+        }
+        let result = state.node_quality.flush();
+        if let Err(error) = &result {
+            let mut notice = notifications::Notice::new(
+                notifications::Kind::Error,
+                "node-quality.save",
+                "node-quality-storage",
+            );
+            notice.title_key = "proxies.quality.saveFailed".into();
+            notice.details = error.clone();
+            notifications::publish(&app, notice);
+        }
+        result
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub(crate) async fn node_quality_report(
+    app: AppHandle,
+    node: String,
+    context: NodeDelayContext,
+) -> Result<crate::node_quality::Report, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        if node_delay_context(&state) != Some(context) {
+            return Err("配置或内核已变化，请重新打开质量历史".into());
+        }
+        let scope = crate::node_quality::Scope::from_store(
+            state.store.lock().unwrap_or_else(|e| e.into_inner()).data(),
+        );
+        let mut report = state.node_quality.report(scope.as_ref(), &node);
+        if state
+            .store
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .data()
+            .engine
+            .engine
+            == crossbow_core::Engine::SingBox
+        {
+            report.test_targets = vec![crate::node_quality::Target::GoogleHttps];
+        }
+        if node_delay_context(&state) != Some(context) {
+            return Err("配置或内核已变化，请重新打开质量历史".into());
+        }
+        Ok(report)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub(crate) async fn node_quality_set_paused(app: AppHandle, paused: bool) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().node_quality.set_paused(paused)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub(crate) async fn node_quality_clear(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().node_quality.clear())
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 impl From<NodeDelayError> for NodeDelayOutcome {
@@ -143,6 +247,9 @@ pub(crate) async fn test_node_delay_structured(
         let Some(task) = task else {
             return Ok(cancelled());
         };
+        if !task.admit(&node) {
+            return Ok(NodeDelayError::Skipped("节点重复或批次请求数已达上限".into()).into());
+        }
         let current = || {
             node_delay_context(&state) == Some(task.context)
                 && state
@@ -172,11 +279,48 @@ pub(crate) async fn test_node_delay_structured(
             return Ok(NodeDelayError::Skipped("已有测速请求正在结束".into()).into());
         };
         Ok(
-            match controller.measure_node_delay_with_review(
+            match controller.measure_node_delay_observed(
                 &node,
                 &current,
                 task.deadline,
                 url_scoped_history,
+                task.target,
+                &|url, result| {
+                    use crate::node_quality::{ResultClass, Sample, Target};
+                    let Some(scope) = &task.quality_scope else {
+                        return;
+                    };
+                    let Some(target) = Target::from_url(url) else {
+                        return;
+                    };
+                    let class = match result {
+                        Ok(_) => ResultClass::Ok,
+                        Err(NodeDelayError::Timeout(_)) => ResultClass::Timeout,
+                        Err(NodeDelayError::Failed(_)) => ResultClass::Failed,
+                        Err(NodeDelayError::Controller(_)) => ResultClass::Controller,
+                        _ => return,
+                    };
+                    // Cancellation fences publication and recording with the same task mutex.
+                    let active = state
+                        .node_delay_task
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner());
+                    if active.as_ref().is_some_and(|active| active.id == task.id)
+                        && node_delay_context(&state) == Some(task.context)
+                    {
+                        state.node_quality.record(
+                            task.quality_epoch,
+                            scope,
+                            &node,
+                            target,
+                            Sample {
+                                at_ms: crate::node_quality::now_ms(),
+                                class,
+                                delay_ms: result.as_ref().ok().copied(),
+                            },
+                        );
+                    }
+                },
             ) {
                 Ok(sample) => NodeDelayOutcome {
                     class: "ok".into(),
@@ -297,6 +441,29 @@ fn read_proxies_snapshot(state: &AppState) -> Result<Vec<GroupView>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn batch_admission_is_shared_bounded_and_rejects_duplicate_nodes() {
+        let task = NodeDelayTask {
+            id: "test".into(),
+            context: NodeDelayContext {
+                revision: 0,
+                pid: 1,
+            },
+            deadline: Instant::now(),
+            quality_scope: None,
+            quality_epoch: 0,
+            target: None,
+            nodes: Default::default(),
+            node_limit: 2,
+        };
+        let other_worker = task.clone();
+        assert!(!task.admit(&"x".repeat(4097)));
+        assert!(task.admit("a"));
+        assert!(!other_worker.admit("a"));
+        assert!(other_worker.admit("b"));
+        assert!(!task.admit("c"));
+    }
 
     #[test]
     fn node_delay_batch_budget_accounts_for_both_probes_and_is_capped() {

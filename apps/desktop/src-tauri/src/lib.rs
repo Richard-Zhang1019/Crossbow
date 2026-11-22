@@ -56,6 +56,7 @@ pub(crate) mod platform;
 pub(crate) mod tray;
 
 // 跨域单件：进程管理、调度、服务端 IPC、应用更新、维护命令。
+pub(crate) mod node_quality;
 pub(crate) mod process;
 pub(crate) mod scheduler;
 #[cfg(windows)]
@@ -755,6 +756,7 @@ pub fn run() {
                 node_delay_revision: std::sync::atomic::AtomicU64::new(0),
                 node_delay_task: std::sync::Mutex::new(None),
                 node_delay_slots: tokio::sync::Semaphore::new(NODE_DELAY_CONCURRENCY),
+                node_quality: node_quality::History::open(&data_dir),
                 store: Mutex::new(store),
                 package_session: Mutex::new(crate::workflow::PackageSession::default()),
                 core_slot: Mutex::new(core),
@@ -1031,6 +1033,9 @@ pub fn run() {
             test_node_delay_structured,
             begin_node_delay_test,
             end_node_delay_test,
+            node_quality_report,
+            node_quality_set_paused,
+            node_quality_clear,
             proxies_test_snapshot,
         ])
         .build(tauri::generate_context!())
