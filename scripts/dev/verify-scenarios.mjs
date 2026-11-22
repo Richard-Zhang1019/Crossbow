@@ -330,7 +330,7 @@ async function scenarioDiagnostics(page) {
   for (const banned of ["SECRET-TOKEN", "SECRET-RAW-ERR", "stub.invalid", "验证订阅", "节点-01"]) {
     assert(!share.includes(banned), `导出摘要泄露了非白名单内容：${banned}`);
   }
-  await page.locator(".cb-dialog .actions button").click();
+  await page.locator(".cb-modal .actions button").click();
   await eventually(page, "复制入口输出和预览完全一致",
     (p) => p.evaluate((expected) => window.__cb.copiedSummary === expected, share));
   await page.keyboard.press("Escape");

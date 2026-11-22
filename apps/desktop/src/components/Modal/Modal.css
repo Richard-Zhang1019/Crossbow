@@ -1,0 +1,17 @@
+.cb-modal-mask { position:fixed; inset:0; z-index:var(--z-modal); background:var(--cb-overlay); }
+.cb-modal-viewport { position:fixed; inset:0; z-index:var(--z-modal); display:flex; justify-content:center; align-items:flex-start; padding:24px 16px; pointer-events:none; }
+.cb-modal-viewport[data-centered="true"] { align-items:center; }
+.cb-modal { pointer-events:auto; width:var(--cb-modal-width); max-width:100%; max-height:calc(100dvh - 48px); min-height:0; display:flex; flex-direction:column; overflow:hidden; background:var(--cb-floating); color:var(--cb-text); border:1px solid var(--cb-line-strong); border-radius:16px; box-shadow:0 18px 50px rgb(0 0 0 / .22); outline:none; }
+.cb-modal-header { display:flex; flex:none; justify-content:space-between; align-items:flex-start; gap:16px; padding:20px 24px; border-bottom:1px solid var(--cb-line); }
+.cb-modal-title { margin:0; min-width:0; overflow-wrap:anywhere; font-size:var(--font-title); line-height:1.4; font-weight:550; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.cb-modal-header > button { flex:none; }
+.cb-modal-body { min-height:0; overflow:auto; overscroll-behavior:contain; padding:20px 24px; overflow-wrap:anywhere; }
+.cb-modal-body label { display:block; font-size:var(--font-md); margin:18px 0 8px; }
+.cb-modal-body .cb-input { width:100%; }
+.cb-modal-footer { flex:none; display:flex; flex-wrap:wrap; justify-content:flex-end; align-items:center; gap:8px; padding:16px 24px; border-top:1px solid var(--cb-line); }
+.cb-modal-footer > :is(.actions,.cb-process-form-actions,.cb-rulesets-form-actions) { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px; width:100%; margin:0; padding:0; border:0; }
+
+.cb-modal[hidden],.cb-modal-mask[hidden],.cb-modal-viewport[hidden] { display:none; }
+@media(max-height:600px) { .cb-modal-header { padding:12px 20px; } .cb-modal-body { padding:16px 20px; } .cb-modal-footer { padding:12px 20px; } }
+
+.cb-modal-body .cb-share-preview { max-height:none; overflow:visible; }

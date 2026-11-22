@@ -125,7 +125,7 @@ try {
         document.querySelector('[role="dialog"] button[type="submit"]')
           ?.disabled === false,
     );
-    assert(await page.locator(".cb-dialog").isVisible());
+    assert(await page.locator(".cb-modal").isVisible());
     assert.equal(
       await page.getByLabel("名称", { exact: true }).inputValue(),
       "国际媒体 · 已编辑",
@@ -138,14 +138,14 @@ try {
       window.__failSave = false;
     });
     await page.getByRole("button", { name: "保存", exact: true }).click();
-    await page.locator(".cb-dialog").waitFor({ state: "hidden" });
+    await page.locator(".cb-modal").waitFor({ state: "hidden" });
     await page.getByRole("button", { name: "添加规则集", exact: true }).click();
     await page.getByLabel("名称", { exact: true }).fill("开发工具");
     await page
       .getByLabel("规则集链接", { exact: true })
       .fill("https://rules.example.invalid/dev.yaml");
     await page.getByRole("button", { name: "保存", exact: true }).click();
-    await page.locator(".cb-dialog").waitFor({ state: "hidden" });
+    await page.locator(".cb-modal").waitFor({ state: "hidden" });
     assert.equal(await rows.count(), 3);
     await page.evaluate(() => window.__cb.emit("ui://theme", "dark"));
     await page.setViewportSize({ width: 880, height: 560 });
@@ -160,7 +160,7 @@ try {
     await page.getByRole("button", { name: "添加规则集", exact: true }).click();
     await page.waitForTimeout(150);
     await page.screenshot({ path: path.join(out, "form-small.png") });
-    const box = await page.locator(".cb-dialog").boundingBox();
+    const box = await page.locator(".cb-modal").boundingBox();
     assert(box && box.y >= 0 && box.y + box.height <= 560);
     const submit = await page
       .getByRole("button", { name: "保存", exact: true })

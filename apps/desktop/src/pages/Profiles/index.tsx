@@ -15,7 +15,7 @@ import UserRules from "@/components/UserRules";
 import ProcessRules from "@/components/ProcessRules";
 import { useT } from "@/i18n/i18n";
 import FitItems from "@/components/FitItems";
-import Dialog from "@/components/Dialog";
+import Modal from "@/components/Modal";
 import { Icon } from "@/components/Icon";
 import PopoverPanel from "@/components/PopoverPanel";
 import { ProgressRing } from "@/components/ProgressRing";
@@ -329,18 +329,23 @@ export default function ProfilesPage({
       </PageHead>
       {recovering&&<ConfigRecovery onClose={()=>setRecovering(false)} onRestored={()=>void refresh()}/>}
       {exportingPackage && (
-        <Dialog title={t("pkg.export")} onClose={closeExportPackage}>
-          <p className="cb-control-note">{t("pkg.exportHint")}</p>
-          <div className="actions">
+        <Modal open footer={<div className="actions">
             <Button onClick={closeExportPackage} disabled={pkgBusy !== null}>{t("ov.cancel")}</Button>
             <Button variant="primary" loading={pkgBusy === "export"} onClick={() => void exportPackage()}>
               {t("pkg.chooseSave")}
             </Button>
-          </div>
-        </Dialog>
+          </div>} closeDisabled={pkgBusy !== null} title={t("pkg.export")} onCancel={closeExportPackage}>
+          <p className="cb-control-note">{t("pkg.exportHint")}</p>
+
+        </Modal>
       )}
       {pkgPreview && (
-        <Dialog title={t("pkg.import")} onClose={closeImportPackage}>
+        <Modal open footer={<div className="actions">
+            <Button onClick={closeImportPackage} disabled={pkgBusy !== null}>{t("ov.cancel")}</Button>
+            <Button variant="primary" disabled={!!pkgPreview.report.policy_conflicts} loading={pkgBusy === "import"} onClick={() => void confirmImport()}>
+              {t("pkg.import")}
+            </Button>
+          </div>} closeDisabled={pkgBusy !== null} title={t("pkg.import")} onCancel={closeImportPackage}>
           <p className="cb-control-note">
             {t("pkg.report", {
               added: pkgPreview.report.added_profiles,
@@ -357,13 +362,8 @@ export default function ProfilesPage({
           <p className="cb-control-note">
             {t(pkgPreview.report.selects_profile ? "pkg.selectsProfile" : "pkg.keepsProfile")}
           </p>
-          <div className="actions">
-            <Button onClick={closeImportPackage} disabled={pkgBusy !== null}>{t("ov.cancel")}</Button>
-            <Button variant="primary" disabled={!!pkgPreview.report.policy_conflicts} loading={pkgBusy === "import"} onClick={() => void confirmImport()}>
-              {t("pkg.import")}
-            </Button>
-          </div>
-        </Dialog>
+
+        </Modal>
       )}
       <input
         ref={fileInputRef}
@@ -473,9 +473,24 @@ export default function ProfilesPage({
         </div>
       )}
       {importing && (
-        <Dialog
-          title={t("studio.importSource")}
-          onClose={() => setImporting(false)}
+        <Modal open footer={<div className="actions">
+            <Button
+              disabled={busy !== null}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {t("profiles.importFile")}
+            </Button>
+            <Button variant="primary"
+              disabled={!canImport || !url.trim() || busy !== null}
+              onClick={importUrl}
+            >
+              {busy === "import"
+                ? t("profiles.importing")
+                : t("profiles.import")}
+            </Button>
+          </div>}
+          closeDisabled={busy !== null} title={t("studio.importSource")}
+          onCancel={() => setImporting(false)}
         >
           <p className="cb-control-note">{t("profiles.dropHint")}</p>
           <label htmlFor="profile-url">{t("profiles.sourceLabel")}</label>
@@ -499,23 +514,8 @@ export default function ProfilesPage({
             className="cb-input cb-selectable"
           />
           <ImportCompatibility content={url} onReady={setCanImport} />
-          <div className="actions">
-            <Button
-              disabled={busy !== null}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {t("profiles.importFile")}
-            </Button>
-            <Button variant="primary"
-              disabled={!canImport || !url.trim() || busy !== null}
-              onClick={importUrl}
-            >
-              {busy === "import"
-                ? t("profiles.importing")
-                : t("profiles.import")}
-            </Button>
-          </div>
-        </Dialog>
+
+        </Modal>
       )}
     </div>
   );

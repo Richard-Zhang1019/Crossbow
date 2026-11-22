@@ -73,7 +73,11 @@ export function NotificationProvider({ children }: { children?: ReactNode }) {
   return (
     <Context.Provider value={{ ...snapshot, historyOpen, setHistoryOpen }}>
       {children}
-      <NotificationViewport />
+      {/* Keep a live region mounted before modal background isolation begins.
+          Late error notifications must remain available to assistive technology. */}
+      <div aria-live="polite" aria-atomic="false">
+        <NotificationViewport />
+      </div>
     </Context.Provider>
   );
 }

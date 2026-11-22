@@ -11,7 +11,7 @@ try{
  // #634：入口在「策略组」标题行内，不再是标题与导航之间的独立一行。
  assert.equal(await page.locator('.cb-node-heading-actions button',{hasText:'自定义组'}).count(),1,'自定义组入口应在节点页右上角动作区');
  assert.equal(await page.locator('.cb-node-nav-head, .cb-node-custom-manage').count(),0,'侧栏不应再有入口行');
- await page.getByRole('button',{name:'自定义组',exact:true}).click();const dialog=page.locator('.cb-dialog');await dialog.waitFor();
+ await page.getByRole('button',{name:'自定义组',exact:true}).click();const dialog=page.locator('.cb-modal');await dialog.waitFor();
  await page.screenshot({path:out+'/list-entry.png'});
  assert.equal(await dialog.locator('.cb-custom-help[open]').count(),0,'说明默认折叠');
  const toolbarHeights=await dialog.locator('.cb-process-actions button').evaluateAll(bs=>bs.slice(0,2).map(b=>Math.round(b.getBoundingClientRect().height)));

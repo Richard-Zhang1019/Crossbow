@@ -1,6 +1,6 @@
 import { useClipboardFeedback } from "@/hooks/useClipboardFeedback";
 import {Icon} from "@/components/Icon";
-import Dialog from "@/components/Dialog";
+import Modal from "@/components/Modal";
 import Select from "@/components/Select";
 import {SearchField} from "@/components/Controls";
 import { ButtonBase, Button } from "@/components/Button";
@@ -586,13 +586,13 @@ export default function LogsPage() {
         )}
       </div>
       {exportPreview && (
-        <Dialog title={t("logs.export")} onClose={() => setExportPreview(null)}>
+        <Modal open footer={<div className="actions">
+            <Button variant="primary" loading={exporting} onClick={() => void exportLogs()}>{t("logs.export")}</Button>
+          </div>} closeDisabled={exporting} title={t("logs.export")} onCancel={() => setExportPreview(null)}>
           <p>{t("logs.shareScope")}</p>
           <pre className="cb-share-preview cb-selectable cb-mono">{exportPreview.text}</pre>
-          <div className="actions">
-            <Button variant="primary" loading={exporting} onClick={() => void exportLogs()}>{t("logs.export")}</Button>
-          </div>
-        </Dialog>
+
+        </Modal>
       )}
     </div>
   );

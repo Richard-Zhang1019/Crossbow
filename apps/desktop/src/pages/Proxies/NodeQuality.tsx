@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/Button";
 import { Switch } from "@/components/Controls";
-import Dialog from "@/components/Dialog";
+import Modal from "@/components/Modal";
 import Select from "@/components/Select";
 import { ChoiceChip } from "@/components/ChoiceChip";
 import { Icon } from "@/components/Icon";
@@ -62,7 +62,12 @@ export default function NodeQuality({nodes, initialNode, context, testing, onTes
   };
   const summary = report?.targets.find(row => row.target === target);
   const ms = (value: number | null | undefined) => value == null ? "—" : `${value} ms`;
-  return <Dialog title={t("proxies.quality.title")} onClose={onClose}>
+  return <Modal open width={720} footer={<div className="cb-node-quality" style={{width:"100%"}}>      <div className="cb-quality-controls">
+        <div className="cb-quality-record"><span>{t("proxies.quality.record")}</span><Switch checked={!!report && !report.paused} disabled={!report || saving} aria-label={t("proxies.quality.record")} onChange={enabled => void change(() => ipc.nodeQualitySetPaused(!enabled))} /></div>
+        <div className="cb-quality-retention"><span>{report && t("proxies.quality.retention", {days:report.retentionDays, count:report.storedSamples, max:report.capacity})}</span>
+          <Button size="small" disabled={!report || saving} onClick={() => setConfirm(value => !value)}>{t("proxies.quality.clear")}</Button></div>
+        {confirm && <div className="cb-quality-confirm"><p>{t("proxies.quality.confirm")}</p><Button size="small" disabled={saving} onClick={() => setConfirm(false)}>{t("proxies.quality.cancel")}</Button><Button size="small" tone="danger" loading={saving} onClick={() => void change(ipc.nodeQualityClear)}>{t("proxies.quality.confirmClear")}</Button></div>}
+      </div></div>} title={t("proxies.quality.title")} onCancel={onClose}>
     <div className="cb-node-quality">
       <div className="cb-quality-toolbar">
         <Select label={t("proxies.quality.node")} value={node} disabled={saving || testing || probeBusy} onChange={value => {setNode(value); setReport(null); setConfirm(false);}}
@@ -104,12 +109,7 @@ export default function NodeQuality({nodes, initialNode, context, testing, onTes
           {report.storageError && <p role="status" className="cb-quality-storage">{t("proxies.quality.storageError")}</p>}
         </>}
       </div>
-      <footer className="cb-quality-controls">
-        <div className="cb-quality-record"><span>{t("proxies.quality.record")}</span><Switch checked={!!report && !report.paused} disabled={!report || saving} aria-label={t("proxies.quality.record")} onChange={enabled => void change(() => ipc.nodeQualitySetPaused(!enabled))} /></div>
-        <div className="cb-quality-retention"><span>{report && t("proxies.quality.retention", {days:report.retentionDays, count:report.storedSamples, max:report.capacity})}</span>
-          <Button size="small" disabled={!report || saving} onClick={() => setConfirm(value => !value)}>{t("proxies.quality.clear")}</Button></div>
-        {confirm && <div className="cb-quality-confirm"><p>{t("proxies.quality.confirm")}</p><Button size="small" disabled={saving} onClick={() => setConfirm(false)}>{t("proxies.quality.cancel")}</Button><Button size="small" tone="danger" loading={saving} onClick={() => void change(ipc.nodeQualityClear)}>{t("proxies.quality.confirmClear")}</Button></div>}
-      </footer>
+
     </div>
-  </Dialog>;
+  </Modal>;
 }

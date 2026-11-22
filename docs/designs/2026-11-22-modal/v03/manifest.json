@@ -1,0 +1,34 @@
+{
+  "date": "2026-11-22",
+  "version": "v03",
+  "issue": 631,
+  "pr": 638,
+  "baseline_pr_commit": "fc937ad77e7dc3ef1eb7b3374aa5e39d706849cb",
+  "merged_main": "761af5e",
+  "merge_commit": "8cfaa82c40fb67d0cd191241f4345890086ae666",
+  "status": "review fixes implemented and locally/synthetically verified; native and revised CI pending",
+  "input": "#631 requirements and #638 production implementation, review boundary reproductions",
+  "source_sha256": {
+    "apps/desktop/src/components/Modal/index.tsx": "d0913b499cb509c9b4a4931b70b600937703f9dc9d2bbea33fb35a426113deff",
+    "apps/desktop/src/components/Modal/Modal.css": "71a42de1834b7fe4b55086d8348c0db4fd3e4059ab049a7172b9b599afb1e85e",
+    "apps/desktop/src/notifications/NotificationProvider.tsx": "9c27e1d7e51074e9089d1a88cbff127fed2db87c678844accfd80fad5f355377",
+    "apps/desktop/src/pages/Diagnostics/index.tsx": "ed70f157b08406233788bfc33320176159d38a1321da6e7fd49322e00d8c147c",
+    "scripts/dev/verify-modal.mjs": "0325d2cb11a0fec86c872c4f2d931b8957bae9f63f4c9740ec9af962033b4f82",
+    "scripts/dev/verify-lib.mjs": "8569ebbef989e6d9833b6851f74f25cbe0ddde1cd7362508121a887140b78689",
+    "docs/MODAL.md": "7db0c286998c4a33439a7d3deec7252386f9b6e5d9efd253068d0922aefa4b55"
+  },
+  "artifacts": {
+    "SPEC.md": "72ae9a4c5dca366c6c376a4576361aebb28c470f6315b368b4933900e72481f5",
+    "previews/after-light.png": "8cfa6d57ee2f31b2229cfe5e477787e55949c6f45d460165dd23c79e31768cc9",
+    "previews/after-long-title-dark.png": "194db35f4cf7b2e719bb77ee772a0cbcffb409aed2662977c6096b25f44b761e",
+    "previews/after-notification-light.png": "707f0d39da1041dd67f354a6ec67c9102a72bf2c6186a292fc63ffc390dad63a",
+    "previews/after-small-dark.png": "1be7fe079fc908dd4ddfb72d8f12c7d758d872a36d0eb797d9761587c666ca31",
+    "previews/before-long-title-light.png": "ff786d579ce2661e1e6ebd83e5dec4af4e2596b843ebe16c7e001a8112e8bd48",
+    "previews/before-notification-light.png": "080d6dd2f82c7b9425171444ce8f7e137472032a174b373d0721d40fba6f49f7",
+    "source.zip": "cca33658176b2b5ca6a71ed30a9fcba0c73527632c8d55435818a1808f5b5c35",
+    "verification/before.json": "e16286be1b8e66cc910d1c5f09bffbab29463b220be23e8907ccccc4a2ac7458",
+    "verification/checks.json": "93585abf9797a8f4ce491e0a222ee9006d58097cd35f73eaa128605cc28e8c77",
+    "verification/diagnostics.json": "013c1bf035daa748b275984478233548ac66a09c562ccfe558b06b217478643e",
+    "verification/modal.json": "4577b6f8b78652f6dc525a6f1ef3a9c6cf80931499edc1c189e048cf2f181c73"
+  }
+}

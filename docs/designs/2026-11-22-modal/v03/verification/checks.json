@@ -1,0 +1,18 @@
+{
+  "base_pr_head": "fc937ad77e7dc3ef1eb7b3374aa5e39d706849cb",
+  "merged_main": "761af5e",
+  "merge_commit": "8cfaa82c40fb67d0cd191241f4345890086ae666",
+  "working_source": "final source identified by manifest SHA256; screenshots before review-fix commit",
+  "local": {
+    "tsc_vite": "passed; existing large bundle warning",
+    "frontend_unit": "47/47 passed",
+    "modal": "16 named checks passed",
+    "desktop_scenarios": "10/10 passed after merge",
+    "diagnostics_layout": "110 samples passed after merge",
+    "node_probes": "passed before merge; consumer and cancellation code unchanged by merge",
+    "package_policies": "passed before merge; consumer and release protocol unchanged by merge"
+  },
+  "CI": "fix revision pending; no polling after push",
+  "native": "Tauri WebView, VoiceOver/NVDA actual announcements, Windows/Linux native UI pending",
+  "network": "synthetic IPC; no user proxy/TUN/subscription or installed app changes"
+}

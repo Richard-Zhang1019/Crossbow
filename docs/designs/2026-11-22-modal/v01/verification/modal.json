@@ -1,0 +1,20 @@
+{
+  "revision": "fa13061f8a737e4d7879b7bea2f99527032342a7",
+  "source": "production Modal/Select + synthetic async business fixture",
+  "errors": [],
+  "checks": [
+    "failure-preserves-draft",
+    "async-single-submit",
+    "busy-dismissal-guard",
+    "controlled-success",
+    "sibling-only-top-escape",
+    "nested-only-top-escape",
+    "unique-title-ids",
+    "select-escape",
+    "tab-trap",
+    "focus-return",
+    "keep-mounted-state",
+    "small-fixed-footer",
+    "close-callback"
+  ]
+}
