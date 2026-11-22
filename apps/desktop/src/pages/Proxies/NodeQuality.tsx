@@ -10,6 +10,7 @@ import { notify } from "@/notifications/service";
 import { useT } from "@/i18n/i18n";
 import { ipc, type NodeDelayContext, type NodeQualityReport, type NodeQualityTarget, type NodeView } from "@/services/ipc";
 import "./NodeQuality.css";
+import NodeProbes from "@/components/NodeProbes";
 
 const targets: [NodeQualityTarget, string][] = [["google-http", "Google · HTTP"], ["google-https", "Google · HTTPS"], ["cloudflare-https", "Cloudflare · HTTPS"]];
 export default function NodeQuality({nodes, initialNode, context, testing, onTest, onCancel, onClose}: {
@@ -18,6 +19,7 @@ export default function NodeQuality({nodes, initialNode, context, testing, onTes
 }) {
   const t = useT();
   const [node, setNode] = useState(() => nodes.some(n => n.name === initialNode) ? initialNode! : nodes[0].name);
+  const [probeBusy, setProbeBusy] = useState(false), [mode, setMode] = useState<"history" | "probes">("history"), [probeRefresh, setProbeRefresh] = useState(0);
   const [target, setTarget] = useState<NodeQualityTarget>("google-http");
   const [report, setReport] = useState<NodeQualityReport | null>(null);
   const [loading, setLoading] = useState(true), [failed, setFailed] = useState(false);
@@ -63,18 +65,23 @@ export default function NodeQuality({nodes, initialNode, context, testing, onTes
   return <Dialog title={t("proxies.quality.title")} onClose={onClose}>
     <div className="cb-node-quality">
       <div className="cb-quality-toolbar">
-        <Select label={t("proxies.quality.node")} value={node} disabled={saving || testing} onChange={value => {setNode(value); setReport(null); setConfirm(false);}}
+        <Select label={t("proxies.quality.node")} value={node} disabled={saving || testing || probeBusy} onChange={value => {setNode(value); setReport(null); setConfirm(false);}}
           options={nodes.map(n => ({value: n.name, label: nodeNameText(n.name)}))} />
-        <Button iconOnly aria-label={t("proxies.quality.refresh")} title={t("proxies.quality.refresh")} onClick={() => void load()} disabled={loading || saving}><Icon name="refresh" /></Button>
-        {testing ? <Button onClick={onCancel}>{t("proxies.cancelTest")}</Button> : <Button variant="primary" disabled={saving || !report?.testTargets.includes(target)} onClick={() => onTest(node, target)}>{t("proxies.quality.test")}</Button>}
+        <Button iconOnly aria-label={t("proxies.quality.refresh")} title={t("proxies.quality.refresh")} onClick={() => mode === "probes" ? setProbeRefresh(n => n + 1) : void load()} disabled={loading || saving}><Icon name="refresh" /></Button>
+        {testing ? <Button onClick={onCancel}>{t("proxies.cancelTest")}</Button> : mode === "history" && <Button variant="primary" disabled={saving || probeBusy || !report?.testTargets.includes(target)} onClick={() => onTest(node, target)}>{t("proxies.quality.test")}</Button>}
       </div>
-      <p className="cb-quality-hint">{t("proxies.quality.hint")}</p>
+      <div className="cb-quality-targets" role="group" aria-label={t("probes.view")}>
+        <ChoiceChip disabled={probeBusy} selected={mode === "history"} onClick={() => setMode("history")}>{t("probes.latencyHistory")}</ChoiceChip>
+        <ChoiceChip disabled={probeBusy} selected={mode === "probes"} onClick={() => setMode("probes")}>{t("probes.title")}</ChoiceChip>
+      </div>
+      {mode === "history" && <><p className="cb-quality-hint">{t("proxies.quality.hint")}</p>
       <div className="cb-quality-targets" role="group" aria-label={t("proxies.quality.title")}>
         {targets.map(([value, label]) => <ChoiceChip key={value} disabled={testing} selected={target === value} onClick={() => setTarget(value)}>{label}</ChoiceChip>)}
       </div>
-      {report && !report.testTargets.includes(target) && <p className="cb-quality-hint">{t("proxies.quality.targetUnsupported")}</p>}
+      </>}
+      {mode === "history" && report && !report.testTargets.includes(target) && <p className="cb-quality-hint">{t("proxies.quality.targetUnsupported")}</p>}
       <div aria-busy={loading} className="cb-quality-content">
-        {failed ? <p role="status">{t("proxies.quality.loadFailed")}</p> : !report || !summary ? <p role="status">{t("proxies.quality.loading")}</p> : <>
+        {failed ? <p role="status">{t("proxies.quality.loadFailed")}</p> : !report || !summary ? <p role="status">{t("proxies.quality.loading")}</p> : mode === "probes" ? <NodeProbes key={`${node}:${context.revision}:${context.pid}`} node={node} context={context} blocked={testing || saving} historyKey={`${report.epoch}:${probeRefresh}`} onBusy={setProbeBusy} /> : <>
           <dl className="cb-quality-metrics">
             <div><dt>{t("proxies.quality.success")}</dt><dd>{summary.successRate == null ? "—" : `${Math.round(summary.successRate * 100)}%`}</dd></div>
             <div><dt>{t("proxies.quality.p50")}</dt><dd>{ms(summary.p50Ms)}</dd></div>
@@ -94,7 +101,6 @@ export default function NodeQuality({nodes, initialNode, context, testing, onTes
           </section>}
           <p className="cb-quality-hint">{t("proxies.quality.policy")}</p>
           <p className="cb-quality-hint">{t("proxies.quality.method")}</p>
-          <p className="cb-quality-untested">{t("proxies.quality.untested")}</p>
           {report.storageError && <p role="status" className="cb-quality-storage">{t("proxies.quality.storageError")}</p>}
         </>}
       </div>

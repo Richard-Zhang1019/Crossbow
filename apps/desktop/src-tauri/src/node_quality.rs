@@ -56,7 +56,14 @@ struct Bucket {
     samples: Vec<Sample>,
 }
 #[derive(Clone, Serialize, Deserialize)]
+struct ProbeEntry {
+    id: String,
+    report: crate::node_probes::Report,
+}
+#[derive(Clone, Serialize, Deserialize)]
 struct Document {
+    #[serde(default)]
+    probes: Vec<ProbeEntry>,
     version: u8,
     paused: bool,
     buckets: Vec<Bucket>,
@@ -67,6 +74,7 @@ impl Default for Document {
             version: 1,
             paused: false,
             buckets: vec![],
+            probes: vec![],
         }
     }
 }
@@ -134,6 +142,9 @@ pub(crate) struct Report {
     pub test_targets: Vec<Target>,
     pending_save: bool,
     targets: Vec<Summary>,
+    pub(crate) probe_history: Vec<crate::node_probes::Report>,
+    probe_capacity: usize,
+    stored_probe_reports: usize,
 }
 pub(crate) fn now_ms() -> u64 {
     std::time::SystemTime::now()
@@ -142,6 +153,14 @@ pub(crate) fn now_ms() -> u64 {
         .as_millis() as u64
 }
 fn prune(document: &mut Document, now: u64) {
+    document.probes.retain(|p| {
+        p.report.at_ms <= now.saturating_add(60_000)
+            && now.saturating_sub(p.report.at_ms) <= RETENTION_MS
+    });
+    document.probes.sort_by_key(|p| p.report.at_ms);
+    if document.probes.len() > 128 {
+        document.probes.drain(..document.probes.len() - 128);
+    }
     for bucket in &mut document.buckets {
         bucket.samples.retain(|sample| {
             sample.at_ms <= now.saturating_add(60_000)
@@ -263,9 +282,19 @@ impl History {
             ),
         };
         let mut document = document;
-        let before: usize = document.buckets.iter().map(|b| b.samples.len()).sum();
+        let before: usize = document
+            .buckets
+            .iter()
+            .map(|b| b.samples.len())
+            .sum::<usize>()
+            + document.probes.len();
         prune(&mut document, now_ms());
-        let after: usize = document.buckets.iter().map(|b| b.samples.len()).sum();
+        let after: usize = document
+            .buckets
+            .iter()
+            .map(|b| b.samples.len())
+            .sum::<usize>()
+            + document.probes.len();
         let history = Self {
             path,
             inner: Mutex::new(Inner {
@@ -311,6 +340,24 @@ impl History {
                 inner.document.buckets.len() - 1
             });
         inner.document.buckets[index].samples.push(sample);
+        prune(&mut inner.document, now_ms());
+        inner.dirty = true;
+    }
+    pub(crate) fn record_probe(
+        &self,
+        epoch: u64,
+        scope: &Scope,
+        node: &str,
+        report: crate::node_probes::Report,
+    ) {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if inner.epoch != epoch || inner.document.paused || inner.load_error.is_some() {
+            return;
+        }
+        inner.document.probes.push(ProbeEntry {
+            id: scope.node(node),
+            report,
+        });
         prune(&mut inner.document, now_ms());
         inner.dirty = true;
     }
@@ -375,9 +422,21 @@ impl History {
     }
     pub(crate) fn report(&self, scope: Option<&Scope>, node: &str) -> Report {
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        let before: usize = inner.document.buckets.iter().map(|b| b.samples.len()).sum();
+        let before: usize = inner
+            .document
+            .buckets
+            .iter()
+            .map(|b| b.samples.len())
+            .sum::<usize>()
+            + inner.document.probes.len();
         prune(&mut inner.document, now_ms());
-        let after: usize = inner.document.buckets.iter().map(|b| b.samples.len()).sum();
+        let after: usize = inner
+            .document
+            .buckets
+            .iter()
+            .map(|b| b.samples.len())
+            .sum::<usize>()
+            + inner.document.probes.len();
         inner.dirty |= before != after;
         if inner.load_error.is_none() {
             let _ = self.flush_locked(&mut inner);
@@ -401,6 +460,17 @@ impl History {
         })
         .collect();
         Report {
+            probe_history: inner
+                .document
+                .probes
+                .iter()
+                .rev()
+                .filter(|p| Some(&p.id) == id.as_ref())
+                .take(6)
+                .map(|p| p.report.clone())
+                .collect(),
+            probe_capacity: 128,
+            stored_probe_reports: inner.document.probes.len(),
             test_targets: vec![
                 Target::GoogleHttp,
                 Target::GoogleHttps,
@@ -467,6 +537,63 @@ mod tests {
         assert!(!raw.contains("synthetic-secret"));
         assert!(!raw.contains("secret.invalid"));
         assert!(!raw.contains("private name"));
+    }
+
+    #[test]
+    fn bounded_component_reports_share_scope_privacy_and_clear_fence() {
+        use crate::node_probes::{Kind, Report};
+        let dir = tempfile::tempdir().unwrap();
+        let h = History::open(dir.path());
+        for _ in 0..140 {
+            h.record_probe(
+                0,
+                &scope(),
+                "private component node",
+                Report::empty(Kind::Connectivity),
+            );
+        }
+        let r = h.report(Some(&scope()), "private component node");
+        assert_eq!(r.stored_probe_reports, 128);
+        assert_eq!(r.probe_history.len(), 6);
+        assert!(h
+            .report(Some(&Scope("different".into())), "private component node")
+            .probe_history
+            .is_empty());
+        h.set_paused(true).unwrap();
+        let old = h.epoch();
+        h.record_probe(
+            old,
+            &scope(),
+            "private component node",
+            Report::empty(Kind::Throughput),
+        );
+        assert_eq!(h.report(None, "").stored_probe_reports, 128);
+        h.clear().unwrap();
+        h.record_probe(
+            old,
+            &scope(),
+            "private component node",
+            Report::empty(Kind::Throughput),
+        );
+        assert_eq!(h.report(None, "").stored_probe_reports, 0);
+        h.set_paused(false).unwrap();
+        h.record_probe(
+            h.epoch(),
+            &scope(),
+            "private component node",
+            Report::empty(Kind::Throughput),
+        );
+        h.flush().unwrap();
+        let raw = std::fs::read_to_string(dir.path().join("node-quality.json")).unwrap();
+        assert!(!raw.contains("private component node"));
+        assert!((raw.len() as u64) < MAX_FILE_BYTES);
+        assert_eq!(
+            History::open(dir.path())
+                .report(Some(&scope()), "private component node")
+                .probe_history
+                .len(),
+            1
+        );
     }
 
     #[test]
