@@ -40,4 +40,3 @@
 .cb-node-automatic-copy > span { overflow-wrap:anywhere; min-width:0; }
 .cb-node-automatic[data-fixed="true"] { border-color:var(--cb-accent-line); background:var(--cb-accent-soft); }
 
-.cb-node-custom-manage { margin: 0 10px 16px; }
