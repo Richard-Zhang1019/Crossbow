@@ -212,6 +212,10 @@ export function stubSource() {
     "notification_restore_completed", "notification_publish", "notification_resolve",
   ])});
   const calls = Object.create(null);
+  // 静默命令（通知等）没有返回值，但参数本身常常是断言对象：
+  // 记录最后一次调用的参数，供场景核对"发了什么"而不只核对"发了几次"。
+  const payloads = Object.create(null);
+  const payloadLog = Object.create(null);
   const unknown = [];
   const registry = new Map();   // handlerId -> { event, fn }
   const byEvent = new Map();    // event -> Set<handlerId>
@@ -219,7 +223,7 @@ export function stubSource() {
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
   window.__cb = {
-    calls, unknown,
+    calls, unknown, payloads, payloadLog,
     setCommands(overrides) { Object.assign(config, overrides); },
     emit(event, payload) {
       const ids = [...(byEvent.get(event) ?? new Set())];
@@ -257,6 +261,10 @@ export function stubSource() {
     },
     invoke(cmd, args = {}) {
       calls[cmd] = (calls[cmd] ?? 0) + 1;
+      payloads[cmd] = args;
+      const log = (payloadLog[cmd] ??= []);
+      log.push(args);
+      if (log.length > 50) log.shift();
       if (cmd === "plugin:event|listen") {
         const { event, handler } = args;
         registry.set(handler, { event, fn: window["_" + handler] });
