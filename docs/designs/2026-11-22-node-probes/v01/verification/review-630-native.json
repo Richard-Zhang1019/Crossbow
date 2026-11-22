@@ -1,0 +1,41 @@
+{
+  "scope": "controlled loopback only; production guardian/Worker; no host networking changes",
+  "cases": [
+    {
+      "engine": "mihomo",
+      "case": "probe_worker::tests::native_tcp_success_https_failure_and_cancel_cleanup",
+      "passed": true,
+      "output": "\nrunning 1 test\nnative evidence: engine=Mihomo, TCP=ok, HTTPS=https_unverified, HTTP-node UDP=unsupported, cancellation_ms=50, private_directory_removed=true\ntest probe_worker::tests::native_tcp_success_https_failure_and_cancel_cleanup ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 391 filtered out; finished in 1.75s\n\n"
+    },
+    {
+      "engine": "mihomo",
+      "case": "probe_worker::transport::native_tests::native_http_success_udp_blackhole_is_unverified",
+      "passed": true,
+      "output": "\nrunning 1 test\nnative evidence: engine=Mihomo, HTTP=204, UDP=unverified, datagrams=3, no WAN traffic\ntest probe_worker::transport::native_tests::native_http_success_udp_blackhole_is_unverified ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 391 filtered out; finished in 3.74s\n\n"
+    },
+    {
+      "engine": "mihomo",
+      "case": "parent-SIGKILL-owned-core-cleanup",
+      "passed": true,
+      "elapsed_ms": 26
+    },
+    {
+      "engine": "singbox",
+      "case": "probe_worker::tests::native_tcp_success_https_failure_and_cancel_cleanup",
+      "passed": true,
+      "output": "\nrunning 1 test\nnative evidence: engine=SingBox, TCP=ok, HTTPS=https_unverified, HTTP-node UDP=unsupported, cancellation_ms=30, private_directory_removed=true\ntest probe_worker::tests::native_tcp_success_https_failure_and_cancel_cleanup ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 391 filtered out; finished in 0.29s\n\n"
+    },
+    {
+      "engine": "singbox",
+      "case": "probe_worker::transport::native_tests::native_http_success_udp_blackhole_is_unverified",
+      "passed": true,
+      "output": "\nrunning 1 test\nnative evidence: engine=SingBox, HTTP=204, UDP=unverified, datagrams=3, no WAN traffic\ntest probe_worker::transport::native_tests::native_http_success_udp_blackhole_is_unverified ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 391 filtered out; finished in 3.76s\n\n"
+    },
+    {
+      "engine": "singbox",
+      "case": "parent-SIGKILL-owned-core-cleanup",
+      "passed": true,
+      "elapsed_ms": 27
+    }
+  ]
+}
