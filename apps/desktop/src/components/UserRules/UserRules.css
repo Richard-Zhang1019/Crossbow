@@ -1,0 +1,4 @@
+.cb-user-row { grid-template-columns:minmax(170px,1.5fr) minmax(110px,1fr) 260px; }
+.cb-user-row .cb-process-identity { overflow-wrap:anywhere; }
+.cb-user-row small { display:block; color:var(--cb-text-dim); font-size:var(--font-xs); }
+@media(max-width:960px) { .cb-user-row { grid-template-columns:minmax(130px,1fr) minmax(90px,.7fr) 220px; } .cb-user-row .cb-process-actions { gap:4px; } }

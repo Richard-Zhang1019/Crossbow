@@ -97,8 +97,12 @@ pub fn render_config_with(
             };
             let json = crate::rule_sets::inject_json(&json, &store.rule_sets)
                 .map_err(RenderError::InvalidYaml)?;
-            crate::process_rules::inject_json(&json, &store.process_rules)
-                .map_err(|e| RenderError::InvalidYaml(e.to_string()))?
+            crate::process_rules::inject_json(
+                &crate::user_rules::inject(&json, &store.user_rules, true)
+                    .map_err(RenderError::InvalidYaml)?,
+                &store.process_rules,
+            )
+            .map_err(|e| RenderError::InvalidYaml(e.to_string()))?
         }
         crate::model::Engine::Mihomo => {
             // Native sing-box outbounds are not Clash proxies. Keep this
@@ -111,6 +115,8 @@ pub fn render_config_with(
                 return Err(RenderError::UnsupportedProfileFormat);
             }
             let config = crate::rule_sets::inject_yaml(&config, &store.rule_sets)
+                .map_err(RenderError::InvalidYaml)?;
+            let config = crate::user_rules::inject(&config, &store.user_rules, false)
                 .map_err(RenderError::InvalidYaml)?;
             let config = crate::process_rules::inject_yaml(&config, &store.process_rules)
                 .map_err(|e| RenderError::InvalidYaml(e.to_string()))?;
