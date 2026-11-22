@@ -118,6 +118,7 @@ jobs:
             apps/desktop/src/pages/Logs/logReading.test.mjs \
             apps/desktop/src/pages/Home/firstConnection.test.mjs \
             apps/desktop/src/pages/Diagnostics/report.test.mjs \
+            apps/desktop/src/pages/Diagnostics/dnsReport.test.mjs \
             apps/desktop/src/pages/Proxies/nodeDelay.test.mjs
       - name: Reproducible desktop scenarios
         id: desktop-scenarios
@@ -132,6 +133,7 @@ jobs:
           node scripts/dev/verify-lan.mjs
           node scripts/dev/verify-user-rules.mjs
           node scripts/dev/verify-dns-settings.mjs
+          node scripts/dev/verify-dns-probe.mjs
       - uses: actions/upload-artifact@v7
         if: failure() && steps.desktop-scenarios.outcome == 'failure'
         with:
@@ -183,7 +185,7 @@ jobs:
       - run: cargo test --locked -p crossbow-core
       - run: cargo test --locked -p crossbow-service
       - run: cargo test --locked --lib -p crossbow-desktop
-      - run: node --experimental-strip-types --test apps/desktop/src/lib/unlisten.test.mjs apps/desktop/src/components/NodeName/nodeFlags.test.mjs apps/desktop/src/components/FitItems/fitGrid.test.mjs apps/desktop/src/pages/Logs/logHistory.test.mjs apps/desktop/src/pages/Home/firstConnection.test.mjs apps/desktop/src/pages/Diagnostics/report.test.mjs apps/desktop/src/pages/Proxies/nodeDelay.test.mjs
+      - run: node --experimental-strip-types --test apps/desktop/src/lib/unlisten.test.mjs apps/desktop/src/components/NodeName/nodeFlags.test.mjs apps/desktop/src/components/FitItems/fitGrid.test.mjs apps/desktop/src/pages/Logs/logHistory.test.mjs apps/desktop/src/pages/Home/firstConnection.test.mjs apps/desktop/src/pages/Diagnostics/report.test.mjs apps/desktop/src/pages/Diagnostics/dnsReport.test.mjs apps/desktop/src/pages/Proxies/nodeDelay.test.mjs
       - name: Reproducible desktop scenarios
         id: desktop-scenarios
         if: needs.changes.outputs.frontend == 'true'
@@ -198,6 +200,7 @@ jobs:
           node scripts/dev/verify-lan.mjs
           node scripts/dev/verify-user-rules.mjs
           node scripts/dev/verify-dns-settings.mjs
+          node scripts/dev/verify-dns-probe.mjs
       - uses: actions/upload-artifact@v7
         if: failure() && steps.desktop-scenarios.outcome == 'failure'
         with:
@@ -320,7 +323,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Node flag display tests
-        run: node --experimental-strip-types --test apps/desktop/src/lib/unlisten.test.mjs apps/desktop/src/components/NodeName/nodeFlags.test.mjs apps/desktop/src/pages/Logs/logHistory.test.mjs apps/desktop/src/pages/Home/firstConnection.test.mjs apps/desktop/src/pages/Diagnostics/report.test.mjs apps/desktop/src/pages/Proxies/nodeDelay.test.mjs
+        run: node --experimental-strip-types --test apps/desktop/src/lib/unlisten.test.mjs apps/desktop/src/components/NodeName/nodeFlags.test.mjs apps/desktop/src/pages/Logs/logHistory.test.mjs apps/desktop/src/pages/Home/firstConnection.test.mjs apps/desktop/src/pages/Diagnostics/report.test.mjs apps/desktop/src/pages/Diagnostics/dnsReport.test.mjs apps/desktop/src/pages/Proxies/nodeDelay.test.mjs
 
       - name: Desktop backend tests
         run: cargo test --locked --lib --manifest-path apps/desktop/src-tauri/Cargo.toml

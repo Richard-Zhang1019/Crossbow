@@ -1,0 +1,68 @@
+{
+  "date": "2026-11-22",
+  "version": "v01",
+  "issue": 603,
+  "branch": "feat/603-dns-probe",
+  "base_commit": "e068a68",
+  "status": "implemented; simulated UI and isolated real-core checks passed; review pending",
+  "input": "synthetic IPC fixtures and a user-entered domain; no subscription, credential or system proxy/TUN state",
+  "source_sha256": {
+    "apps/desktop/src/pages/Diagnostics/DnsCheck.tsx": "6315f1a370676217e981f2a0122057543f10635cb9d8e7540b205be856b43fb0",
+    "apps/desktop/src/pages/Diagnostics/dnsReport.ts": "d2e1d6066e4f0396d449fd87fa6af90f06ae6c4c6774a6905118d0402bdd489a",
+    "apps/desktop/src/pages/Diagnostics/dnsReport.test.mjs": "68f653b8f3a1f04cfac16d2ddc66998df785b1ad11ab75a6f89a470e3bf0d2d9",
+    "apps/desktop/src/pages/Diagnostics/index.tsx": "64a3fe027d8e4fae12bbce9f512c2481e37bb396ca1562bd22198a580a04756b",
+    "apps/desktop/src/services/ipc.ts": "869c6a61a2a4b17600bc6ef55c2964e2fead40a0b2007d0a11f6eda68ad9cf96",
+    "apps/desktop/src/i18n/i18n.ts": "319e9785050f7049e037ae02565d9c261f55b7f2df0b6a97af12806204a9ccc5",
+    "apps/desktop/src/styles/layout.css": "b2c64e8938b5ad60104f7107d4b77a0b02aefc3a2065b0516bf75a9aef06dd9c",
+    "apps/desktop/src-tauri/src/diagnostics/dns_probe.rs": "03d9025f2abf29fdfee9838c37600ba078ba17b19fb644358d791b52f988390d",
+    "apps/desktop/src-tauri/src/engine/api.rs": "2ce016c5c647af5771a0f453a25b09970635fd00f0a391cf6b4da161563448ab",
+    "apps/desktop/src-tauri/src/commands/monitor.rs": "5479b8b3d78244fa1cf53d2bd2adeddc4ab35db75126322380acb4972a7036eb",
+    "scripts/dev/verify-dns-probe.mjs": "5e49a1242580d1af9e44db171de0f5164074e81c2f42ffad1ccf2d7baf4b4974"
+  },
+  "artifacts": [
+    {
+      "path": "SPEC.md",
+      "sha256": "ee3efeb1872bd21dbeab60073151b58ec757ea69dca97fb98ca8f30ba8139189"
+    },
+    {
+      "path": "previews/after-1120-light-zh.png",
+      "sha256": "97a90720b59fe58ba2254aeb67ea987f4fa39c0edb59f8dc09e5d73fb0e539c3"
+    },
+    {
+      "path": "previews/after-880-dark-en.png",
+      "sha256": "04d8bdba1eb2a65cb47b85dd62f38d0aa8ccc513def62424833ae07ded28925c"
+    },
+    {
+      "path": "previews/after-error.png",
+      "sha256": "9653e0035dd3701b1e0e18c40564c739608e8a556b2428377830df39673b4fae"
+    },
+    {
+      "path": "previews/after-history.png",
+      "sha256": "992fee7603991aec71f8bd8e1d35e039dae634cafb05350802456e3a0a153f2c"
+    },
+    {
+      "path": "previews/after-kernel-unavailable.png",
+      "sha256": "3428f497db346d66ecb7953cd0ff31b2ac7f27872de75420cea1afcf0233a998"
+    },
+    {
+      "path": "previews/after-result-system-only.png",
+      "sha256": "e6bce0030d91e0fea731f646e8c3cdb82b61a3511d6685b66277029add420dc9"
+    },
+    {
+      "path": "previews/before-1120-light-zh.png",
+      "sha256": "57c493653d0a3c2a1c01a1b7c05cbbd8a5f812256553e366076a39f78839f62d"
+    },
+    {
+      "path": "previews/before-880-dark-en.png",
+      "sha256": "6d3ec4856d7a313d69e34b17627d94098f437b8356f92db219db10554ec5c8d1"
+    },
+    {
+      "path": "source.zip",
+      "sha256": "f097b2b5839426f8ecc89c13c27ebddc259f1adc30484b6bb8eebea670bf02ab"
+    },
+    {
+      "path": "verification/native.json",
+      "sha256": "888f9f6843b67b0b70fd9b621bd9d328b9d614f1c199f93adf86d1556f5cd3ca"
+    }
+  ]
+}

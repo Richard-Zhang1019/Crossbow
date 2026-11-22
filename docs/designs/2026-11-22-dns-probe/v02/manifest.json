@@ -1,0 +1,25 @@
+{
+  "date": "2026-11-22",
+  "version": "v02",
+  "issue": 603,
+  "pr": 624,
+  "base_commit": "1a39c8b223bb265b3b254df79861803076c078a7",
+  "status": "review fixes implemented; local, synthetic UI and isolated mihomo passed; revised CI unknown",
+  "source_sha256": {
+    "apps/desktop/src-tauri/src/diagnostics/dns_probe.rs": "d6b43bf0efbf580e3bb87536b500a32f91feeeef6ed4660f053de749bf34919c",
+    "apps/desktop/src-tauri/src/engine/api.rs": "98a4630869ea57d963f3cd77614780efa1b253f995b66870f525d793cb63cd9b",
+    "apps/desktop/src/pages/Diagnostics/DnsCheck.tsx": "70b4c1554fdd9946cc886c0af4b6c66eb1e065007a3d8dff100147b6b52479cb",
+    "apps/desktop/src/pages/Diagnostics/dnsReport.ts": "2b813562ef8405f8c4d59798c259d51eff71cac46fd575de068fde839f729b10",
+    "apps/desktop/src/services/ipc.ts": "c4e959b70cdf7c41d2163ec461de2a17bee59171b9a4fa7f45a4c8c92df20809",
+    "apps/desktop/src/i18n/i18n.ts": "ffc768ec4a323b95e619fbbce61c1b791ee374b014c34ecbb6f9b06e5c2faa77",
+    "scripts/dev/verify-dns-probe.mjs": "7c75c2a11e772ec5a96a439395c8ea96d57ad74a35351aa6cf1edeb8547743ae"
+  },
+  "artifacts": {
+    "source.zip": "cd396d49bac1211f4092e8718727eb18461d66225c4d439ec9316de2abdf383a",
+    "SPEC.md": "5dad52388877b200edc79c1578ac1141195cd944faca65b2a0a6781715b274b5",
+    "previews/07-dark-small-en.png": "178f87b96ccb79a94e36b412641e112a5de1d2c49e6dfe6865eb83216433d0ef",
+    "previews/08-cancelled-stale.png": "ebbe0d570d1be16d834a557018b7ce45c0ef793a4e18db55fb163e9014ee24a7",
+    "previews/04-result-system-only.png": "c5c58a0abcfa312b1650b1d8c6a0b8cbf2826e8f215251ecf9616d0f319edbda",
+    "previews/before-review.png": "e6bce0030d91e0fea731f646e8c3cdb82b61a3511d6685b66277029add420dc9"
+  }
+}

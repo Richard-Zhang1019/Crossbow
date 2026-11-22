@@ -16,6 +16,7 @@
 | 日期 | 主题 | 版本 | 状态 | 文件 | 关联 |
 | --- | --- | --- | --- | --- | --- |
 | 2026-11-22 | 域名/IP 用户规则与优先级解释 | v01 | 已实现，本地/模拟/受控原生通过；待实机验收 | [说明](2026-11-22-user-rules/v01/SPEC.md) · [浅色](2026-11-22-user-rules/v01/previews/light.png) · [小窗口](2026-11-22-user-rules/v01/previews/dark-small.png) · [源稿](2026-11-22-user-rules/v01/source.zip) | #605 |
+| 2026-11-22 | DNS 诊断：地址族、配置归属与迟到结果保护 | v02 | 已实现，本地/模拟/隔离 mihomo 通过，待评审 | [说明](2026-11-22-dns-probe/v02/SPEC.md) · [结果](2026-11-22-dns-probe/v02/previews/04-result-system-only.png) · [小窗口](2026-11-22-dns-probe/v02/previews/07-dark-small-en.png) · [源稿](2026-11-22-dns-probe/v02/source.zip) | #603 / PR #624 |
 | 2026-11-21 | 分享链接导入兼容性与能力范围 | v01 | 已实现，本地/模拟/受控原生通过；待评审 | [说明](2026-11-21-import-capabilities/v01/SPEC.md) · [改前](2026-11-21-import-capabilities/v01/previews/before.png) · [改后](2026-11-21-import-capabilities/v01/previews/light.png) · [小窗口](2026-11-21-import-capabilities/v01/previews/dark-small.png) · [源稿](2026-11-21-import-capabilities/v01/source.zip) | #599 |
 | 2026-11-21 | 本地统计隐私控制与容量边界 | v01 | 已实现，模拟通过；原生长跑待验 | [说明](2026-11-21-stats-controls/v01/SPEC.md) · [小窗口英文](2026-11-21-stats-controls/v01/previews/small-en.png) · [源稿](2026-11-21-stats-controls/v01/source.zip) | #600 / PR #619 |
 | 2026-11-21 | DNS 设置：原子应用、能力边界与紧凑编辑 | v02 | 已实现，本地/模拟通过；待原生网络验收 | [说明](2026-11-21-dns-settings/v02/SPEC.md) · [浅色](2026-11-21-dns-settings/v02/previews/light-custom.png) · [小窗口](2026-11-21-dns-settings/v02/previews/dark-small.png) · [源稿](2026-11-21-dns-settings/v02/source.zip) · [manifest](2026-11-21-dns-settings/v02/manifest.json) | #598 / PR #617 |
@@ -76,3 +77,4 @@
 | 2026-10-30 | 节点工具栏与可用滑动开关 | v02 | 已实现 | [规格](2026-10-30-node-toolbar/v02/SPEC.md) · [实际浅色](2026-10-30-node-toolbar/v02/previews/light.png) · [实际深色](2026-10-30-node-toolbar/v02/previews/dark.png) | #207 |
 
 | 2026-10-31 | Dock 图标安全区：恢复与系统 App 一致的视觉尺寸 | v02 | 已实现，原生验证通过，待安装验收 | [规格](2026-10-31-dock-color/v02/SPEC.md) · [原生对比](2026-10-31-dock-color/v02/previews/native-comparison.png) · [源快照](2026-10-31-dock-color/v02/source.zip) | #246 |
+| 2026-11-22 | #603 DNS 解析路径诊断：系统解析 vs 内核真实业务解析 | v01 | 已实现，待 PR 评审 | [规格](2026-11-22-dns-probe/v01/SPEC.md) · [源快照](2026-11-22-dns-probe/v01/source.zip) · [改前](2026-11-22-dns-probe/v01/previews/before-1120-light-zh.png) · [改后](2026-11-22-dns-probe/v01/previews/after-1120-light-zh.png) · [结果态](2026-11-22-dns-probe/v01/previews/after-result-system-only.png) · [验证](2026-11-22-dns-probe/v01/verification/native.json) | #603 |

@@ -1,0 +1,41 @@
+{
+  "date": "2026-11-22",
+  "issue": 603,
+  "base_commit": "e068a68",
+  "platform": "macOS 27.2 arm64",
+  "ui_harness": {
+    "command": "node scripts/dev/verify-dns-probe.mjs",
+    "viewports": [
+      "1120x734 light zh",
+      "880x560 dark en"
+    ],
+    "checks": [
+      "default collapsed, no IPC on mount",
+      "invalid domain shows backend reason inline and keeps input",
+      "system ok + kernel NXDOMAIN renders both paths and RCODE 3",
+      "kernel not running renders kernel_unavailable",
+      "history capped at 5 and clearable",
+      "copy summary contains facts and no credentials",
+      "no horizontal overflow at 880x560 dark en",
+      "no unregistered IPC commands"
+    ],
+    "result": "pass"
+  },
+  "native": {
+    "mihomo": "v1.19.32",
+    "singbox": "1.14.2",
+    "command": "CROSSBOW_CORE_BIN=<mihomo> cargo test --lib --manifest-path apps/desktop/src-tauri/Cargo.toml real_core_dns_query -- --ignored",
+    "result": "pass",
+    "observations": [
+      "mihomo GET /dns/query?name=example.com&type=A -> Status 0 with A answers",
+      "mihomo GET /dns/query?name=crossbow-603-nonexistent.invalid&type=A -> Status 3",
+      "sing-box GET /dns/query returns the same JSON shape with Server=internal (no upstream information)"
+    ],
+    "isolation": "loopback controller on temporary ports; no system proxy, TUN or user profile changes"
+  },
+  "not_verified": [
+    "installed-app click-through",
+    "kernel DNS query under real system-proxy/TUN business traffic",
+    "Windows and Linux hosts"
+  ]
+}
