@@ -31,6 +31,10 @@ pnpm verify:desktop --headed       # 显示浏览器
 
 中英文与明暗主题经 `ui://lang` / `ui://theme` 事件热切换（设置页同一路径），无需重载。
 
+- 专项生产组件检查（各自输出截图证据，CI 跑同一命令）：`scripts/dev/verify-dns-settings.mjs`（#598 DNS 设置）、
+  `scripts/dev/verify-dns-probe.mjs`（#603 DNS 解析路径：折叠态、系统/内核两侧状态、未知字段、历史边界与清除、
+  复制摘要脱敏、深色 + 英文 + 最小窗口）。
+
 ## 2. 实机验收记录
 
 模板（追加新行，不改旧行；一条记录一个提交/构建号）：
@@ -46,6 +50,20 @@ pnpm verify:desktop --headed       # 显示浏览器
 - 结果：<逐条通过/失败；失败附证据路径或 issue 链接>
 - 与模拟覆盖差异：<真实系统代理、TUN、托盘、真实流量中本次覆盖了哪些>
 ```
+
+### 2026-11-22 · #603 DNS 解析路径（模拟 + 隔离真实内核）
+
+- 提交/构建：`feat/603-dns-probe`（基于 main `e068a68`，PR 提交时以分支 HEAD 为准）
+- 平台：macOS 27.2 arm64，node v24.20.0，本机 Chrome，vite 临时回环端口
+- 内核：mihomo v1.19.32、sing-box 1.14.2（隔离回环控制器；未改系统代理、TUN 或用户配置）
+- 代理模式：直连；控制器为 `127.0.0.1` 临时端口，查询上游 1.1.1.1
+- 操作：`node scripts/dev/verify-dns-probe.mjs`（生产组件 + IPC 桩，7 张截图）；
+  `CROSSBOW_CORE_BIN=<mihomo> cargo test --lib --manifest-path apps/desktop/src-tauri/Cargo.toml real_core_dns_query -- --ignored`
+- 结果：通过。UI 覆盖折叠、非法域名行内错误、系统成功/内核 NXDOMAIN、内核未运行、历史 5 条上限与清除、
+  复制摘要与脱敏、深色最小窗口不横向溢出；真实 mihomo `/dns/query` 对 `example.com` 返回 Status 0 且有应答，
+  对不存在域名返回 Status 3。
+- 与模拟覆盖差异：sing-box 只手动验证了同形 JSON 应答（`Server: internal`，无上游信息），未接桌面 UI；
+  未在安装版里点击验证，也未覆盖真实业务流量下的内核 DNS 查询（需系统代理/TUN 场景）。
 
 ### 2026-11-15 · 场景 1-4（模拟环境，框架首跑）
 

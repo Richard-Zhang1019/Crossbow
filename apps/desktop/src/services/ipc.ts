@@ -258,6 +258,33 @@ export interface DiagnosticReport {
   };
 }
 
+/** #603：一条解析路径的结果。state=unavailable 表示该路径这次没有观测到。 */
+export interface DnsPathResult {
+  state: "ok" | "no_record" | "nxdomain" | "servfail" | "refused" | "timeout" | "error" | "unavailable";
+  ms: number;
+  rcode: number | null;
+  answers: string[];
+  ttl: number | null;
+  note: string | null;
+}
+
+/** #603：系统解析与内核真实业务解析的对比记录。不含上游/缓存字段。 */
+export interface DnsProbeResult {
+  domain: string;
+  record_type: "A" | "AAAA";
+  at_ms: number;
+  engine: "mihomo" | "sing-box";
+  core_running: boolean;
+  core_pid: number | null;
+  core_version: string | null;
+  dns_mode: "inherit" | "custom";
+  system: DnsPathResult;
+  kernel: DnsPathResult;
+  verdict: "both_ok" | "system_only" | "kernel_only" | "both_fail" | "kernel_unavailable";
+  hosts_override: boolean;
+  unknown_fields: Array<"upstream" | "cache" | "kernel_time">;
+}
+
 export interface DiagnosisProgress { run_id: string; id: string; result: CheckResult | null }
 export interface ProfileStatus { id:string; last_success:number|null; next_update:number|null; retry:boolean; failure:string|null; failure_at?:number|null; using_previous:boolean; changes:{added:number;removed:number;changed:number}|null }
 export interface ConfigSnapshot {id:string;at:number;profiles:number;overrides:number;active:string|null}
@@ -505,6 +532,7 @@ export const ipc = {
   diagnosisEnableSysproxy: () => invoke<void>("diagnosis_enable_sysproxy"),
   onProxySelectionChanged: (cb: () => void) => listen("proxy://selection-changed", cb),
   onDiagnosisProgress: (cb:(p:DiagnosisProgress)=>void) => listen<DiagnosisProgress>("diagnosis://progress", e=>cb(parsePayload<DiagnosisProgress>(e.payload))),
+  diagnoseDns: (domain: string, recordType: "A" | "AAAA") => invoke<DnsProbeResult>("diagnose_dns", { domain, recordType }),
   profileStatuses: () => invoke<ProfileStatus[]>("profile_statuses"),
   configSnapshots: () => invoke<ConfigSnapshot[]>("config_snapshots"),
   restoreConfigSnapshot: (id:string) => invoke<void>("restore_config_snapshot",{id}),

@@ -2552,9 +2552,7 @@ textarea:focus-visible,
 .cb-fault-prev summary:hover { color: var(--cb-text); }
 .cb-fault-prev .cb-fault-probe-grid { margin-top: 10px; }
 
-/* 诊断列表：唯一滚动区。padding-inline-end 12px 是滚动条不压内容的关键——
-   overlay 滚动条（macOS）浮动绘制时只压 padding，不压「通过/失败」文字；
-   scrollbar-gutter 在经典滚动条环境再预留一份位置。 */
+/* 诊断列表内容区（不再自己滚动，滚动由外层 .cb-diag-scroll 承担，见下方 #603 段）。 */
 .cb-diag-results {
   display: flex;
   flex-direction: column;
@@ -2577,6 +2575,23 @@ textarea:focus-visible,
   padding: 13px 0 13px 16px;
   position: relative;
 }
+/* #603：检查列表与 DNS 卡片共用一个滚动区，窗口变矮时不会互相覆盖；
+   列表本身不再单独滚动，避免出现嵌套滚动条。 */
+.cb-diag-scroll {
+  flex: 1;
+  min-height: 150px;
+  overflow-y: auto;
+  padding-inline-end: 12px;
+  scrollbar-gutter: stable;
+}
+.cb-diag-scroll > .cb-diag-results {
+  flex: none;
+  min-height: 0;
+  overflow: visible;
+  padding-inline-end: 0;
+  scrollbar-gutter: auto;
+}
+.cb-diag-scroll > .cb-dnsprobe-check { margin: 12px 0 10px; }
 /* 首个失败项在列表内升级，替代独立的优先处理大卡 */
 .cb-diagnostic-step.first-failed { background: color-mix(in srgb, var(--cb-warn) 5%, transparent); }
 .cb-diagnostic-step.first-failed::before {
@@ -2599,6 +2614,119 @@ textarea:focus-visible,
   flex: none;
 }
 .cb-check-state-fail { color: var(--cb-bad); font-weight: 600; }
+/* #603 DNS 解析路径：默认折叠为一行；展开后内部滚动，不挤占唯一的检查列表滚动区。 */
+.cb-dnsprobe-check { flex: none; margin: 0 0 10px; padding: 0; gap: 0; overflow: hidden; }
+.cb-dnsprobe-check-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 16px;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  color: var(--cb-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cb-dnsprobe-check-toggle:focus-visible { outline: 2px solid var(--cb-accent); outline-offset: -2px; }
+.cb-dnsprobe-check-toggle h2 { margin: 0; font-size: var(--font-md); font-weight: 600; flex: none; }
+.cb-dnsprobe-check.open .cb-fault-chev { transform: rotate(90deg); }
+.cb-dnsprobe-check-sum {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-sm);
+  color: var(--cb-text-dim);
+}
+.cb-dnsprobe-tone {
+  margin-left: auto;
+  flex: none;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: var(--font-xs);
+  color: var(--cb-text-dim);
+  background: var(--cb-surface-2);
+}
+.cb-dnsprobe-tone[data-state="ok"] { color: var(--cb-ok); background: color-mix(in srgb, var(--cb-ok) 10%, var(--cb-bg)); }
+.cb-dnsprobe-tone[data-state="bad"] { color: var(--cb-bad); background: color-mix(in srgb, var(--cb-bad) 12%, var(--cb-bg)); }
+.cb-dnsprobe-tone[data-state="warn"] { color: var(--cb-warn); background: color-mix(in srgb, var(--cb-warn) 12%, var(--cb-bg)); }
+.cb-dnsprobe-check-body {
+  border-top: 1px solid var(--cb-line);
+  padding: 14px 16px 16px;
+  /* 卡片与检查列表共用外层滚动区，这里不再自建内滚（避免嵌套滚动条挡住表单标签）。 */
+}
+.cb-dnsprobe-form { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.cb-dnsprobe-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 220px;
+  min-width: 180px;
+  font-size: var(--font-xs);
+  color: var(--cb-text-dim);
+}
+.cb-dnsprobe-type { display: flex; flex-direction: column; gap: 4px; font-size: var(--font-xs); color: var(--cb-text-dim); }
+.cb-dnsprobe-type .cb-segments { width: auto; }
+.cb-dnsprobe-error { margin-top: 10px; font-size: var(--font-sm); color: var(--cb-bad); overflow-wrap: anywhere; }
+.cb-dnsprobe-hint { margin-top: 10px; font-size: var(--font-xs); color: var(--cb-faint); }
+.cb-dnsprobe-result { margin-top: 12px; }
+.cb-dnsprobe-verdict { font-size: var(--font-md); font-weight: 600; }
+.cb-dnsprobe-verdict[data-state="ok"] { color: var(--cb-ok); }
+.cb-dnsprobe-verdict[data-state="bad"] { color: var(--cb-bad); }
+.cb-dnsprobe-verdict[data-state="warn"] { color: var(--cb-warn); }
+.cb-dnsprobe-verdict-hint { margin-top: 2px; font-size: var(--font-xs); line-height: 17px; color: var(--cb-text-dim); }
+.cb-dnsprobe-paths { margin-top: 10px; border: 1px solid var(--cb-line); border-radius: 10px; overflow: hidden; }
+.cb-dnsprobe-path-row { padding: 9px 12px; }
+.cb-dnsprobe-path-row + .cb-dnsprobe-path-row { border-top: 1px solid var(--cb-line); }
+.cb-dnsprobe-path-head { display: flex; align-items: center; gap: 8px; }
+.cb-dnsprobe-path-name { font-size: var(--font-sm); font-weight: 500; }
+.cb-dnsprobe-ms { margin-left: auto; font-size: var(--font-xs); color: var(--cb-text-dim); }
+.cb-dnsprobe-pill { padding: 1px 8px; border-radius: 999px; font-size: var(--font-xs); background: var(--cb-surface-2); color: var(--cb-text-dim); }
+.cb-dnsprobe-pill[data-state="ok"] { color: var(--cb-ok); background: color-mix(in srgb, var(--cb-ok) 10%, var(--cb-bg)); }
+.cb-dnsprobe-pill[data-state="bad"] { color: var(--cb-bad); background: color-mix(in srgb, var(--cb-bad) 12%, var(--cb-bg)); }
+.cb-dnsprobe-answers { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-top: 4px; font-size: var(--font-sm); overflow-wrap: anywhere; }
+.cb-dnsprobe-ttl { font-size: var(--font-xs); color: var(--cb-faint); }
+.cb-dnsprobe-note { margin-top: 4px; font-size: var(--font-xs); color: var(--cb-text-dim); overflow-wrap: anywhere; }
+.cb-dnsprobe-context { margin-top: 8px; font-size: var(--font-xs); color: var(--cb-text-dim); overflow-wrap: anywhere; }
+.cb-dnsprobe-warn { margin-top: 6px; font-size: var(--font-xs); color: var(--cb-warn); overflow-wrap: anywhere; }
+.cb-dnsprobe-unknown { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.cb-dnsprobe-unknown-label { font-size: var(--font-xs); color: var(--cb-text-dim); }
+.cb-dnsprobe-unknown-chip {
+  padding: 1px 8px;
+  border: 1px solid var(--cb-line);
+  border-radius: 999px;
+  font-size: var(--font-xs);
+  color: var(--cb-faint);
+}
+.cb-dnsprobe-unknown-hint { flex-basis: 100%; font-size: var(--font-xs); color: var(--cb-faint); }
+.cb-dnsprobe-actions { display: flex; gap: 8px; margin-top: 12px; }
+.cb-dnsprobe-history { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.cb-dnsprobe-history-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--cb-text-dim);
+  font: inherit;
+  font-size: var(--font-xs);
+  text-align: left;
+  cursor: pointer;
+}
+.cb-dnsprobe-history-item:hover,
+.cb-dnsprobe-history-item.current { background: var(--cb-surface-2); color: var(--cb-text); }
+.cb-dnsprobe-history-item:focus-visible { outline: 2px solid var(--cb-accent); outline-offset: -2px; }
+.cb-dnsprobe-history-verdict { margin-left: auto; flex: none; }
+.cb-dnsprobe-history-verdict[data-state="ok"] { color: var(--cb-ok); }
+.cb-dnsprobe-history-verdict[data-state="bad"] { color: var(--cb-bad); }
+.cb-dnsprobe-history-verdict[data-state="warn"] { color: var(--cb-warn); }
+
 .cb-empty-sig {
   width: 44px;
   height: 44px;
