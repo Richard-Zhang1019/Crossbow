@@ -83,4 +83,4 @@ macOS Dock、安装包、Windows/Linux 应用图标、iOS AppIcon、网站 favic
 
 ## 统一业务 Modal（#631，2026-11-22）
 
-当前标准为 [Modal API 与迁移清单](MODAL.md)：生产组件 `components/Modal`。保留现有主题与统一按钮，标题/底栏固定、正文单一纵向滚动；默认 560px，节点历史 720px、自定义组 680px。表单动作放 footer，使用 form 属性关联正文表单；异步等待明确关闭保护，失败保留草稿。仅顶层拥有焦点与关闭权限。旧 Dialog 已退役；设计档案为 `2026-11-22-modal/v01`。
+当前标准为 [Modal API 与迁移清单](MODAL.md)：生产组件 `components/Modal`。保留现有主题与统一按钮，标题/底栏固定、正文单一纵向滚动；默认 560px，节点历史 720px、自定义组 680px。表单动作放 footer，使用 form 属性关联正文表单；异步等待明确关闭保护，失败保留草稿。仅顶层拥有焦点与关闭权限。旧 Dialog 已退役；设计档案为 `2026-11-22-modal/v02`。

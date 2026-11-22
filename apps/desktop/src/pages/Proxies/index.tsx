@@ -348,7 +348,6 @@ export default function ProxiesPage() {
         <div className="cb-context-layout">
           <nav className="cb-context-nav" aria-label={t("studio.groups")}>
             <h2 className="cb-node-page-title">{t("studio.nodes")}</h2>
-            <div className="cb-node-custom-manage"><Button size="small" onClick={()=>setManageGroups(true)}>{t("cg.title")}</Button></div>
             <p className="cb-node-nav-caption">{t("studio.groups")}</p>
             <SearchField className="cb-group-search" label={t("layout.searchGroups")} placeholder={t("layout.searchGroups")} value={groupQuery} onChange={e=>setGroupQuery(e.target.value)}/>
             <div className="cb-context-scroll">
@@ -385,6 +384,7 @@ export default function ProxiesPage() {
                 onRestoreAutomatic={() => automaticGroup && restoreAutomatic(automaticGroup.name)}
                 onTest={() => testNodes(selectedGroup.name, selectedGroup.nodes.filter(n => !INFO_NAME.test(n.name)).map(n => n.name))}
                 onCancelTest={() => { if (testing) cancelTest(testing); }}
+                onManageGroups={() => setManageGroups(true)}
                 onTestNode={(node, target) => testNodes(selectedGroup.name, [node], target)}
                 onSelect={(node) => select(selectedGroup.name, node)}
               />
@@ -416,6 +416,7 @@ function GroupCard({
   onTestNode,
   onSelect,
   onRestoreAutomatic,
+  onManageGroups,
 }: {
   context: NodeDelayContext;
   group: GroupView;
@@ -431,6 +432,7 @@ function GroupCard({
   onTestNode: (node: string, target?: NodeQualityTarget) => void;
   onSelect: (node: string) => void;
   onRestoreAutomatic: () => void;
+  onManageGroups: () => void;
 }) {
   const t = useT();
   const [query, setQuery] = useState("");
@@ -492,6 +494,8 @@ function GroupCard({
           <h1><NodeName name={group.name} /><span>{realNodes.length} {t("proxies.nodeCount")}</span></h1>
         </div>
         <div className="cb-node-heading-actions">
+          {/* #634：管理入口放在页面右上角动作区，与「质量历史」并列，不再占用侧栏标题行。 */}
+          <Button onClick={onManageGroups}>{t("cg.title")}</Button>
           {realNodes.length > 0 && <Button onClick={() => setQualityOpen(true)}>{t("proxies.quality.title")}</Button>}
           {infoNodes.length > 0 && <PopoverPanel label={t("proxies.subscriptionInfo")} trigger={<Button size="small">{t("proxies.subscriptionInfo")}</Button>}>{()=> <div className="cb-help-copy">{infoNodes.map(n=><p key={n.name}><NodeName name={n.name}/></p>)}</div>}</PopoverPanel>}
           <Button iconOnly className="cb-node-refresh" title={t("proxies.refresh")} aria-label={t("proxies.refresh")} onClick={onRefresh} disabled={busy || selecting !== null}><Icon name="refresh" /></Button>

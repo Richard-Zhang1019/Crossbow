@@ -44,7 +44,7 @@ API 风格参考 [Ant Design Modal](https://ant.design/components/modal/)，实�
 | Logs 导出预览 | 固定导出底栏、导出期间关闭保护；脱敏数据不变 |
 | Diagnostics 摘要 | 固定复制底栏；关闭继续 clear 复制反馈 |
 | NodeQuality（含分项测试） | 720px；历史隐私控制固定底栏，正文单独滚动；NodeProbes 卸载取消保留 |
-| CustomGroups 列表/编辑 | 680px；编辑固定删除/取消/保存底栏，提交关联原 form；列表刷新/新增同为 small 规格 |
+| CustomGroups 列表/编辑 | 680px；编辑固定删除/取消/保存底栏，提交关联原 form；列表刷新/新增沿用 #634 的同一默认规格 |
 | ProcessRules / UserRules / RuleSets / SceneRules | 固定原表单操作底栏；显式 form 关联，busy 关闭保护，保留既有原子保存和错误草稿 |
 | ConfigRecovery | 列表恢复动作保留，busyId 非空关闭保护；可连续恢复与失败重试 |
 
