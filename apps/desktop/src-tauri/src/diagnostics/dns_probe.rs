@@ -1,4 +1,4 @@
-//! #603 内核 DNS 解析诊断：把「系统解析」与「内核真实业务解析」放进同一份记录。
+//! #603 内核 DNS 解析诊断：把「系统解析」与「内核 DNS 接口查询（不保证等同逐连接路径）」放进同一份记录。
 //!
 //! 用户主动触发，不常驻抓取：查询用户指定域名的 A/AAAA，对比系统解析器与
 //! 内核 `/dns/query` 的结果、各自耗时与失败类别。两个内核只暴露 RCODE、TTL
@@ -6,7 +6,16 @@
 //! `unknown_fields`，不推测。结果只随本次调用返回：不落盘、不发送遥测，
 //! 前端的历史仅保留当前会话最近几条并可就地清除。
 
-use std::net::ToSocketAddrs;
+use std::net::{IpAddr, ToSocketAddrs};
+use std::sync::atomic::{AtomicBool, Ordering};
+static PROBE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+static SYSTEM_ACTIVE: AtomicBool = AtomicBool::new(false);
+struct SystemLease;
+impl Drop for SystemLease {
+    fn drop(&mut self) {
+        SYSTEM_ACTIVE.store(false, Ordering::Release);
+    }
+}
 use std::path::Path;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -42,6 +51,8 @@ pub struct DnsPathResult {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct DnsProbeResult {
     /// 归一化后的查询域名（用户输入，已校验为 ASCII 主机名）。
+    pub profile_id: Option<String>,
+    pub config_revision: u64,
     pub domain: String,
     /// A / AAAA。
     pub record_type: &'static str,
@@ -101,6 +112,9 @@ pub(crate) fn normalize_domain(raw: &str) -> Result<String, String> {
         .strip_suffix('.')
         .unwrap_or(trimmed)
         .to_ascii_lowercase();
+    if name.parse::<IpAddr>().is_ok() {
+        return Err("请输入域名，不是 IP 地址 / Enter a domain, not an IP address".into());
+    }
     if name.len() > 253 {
         return Err("域名过长（最多 253 个字符）".into());
     }
@@ -172,7 +186,11 @@ pub(crate) fn parse_kernel_reply(
             if answer["type"].as_i64() != Some(want_type) {
                 continue;
             }
-            if let Some(data) = answer["data"].as_str() {
+            if let Some(data) = answer["data"].as_str().filter(|value| {
+                value
+                    .parse::<IpAddr>()
+                    .is_ok_and(|ip| ip.is_ipv6() == (record_type == "AAAA"))
+            }) {
                 if answers.len() < MAX_ANSWERS && !answers.iter().any(|a| a == data) {
                     answers.push(data.to_string());
                 }
@@ -199,12 +217,35 @@ pub(crate) fn parse_kernel_reply(
     }
 }
 
-fn system_probe(domain: &str) -> DnsPathResult {
+fn family_answers(addrs: Vec<String>, record_type: &str) -> Vec<String> {
+    let mut answers = Vec::new();
+    for value in addrs {
+        if let Ok(ip) = value.parse::<IpAddr>() {
+            if ip.is_ipv6() == (record_type == "AAAA") && !answers.contains(&ip.to_string()) {
+                answers.push(ip.to_string());
+                if answers.len() == MAX_ANSWERS {
+                    break;
+                }
+            }
+        }
+    }
+    answers
+}
+fn system_probe(domain: &str, record_type: &str) -> DnsPathResult {
     let start = Instant::now();
+    if SYSTEM_ACTIVE
+        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
+        return DnsPathResult::unavailable(
+            "此前系统解析仍未返回，请稍后重试 / Previous OS lookup is still running",
+        );
+    }
     let target = format!("{domain}:0");
     let (tx, rx) = std::sync::mpsc::channel();
     // 解析线程不可取消：超时后丢弃结果，但不会阻塞调用方。
     std::thread::spawn(move || {
+        let _lease = SystemLease;
         let resolved = target
             .to_socket_addrs()
             .map(|addrs| addrs.map(|addr| addr.ip().to_string()).collect::<Vec<_>>());
@@ -213,15 +254,7 @@ fn system_probe(domain: &str) -> DnsPathResult {
     match rx.recv_timeout(SYSTEM_BUDGET) {
         Ok(Ok(addrs)) => {
             let ms = elapsed_ms(start);
-            let mut answers: Vec<String> = Vec::new();
-            for address in addrs {
-                if answers.len() >= MAX_ANSWERS {
-                    break;
-                }
-                if !answers.contains(&address) {
-                    answers.push(address);
-                }
-            }
+            let answers = family_answers(addrs, record_type);
             if answers.is_empty() {
                 DnsPathResult::failed("no_record", ms, "系统解析器没有返回地址".into())
             } else {
@@ -276,7 +309,15 @@ fn kernel_probe(
     let start = Instant::now();
     match controller.dns_query(domain, record_type) {
         Ok(reply) => parse_kernel_reply(&reply, record_type, elapsed_ms(start)),
-        Err(error) => DnsPathResult::failed("error", elapsed_ms(start), error),
+        Err(error) => DnsPathResult::failed(
+            if error.starts_with("DNS query timeout:") {
+                "timeout"
+            } else {
+                "error"
+            },
+            elapsed_ms(start),
+            error,
+        ),
     }
 }
 
@@ -324,16 +365,37 @@ pub(crate) fn hosts_has(path: &Path, domain: &str) -> bool {
         let entry = line.split('#').next().unwrap_or_default();
         let mut fields = entry.split_whitespace();
         // 首列是地址；其余列是同一地址的多个主机名。
-        fields.next();
+        if !fields.next().is_some_and(|ip| ip.parse::<IpAddr>().is_ok()) {
+            return false;
+        }
         fields.any(|name| name.eq_ignore_ascii_case(domain))
     })
 }
 
+fn context_current(
+    before: (u64, Option<u32>, bool),
+    after: (u64, Option<u32>, bool),
+    transitioning: bool,
+) -> bool {
+    !transitioning && before == after
+}
+
 /// 一次完整诊断。域名/记录类型非法时不发起任何查询。
 pub fn run(state: &AppState, domain: &str, record_type: &str) -> Result<DnsProbeResult, String> {
+    let _probe = PROBE
+        .try_lock()
+        .map_err(|_| "DNS 检查仍在进行，请稍后重试 / DNS check is still running".to_string())?;
     let domain = normalize_domain(domain)?;
     let record_type = parse_record_type(record_type)?;
-    let (engine, dns_mode) = {
+    let config_revision = state.node_delay_revision.load(Ordering::SeqCst);
+    if state.config_transition.load(Ordering::SeqCst) {
+        return Err("配置正在切换，请稍后重试 / Configuration is changing".into());
+    }
+    let at_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis().min(u64::MAX as u128) as u64)
+        .unwrap_or(0);
+    let (engine, dns_mode, profile_id) = {
         let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
         let engine = match store.data().engine.engine {
             crossbow_core::Engine::Mihomo => "mihomo",
@@ -343,7 +405,7 @@ pub fn run(state: &AppState, domain: &str, record_type: &str) -> Result<DnsProbe
             crossbow_core::dns_settings::DnsMode::Inherit => "inherit",
             crossbow_core::dns_settings::DnsMode::Custom => "custom",
         };
-        (engine, dns_mode)
+        (engine, dns_mode, store.data().active_profile.clone())
     };
     let core = state.core();
     let core_running = core.status() == crate::CoreStatus::Running;
@@ -358,19 +420,32 @@ pub fn run(state: &AppState, domain: &str, record_type: &str) -> Result<DnsProbe
     } else {
         None
     };
-    let system = system_probe(&domain);
+    let system = system_probe(&domain, record_type);
     let kernel = if core_running {
         kernel_probe(&core, &domain, record_type)
     } else {
         DnsPathResult::unavailable("内核未运行，只记录了系统解析结果")
     };
+    if !context_current(
+        (config_revision, core_pid, core_running),
+        (
+            state.node_delay_revision.load(Ordering::SeqCst),
+            state.core().pid(),
+            state.core().status() == crate::CoreStatus::Running,
+        ),
+        state.config_transition.load(Ordering::SeqCst),
+    ) {
+        return Err(
+            "配置或内核已变化，本次结果已丢弃 / Configuration or core changed; result discarded"
+                .into(),
+        );
+    }
     let hosts_override = hosts_path().is_some_and(|path| hosts_has(&path, &domain));
     Ok(DnsProbeResult {
         verdict: verdict(&system, &kernel),
-        at_ms: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis().min(u64::MAX as u128) as u64)
-            .unwrap_or(0),
+        at_ms,
+        profile_id,
+        config_revision,
         domain,
         record_type,
         engine,
@@ -416,6 +491,36 @@ mod tests {
         );
     }
 
+    #[test]
+    fn context_rejects_changes_even_if_pid_does_not_change() {
+        assert!(context_current(
+            (1, Some(10), true),
+            (1, Some(10), true),
+            false
+        ));
+        assert!(!context_current(
+            (1, Some(10), true),
+            (2, Some(10), true),
+            false
+        ));
+        assert!(!context_current(
+            (1, Some(10), true),
+            (1, Some(11), true),
+            false
+        ));
+        assert!(!context_current(
+            (1, Some(10), true),
+            (1, Some(10), true),
+            true
+        ));
+    }
+    #[test]
+    fn system_answers_are_family_specific() {
+        let both = vec!["127.0.0.1".into(), "::1".into(), "127.0.0.1".into()];
+        assert_eq!(family_answers(both.clone(), "A"), ["127.0.0.1"]);
+        assert_eq!(family_answers(both, "AAAA"), ["::1"]);
+        assert!(family_answers(vec!["127.0.0.1".into()], "AAAA").is_empty());
+    }
     #[test]
     fn only_a_and_aaaa_are_accepted() {
         assert_eq!(parse_record_type("a").unwrap(), "A");
@@ -507,7 +612,7 @@ mod tests {
 
     #[test]
     fn system_probe_reports_loopback_without_a_live_kernel() {
-        let result = system_probe("localhost");
+        let result = system_probe("localhost", "A");
         assert_eq!(result.state, "ok");
         assert!(!result.answers.is_empty());
     }

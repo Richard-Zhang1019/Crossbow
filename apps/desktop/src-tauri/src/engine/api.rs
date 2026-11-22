@@ -423,7 +423,30 @@ impl Controller {
     /// 返回 DNS 报文 JSON（Status/Answer），不含上游与缓存字段——调用方不得
     /// 从 TTL 反推缓存命中。
     pub fn dns_query(&self, name: &str, record_type: &str) -> Result<serde_json::Value, String> {
-        self.get_json(&dns_query_path(name, record_type))
+        use std::io::Read;
+        const LIMIT: u64 = 256 * 1024;
+        let response = self
+            .req("GET", &dns_query_path(name, record_type))
+            .call()
+            .map_err(|error| {
+                if matches!(&error, ureq::Error::Transport(_))
+                    && error.to_string().to_ascii_lowercase().contains("timed out")
+                {
+                    "DNS query timeout: controller round trip exceeded its budget".to_string()
+                } else {
+                    "DNS query failed: controller request failed".to_string()
+                }
+            })?;
+        let mut bytes = Vec::new();
+        response
+            .into_reader()
+            .take(LIMIT + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|_| "DNS query response read failed".to_string())?;
+        if bytes.len() as u64 > LIMIT {
+            return Err("DNS query response too large".into());
+        }
+        serde_json::from_slice(&bytes).map_err(|_| "DNS query response is not valid JSON".into())
     }
 
     /// 当前出口：规则模式取最后一条 MATCH 规则的目标组并解析其当前节点；
@@ -1588,6 +1611,33 @@ pub(crate) mod tests {
         assert!(delay > 0, "direct adapter should answer the probe");
 
         mgr.stop();
+    }
+
+    #[test]
+    fn dns_query_rejects_oversized_controller_replies() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0; 2048];
+            let _ = stream.read(&mut buf);
+            let body = vec![b' '; 256 * 1024 + 1];
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = stream.write_all(&body);
+        });
+        let error = Controller {
+            port,
+            secret: "synthetic".into(),
+        }
+        .dns_query("example.test", "A")
+        .unwrap_err();
+        assert!(error.contains("too large"));
+        server.join().unwrap();
     }
 
     /// #603：真实内核的 `/dns/query`。需要联网解析上游，默认跳过；

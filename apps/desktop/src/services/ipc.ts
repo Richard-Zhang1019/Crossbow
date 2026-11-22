@@ -270,6 +270,8 @@ export interface DnsPathResult {
 
 /** #603：系统解析与内核真实业务解析的对比记录。不含上游/缓存字段。 */
 export interface DnsProbeResult {
+  profile_id: string | null;
+  config_revision: number;
   domain: string;
   record_type: "A" | "AAAA";
   at_ms: number;

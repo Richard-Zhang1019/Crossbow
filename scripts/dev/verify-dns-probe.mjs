@@ -16,8 +16,9 @@ const path = (over = {}) => ({
 });
 const probe = (over = {}) => ({
   domain: "www.gstatic.com", record_type: "A", at_ms: Date.now(), engine: "mihomo",
+  profile_id:"synthetic-profile", config_revision:7,
   core_running: true, core_pid: 4242, core_version: "1.19.32", dns_mode: "inherit",
-  system: path(), kernel: path({ state: "nxdomain", rcode: 3, answers: [], ttl: null, note: "内核返回 RCODE 3" }),
+  system: path({rcode:null,ttl:null}), kernel: path({ state: "nxdomain", rcode: 3, answers: [], ttl: null, note: "内核返回 RCODE 3" }),
   verdict: "system_only", hosts_override: false,
   unknown_fields: ["upstream", "cache", "kernel_time"], ...over,
 });
@@ -140,6 +141,19 @@ try {
   await capture("dark-small-en");
   assert(await card.evaluate(el => el.scrollWidth <= el.clientWidth), "最小窗口下 DNS 卡片不得横向溢出");
 
+  // A single record must be clearable; late results must not resurrect it.
+  await card.getByRole("button",{name:"Clear history",exact:true}).click();
+  assert.equal(await card.locator(".cb-dnsprobe-result").count(),0);
+  await page.evaluate(()=>{window.__cb.dnsProbe.delay=300;});
+  await card.locator(".cb-dnsprobe-form button[type=submit]").click();
+  await card.getByRole("button",{name:"Cancel",exact:true}).click();
+  await page.waitForTimeout(400);
+  assert.equal(await card.locator(".cb-dnsprobe-result").count(),0,"cancelled lookup must not reappear");
+  await card.locator(".cb-dnsprobe-form button[type=submit]").click();
+  await page.evaluate(()=>window.__cb.emit("profile://switched","changed-profile"));
+  await page.waitForTimeout(400);
+  assert.equal(await card.locator(".cb-dnsprobe-result").count(),0,"old profile result must be discarded");
+  await capture("cancelled-stale");
   const unknownCommands = await page.evaluate(() => window.__cb.unknown);
   assert.equal(unknownCommands.length, 0, `出现未注册的 IPC 命令：${JSON.stringify(unknownCommands.slice(0, 3))}`);
 } catch (error) {

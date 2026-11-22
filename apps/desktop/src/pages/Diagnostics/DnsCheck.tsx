@@ -1,4 +1,4 @@
-import { useState, type MutableRefObject } from "react";
+import { useState, useEffect, useRef, type MutableRefObject } from "react";
 import SegmentedControl from "@/components/SegmentedControl";
 import { Button, ButtonBase } from "@/components/Button";
 import { Input } from "@/components/Controls";
@@ -14,11 +14,14 @@ function probeTime(atMs: number) {
 }
 
 /**
- * #603 DNS 解析路径：用户主动触发的一次对比——系统解析器 vs 内核真实业务解析。
+ * #603 DNS 解析路径：用户主动触发的一次对比——系统解析器 vs 内核 DNS 接口查询。
  * 只有点击「检查解析」才发起查询；历史仅保留本次会话最近几条，可清除。
  */
 export default function DnsCheck({ revision }: { revision: MutableRefObject<number> }) {
   const t = useT();
+  const request=useRef(0), pending=useRef(false);
+  useEffect(()=>()=>{++request.current;pending.current=false;},[]);
+  const cancel=()=>{++request.current;pending.current=false;setRunning(false);};
   const [open, setOpen] = useState(false);
   const [domain, setDomain] = useState("");
   const [recordType, setRecordType] = useState<"A" | "AAAA">("A");
@@ -33,21 +36,24 @@ export default function DnsCheck({ revision }: { revision: MutableRefObject<numb
 
   const run = async () => {
     const name = domain.trim();
-    if (running || !name) return;
+    if (pending.current || !name) return;
+    const id=++request.current;pending.current=true;
     const startedRevision = revision.current;
     setRunning(true);
     setError(null);
     try {
       const probe = await ipc.diagnoseDns(name, recordType);
+      if(id!==request.current || revision.current!==startedRevision)return;
       setHistory(old => pushHistory(old, { probe, revision: startedRevision }));
       setSelected(0);
       clearCopy();
       void notify.resolve("diagnostics-dns");
     } catch (failure) {
+      if(id!==request.current || revision.current!==startedRevision)return;
       setError(String(failure));
       notify.error(failure, "diagnostics-dns", t("dnsprobe.failed"));
     } finally {
-      setRunning(false);
+      if(id===request.current){pending.current=false;setRunning(false);}
     }
   };
 
@@ -101,6 +107,7 @@ export default function DnsCheck({ revision }: { revision: MutableRefObject<numb
           <Button type="submit" variant="primary" loading={running} disabled={!domain.trim()}>
             {running ? t("dnsprobe.running") : t("dnsprobe.run")}
           </Button>
+          {running&&<Button onClick={cancel}>{t("pr.cancel")}</Button>}
         </form>
         {error && <p className="cb-dnsprobe-error" role="alert">{error}</p>}
         <p className="cb-dnsprobe-hint">{t("dnsprobe.privacy")}</p>
@@ -147,6 +154,7 @@ export default function DnsCheck({ revision }: { revision: MutableRefObject<numb
                 time: probeTime(shown.probe.at_ms),
               })}
             </p>
+            <p className="cb-dnsprobe-context">{t("dnsprobe.profile")}: {shown.probe.profile_id ?? "—"} · {shown.probe.config_revision ?? "—"}</p>
             {shown.probe.hosts_override && <p className="cb-dnsprobe-warn">{t("dnsprobe.hosts")}</p>}
             {stale && <p className="cb-dnsprobe-warn">{t("dnsprobe.stale")}</p>}
             <div className="cb-dnsprobe-unknown">
@@ -160,8 +168,8 @@ export default function DnsCheck({ revision }: { revision: MutableRefObject<numb
               <Button size="small" onClick={() => void copy(shown.probe.domain + shown.probe.at_ms, () => probeSummary(shown.probe))}>
                 <span role="status">{t(copied ? "dnsprobe.copied" : "dnsprobe.copy")}</span>
               </Button>
-              {history.length > 1 && (
-                <Button size="small" onClick={() => { setHistory([]); setSelected(0); clearCopy(); }}>
+              {history.length > 0 && (
+                <Button size="small" onClick={() => { cancel(); setHistory([]); setSelected(0); clearCopy(); }}>
                   {t("dnsprobe.clear")}
                 </Button>
               )}

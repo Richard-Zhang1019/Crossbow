@@ -73,6 +73,7 @@ export function probeSummary(probe: DnsProbeResult) {
     `At: ${new Date(probe.at_ms).toISOString()}`,
     `Engine: ${engine}`,
     `DNS mode: ${probe.dns_mode}`,
+    `Profile: ${probe.profile_id ?? "unknown"}; revision=${probe.config_revision ?? "unknown"}`,
     `System: ${pathSummary(probe.system)}`,
     `Kernel: ${pathSummary(probe.kernel)}`,
     `Verdict: ${probe.verdict}`,
