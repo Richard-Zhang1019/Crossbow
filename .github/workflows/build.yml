@@ -43,7 +43,7 @@ jobs:
         if: github.event_name == 'pull_request'
         with:
           ref: ${{ inputs.ref || github.ref }}
-      - uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         if: github.event_name == 'pull_request'
         id: filter
         with:
