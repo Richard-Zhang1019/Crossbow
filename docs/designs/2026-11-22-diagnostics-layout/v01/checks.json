@@ -1,0 +1,34 @@
+{
+  "issue": 633,
+  "status": "implemented; local and synthetic production UI passed; native and CI pending",
+  "base_commit": "fa13061f8a737e4d7879b7bea2f99527032342a7",
+  "build": {
+    "command": "npm run build --prefix apps/desktop",
+    "result": "passed",
+    "warning": "Existing bundle chunk exceeds 500 kB"
+  },
+  "unit": {
+    "runtime": "Node 24.20.0",
+    "tests": 47,
+    "passed": 47
+  },
+  "production_ui": {
+    "script": "scripts/dev/verify-diagnostics-layout.mjs",
+    "samples": 110,
+    "result": "passed",
+    "matrix": "880x560 / 1120x734 / 1440x960; zh/en; light/dark; 8 disclosure combinations",
+    "other": "continuous height samples, actual hit tests, no competing scroll owners, keyboard, DNS form reachability/draft preservation, running, incomplete, expired, long text, history missing/read failure"
+  },
+  "workflow": {
+    "command": "node scripts/dev/verify-scenarios.mjs --scenario 3",
+    "result": "passed; primary/recovery evidence, export allowlist, stale rerun"
+  },
+  "dns": {
+    "command": "node scripts/dev/verify-dns-probe.mjs",
+    "result": "passed; query, errors, cancel, late results, context revision, summary/history"
+  },
+  "source_state": "Screenshots rendered before commit. Base revision plus manifest source_sha256 identifies actual working source.",
+  "native": "Not run for this layout change; macOS WebView and Windows/Linux pending",
+  "CI": "Script registered in both desktop scenario jobs; pending new PR, no polling",
+  "data": "Synthetic IPC only; all external browser traffic blocked. No installed app, user data, proxy or TUN changes."
+}

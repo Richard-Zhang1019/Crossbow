@@ -1,0 +1,42 @@
+{
+  "date": "2026-11-22",
+  "version": "v01",
+  "issue": 633,
+  "base_commit": "fa13061f8a737e4d7879b7bea2f99527032342a7",
+  "status": "implemented; local and synthetic production UI passed; native and CI pending",
+  "input": "User native screenshots in #633; faithful production reproduction before edits; existing Crossbow UI tokens",
+  "style": "Existing Frame Studio; framed-sheet seed 266936375, keep palette/type",
+  "source_sha256": {
+    "apps/desktop/src/pages/Diagnostics/index.tsx": "b120c932af18683c7c5f637c015f2b3f50056f5a7c788cd17d30bb4da6851e8e",
+    "apps/desktop/src/pages/Diagnostics/DnsCheck.tsx": "716d74e031877a2417105609d736fd60b3d6a5b235d7aef1fb83da0f86dd8c17",
+    "apps/desktop/src/pages/Diagnostics/report.ts": "cdef7dafbeb9a13e65f76f4d0f754286ecc0bb80f4ade27ab263dc78ba6d2584",
+    "apps/desktop/src/pages/Diagnostics/dnsReport.ts": "2b813562ef8405f8c4d59798c259d51eff71cac46fd575de068fde839f729b10",
+    "apps/desktop/src/styles/layout.css": "d762bf6a0ba31caf878dc63bd08b30a327f22de7b4f19fd1e89dd6c20e7b4097",
+    "apps/desktop/src/i18n/i18n.ts": "1b86c957f45e43bc98383880a20ec9a20c17fbebbb1797e6fdf8aa73e42a6fee",
+    "scripts/dev/verify-diagnostics-layout.mjs": "f16d8e0e660fcf3a009a171045ae54eaf8f53495a75ae9a55cad780cd10c1ba4",
+    "scripts/dev/verify-lib.mjs": "8569ebbef989e6d9833b6851f74f25cbe0ddde1cd7362508121a887140b78689",
+    "scripts/dev/verify-scenarios.mjs": "40e7c2113251e0170fee177615596d858bc26e49f0716a6efdb5fd8c92e11863",
+    "scripts/dev/verify-dns-probe.mjs": "7c75c2a11e772ec5a96a439395c8ea96d57ad74a35351aa6cf1edeb8547743ae"
+  },
+  "artifacts": {
+    "SPEC.md": "c47220ffe80312e0c8c34c05f81f6373feabb5da3ecd7b63679e0126eebbbc4c",
+    "checks.json": "23fea23b480de044bfe6ba0691164c07b066ebbca63acb0107cd2d0120cbdc3f",
+    "previews/before-expanded-light.png": "0bdc2ee66bfcbc2098e1237776967400f9195bc357bb19b77c739e38c4595e2e",
+    "previews/before-expanded-small.png": "4bf87d640de956beb1028bddb025e3b9c2889e8ab9f7635d7e53a15344c1605b",
+    "previews/before-idle-light.png": "b664663dc29f5c2798ba75db696fbc2f99b837573152782f65fb362493faa266",
+    "previews/dns-small-dark-en.png": "ad74a1dde47a9d76e480b0762cd90481c04ced53be46699b25993beb38ca47d0",
+    "previews/evidence-expanded-light.png": "fb68282e30eaf2eb5158b02b4d053cc5e0f2efe00068c783752093dae56d3b82",
+    "previews/expanded-light-top.png": "fb68282e30eaf2eb5158b02b4d053cc5e0f2efe00068c783752093dae56d3b82",
+    "previews/expanded-small-top.png": "d1fd0e58bf9c4bf12ceda67c8bac8ffc91f7e536739e581838767fb0a75a4549",
+    "previews/idle-light.png": "8d9ae0063411a0721c6828aabbf37133aae85adb54739a1ace68983bd6346bc7",
+    "previews/initial-failure-light.png": "5bf1f4bfce7ba8202137e28816aaaad9547e40cf41c18d840810b87b19902aa0",
+    "previews/long-details-light.png": "32abe58bfc08673e776fad7790462a1f645ad6cf1dc301d0017bfe95b3dacf43",
+    "previews/result-light.png": "549a961d449311044e547f1a06ea6ad98cc58943dd2e9ec74dfdae61c011ea02",
+    "previews/result-small-dark-en.png": "02a5315a9256555eaac2681d6490d11778c52005d4ecd4e761afa6e9ccedf0af",
+    "previews/running-small-dark-en.png": "8cb0a10ebc84e4191479d081a6a56838e3b5bd46ff16a8536239c094542efb56",
+    "source.zip": "a6b4eac670517d8807fb44a02cab7e524f001735f80248f11c1f1673ced3e32c",
+    "verification/after.json": "30121d79871122f5442add285eaf59bb20c36030647bd79e17c97f1c81a26621",
+    "verification/before.json": "da548a5cb57a1e915d3968e3d031607f6a6eb7e596d7f5e045f53a1693564948"
+  },
+  "previews": "Actual production React components in Chromium on macOS arm64; viewport/language/theme in filenames and verification JSON; fixed harness version 0.14.4-verify is not a release."
+}

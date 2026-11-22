@@ -135,6 +135,7 @@ export default function DiagnosticsPage({
   const fixingRef = useRef(false);
   const active = useRef(true);
   const runId = useRef<string | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     active.current = true;
@@ -198,6 +199,8 @@ export default function DiagnosticsPage({
     setRunning(true);
     setRunFailed(false);
     setProgress([]);
+    // The explicit primary action brings its results back into view from auxiliary tools.
+    if (contentRef.current) contentRef.current.scrollTop = 0;
     const runRevision = revision.current;
     const isActiveRun = () => active.current && runId.current === id;
     let off: (() => void) | undefined;
@@ -303,11 +306,12 @@ export default function DiagnosticsPage({
         onClick={() => setFaultOpen(open => !open)}
       >
         <span className="cb-fault-chev" aria-hidden="true"><Icon name="chevron" size={15} strokeWidth={2} /></span>
-        <h2>{t("fault.title")}</h2>
-        <span className="cb-fault-evidence-sum">
-          {t("fault.startedAt")} {faultTime(fault.startedAtMs)}
-          {faultStats && <> · {t("fault.probeLayers", { n: faultStats.total })} · {t("fault.probeFailed", { n: faultStats.failed })}</>}
-          {previousFault && <> · {t("fault.previous")} {faultTime(previousFault.startedAtMs)}</>}
+        <span className="cb-diag-disclosure-text">
+          <span className="cb-diag-disclosure-title">{t("fault.title")}</span>
+          <span className="cb-fault-evidence-sum">
+            {t("fault.startedAt")} {faultTime(fault.startedAtMs)}
+            {faultStats && <> · {t("fault.probeLayers", { n: faultStats.total })} · {t("fault.probeFailed", { n: faultStats.failed })}</>}
+          </span>
         </span>
         <FaultState fault={fault} />
       </ButtonBase>
@@ -323,7 +327,7 @@ export default function DiagnosticsPage({
       </div>
     </section>
   );
-  const statusBand = (running || report) && (
+  const statusBand = (running || report || runFailed) && (
     <div className="cb-diag-summary" aria-live="polite">
       {running ? (
         <ProgressRing value={progress.length / DIAG_STEPS.length * 100} label={resultTitle} size={28} />
@@ -346,40 +350,31 @@ export default function DiagnosticsPage({
           </p>
         )}
       </div>
-      <div className="cb-diag-band-actions">
-        {(report || fault) && !running && (
-          <Button onClick={() => setSummaryOpen(true)}>{t("diag.summaryPreview")}</Button>
-        )}
-        <Button variant="primary" disabled={!listeners} loading={running || repairRunning} onClick={() => void run()}>
-          <span role="status">{running ? t("diag.running") : repairRunning ? repairLabel : t(stale || runFailed ? "diag.rerun" : "diag.run")}</span>
-        </Button>
-      </div>
     </div>
   );
   return (
     <div className="cb-diagnostics-page">
-      <PageHead title={t("diag.title")} meta={t("diag.hint")} />
-      {!results && !runFailed ? (
-        <>
-          {faultCard}
-          {/* 空态与 DNS 卡片共用唯一滚动区：窗口变矮时不会互相覆盖。 */}
-          <div className="cb-diag-scroll">
-            <div className="cb-empty">
-              <span className="cb-empty-sig" aria-hidden="true"><Icon name="pulse" size={20} /></span>
-              <h2>{t("diag.emptyTitle")}</h2>
+      <PageHead title={t("diag.title")} meta={t("diag.hint")}>
+        <div className="cb-diag-band-actions">
+          {(report || fault) && !running && (
+            <Button onClick={() => setSummaryOpen(true)}>{t("diag.summaryPreview")}</Button>
+          )}
+          <Button className="cb-diag-run" variant="primary" disabled={!listeners} loading={running || repairRunning} onClick={() => void run()}>
+            <span role="status">{running ? t("diag.running") : repairRunning ? repairLabel : t(report || runFailed ? "diag.rerun" : "diag.run")}</span>
+          </Button>
+        </div>
+      </PageHead>
+      {/* The header owns actions; all variable-height content shares this scroll viewport. */}
+      <div ref={contentRef} className="cb-diag-scroll" role="region" aria-label={t("diag.content")} tabIndex={0}>
+        <section className="cb-diag-current" aria-label={t("diag.current")}>
+          <h2 className="cb-diag-section-title">{t("diag.current")}</h2>
+          {!results && !runFailed ? (
+            <div className="cb-diag-idle">
+              <h3><Icon name="pulse" size={18} />{t("diag.emptyTitle")}</h3>
               <p>{repairRunning ? repairLabel : t("diag.emptyHint")}</p>
-              <Button variant="primary" disabled={!listeners} loading={running} onClick={() => void run()}>
-                <span role="status">{repairRunning ? repairLabel : t("diag.run")}</span>
-              </Button>
             </div>
-            <DnsCheck revision={revision} />
-          </div>
-        </>
-      ) : (
-        <>
+          ) : <>
           {statusBand}
-          {faultCard}
-          <div className="cb-diag-scroll">
           <div className="cb-diag-results">
             {DIAG_STEPS.map((id) => {
               const row = results?.find((r) => r.id === id),
@@ -438,10 +433,17 @@ export default function DiagnosticsPage({
               );
             })}
           </div>
+          </>}
+        </section>
+        <section className="cb-diag-tools" aria-labelledby="cb-diag-tools-title">
+          <header className="cb-diag-tools-head">
+            <h2 className="cb-diag-section-title" id="cb-diag-tools-title">{t("diag.tools")}</h2>
+            <p>{t("diag.toolsHint")}</p>
+          </header>
+          {faultCard}
           <DnsCheck revision={revision} />
-          </div>
-        </>
-      )}
+        </section>
+      </div>
       {summaryText !== null && (
         <Dialog title={t("diag.summaryPreview")} onClose={() => { clear(); setSummaryOpen(false); }}>
           <pre className="cb-share-preview cb-selectable cb-mono">{summaryText}</pre>
