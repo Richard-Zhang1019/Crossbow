@@ -346,13 +346,17 @@ export default function ProfilesPage({
               replacedOv: pkgPreview.report.replaced_overrides,
             })}
           </p>
-          <p className="cb-control-note">{t("pkg.importHint")}</p>
+          <p className="cb-control-note">{t("pkg.policiesReport",{process:pkgPreview.report.added_process_rules??0,replacedProcess:pkgPreview.report.replaced_process_rules??0,sets:pkgPreview.report.added_rule_sets??0,replacedSets:pkgPreview.report.replaced_rule_sets??0})}</p>
+          {!!pkgPreview.report.same_name_items&&<p className="cb-control-note">{t("pkg.sameNames",{n:pkgPreview.report.same_name_items})}</p>}
+          {!!pkgPreview.report.unverified_targets&&<p className="cb-control-note">{t("pkg.targetsPending",{n:pkgPreview.report.unverified_targets})}</p>}
+          {!!pkgPreview.report.policy_conflicts&&<p role="alert" className="cb-control-note">{t("pkg.conflicts",{n:pkgPreview.report.policy_conflicts})}</p>}
+          <details><summary>{t("pkg.scope")}</summary><p className="cb-control-note">{t("pkg.range")}</p><p className="cb-control-note">{t("pkg.importHint")}</p></details>
           <p className="cb-control-note">
             {t(pkgPreview.report.selects_profile ? "pkg.selectsProfile" : "pkg.keepsProfile")}
           </p>
           <div className="actions">
             <Button onClick={closeImportPackage} disabled={pkgBusy !== null}>{t("ov.cancel")}</Button>
-            <Button variant="primary" loading={pkgBusy === "import"} onClick={() => void confirmImport()}>
+            <Button variant="primary" disabled={!!pkgPreview.report.policy_conflicts} loading={pkgBusy === "import"} onClick={() => void confirmImport()}>
               {t("pkg.import")}
             </Button>
           </div>
