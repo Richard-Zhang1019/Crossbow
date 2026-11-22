@@ -193,6 +193,8 @@ pub struct StoreSchema {
     #[serde(default)]
     pub process_rules: Vec<ProcessRule>,
     #[serde(default)]
+    pub custom_groups: Vec<crate::custom_groups::Group>,
+    #[serde(default)]
     pub user_rules: Vec<crate::user_rules::UserRule>,
     /// Application-managed rule subscriptions and last-good local cache (#571).
     #[serde(default)]
@@ -333,6 +335,7 @@ impl Default for StoreSchema {
             update: UpdateSettings::default(),
             scenes: NetworkScenes::default(),
             process_rules: Vec::new(),
+            custom_groups: Vec::new(),
             user_rules: Vec::new(),
             rule_sets: Vec::new(),
             dns: Default::default(),

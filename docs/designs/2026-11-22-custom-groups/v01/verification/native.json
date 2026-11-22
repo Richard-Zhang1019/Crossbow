@@ -1,0 +1,42 @@
+[
+  {
+    "engine": "mihomo",
+    "kind": "select",
+    "controller_members": [
+      "A",
+      "B"
+    ],
+    "routed": true,
+    "persisted_and_reopened": true
+  },
+  {
+    "engine": "mihomo",
+    "kind": "url-test",
+    "controller_members": [
+      "A",
+      "B"
+    ],
+    "routed": true,
+    "persisted_and_reopened": true
+  },
+  {
+    "engine": "singbox",
+    "kind": "select",
+    "controller_members": [
+      "A",
+      "B"
+    ],
+    "routed": true,
+    "persisted_and_reopened": true
+  },
+  {
+    "engine": "singbox",
+    "kind": "url-test",
+    "controller_members": [
+      "A",
+      "B"
+    ],
+    "routed": true,
+    "persisted_and_reopened": true
+  }
+]

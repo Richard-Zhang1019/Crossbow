@@ -1,0 +1,12 @@
+.cb-custom-pair {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.cb-custom-preview {border-top:1px solid var(--cb-line);padding-top:12px;font-size:var(--font-sm);overflow-wrap:anywhere}
+.cb-custom-preview p {margin:8px 0;color:var(--cb-text-dim)}
+.cb-custom-list {max-height:40vh;overflow:auto}
+.cb-custom-list-row {display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid var(--cb-line)}
+.cb-custom-list-row > div {min-width:0;overflow-wrap:anywhere}
+.cb-custom-list-row small {display:block;color:var(--cb-text-dim);margin-top:4px}
+.cb-custom-list-row p {font-size:var(--font-sm);color:var(--cb-text-dim);margin:8px 0 0}
+.cb-custom-form {gap:12px}
+
+.cb-dialog .cb-custom-form label {margin:0}
+.cb-custom-form > .cb-control-note {margin:0}

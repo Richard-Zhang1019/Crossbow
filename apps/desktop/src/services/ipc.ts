@@ -392,7 +392,13 @@ export interface ImportInspection {
 }
 export interface UserRule {id:string; kind:"DOMAIN"|"DOMAIN_SUFFIX"|"IP_CIDR"; value:string; target:string; enabled:boolean}
 export interface UserRuleStatus {rules:UserRule[]; targets:string[]; overlaps?:[number,number][]}
+export interface CustomGroup {id:string;profile_id:string;name:string;kind:"select"|"url-test";membership:"explicit"|"filter";members:string[];filter:string;url:string;interval:number;tolerance:number}
+export interface GroupResolution {members:string[];missing:string[];error:string|null}
+export interface CustomGroupStatus {sources?:[string,string][];groups:CustomGroup[];profile_id:string|null;profile_name:string|null;candidates:string[];context:string;error:string|null;resolutions:[string,GroupResolution][]}
 export const ipc = {
+  customGroups:()=>invoke<CustomGroupStatus>("custom_groups_get"),
+  previewCustomGroup:(draft:CustomGroup,sourceContext:string)=>invoke<GroupResolution>("preview_custom_group",{draft,sourceContext}),
+  setCustomGroups:(expected:CustomGroup[],groups:CustomGroup[],sourceContext:string)=>invoke<void>("custom_groups_set",{expected,groups,sourceContext}),
   userRules:()=>invoke<UserRuleStatus>("user_rules_get"),
   setUserRules:(expected:UserRule[], rules:UserRule[])=>invoke<void>("user_rules_set",{expected,rules}),
   inspectProfileImport: (content: string) => invoke<ImportInspection>("inspect_profile_import", {content}),

@@ -56,6 +56,8 @@ pub fn render_config_with(
                 detail: e.to_string(),
             })?;
     }
+    config = crate::custom_groups::inject(&config, profile_id, &store.custom_groups)
+        .map_err(RenderError::InvalidYaml)?;
     if store.engine.flag_emoji {
         config = crate::emoji::enrich_flags(&config)
             .map_err(|e| RenderError::InvalidYaml(e.to_string()))?;

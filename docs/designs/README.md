@@ -15,6 +15,7 @@
 
 | 日期 | 主题 | 版本 | 状态 | 文件 | 关联 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-11-22 | 自定义策略组：来源、成员与有效预览 | v01 | 已实现，本地/模拟/双内核隔离路由通过；待整机验收 | [说明](2026-11-22-custom-groups/v01/SPEC.md) · [改前](2026-11-22-custom-groups/v01/previews/before.png) · [浅色](2026-11-22-custom-groups/v01/previews/list.png) · [小窗口](2026-11-22-custom-groups/v01/previews/dark-small.png) · [源稿](2026-11-22-custom-groups/v01/source.zip) | #606 |
 | 2026-11-22 | 域名/IP 用户规则与优先级解释 | v01 | 已实现，本地/模拟/受控原生通过；待实机验收 | [说明](2026-11-22-user-rules/v01/SPEC.md) · [浅色](2026-11-22-user-rules/v01/previews/light.png) · [小窗口](2026-11-22-user-rules/v01/previews/dark-small.png) · [源稿](2026-11-22-user-rules/v01/source.zip) | #605 |
 | 2026-11-22 | DNS 诊断：地址族、配置归属与迟到结果保护 | v02 | 已实现，本地/模拟/隔离 mihomo 通过，待评审 | [说明](2026-11-22-dns-probe/v02/SPEC.md) · [结果](2026-11-22-dns-probe/v02/previews/04-result-system-only.png) · [小窗口](2026-11-22-dns-probe/v02/previews/07-dark-small-en.png) · [源稿](2026-11-22-dns-probe/v02/source.zip) | #603 / PR #624 |
 | 2026-11-21 | 分享链接导入兼容性与能力范围 | v01 | 已实现，本地/模拟/受控原生通过；待评审 | [说明](2026-11-21-import-capabilities/v01/SPEC.md) · [改前](2026-11-21-import-capabilities/v01/previews/before.png) · [改后](2026-11-21-import-capabilities/v01/previews/light.png) · [小窗口](2026-11-21-import-capabilities/v01/previews/dark-small.png) · [源稿](2026-11-21-import-capabilities/v01/source.zip) | #599 |
