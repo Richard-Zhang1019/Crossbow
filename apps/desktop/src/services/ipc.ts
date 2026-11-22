@@ -142,6 +142,9 @@ export interface PackagePreview {
     added_overrides: number;
     replaced_overrides: number;
     selects_profile: boolean;
+    added_process_rules?:number; replaced_process_rules?:number;
+    added_rule_sets?:number; replaced_rule_sets?:number;
+    policy_conflicts?:number; same_name_items?:number; unverified_targets?:number;
   };
 }
 

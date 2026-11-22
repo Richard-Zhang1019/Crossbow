@@ -134,6 +134,8 @@ fn recover_configuration(data: &mut crossbow_core::StoreSchema, saved: crossbow_
     data.profiles = saved.profiles;
     data.overrides = saved.overrides;
     data.active_profile = saved.active_profile;
+    data.process_rules = saved.process_rules;
+    data.rule_sets = saved.rule_sets;
 }
 #[derive(Default)]
 pub(crate) struct PackageSession {
@@ -163,6 +165,9 @@ fn package_target(data: &crossbow_core::StoreSchema) -> Result<[u8; 32], String>
             &data.overrides,
             &data.active_profile,
             &data.engine,
+            &data.dns,
+            &data.process_rules,
+            &data.rule_sets,
         ),
     )
     .map_err(|_| "pkg.errorCommit".to_owned())?;
@@ -294,17 +299,26 @@ pub async fn import_config_package(app: AppHandle, id: String) -> Result<(), Str
                     return Err("pkg.errorStale".into());
                 }
                 let changes_active = pending.payload.changes_active_profile(data);
+                let policies = pending.payload.clone();
                 pending
                     .payload
                     .merge_into(data)
                     .map_err(|e| e.to_string())?;
-                if changes_active {
+                if changes_active && data.active_profile.is_some() {
                     // The normal transaction skips engine apply when stopped.
                     // Validate the chosen profile and its enabled overrides anyway.
                     let rendered =
                         crossbow_core::render_config(data).map_err(|_| "pkg.errorActive")?;
+                    policies
+                        .validate_targets(&rendered.config)
+                        .map_err(|e| e.to_string())?;
                     crate::platform::validate_config(data.engine.engine, &rendered.config)
                         .map_err(|_| "pkg.errorActive")?;
+                }
+                if data.active_profile.is_none() {
+                    policies
+                        .validate_targets("proxy-groups: []")
+                        .map_err(|e| e.to_string())?;
                 }
                 active = data.active_profile.clone();
                 Ok(())
@@ -484,7 +498,15 @@ mod tests {
         saved.profiles.push(
             serde_json::from_str(r#"{"id":"restored","name":"Snapshot","kind":"local"}"#).unwrap(),
         );
+        saved.process_rules.push(crossbow_core::ProcessRule {
+            id: "restored-rule".into(),
+            process: "curl".into(),
+            target: "DIRECT".into(),
+        });
+        saved.rule_sets.push(serde_json::from_value(serde_json::json!({"id":"restored-set","name":"Set","url":"https://example.invalid/rules","behavior":"domain","target":"DIRECT","enabled":true,"interval_secs":0,"payload":["example.invalid"],"updated_at":1})).unwrap());
         recover_configuration(&mut current, saved);
+        assert_eq!(current.process_rules[0].id, "restored-rule");
+        assert_eq!(current.rule_sets[0].id, "restored-set");
         assert_eq!(current.active_profile.as_deref(), Some("restored"));
         assert_eq!(current.profiles.len(), 1);
         assert_eq!(current.engine.mixed_port, 7898);
@@ -506,6 +528,16 @@ mod tests {
     fn package_preview_detects_changes_to_destination_configuration() {
         let mut target = crossbow_core::StoreSchema::default();
         let stamp = package_target(&target).unwrap();
+        target.process_rules.push(crossbow_core::ProcessRule {
+            id: "r".into(),
+            process: "curl".into(),
+            target: "DIRECT".into(),
+        });
+        assert_ne!(package_target(&target).unwrap(), stamp);
+        target.process_rules.clear();
+        target.dns.mode = crossbow_core::dns_settings::DnsMode::Custom;
+        assert_ne!(package_target(&target).unwrap(), stamp);
+        target.dns = crossbow_core::dns_settings::DnsSettings::default();
         target.ui.lang = "en".into();
         assert_eq!(package_target(&target).unwrap(), stamp);
         target.active_profile = Some("new-active".into());

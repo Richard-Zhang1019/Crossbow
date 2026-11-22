@@ -1,0 +1,25 @@
+{
+  "date": "2026-11-22",
+  "version": "v01",
+  "issue": 607,
+  "base_commit": "0a28caceb5f31357304546b090f78da663c9938e",
+  "status": "implemented; local, synthetic UI and isolated native mihomo passed; physical migration pending",
+  "source_sha256": {
+    "crates/crossbow-core/src/config_package.rs": "ec0a0948f6068eaa51afeb8b93a360fdbc81b01b31218592d9c4a830868c67ee",
+    "apps/desktop/src-tauri/src/workflow.rs": "24d22f92033cbf85e4670dd496e9faf3b33270b82273033c1a7b637341652fa6",
+    "apps/desktop/src/services/ipc.ts": "3e8601b0e46cebfeeb1567aa03069fe5fee956f34b91e09a5c635c1e4e2c0de6",
+    "apps/desktop/src/pages/Profiles/index.tsx": "1a4798cb675651f3c59b52f69759b13c5a454419594af58e5035cfa838f81473",
+    "apps/desktop/src/i18n/i18n.ts": "3298032d8eb1e471f1f3c89e6b2805fe4b5964d3a43dcf5cc1fc2a3c8221453f",
+    "scripts/dev/verify-package-policies.mjs": "5faa66c591b883572778b6eda1df5e510cf6c7beb0a05bc23db89693d4e8c9fb",
+    "docs/config-package/example-v2.json": "4f8dcceaee9c27aa19dd3f9eac78f644968c2ffcdf9ca1b7d27a69f87f362585"
+  },
+  "artifacts": {
+    "source.zip": "8c121b611b312e4d50e4bbb9e5b6ca8080a9779ef2a3d65d7de425bdb282996e",
+    "SPEC.md": "b4027e035b1bbde5e22cd4caf81503202fcb475028c41c8bf9bde72d92367eaa",
+    "previews/before.png": "86c89fa5abac3036bb9ced8cc99adfbc620c055b9bf7fe93ad6cc8f82f31b409",
+    "previews/preview.png": "e84e659b8edb2b5eb141fec1b0923c21727741200ff7b4cccfa35062f05c30e8",
+    "previews/export.png": "b634f3734caefff350a7b727d2184ca7bc6e3131ca12fb6b804ceab3da9b80a2",
+    "previews/dark-small.png": "121c967de1f6b6a30e6c6f723c2418bc6573df820f24eb9e7119e6a66193a9d9",
+    "previews/conflict.png": "4311a46301e8aec2dbe92103ce979bfb5a4be74c278050eb043704db82f8cdf9"
+  }
+}

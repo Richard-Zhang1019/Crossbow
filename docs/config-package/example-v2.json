@@ -1,0 +1,67 @@
+{
+  "package_version": 2,
+  "created_at": 0,
+  "schema_version": 2,
+  "payload": {
+    "profiles": [
+      {
+        "id": "sample-local",
+        "name": "Offline example",
+        "kind": "local",
+        "content": "proxies: []\nrules: ['MATCH,DIRECT']\n",
+        "override_ids": [
+          "sample-enabled",
+          "sample-disabled"
+        ]
+      },
+      {
+        "id": "sample-subscription",
+        "name": "Subscription example",
+        "kind": "remote",
+        "url": "https://example.invalid/subscription",
+        "content": "proxies: []\nrules: ['MATCH,DIRECT']\n",
+        "update_interval_min": 0
+      }
+    ],
+    "overrides": [
+      {
+        "id": "sample-enabled",
+        "name": "Enabled rule example",
+        "kind": "merge",
+        "enabled": true,
+        "content": "+rules: ['DOMAIN,fixture.invalid,DIRECT']\n"
+      },
+      {
+        "id": "sample-disabled",
+        "name": "Disabled override example",
+        "kind": "merge",
+        "enabled": false,
+        "content": "rules: ['MATCH,REJECT']\n"
+      }
+    ],
+    "active_profile": "sample-local",
+    "process_rules": [
+      {
+        "id": "sample-process",
+        "process": "ExampleBrowser",
+        "target": "DIRECT"
+      }
+    ],
+    "rule_sets": [
+      {
+        "id": "sample-set",
+        "name": "Offline domains",
+        "url": "https://example.invalid/rules",
+        "behavior": "domain",
+        "target": "DIRECT",
+        "enabled": false,
+        "interval_secs": 3600,
+        "payload": [
+          "example.invalid"
+        ],
+        "updated_at": 0,
+        "last_error": null
+      }
+    ]
+  }
+}
