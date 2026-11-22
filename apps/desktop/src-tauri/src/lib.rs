@@ -56,7 +56,9 @@ pub(crate) mod platform;
 pub(crate) mod tray;
 
 // 跨域单件：进程管理、调度、服务端 IPC、应用更新、维护命令。
+pub(crate) mod node_probes;
 pub(crate) mod node_quality;
+pub(crate) mod probe_worker;
 pub(crate) mod process;
 pub(crate) mod scheduler;
 #[cfg(windows)]
@@ -563,6 +565,9 @@ fn restart_adopted_core_death(handle: AppHandle) -> impl Fn() + Send + 'static {
 /// 内核状态回调：UI 事件、托盘速率联动、崩溃时系统代理一致性守护。
 /// 换核/重装创建新 CoreManager 后必须重新挂载（ensure_engine_binary / core_install）。
 pub fn run() {
+    if probe_worker::guardian::maybe_run() {
+        return;
+    }
     // #592 脚本覆写的工作进程模式：本二进制以 --script-worker 参数重入
     // 自身，stdin 收 payload、stdout 出结果（见
     // crossbow_core::script_override），不进入正常应用启动。
@@ -757,6 +762,7 @@ pub fn run() {
                 node_delay_task: std::sync::Mutex::new(None),
                 node_delay_slots: tokio::sync::Semaphore::new(NODE_DELAY_CONCURRENCY),
                 node_quality: node_quality::History::open(&data_dir),
+                node_probes: std::sync::Arc::new(node_probes::Service::default()),
                 store: Mutex::new(store),
                 package_session: Mutex::new(crate::workflow::PackageSession::default()),
                 core_slot: Mutex::new(core),
@@ -1036,6 +1042,10 @@ pub fn run() {
             node_quality_report,
             node_quality_set_paused,
             node_quality_clear,
+            start_node_probe,
+            node_probe_snapshot,
+            cancel_node_probe,
+            node_probe_history,
             proxies_test_snapshot,
         ])
         .build(tauri::generate_context!())

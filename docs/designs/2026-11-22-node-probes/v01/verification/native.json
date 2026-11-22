@@ -1,0 +1,1780 @@
+{
+  "platform": "darwin",
+  "scope": "isolated real cores + production measurement service/guardian; not native Tauri IPC/UI or system takeover acceptance",
+  "engines": [
+    {
+      "engine": "mihomo",
+      "binary_sha256": "94a386ec0149080deadd86b1f667363bde3c70f7489dba3258e52c56fc9a6d66",
+      "controlled_cases": [
+        {
+          "case": "native_tcp_success_https_failure_and_cancel_cleanup",
+          "passed": true,
+          "stdout": "\nrunning 1 test\ntest probe_worker::tests::native_tcp_success_https_failure_and_cancel_cleanup ... native evidence: engine=Mihomo, TCP=ok, HTTPS=https_unverified, HTTP-node UDP=unsupported, cancellation_ms=37, private_directory_removed=true\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 390 filtered out; finished in 1.70s\n\n"
+        },
+        {
+          "case": "native_http_success_udp_blackhole_is_unverified",
+          "passed": true,
+          "stdout": "\nrunning 1 test\ntest probe_worker::transport::native_tests::native_http_success_udp_blackhole_is_unverified ... native evidence: engine=Mihomo, HTTP=204, UDP=unverified, datagrams=3, no WAN traffic\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 390 filtered out; finished in 3.75s\n\n"
+        }
+      ],
+      "public": [
+        {
+          "kind": "connectivity",
+          "business_before": {
+            "count": 30,
+            "ok_count": 30,
+            "percentile_method": "nearest_rank_successes_only",
+            "success_rate": 1.0,
+            "p50_ms": 2.327,
+            "p95_ms": 3.569,
+            "failures": {},
+            "samples": [
+              {
+                "ms": 1.681,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.074,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.596,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.568,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.8,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.935,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.568,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.361,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.327,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.569,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.811,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.374,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.239,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.183,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.966,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.2,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.321,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.957,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.365,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.409,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.294,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 4.282,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.149,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.845,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.059,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.798,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.223,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.912,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.698,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.925,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              }
+            ]
+          },
+          "business_during": {
+            "count": 30,
+            "ok_count": 30,
+            "percentile_method": "nearest_rank_successes_only",
+            "success_rate": 1.0,
+            "p50_ms": 2.16,
+            "p95_ms": 3.328,
+            "failures": {},
+            "samples": [
+              {
+                "ms": 1.307,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.562,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.228,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.227,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.643,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.136,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.328,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.232,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.233,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.16,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.665,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.049,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.863,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.952,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.195,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 4.736,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.457,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.603,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.975,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.397,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.975,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.525,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.394,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.658,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.595,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.2,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.06,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.019,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.163,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.012,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              }
+            ]
+          },
+          "overlapping_business_requests": 17,
+          "measurement": {
+            "id": "f18e10ec-638f-4ae6-94b7-18082120f2b6",
+            "node": "fixture,direct",
+            "kind": "connectivity",
+            "state": "completed",
+            "phase": "finished",
+            "report": {
+              "kind": "connectivity",
+              "atMs": 1795334225552,
+              "elapsedMs": 1064,
+              "tcp": {
+                "class": "ok",
+                "elapsedMs": 22,
+                "packets": 0
+              },
+              "https": {
+                "class": "ok",
+                "elapsedMs": 634,
+                "packets": 1
+              },
+              "udp": {
+                "class": "ok",
+                "elapsedMs": 314,
+                "packets": 1
+              },
+              "download": {
+                "class": "not_tested",
+                "bytes": 0,
+                "elapsedMs": 0,
+                "limitBytes": 0,
+                "mbps": null
+              },
+              "upload": {
+                "class": "not_tested",
+                "bytes": 0,
+                "elapsedMs": 0,
+                "limitBytes": 0,
+                "mbps": null
+              }
+            },
+            "error": null
+          },
+          "note": "4 MiB download/1 MiB upload are payload caps, not wire-billing caps; includes connection overhead and host scheduling; small sample only"
+        },
+        {
+          "kind": "throughput",
+          "business_before": {
+            "count": 30,
+            "ok_count": 30,
+            "percentile_method": "nearest_rank_successes_only",
+            "success_rate": 1.0,
+            "p50_ms": 2.478,
+            "p95_ms": 3.847,
+            "failures": {},
+            "samples": [
+              {
+                "ms": 1.919,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.729,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.623,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.506,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.989,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.026,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.938,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.028,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.478,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.44,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.099,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.317,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.935,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.823,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.847,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.736,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.563,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.156,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.637,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.242,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 4.14,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.915,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.714,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.901,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.176,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.045,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.572,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.147,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.626,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.106,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              }
+            ]
+          },
+          "business_during": {
+            "count": 30,
+            "ok_count": 30,
+            "percentile_method": "nearest_rank_successes_only",
+            "success_rate": 1.0,
+            "p50_ms": 2.429,
+            "p95_ms": 3.276,
+            "failures": {},
+            "samples": [
+              {
+                "ms": 1.332,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.443,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.061,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.365,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.915,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.827,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.276,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.208,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.524,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.698,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.448,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.588,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.026,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.099,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.086,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.429,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.819,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.167,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.094,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.627,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.069,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.242,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.202,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.794,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.752,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.636,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.901,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.633,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.821,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.104,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              }
+            ]
+          },
+          "overlapping_business_requests": 30,
+          "measurement": {
+            "id": "22f669b9-a840-49d4-8bb4-6de12f10ba88",
+            "node": "fixture,direct",
+            "kind": "throughput",
+            "state": "completed",
+            "phase": "finished",
+            "report": {
+              "kind": "throughput",
+              "atMs": 1795334229214,
+              "elapsedMs": 6595,
+              "tcp": {
+                "class": "not_tested",
+                "elapsedMs": 0,
+                "packets": 0
+              },
+              "https": {
+                "class": "not_tested",
+                "elapsedMs": 0,
+                "packets": 0
+              },
+              "udp": {
+                "class": "not_tested",
+                "elapsedMs": 0,
+                "packets": 0
+              },
+              "download": {
+                "class": "ok",
+                "bytes": 4194304,
+                "elapsedMs": 3024,
+                "limitBytes": 4194304,
+                "mbps": 11.09
+              },
+              "upload": {
+                "class": "ok",
+                "bytes": 1048576,
+                "elapsedMs": 3467,
+                "limitBytes": 1048576,
+                "mbps": 2.42
+              }
+            },
+            "error": null
+          },
+          "note": "4 MiB download/1 MiB upload are payload caps, not wire-billing caps; includes connection overhead and host scheduling; small sample only"
+        }
+      ],
+      "parent_death": {
+        "ready_before_parent_death": true,
+        "private_directory_removed": true,
+        "cleanup_ms": 16.7
+      },
+      "version": "Mihomo Meta v1.19.32 darwin arm64 with go1.26.8 Wed Sep 30 17:00:14 UTC 2026",
+      "version_source": "same SHA-256 binary; metadata collected after the measurements"
+    },
+    {
+      "engine": "singbox",
+      "binary_sha256": "d652879eed7e38b866fa980bc2e119dcdb13968fe5e6583670293a258686d0e7",
+      "controlled_cases": [
+        {
+          "case": "native_tcp_success_https_failure_and_cancel_cleanup",
+          "passed": true,
+          "stdout": "\nrunning 1 test\ntest probe_worker::tests::native_tcp_success_https_failure_and_cancel_cleanup ... native evidence: engine=SingBox, TCP=ok, HTTPS=https_unverified, HTTP-node UDP=unsupported, cancellation_ms=52, private_directory_removed=true\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 390 filtered out; finished in 0.20s\n\n"
+        },
+        {
+          "case": "native_http_success_udp_blackhole_is_unverified",
+          "passed": true,
+          "stdout": "\nrunning 1 test\ntest probe_worker::transport::native_tests::native_http_success_udp_blackhole_is_unverified ... native evidence: engine=SingBox, HTTP=204, UDP=unverified, datagrams=3, no WAN traffic\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 390 filtered out; finished in 3.79s\n\n"
+        }
+      ],
+      "public": [
+        {
+          "kind": "connectivity",
+          "business_before": {
+            "count": 30,
+            "ok_count": 30,
+            "percentile_method": "nearest_rank_successes_only",
+            "success_rate": 1.0,
+            "p50_ms": 2.235,
+            "p95_ms": 3.323,
+            "failures": {},
+            "samples": [
+              {
+                "ms": 1.206,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 0.99,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.459,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.055,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.519,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.559,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.672,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.463,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.144,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.237,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 0.962,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 0.93,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.153,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.056,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.248,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.648,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.429,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.826,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.812,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.592,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.23,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.323,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.585,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.715,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.821,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.421,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.688,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.235,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.619,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.048,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              }
+            ]
+          },
+          "business_during": {
+            "count": 30,
+            "ok_count": 30,
+            "percentile_method": "nearest_rank_successes_only",
+            "success_rate": 1.0,
+            "p50_ms": 2.309,
+            "p95_ms": 5.697,
+            "failures": {},
+            "samples": [
+              {
+                "ms": 1.408,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.026,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.535,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 5.73,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.032,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.309,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.91,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.938,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.393,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.392,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 5.697,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.422,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.848,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.778,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.348,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.111,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.865,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.485,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.892,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.283,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.497,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.274,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.37,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.339,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.374,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.434,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.821,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.12,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.418,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.851,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              }
+            ]
+          },
+          "overlapping_business_requests": 30,
+          "measurement": {
+            "id": "9de5084a-3e0b-40a8-8510-cd60c6e46df3",
+            "node": "fixture,direct",
+            "kind": "connectivity",
+            "state": "completed",
+            "phase": "finished",
+            "report": {
+              "kind": "connectivity",
+              "atMs": 1795334242007,
+              "elapsedMs": 3243,
+              "tcp": {
+                "class": "ok",
+                "elapsedMs": 258,
+                "packets": 0
+              },
+              "https": {
+                "class": "ok",
+                "elapsedMs": 2529,
+                "packets": 1
+              },
+              "udp": {
+                "class": "ok",
+                "elapsedMs": 298,
+                "packets": 1
+              },
+              "download": {
+                "class": "not_tested",
+                "bytes": 0,
+                "elapsedMs": 0,
+                "limitBytes": 0,
+                "mbps": null
+              },
+              "upload": {
+                "class": "not_tested",
+                "bytes": 0,
+                "elapsedMs": 0,
+                "limitBytes": 0,
+                "mbps": null
+              }
+            },
+            "error": null
+          },
+          "note": "4 MiB download/1 MiB upload are payload caps, not wire-billing caps; includes connection overhead and host scheduling; small sample only"
+        },
+        {
+          "kind": "throughput",
+          "business_before": {
+            "count": 30,
+            "ok_count": 30,
+            "percentile_method": "nearest_rank_successes_only",
+            "success_rate": 1.0,
+            "p50_ms": 2.512,
+            "p95_ms": 3.729,
+            "failures": {},
+            "samples": [
+              {
+                "ms": 2.846,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.915,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.337,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.106,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.206,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.579,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.961,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.531,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 4.521,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.911,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.729,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.467,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.25,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.711,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.192,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.055,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.738,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.017,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.379,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.512,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.397,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.479,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.022,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.53,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.343,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.619,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.935,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.394,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.165,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.17,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              }
+            ]
+          },
+          "business_during": {
+            "count": 30,
+            "ok_count": 30,
+            "percentile_method": "nearest_rank_successes_only",
+            "success_rate": 1.0,
+            "p50_ms": 2.465,
+            "p95_ms": 3.708,
+            "failures": {},
+            "samples": [
+              {
+                "ms": 1.246,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.178,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.278,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.941,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.285,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.471,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.465,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.903,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.681,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.829,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.174,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.624,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.592,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.537,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.275,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.084,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.075,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.148,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.708,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.813,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.629,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.911,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.047,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.673,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.851,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 1.546,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.024,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 3.972,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.734,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              },
+              {
+                "ms": 2.433,
+                "ok": true,
+                "error": null,
+                "route_evidence": true
+              }
+            ]
+          },
+          "overlapping_business_requests": 30,
+          "measurement": {
+            "id": "f0d1d38b-aafd-47c8-98dc-eedf45dc547e",
+            "node": "fixture,direct",
+            "kind": "throughput",
+            "state": "completed",
+            "phase": "finished",
+            "report": {
+              "kind": "throughput",
+              "atMs": 1795334247097,
+              "elapsedMs": 6215,
+              "tcp": {
+                "class": "not_tested",
+                "elapsedMs": 0,
+                "packets": 0
+              },
+              "https": {
+                "class": "not_tested",
+                "elapsedMs": 0,
+                "packets": 0
+              },
+              "udp": {
+                "class": "not_tested",
+                "elapsedMs": 0,
+                "packets": 0
+              },
+              "download": {
+                "class": "ok",
+                "bytes": 4194304,
+                "elapsedMs": 4213,
+                "limitBytes": 4194304,
+                "mbps": 7.96
+              },
+              "upload": {
+                "class": "ok",
+                "bytes": 1048576,
+                "elapsedMs": 1838,
+                "limitBytes": 1048576,
+                "mbps": 4.56
+              }
+            },
+            "error": null
+          },
+          "note": "4 MiB download/1 MiB upload are payload caps, not wire-billing caps; includes connection overhead and host scheduling; small sample only"
+        }
+      ],
+      "parent_death": {
+        "ready_before_parent_death": true,
+        "private_directory_removed": true,
+        "cleanup_ms": 16.68
+      },
+      "version": "sing-box version 1.14.2",
+      "version_source": "same SHA-256 binary; metadata collected after the measurements"
+    }
+  ],
+  "source_sha256": {
+    "apps/desktop/src-tauri/src/probe_worker/config.rs": "50156f1f3e2ba55f33881035c49007f0feb2cd0515b7bd178b8447521925f1e3",
+    "apps/desktop/src-tauri/src/probe_worker/transport.rs": "42669ef4b326a9bfbac7bd177ef50665369ca599b7bf24171473b432ef0a699a",
+    "apps/desktop/src-tauri/src/probe_worker/mod.rs": "6e8c636c918db374662dd2dcbf93c3a855d28b545ea39ceb35e60ab517eb1bc5",
+    "apps/desktop/src-tauri/src/probe_worker/http.rs": "382de3e6c306b6f6c834629af2a504a40456456a924d1390e4f6263191c26207",
+    "apps/desktop/src-tauri/src/probe_worker/guardian.rs": "16bd3420511f79c1b0025291cb5a71c696539249227aac670be6b1488724eaa4",
+    "apps/desktop/src-tauri/src/node_probes.rs": "3c4999282462aea3b85b02ddf7f3a6426d4fa9a9eedfaaa625609afb684a5e9b"
+  }
+}

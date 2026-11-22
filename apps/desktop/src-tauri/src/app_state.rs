@@ -17,6 +17,7 @@ pub struct AppState {
     pub(crate) node_delay_task: Mutex<Option<NodeDelayTask>>,
     pub(crate) node_delay_slots: tokio::sync::Semaphore,
     pub(crate) node_quality: crate::node_quality::History,
+    pub(crate) node_probes: std::sync::Arc<crate::node_probes::Service>,
     pub store: Mutex<Store>,
     pub(crate) package_session: Mutex<crate::workflow::PackageSession>,
     /// 当前内核管理器；内核安装后整体替换（core_slot）。

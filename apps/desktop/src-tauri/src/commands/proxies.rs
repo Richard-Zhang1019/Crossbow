@@ -79,6 +79,9 @@ pub(crate) fn begin_node_delay_test(
     target: Option<crate::node_quality::Target>,
 ) -> Option<NodeDelayTicket> {
     let _operation = state.core_op.try_lock().ok()?;
+    if state.node_probes.busy() {
+        return None;
+    }
     if node_delay_context(&state) != Some(context) {
         return None;
     }
@@ -472,4 +475,149 @@ mod tests {
         assert_eq!(node_delay_budget(11), 2 * node_delay_budget(10));
         assert_eq!(node_delay_budget(usize::MAX), Duration::from_secs(120));
     }
+}
+
+/// #604 finite measurements never modify the active core or host-network state.
+#[tauri::command]
+pub(crate) async fn start_node_probe(
+    app: AppHandle,
+    node: String,
+    context: NodeDelayContext,
+    kind: crate::node_probes::Kind,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let _operation = state
+            .core_op
+            .try_lock()
+            .map_err(|_| "内核正在切换，请稍后测试")?;
+        if node.len() > 4096 || node_delay_context(&state) != Some(context) {
+            return Err("配置或内核已变化，请重新打开测试面板".into());
+        }
+        if state.node_delay_slots.available_permits() != NODE_DELAY_CONCURRENCY
+            || state
+                .node_delay_task
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_ref()
+                .is_some_and(|t| t.context == context && Instant::now() < t.deadline)
+        {
+            return Err("请先结束延迟测试，避免测试相互干扰".into());
+        }
+        let core = state.core();
+        let config = core.current_config().ok_or("当前内核没有可用的运行配置")?;
+        if config.len() > 16 * 1024 * 1024 {
+            return Err("运行配置过大，暂不支持分项测试".into());
+        }
+        let (engine, scope) = {
+            let store = state.store.lock().unwrap_or_else(|e| e.into_inner());
+            (
+                store.data().engine.engine,
+                crate::node_quality::Scope::from_store(store.data()),
+            )
+        };
+        // Fail unsupported groups/providers before creating a task or issuing requests.
+        crate::probe_worker::config::build(&config, engine, &node, 1, "preflight")?;
+        let epoch = state.node_quality.epoch();
+        let node_for_history = node.clone();
+        let guard_app = app.clone();
+        let events_app = app.clone();
+        state.node_probes.begin(
+            crate::node_probes::Input {
+                binary: core.binary_path(),
+                config,
+                engine,
+                node,
+                kind,
+            },
+            std::sync::Arc::new(move || {
+                node_delay_context(&guard_app.state::<AppState>()) == Some(context)
+            }),
+            std::sync::Arc::new(move |snapshot| {
+                let source = format!("node-probe-{}", snapshot.id);
+                if matches!(snapshot.state.as_str(), "running" | "cancelling") {
+                    let mut notice = notifications::Notice::new(
+                        notifications::Kind::Progress,
+                        "node-probe.running",
+                        &source,
+                    );
+                    notice.title_key = format!("probes.phase.{}", snapshot.phase);
+                    notifications::publish(&events_app, notice);
+                    return;
+                }
+                notifications::resolve(&events_app, &source);
+                let state = events_app.state::<AppState>();
+                if let (Some(scope), Some(report)) = (&scope, &snapshot.report) {
+                    if node_delay_context(&state) == Some(context) {
+                        state.node_quality.record_probe(
+                            epoch,
+                            scope,
+                            &node_for_history,
+                            report.clone(),
+                        );
+                        if let Err(error) = state.node_quality.flush() {
+                            let mut notice = notifications::Notice::new(
+                                notifications::Kind::Error,
+                                "node-quality.save",
+                                "node-quality-storage",
+                            );
+                            notice.title_key = "proxies.quality.saveFailed".into();
+                            notice.details = error;
+                            notifications::publish(&events_app, notice);
+                        }
+                    }
+                }
+                if let Some(error) = &snapshot.error {
+                    let mut notice = notifications::Notice::new(
+                        notifications::Kind::Error,
+                        "node-probe.failed",
+                        &source,
+                    );
+                    notice.title_key = "probes.failed".into();
+                    notice.details = error.clone();
+                    notifications::publish(&events_app, notice);
+                }
+            }),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+pub(crate) fn node_probe_snapshot(
+    state: State<AppState>,
+    id: String,
+    context: NodeDelayContext,
+) -> Option<crate::node_probes::Snapshot> {
+    (node_delay_context(&state) == Some(context))
+        .then(|| state.node_probes.snapshot())
+        .flatten()
+        .filter(|s| s.id == id)
+}
+#[tauri::command]
+pub(crate) fn cancel_node_probe(state: State<AppState>, id: String) {
+    state.node_probes.cancel(&id);
+}
+#[tauri::command]
+pub(crate) async fn node_probe_history(
+    app: AppHandle,
+    node: String,
+    context: NodeDelayContext,
+) -> Result<Vec<crate::node_probes::Report>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        if node_delay_context(&state) != Some(context) {
+            return Err("配置或内核已变化，请重新打开测试面板".into());
+        }
+        let scope = crate::node_quality::Scope::from_store(
+            state.store.lock().unwrap_or_else(|e| e.into_inner()).data(),
+        );
+        let report = state.node_quality.report(scope.as_ref(), &node);
+        if node_delay_context(&state) != Some(context) {
+            return Err("配置或内核已变化，请重新打开测试面板".into());
+        }
+        Ok(report.probe_history)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
