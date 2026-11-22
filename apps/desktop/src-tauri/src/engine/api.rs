@@ -660,6 +660,10 @@ impl Controller {
     }
 
     /// 主目标固定；仅节点超时复核 HTTPS。每次新请求前及发布结果前均检查取消。
+    ///
+    /// 页面测速改走 `measure_node_delay_observed`（带质量历史回调）后，本包装
+    /// 只剩 macOS 托盘与测试使用；其他平台的 lib 构建不再携带，避免 dead_code。
+    #[cfg(any(target_os = "macos", test))]
     pub(crate) fn measure_node_delay_with_review(
         &self,
         node: &str,
