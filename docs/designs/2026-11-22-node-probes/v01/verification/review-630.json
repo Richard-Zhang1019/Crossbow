@@ -1,0 +1,31 @@
+{
+  "reviewed_head": "0fd269628dc7481622713f2ee3e3e6a84fe9f8e3",
+  "issue_verdict": "gap exists: baseline history lacks component tests",
+  "finding": {
+    "priority": "P2",
+    "file": "apps/desktop/src-tauri/src/probe_worker/http.rs",
+    "problem": "ureq timeout_connect(500ms) covers selected outbound SOCKS remote dial, incorrectly timing out usable slow nodes",
+    "red": "700ms dial failed after 499ms under a 3s stage budget",
+    "green": "700ms dial succeeds under 3s budget; same dial rejected under 100ms budget"
+  },
+  "fix_sha256": "dc1e60446bb98a988ae603154142c02976597041a440982e930ccbb936d575de",
+  "validation": {
+    "backend_passed": 384,
+    "backend_ignored": 8,
+    "frontend_tests_passed": 47,
+    "typescript_vite": "passed",
+    "clippy_all_targets_deny_warnings": "passed",
+    "fmt": "passed",
+    "production_ui_new_probes_and_existing_history": "passed",
+    "controlled_native_cases": 6
+  },
+  "ci": "original PR head passed; updated commit CI not yet run at review submission",
+  "pending": [
+    "native Tauri window/IPC/install lifecycle",
+    "Windows Job and Linux native acceptance"
+  ],
+  "notes": [
+    "no UI code changes during review; original v01 source.zip and native.json preserved as author evidence",
+    "public WAN throughput not rerun in review; six native cases use loopback only"
+  ]
+}

@@ -1,9 +1,6 @@
 //! HTTPS verification/transfer reuse ureq's certificate, framing and deadline handling.
 use crate::node_probes::{Budget, Check, Transfer};
-use std::{
-    io::Read,
-    time::{Duration, Instant},
-};
+use std::{io::Read, time::Instant};
 pub const DOWNLOAD_BYTES: u64 = 4 * 1024 * 1024;
 pub const UPLOAD_BYTES: u64 = 1024 * 1024;
 fn agent(port: u16, password: &str, budget: &Budget) -> Result<ureq::Agent, String> {
@@ -14,7 +11,9 @@ fn agent(port: u16, password: &str, budget: &Budget) -> Result<ureq::Agent, Stri
         .proxy(proxy)
         .try_proxy_from_env(false)
         .redirects(0)
-        .timeout_connect(Duration::from_millis(500))
+        // ureq applies timeout_connect to the full SOCKS handshake, including
+        // the chosen outbound's remote dial. Use the phase's overall deadline
+        // for both CONNECT and HTTP/TLS instead of a loopback-only 500ms cap.
         .timeout(budget.remaining()?)
         .build())
 }
@@ -126,6 +125,85 @@ pub fn upload(port: u16, password: &str, budget: &Budget) -> Transfer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
+    // A SOCKS CONNECT reply arrives only after the selected outbound has dialed
+    // the target. Delaying it models a usable, high-latency proxy without WAN IO.
+    fn delayed_proxy() -> (u16, std::thread::JoinHandle<()>) {
+        use std::{io::Write, net::TcpListener};
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let serve = || -> std::io::Result<()> {
+                let mut socket = &socket;
+                let mut header = [0; 2];
+                socket.read_exact(&mut header)?;
+                let mut methods = vec![0; header[1] as usize];
+                socket.read_exact(&mut methods)?;
+                socket.write_all(&[5, 2])?;
+                socket.read_exact(&mut header)?;
+                let mut user = vec![0; header[1] as usize];
+                socket.read_exact(&mut user)?;
+                let mut size = [0];
+                socket.read_exact(&mut size)?;
+                let mut password = vec![0; size[0] as usize];
+                socket.read_exact(&mut password)?;
+                socket.write_all(&[1, 0])?;
+                let mut connect = [0; 4];
+                socket.read_exact(&mut connect)?;
+                assert_eq!(connect, [5, 1, 0, 3]);
+                socket.read_exact(&mut size)?;
+                let mut target = vec![0; size[0] as usize + 2];
+                socket.read_exact(&mut target)?;
+                std::thread::sleep(Duration::from_millis(700));
+                socket.write_all(&[5, 0, 0, 1, 127, 0, 0, 1, 0, 80])?;
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") && request.len() < 4096 {
+                    let mut byte = [0];
+                    if socket.read(&mut byte)? == 0 {
+                        return Ok(());
+                    }
+                    request.push(byte[0]);
+                }
+                socket
+                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+            };
+            // An expired request closes its socket before the delayed reply.
+            let _ = serve();
+        });
+        (port, server)
+    }
+    #[test]
+    fn socks_target_dial_uses_stage_budget_instead_of_half_second_cap() {
+        let (port, server) = delayed_proxy();
+        let budget = Budget::new(std::sync::Arc::new(|| true)).child(Duration::from_secs(3));
+        let result = agent(port, "nonce", &budget)
+            .unwrap()
+            .get("http://probe.invalid/")
+            .call();
+        server.join().unwrap();
+        assert_eq!(
+            result
+                .expect("700ms outbound dial is within the 3s phase budget")
+                .status(),
+            200
+        );
+
+        let (port, server) = delayed_proxy();
+        let budget = Budget::new(std::sync::Arc::new(|| true)).child(Duration::from_millis(100));
+        let result = agent(port, "nonce", &budget)
+            .unwrap()
+            .get("http://probe.invalid/")
+            .call();
+        server.join().unwrap();
+        assert!(
+            result.is_err(),
+            "the phase deadline must still bound SOCKS CONNECT"
+        );
+    }
     #[test]
     fn download_caps_reads_and_does_not_accept_a_short_or_cancelled_body() {
         let budget = Budget::new(std::sync::Arc::new(|| true));
