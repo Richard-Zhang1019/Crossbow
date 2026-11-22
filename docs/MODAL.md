@@ -29,7 +29,7 @@ API 风格参考 [Ant Design Modal](https://ant.design/components/modal/)，实�
 确认成功由业务修改 open；失败不会自动关窗。裸 Promise 异常经统一 Notification；已有 notify.run 的业务继续自己处理结果。每次确认拥有独立通知标识。
 自定义 footer 的按钮仍由业务负责重复提交保护、禁用/等待与成功关闭。组件不拦截业务按钮。需要 form 提交时用唯一 form id 和 Button 的 form 属性关联，底栏不放在滚动正文中。
 
-单个或嵌套弹窗的焦点、背景交互隔离、页面滚动锁由 Base UI 负责；共享层级协调还覆盖兄弟实例，仅最顶层响应 Esc/外部关闭并拥有焦点锁。每个标题有独立 ARIA ID。嵌套 Select 仍使用现有 primitive，Esc 先收起 Select。标题与 footer 固定，正文是唯一垂直滚动区；日志摘要的 pre 不再产生第二个纵向滚动区。
+单个或嵌套弹窗的焦点、背景交互隔离、页面滚动锁由 Base UI 负责；共享层级协调还覆盖兄弟实例，仅最顶层响应 Esc/外部关闭并拥有焦点锁。每个标题有独立 ARIA ID。嵌套 Select 仍使用现有 primitive，Esc 先收起 Select。标题与 footer 固定，正文是唯一垂直滚动区；日志摘要的 pre 不再产生第二个纵向滚动区。长标题视觉最多三行，完整文本保留在可访问名称中，字符串标题还提供悬停全文，防止挤出操作区。统一通知由始终挂载的 live region 承载，保证 Modal 打开后才到达的错误不会被背景隔离从可访问树隐藏；背景应用继续隔离。
 
 保持当前条件挂载方式，关闭后的业务卸载清理仍执行。不要把任务取消、会话释放、复制反馈清理搬进 Modal。外部强制改变 open 不受 closeDisabled 阻止，业务仍负责应用退出/导航时的任务处理。
 
@@ -55,6 +55,6 @@ main fa13061 的 12 个消费文件、14 处原 Dialog 全部迁移，旧实现�
 
 ## 回归
 
-`node scripts/dev/verify-modal.mjs`：生产 Modal/Select 的合成业务夹具，验证异步失败留草稿、成功等待受控关闭、重复提交/关闭保护、嵌套及兄弟层级、ARIA、Select Esc、双向 Tab、焦点恢复、隐藏保留、默认/最小窗口与固定底栏。已纳入两处 CI 场景列表。
+`node scripts/dev/verify-modal.mjs`：生产 Modal/Select 的合成业务夹具，验证异步失败留草稿、成功等待受控关闭、重复提交/关闭保护、嵌套及兄弟层级、ARIA、Select Esc、双向 Tab、焦点恢复、隐藏保留、默认/最小窗口与固定底栏、极长标题的操作可达及晚到通知可访问性。已纳入两处 CI 场景列表。
 既有 custom-groups、process-rules、user-rules、rule-sets、scenes、package-policies、node-probes 和 verify-scenarios 继续保护业务；仅更新旧组件 CSS 选择器，不削弱业务断言。生产构建和前端单测检查 API 与按钮统一性。
 这是浏览器生产组件+脱敏 IPC 验证；原生 WebView、系统对话框及完整安装环境待实机验收，不以模拟替代。

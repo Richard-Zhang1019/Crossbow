@@ -1,0 +1,34 @@
+{
+  "source_commit": "fc937ad77e7dc3ef1eb7b3374aa5e39d706849cb",
+  "method": "production Modal/Select/NotificationProvider; observed in isolated review probe, values extracted from tool output",
+  "viewport": {
+    "width": 880,
+    "height": 560
+  },
+  "long_title": {
+    "characters": 360,
+    "popup": {
+      "top": 24,
+      "bottom": 536,
+      "height": 512
+    },
+    "header": {
+      "top": 25,
+      "bottom": 498,
+      "height": 473
+    },
+    "footer": {
+      "top": 530,
+      "bottom": 587,
+      "height": 57
+    },
+    "clipped": true
+  },
+  "notification": {
+    "arrival": "after modal open",
+    "ancestor_aria_hidden": true,
+    "details_click_closed_draft": false
+  },
+  "nested_select_escape": "only Select closes",
+  "grandchild_escape": "only grandchild closes"
+}

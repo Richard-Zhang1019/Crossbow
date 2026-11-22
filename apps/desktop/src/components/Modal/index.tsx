@@ -97,7 +97,7 @@ export default function Modal({open,title,children,onOk,onCancel,okText,cancelTe
           if(keyboard&&!locked&&!pending.current)onCancel();
         }} aria-hidden={!top||undefined} style={{"--cb-modal-width":typeof width==="number"?`${width}px`:width} as CSSProperties} aria-describedby={undefined}>
           <header className="cb-modal-header">
-            <Dialog.Title className="cb-modal-title">{title}</Dialog.Title>
+            <Dialog.Title className="cb-modal-title" title={typeof title === "string" ? title : undefined}>{title}</Dialog.Title>
             {closable&&<Dialog.Close render={<Button iconOnly size="small" />} disabled={locked} aria-label={t("studio.close")}>×</Dialog.Close>}
           </header>
           <div className="cb-modal-body">{children}</div>
