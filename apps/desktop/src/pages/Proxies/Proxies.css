@@ -1,9 +1,6 @@
 /* Approved node toolbar; scoped to avoid changing other shared context pages. */
 .cb-node-toolbar-page .cb-node-page-title { font-size:22px; font-weight:600; color:var(--cb-text); margin:0 10px 24px; }
 .cb-node-nav-caption { font-size:12px; color:var(--cb-text-dim); margin:0 10px 14px; }
-/* #634：策略组标题行承载自定义组管理入口，入口不再单独占据一行。 */
-.cb-node-nav-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 10px 10px; }
-.cb-node-nav-head .cb-node-nav-caption { margin:0; flex:1; min-width:0; }
 .cb-node-toolbar-page .cb-node-group > .cb-node-heading { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin:0 0 10px; }
 .cb-node-heading-copy { min-width:0; flex:1; }
 .cb-node-heading h1 { font-size:20px; font-weight:600; margin:0; line-height:1.4; overflow-wrap:anywhere; }
