@@ -19,6 +19,6 @@ try{
  await page.evaluate(()=>window.__cb.userFixture.fail=false);await dialog.getByRole('button',{name:'保存',exact:true}).click();await page.waitForFunction(()=>window.__cb.userFixture.rules[0].value==='2001:db8:1234::/48');
  await page.evaluate(()=>{window.__cb.emit('ui://lang','en');window.__cb.emit('ui://theme','dark');});await page.setViewportSize({width:880,height:560});await page.getByText('User rules',{exact:true}).first().waitFor();await page.screenshot({path:out+'/dark-small.png'});
  await page.getByRole('button',{name:'Edit',exact:true}).first().click();await page.screenshot({path:out+'/editor.png'});await page.getByRole('dialog').getByRole('button',{name:'Cancel',exact:true}).click();await page.evaluate(()=>window.dispatchEvent(new CustomEvent('cb:goto',{detail:JSON.stringify({page:'profiles',control:'cb-user-rule',source:'2001:db8::1:443'})})));await page.getByRole('dialog').waitFor();assert.equal(await page.getByRole('dialog').getByRole('textbox').inputValue(),'2001:db8::1/128');
- assert.deepEqual(errors,[]);console.log('User-rule production component checks passed');
+ assert.deepEqual(errors,[]);assert.deepEqual(await page.evaluate(()=>window.__cb.unknown),[],'unregistered IPC commands');console.log('User-rule production component checks passed');
  }
 }finally{await browser.close();await vite.close();}

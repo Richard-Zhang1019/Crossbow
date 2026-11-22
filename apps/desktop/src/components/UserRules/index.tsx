@@ -18,13 +18,20 @@ function candidate(raw:string):Pick<UserRule,"kind"|"value"> {
 export default function UserRules({preset}:{preset?:string}) {
  const t=useT(),alive=useRef(false),revision=useRef(0),pending=useRef(false),draftBase=useRef<UserRule[]|null>(null);
  const [status,setStatus]=useState<UserRuleStatus|null>(null),[failed,setFailed]=useState(false),[busy,setBusy]=useState(false),[draft,setDraft]=useState<UserRule|null>(null);
- const load=useCallback(async()=>{const seq=++revision.current;try{const next=await ipc.userRules();if(alive.current&&seq===revision.current){if(draftBase.current===null)draftBase.current=next.rules;setStatus(next);setFailed(false);void notify.resolve("user-rules-read");}}catch(e){if(alive.current&&seq===revision.current){setFailed(true);notify.error(e,"user-rules-read");}}},[]);
+ // draftBase always mirrors the last loaded server list: the stale-edit guard must
+ // compare against the newest state, not the list captured when the page mounted.
+ const load=useCallback(async()=>{const seq=++revision.current;try{const next=await ipc.userRules();if(alive.current&&seq===revision.current){draftBase.current=next.rules;setStatus(next);setFailed(false);void notify.resolve("user-rules-read");}}catch(e){if(alive.current&&seq===revision.current){setFailed(true);notify.error(e,"user-rules-read");}}},[]);
  useEffect(()=>{alive.current=true;void load();const off=[ipc.onProfileSwitched(()=>void load()),ipc.onProfileUpdated(()=>void load()),ipc.onEngineChanged(()=>void load())];return()=>{alive.current=false;revision.current++;off.forEach(p=>void p.then(f=>f(),e=>notify.error(e,"user-rules-listener")));};},[load]);
  useEffect(()=>{if(preset)setDraft({id:crypto.randomUUID(),...candidate(preset),target:"DIRECT",enabled:true});},[preset]);
  const openDraft=(rule:UserRule)=>{draftBase.current=status?.rules??null;setDraft(rule);};
  const change=async(rules:UserRule[],expected=status?.rules)=>{
   if(!status||!expected||pending.current||failed)return;pending.current=true;setBusy(true);
-  try{const result=await notify.run(`user-rule-${crypto.randomUUID()}`,t("ur.title"),()=>ipc.setUserRules(expected,rules));if(alive.current&&result.ok){setDraft(null);await load();}}finally{pending.current=false;if(alive.current)setBusy(false);}
+  let saved=false;
+  try{const result=await notify.run(`user-rule-${crypto.randomUUID()}`,t("ur.title"),()=>ipc.setUserRules(expected,rules));saved=alive.current&&result.ok;if(saved)setDraft(null);}
+  finally{pending.current=false;if(alive.current)setBusy(false);}
+  // A rejected save is usually a stale list (another writer or a refresh landed
+  // mid-edit). Reload so the preserved draft can be retried instead of failing forever.
+  if(alive.current)await load();
  };
  const move=(index:number,offset:number)=>{if(!status)return;const rules=[...status.rules];[rules[index],rules[index+offset]]=[rules[index+offset],rules[index]];void change(rules);};
  return <section className="cb-process-rules" aria-label={t("ur.title")}>

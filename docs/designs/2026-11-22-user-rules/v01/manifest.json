@@ -3,13 +3,13 @@
   "version": "v01",
   "issue": 605,
   "base": "e068a681187454e91e19b62ef38218cab3182d43",
-  "status": "implemented; local/simulated/controlled native checked; native full lifecycle pending",
+  "status": "implemented; local/simulated/controlled native checked; review fixes applied (stale-edit guard + CI registration); native full lifecycle pending",
   "source_sha256": {
     "crates/crossbow-core/src/user_rules.rs": "f66f7b1391ac36307cf48d7899577c0ffc2a1e8ec6cd42b5d9df443e758966c3",
     "crates/crossbow-core/src/model.rs": "1417630ad005c11a5abb8e3e81e92443a428d5a22246807b4971fb2f74d0842e",
     "crates/crossbow-core/src/render.rs": "39a4e3e1c6d7daa8355f202a55135d8ccebaea7cf93b997799aa6186b9439a58",
     "apps/desktop/src-tauri/src/commands/rules.rs": "f946de7027aa5e1fe2c0c956151f031caeab777bf7a969a8c9816edd5fa74949",
-    "apps/desktop/src/components/UserRules/index.tsx": "3db27c0d9f90453097c568f92591c91f58eda9e609eb3fd10a50d9e95c67ce0b",
+    "apps/desktop/src/components/UserRules/index.tsx": "bab3ca39956e6be2c6b6857d68d7bef25df69487c8ab5bf1561e96b6967c16b5",
     "apps/desktop/src/components/UserRules/UserRules.css": "8eaf3b7ee0fdeafc615f9097494e7691dd4779ecb5c1f63202c898b9529920a8",
     "apps/desktop/src/components/ProcessRules/ProcessRules.css": "ac703ded12d4877efc5b215e6932b771884664ba8ed9bf173d3645748e4de781",
     "apps/desktop/src/pages/Connections/index.tsx": "afe688c972b183e9c5444e66828d709dfb913899f4dafbd9e6812969694c2212",
@@ -17,7 +17,7 @@
     "apps/desktop/src/App.tsx": "010bfa2307f50cf1377a29f1f4abe0fedcbc0ea75ccbc939426a14d966c261a1",
     "apps/desktop/src/services/ipc.ts": "d616105283a8e13a3ec645fc464d21e2d90d8b6a61d763edb3d254b6d07e3248",
     "apps/desktop/src/i18n/i18n.ts": "68c9afc8a28df837963055fb43710c4b2355124ce10ad7eae31c14ee3b108679",
-    "scripts/dev/verify-user-rules.mjs": "01073cb04eb5a386529997f80f69c34765f4c572db640a5ead662590b0044f24"
+    "scripts/dev/verify-user-rules.mjs": "f899c9a0ffd57e2c3698df2f920fd48eec74c508172346f8a3abd5b6ca7469cc"
   },
   "artifacts": {
     "source.zip": "588d66bc9a6d82ab81d06da1018810d8a15488c0685fe268d97313c648756321",
