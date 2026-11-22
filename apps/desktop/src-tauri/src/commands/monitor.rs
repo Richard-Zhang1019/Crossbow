@@ -156,6 +156,22 @@ pub(crate) async fn run_diagnosis(
     .await
     .map_err(|e| e.to_string())
 }
+/// #603：用户主动触发的一次 DNS 解析对比（系统解析 vs 内核真实业务解析）。
+/// 只读：不改配置、不切换内核、不写磁盘。
+#[tauri::command]
+pub(crate) async fn diagnose_dns(
+    app: AppHandle,
+    domain: String,
+    record_type: String,
+) -> Result<crate::diagnostics::dns_probe::DnsProbeResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        crate::diagnostics::dns_probe::run(&state, &domain, &record_type)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub(crate) async fn open_diagnosis_guide(url: String) -> Result<(), String> {
     let url = url::Url::parse(&url).map_err(|_| "Invalid troubleshooting URL")?;

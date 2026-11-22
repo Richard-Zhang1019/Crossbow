@@ -11,6 +11,7 @@ import { PageHead } from "@/pages/Home";
 import { ProgressRing } from "@/components/ProgressRing";
 import { DIAG_STEPS, navigateTo } from "@/lib/workflow";
 import { dedupeObservedTargets, failedChecks, faultEvidenceState, faultEvidenceText, faultLayerStats, faultProbeText, guideUrl, isStale, probeOk, remainingAge, shareText, type DiagnosisSnapshot } from "./report";
+import DnsCheck from "./DnsCheck";
 
 let previousReport: DiagnosisSnapshot | null = null;
 
@@ -361,19 +362,24 @@ export default function DiagnosticsPage({
       {!results && !runFailed ? (
         <>
           {faultCard}
-          <div className="cb-empty">
-            <span className="cb-empty-sig" aria-hidden="true"><Icon name="pulse" size={20} /></span>
-            <h2>{t("diag.emptyTitle")}</h2>
-            <p>{repairRunning ? repairLabel : t("diag.emptyHint")}</p>
-            <Button variant="primary" disabled={!listeners} loading={running} onClick={() => void run()}>
-              <span role="status">{repairRunning ? repairLabel : t("diag.run")}</span>
-            </Button>
+          {/* 空态与 DNS 卡片共用唯一滚动区：窗口变矮时不会互相覆盖。 */}
+          <div className="cb-diag-scroll">
+            <div className="cb-empty">
+              <span className="cb-empty-sig" aria-hidden="true"><Icon name="pulse" size={20} /></span>
+              <h2>{t("diag.emptyTitle")}</h2>
+              <p>{repairRunning ? repairLabel : t("diag.emptyHint")}</p>
+              <Button variant="primary" disabled={!listeners} loading={running} onClick={() => void run()}>
+                <span role="status">{repairRunning ? repairLabel : t("diag.run")}</span>
+              </Button>
+            </div>
+            <DnsCheck revision={revision} />
           </div>
         </>
       ) : (
         <>
           {statusBand}
           {faultCard}
+          <div className="cb-diag-scroll">
           <div className="cb-diag-results">
             {DIAG_STEPS.map((id) => {
               const row = results?.find((r) => r.id === id),
@@ -431,6 +437,8 @@ export default function DiagnosticsPage({
                 </section>
               );
             })}
+          </div>
+          <DnsCheck revision={revision} />
           </div>
         </>
       )}
