@@ -702,6 +702,33 @@ mod portable_policy_tests {
         data
     }
     #[test]
+    fn domain_user_rules_stay_local_and_are_never_exported() {
+        // #605 的域名/IP 用户规则不在 v2 承诺内：导出不携带，导入不覆盖。
+        let local_rule = crate::user_rules::UserRule {
+            id: "local-user-rule".into(),
+            kind: crate::user_rules::Kind::Domain,
+            value: "local-only.example".into(),
+            target: "DIRECT".into(),
+            enabled: true,
+        };
+        let mut target = source();
+        target.user_rules = vec![local_rule.clone()];
+        let text = export_package(&target).unwrap();
+        assert!(!text.contains("local-only.example"));
+
+        let mut destination = StoreSchema {
+            user_rules: vec![local_rule],
+            ..StoreSchema::default()
+        };
+        ConfigPayload::parse(export_package(&source()).unwrap().as_bytes())
+            .unwrap()
+            .merge_into(&mut destination)
+            .unwrap();
+        assert_eq!(destination.user_rules.len(), 1);
+        assert_eq!(destination.user_rules[0].value, "local-only.example");
+    }
+
+    #[test]
     fn v2_roundtrip_merges_replaces_without_machine_state_or_downloads() {
         let mut source = source();
         source.engine.tun_enable = true;

@@ -155,9 +155,37 @@ pub struct PackagePreview {
     report: ConfigImportReport,
 }
 
+/// 预览依赖的规则集事实。缓存、更新时间和错误文本由后台刷新写入，
+/// 若参与指纹，一次定时刷新就会让等待确认的预览误报「已过期」。
+#[derive(serde::Serialize)]
+struct RuleSetStamp<'a> {
+    id: &'a str,
+    name: &'a str,
+    url: &'a str,
+    behavior: crossbow_core::rule_sets::Behavior,
+    target: &'a str,
+    enabled: bool,
+    interval_secs: u32,
+}
+
+fn rule_set_stamps(sets: &[crossbow_core::rule_sets::RuleSet]) -> Vec<RuleSetStamp<'_>> {
+    sets.iter()
+        .map(|set| RuleSetStamp {
+            id: &set.id,
+            name: &set.name,
+            url: &set.url,
+            behavior: set.behavior,
+            target: &set.target,
+            enabled: set.enabled,
+            interval_secs: set.interval_secs,
+        })
+        .collect()
+}
+
 fn package_target(data: &crossbow_core::StoreSchema) -> Result<[u8; 32], String> {
     use sha2::{Digest, Sha256};
     let mut hash = Sha256::new();
+    let rule_sets = rule_set_stamps(&data.rule_sets);
     serde_json::to_writer(
         &mut hash,
         &(
@@ -167,7 +195,7 @@ fn package_target(data: &crossbow_core::StoreSchema) -> Result<[u8; 32], String>
             &data.engine,
             &data.dns,
             &data.process_rules,
-            &data.rule_sets,
+            &rule_sets,
         ),
     )
     .map_err(|_| "pkg.errorCommit".to_owned())?;
@@ -544,6 +572,31 @@ mod tests {
         assert_ne!(package_target(&target).unwrap(), stamp);
         target.active_profile = None;
         target.engine.mixed_port += 1;
+        assert_ne!(package_target(&target).unwrap(), stamp);
+    }
+
+    #[test]
+    fn background_rule_set_refresh_does_not_invalidate_a_waiting_preview() {
+        let mut target = crossbow_core::StoreSchema::default();
+        target.rule_sets.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "set", "name": "Set", "url": "https://example.invalid/rules",
+                "behavior": "domain", "target": "DIRECT", "enabled": true,
+                "interval_secs": 3600, "payload": ["a.example"], "updated_at": 1
+            }))
+            .unwrap(),
+        );
+        let stamp = package_target(&target).unwrap();
+        // 定时刷新只改缓存/时间/错误，不改变导入结果，不能把待确认的预览判为过期。
+        target.rule_sets[0].updated_at += 3600;
+        target.rule_sets[0].last_error = Some("refresh failed".into());
+        target.rule_sets[0].payload.push("b.example".into());
+        assert_eq!(package_target(&target).unwrap(), stamp);
+        // 启停与名称会改变注入结果和冲突计数，必须让预览失效。
+        target.rule_sets[0].enabled = false;
+        assert_ne!(package_target(&target).unwrap(), stamp);
+        target.rule_sets[0].enabled = true;
+        target.rule_sets[0].name = "Renamed".into();
         assert_ne!(package_target(&target).unwrap(), stamp);
     }
 
