@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import Select from "@/components/Select";
-import Dialog from "@/components/Dialog";
+import Modal from "@/components/Modal";
 import { Input } from "@/components/Controls";
 import { Icon } from "@/components/Icon";
 import { Button } from "@/components/Button";
@@ -276,13 +276,25 @@ export default function SceneRules() {
       )}
       <p className="cb-scene-footnote">{t("settings.scenes.behavior")}</p>
       {adding && (
-        <Dialog
-          title={t("settings.scenes.addNetwork")}
-          onClose={() => {
+        <Modal open footer={<div className="actions">
+              <Button disabled={busy} onClick={() => setAdding(false)}>
+                {t("ov.cancel")}
+              </Button>
+              <Button
+                type="submit" form="cb-form-scenerules"
+                variant="primary"
+                disabled={!validName || busy}
+                loading={busy}
+              >
+                {t("settings.scenes.save")}
+              </Button>
+            </div>}
+          closeDisabled={busy} title={t("settings.scenes.addNetwork")}
+          onCancel={() => {
             if (!busy) setAdding(false);
           }}
         >
-          <form
+          <form id="cb-form-scenerules"
             className="cb-scene-form"
             onSubmit={(e) => {
               e.preventDefault();
@@ -319,21 +331,9 @@ export default function SceneRules() {
               disabled={busy}
             />
             <p className="cb-control-note">{t("settings.scenes.proxyHint")}</p>
-            <div className="actions">
-              <Button disabled={busy} onClick={() => setAdding(false)}>
-                {t("ov.cancel")}
-              </Button>
-              <Button
-                type="submit"
-                variant="primary"
-                disabled={!validName || busy}
-                loading={busy}
-              >
-                {t("settings.scenes.save")}
-              </Button>
-            </div>
+
           </form>
-        </Dialog>
+        </Modal>
       )}
     </section>
   );

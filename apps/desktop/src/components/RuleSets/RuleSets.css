@@ -132,7 +132,7 @@
 }
 /* Shared dialog labels carry standalone-field margins. This grouped form uses
    its own row rhythm so the submit controls stay visible at minimum height. */
-.cb-dialog .cb-rulesets-form label {
+.cb-modal .cb-rulesets-form label {
   margin: 0;
   display: flex;
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/Button";
 import { Input, Switch } from "@/components/Controls";
-import Dialog from "@/components/Dialog";
+import Modal from "@/components/Modal";
 import Select from "@/components/Select";
 import PopoverPanel from "@/components/PopoverPanel";
 import { subscriptionCleanup } from "@/lib/unlisten";
@@ -250,13 +250,30 @@ export default function RuleSets() {
       )}
       <p className="cb-control-note">{t("rs.priority")}</p>
       {draft && (
-        <Dialog
-          title={t(draft.id ? "rs.edit" : "rs.add")}
-          onClose={() => {
+        <Modal open footer={<div className="cb-rulesets-form-actions">
+              <Button disabled={busy !== null} onClick={() => setDraft(null)}>
+                {t("pr.cancel")}
+              </Button>
+              <Button
+                type="submit" form="cb-form-rulesets"
+                variant="primary"
+                loading={busy === "save"}
+                disabled={
+                  busy !== null ||
+                  !draft.name.trim() ||
+                  !draft.url.trim() ||
+                  !status?.targets.includes(draft.target)
+                }
+              >
+                {t("pr.save")}
+              </Button>
+            </div>}
+          closeDisabled={busy !== null} title={t(draft.id ? "rs.edit" : "rs.add")}
+          onCancel={() => {
             if (!pending.current) setDraft(null);
           }}
         >
-          <form
+          <form id="cb-form-rulesets"
             className="cb-rulesets-form"
             onSubmit={(e) => {
               e.preventDefault();
@@ -348,26 +365,9 @@ export default function RuleSets() {
               />
             </label>
             <p className="cb-control-note">{t("rs.formHint")}</p>
-            <div className="cb-rulesets-form-actions">
-              <Button disabled={busy !== null} onClick={() => setDraft(null)}>
-                {t("pr.cancel")}
-              </Button>
-              <Button
-                type="submit"
-                variant="primary"
-                loading={busy === "save"}
-                disabled={
-                  busy !== null ||
-                  !draft.name.trim() ||
-                  !draft.url.trim() ||
-                  !status?.targets.includes(draft.target)
-                }
-              >
-                {t("pr.save")}
-              </Button>
-            </div>
+
           </form>
-        </Dialog>
+        </Modal>
       )}
     </section>
   );

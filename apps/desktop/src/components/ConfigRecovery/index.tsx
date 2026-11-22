@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/Button";
-import Dialog from "@/components/Dialog";
+import Modal from "@/components/Modal";
 import { ipc, type ConfigSnapshot } from "@/services/ipc";
 import { notify } from "@/notifications/service";
 import { useT } from "@/i18n/i18n";
@@ -57,7 +57,7 @@ export default function ConfigRecovery({
     setBusyId(null);
   };
   return (
-    <Dialog title={t("backup.title")} onClose={onClose}>
+    <Modal open footer={null} closeDisabled={busyId !== null} title={t("backup.title")} onCancel={onClose}>
       <p className="cb-control-note">{t("backup.impact")}</p>
       {phase === "loading" ? (
         <p role="status">{t("workflow.loading")}</p>
@@ -86,6 +86,6 @@ export default function ConfigRecovery({
           ))}
         </div>
       )}
-    </Dialog>
+    </Modal>
   );
 }

@@ -1,4 +1,4 @@
-import Dialog from "@/components/Dialog";
+import Modal from "@/components/Modal";
 import SegmentedControl from "@/components/SegmentedControl";
 import {Input, Switch} from "@/components/Controls";
 import { Button, ButtonBase } from "@/components/Button";
@@ -140,14 +140,14 @@ export default function OverridePanel({
     overrides.find((override) => override.id === editingId) ?? overrides[0];
   return (
     <section className="cb-overrides-workspace">
-      {createOpen && <Dialog title={t("ov.create")} onClose={()=>{if(!creating)onCreateClose()}}>
-        <form className="cb-override-create-form" onSubmit={e=>{e.preventDefault();void create(newKind)}}>
+      {createOpen && <Modal open footer={<div className="actions"><Button disabled={creating} onClick={onCreateClose}>{t("ov.cancel")}</Button><Button type="submit" form="cb-form-overridepanel" variant="primary" disabled={creating||!newName.trim()} loading={creating}>{t("ov.createAction")}</Button></div>} closeDisabled={creating} title={t("ov.create")} onCancel={()=>{if(!creating)onCreateClose()}}>
+        <form id="cb-form-overridepanel" className="cb-override-create-form" onSubmit={e=>{e.preventDefault();void create(newKind)}}>
           <label htmlFor="new-override-name">{t("ov.namePlaceholder")}</label>
           <Input id="new-override-name" autoFocus value={newName} disabled={creating} onChange={e=>setNewName(e.target.value)} placeholder={t("ov.namePlaceholder")}/>
           <SegmentedControl label={t("ov.type")} value={newKind} onChange={setNewKind} disabled={creating} options={[{value:"script",label:t("ov.newScript")},{value:"merge",label:t("ov.newMerge")}]} />
-          <div className="actions"><Button disabled={creating} onClick={onCreateClose}>{t("ov.cancel")}</Button><Button type="submit" variant="primary" disabled={creating||!newName.trim()} loading={creating}>{t("ov.createAction")}</Button></div>
+
         </form>
-      </Dialog>}
+      </Modal>}
       {loadError && overrides.length === 0 ? (
         <div className="cb-empty">
           <p role="status">{t("ov.loadFailed")}</p>

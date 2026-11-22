@@ -1,7 +1,7 @@
 import { useClipboardFeedback } from "@/hooks/useClipboardFeedback";
 import SegmentedControl from "@/components/SegmentedControl";
 import {SearchField} from "@/components/Controls";
-import Dialog from "@/components/Dialog";
+import Modal from "@/components/Modal";
 import Select from "@/components/Select";
 import { unsubscribe } from "@/lib/unlisten";
 import { navigateTo, sortConnections, connectionDetails } from "@/lib/workflow";
@@ -194,12 +194,12 @@ export default function ConnectionsPage() {
           />
         )}
       </div>
-      {selected && <Dialog title={t("conn.details")} onClose={() => { clearCopyFeedback(); setInspected(null); }}>
+      {selected && <Modal open footer={<div className="actions"><span role="status">{copied?t("workflow.copied"):""}</span><Button onClick={()=>void copyDetails(JSON.stringify({...connectionDetails(selected),upload:selected.up,download:selected.down,elapsed_ms:selected.elapsed_ms},null,2))}>{t("workflow.copyAll")}</Button></div>} title={t("conn.details")} onCancel={() => { clearCopyFeedback(); setInspected(null); }}>
         {!snapshot.rows.some(r=>r.id===selected.id) && <p className="cb-control-note">{t("conn.closedDetail")}</p>}
         <dl className="cb-connection-details">{Object.entries(connectionDetails(selected)).map(([key,value])=><div key={key}><dt>{t(({Target:"col.target",Network:"workflow.network",Type:"workflow.type",Rule:"col.rule",Chain:"col.chains",Process:"col.process",ID:"workflow.id"} as Record<string,string>)[key])}</dt><dd className="cb-selectable">{value||"—"}</dd><Button size="small" disabled={!value} onClick={()=>void copyDetails(value)} aria-label={`${t("workflow.copy")} ${t(({Target:"col.target",Network:"workflow.network",Type:"workflow.type",Rule:"col.rule",Chain:"col.chains",Process:"col.process",ID:"workflow.id"} as Record<string,string>)[key])}`}>{t("workflow.copy")}</Button></div>)}</dl>
         <p className="cb-control-note">{t("ur.priority")}</p><Button onClick={()=>navigateTo({page:"profiles",control:"cb-user-rule",source:selected.host})}>{t("ur.fromConnection")}</Button>
-        <div className="actions"><span role="status">{copied?t("workflow.copied"):""}</span><Button onClick={()=>void copyDetails(JSON.stringify({...connectionDetails(selected),upload:selected.up,download:selected.down,elapsed_ms:selected.elapsed_ms},null,2))}>{t("workflow.copyAll")}</Button></div>
-      </Dialog>}
+
+      </Modal>}
 
     </div>
   );

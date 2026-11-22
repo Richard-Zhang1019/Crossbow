@@ -4,7 +4,7 @@ import {useT} from "@/i18n/i18n";
 import {notify} from "@/notifications/service";
 import {Button} from "@/components/Button";
 import {Input} from "@/components/Controls";
-import Dialog from "@/components/Dialog";
+import Modal from "@/components/Modal";
 import Select from "@/components/Select";
 import "../ProcessRules/ProcessRules.css";
 import "./UserRules.css";
@@ -47,11 +47,11 @@ export default function UserRules({preset}:{preset?:string}) {
    </div>)}
   </div>}
   <p className="cb-process-footnote">{t("ur.explain")}</p>
-  {draft&&<Dialog title={t("ur.title")} onClose={()=>{if(!pending.current)setDraft(null);}}><form className="cb-process-form" onSubmit={e=>{e.preventDefault();if(status){const expected=draftBase.current??status.rules;const rules=expected.some(r=>r.id===draft.id)?expected.map(r=>r.id===draft.id?draft:r):[...expected,draft];void change(rules,expected);};}}>
+  {draft&&<Modal open footer={<div className="cb-process-form-actions">{status?.rules.some(r=>r.id===draft.id)&&<Button tone="danger" disabled={busy} onClick={()=>void change((draftBase.current??status.rules).filter(r=>r.id!==draft.id),draftBase.current??status.rules)}>{t("pr.remove")}</Button>}<Button disabled={busy} onClick={()=>setDraft(null)}>{t("pr.cancel")}</Button><Button type="submit" form="cb-form-userrules" variant="primary" loading={busy} disabled={busy||!status||failed||!draft.value.trim()||!status.targets.includes(draft.target)}>{t("pr.save")}</Button></div>} closeDisabled={busy} title={t("ur.title")} onCancel={()=>{if(!pending.current)setDraft(null);}}><form id="cb-form-userrules" className="cb-process-form" onSubmit={e=>{e.preventDefault();if(status){const expected=draftBase.current??status.rules;const rules=expected.some(r=>r.id===draft.id)?expected.map(r=>r.id===draft.id?draft:r):[...expected,draft];void change(rules,expected);};}}>
    <label>{t("ur.match")}<Select label={t("ur.match")} value={draft.kind} disabled={busy} options={["DOMAIN","DOMAIN_SUFFIX","IP_CIDR"].map(value=>({value,label:value.replaceAll("_","-")}))} onChange={kind=>setDraft({...draft,kind:kind as UserRule["kind"]})}/><Input autoFocus value={draft.value} disabled={busy} maxLength={253} placeholder="example.com / 192.0.2.0/24 / 2001:db8::/64" onChange={e=>setDraft({...draft,value:e.target.value})}/></label>
    <label>{t("pr.targetLabel")}<Select label={t("pr.targetLabel")} value={draft.target} disabled={busy} options={(status?.targets??[]).map(value=>({value,label:value}))} onChange={target=>setDraft({...draft,target})}/></label>
    <p className="cb-control-note">{t("ur.editor")}</p>
-   <div className="cb-process-form-actions">{status?.rules.some(r=>r.id===draft.id)&&<Button tone="danger" disabled={busy} onClick={()=>void change((draftBase.current??status.rules).filter(r=>r.id!==draft.id),draftBase.current??status.rules)}>{t("pr.remove")}</Button>}<Button disabled={busy} onClick={()=>setDraft(null)}>{t("pr.cancel")}</Button><Button type="submit" variant="primary" loading={busy} disabled={busy||!status||failed||!draft.value.trim()||!status.targets.includes(draft.target)}>{t("pr.save")}</Button></div>
-  </form></Dialog>}
+
+  </form></Modal>}
  </section>;
 }

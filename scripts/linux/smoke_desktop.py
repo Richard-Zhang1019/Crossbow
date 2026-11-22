@@ -218,7 +218,7 @@ rules:
         driver.command('POST', '/element/' + input_id + '/value', {
             'text': subscription_url, 'value': list(subscription_url)})
         wait_until(lambda: driver.js('return document.querySelector("#profile-url").value') == subscription_url)
-        driver.click('.cb-dialog button[data-variant="primary"]')
+        driver.click('.cb-modal button[data-variant="primary"]')
         profiles = wait_until(lambda: driver.invoke('list_profiles'))
         profile_id = profiles[0]['id']
         driver.invoke('set_active_profile', {'id': profile_id})

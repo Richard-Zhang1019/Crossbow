@@ -1189,58 +1189,6 @@ summary:focus-visible {
   align-items: center;
   gap: 8px;
 }
-.cb-dialog {
-  position: fixed;
-  inset: 0;
-  margin: auto;
-  width: min(480px, calc(100vw - 32px));
-  max-height: calc(100dvh - 48px);
-  overflow: auto;
-  padding: 24px;
-  background: var(--cb-floating);
-  color: var(--cb-text);
-  border: 1px solid var(--cb-line-strong);
-  border-radius: 16px;
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
-}
-.cb-dialog::backdrop {
-  background: var(--cb-overlay);
-}
-.cb-dialog header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 20px;
-}
-.cb-dialog h2 {
-  font-size: var(--font-title);
-  font-weight: 550;
-}
-.cb-dialog header button {
-  font-size: var(--font-title);
-  color: var(--cb-text-dim);
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-}
-.cb-dialog header button:hover {
-  background: var(--cb-surface-2);
-}
-.cb-dialog label {
-  display: block;
-  font-size: var(--font-md);
-  margin: 18px 0 8px;
-}
-.cb-dialog .cb-input {
-  width: 100%;
-}
-.cb-dialog .actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 24px;
-}
 .cb-connection-table {
   overflow-x: auto;
   background: transparent;
@@ -1445,20 +1393,6 @@ summary:focus-visible {
   }
 }
 
-.cb-dialog-mask {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-modal);
-  background: var(--cb-overlay);
-  display: grid;
-  place-items: center;
-  padding: 24px;
-}
-.cb-dialog-mask .cb-dialog {
-  position: relative;
-  inset: auto;
-  margin: 0;
-}
 .cb-drop-indicator {
   padding: 20px;
   border: 1px dashed var(--cb-accent-line);

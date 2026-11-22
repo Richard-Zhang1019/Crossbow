@@ -1,4 +1,4 @@
-import Dialog from "@/components/Dialog";
+import Modal from "@/components/Modal";
 import { useClipboardFeedback } from "@/hooks/useClipboardFeedback";
 import { Icon } from "@/components/Icon";
 import { Button, ButtonBase } from "@/components/Button";
@@ -443,14 +443,14 @@ export default function DiagnosticsPage({
         </>
       )}
       {summaryText !== null && (
-        <Dialog title={t("diag.summaryPreview")} onClose={() => { clear(); setSummaryOpen(false); }}>
-          <pre className="cb-share-preview cb-selectable cb-mono">{summaryText}</pre>
-          <div className="actions">
+        <Modal open footer={<div className="actions">
             <Button variant="primary" onClick={() => void copy(summaryText, () => summaryText)}>
               <span role="status">{t(copied === summaryText ? "workflow.copied" : "diag.summaryCopy")}</span>
             </Button>
-          </div>
-        </Dialog>
+          </div>} title={t("diag.summaryPreview")} onCancel={() => { clear(); setSummaryOpen(false); }}>
+          <pre className="cb-share-preview cb-selectable cb-mono">{summaryText}</pre>
+
+        </Modal>
       )}
     </div>
   );

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Select from "@/components/Select";
-import Dialog from "@/components/Dialog";
+import Modal from "@/components/Modal";
 import { Icon } from "@/components/Icon";
 import { Button } from "@/components/Button";
 import { Input } from "@/components/Controls";
@@ -202,13 +202,29 @@ export default function ProcessRules({
       )}
       <p className="cb-process-footnote">{t("pr.footnote")}</p>
       {editing && (
-        <Dialog
-          title={t(editing.id ? "pr.editTitle" : "pr.add")}
-          onClose={() => {
+        <Modal open footer={<div className="cb-process-form-actions">
+              <Button disabled={busy !== null} onClick={() => setEditing(null)}>
+                {t("pr.cancel")}
+              </Button>
+              <Button
+                type="submit" form="cb-form-processrules"
+                variant="primary"
+                loading={busy === "save"}
+                disabled={
+                  busy !== null ||
+                  !editing.process.trim() ||
+                  !(status?.targets ?? []).includes(editing.target)
+                }
+              >
+                {t("pr.save")}
+              </Button>
+            </div>}
+          closeDisabled={busy !== null} title={t(editing.id ? "pr.editTitle" : "pr.add")}
+          onCancel={() => {
             if (!pending.current) setEditing(null);
           }}
         >
-          <form
+          <form id="cb-form-processrules"
             className="cb-process-form"
             onSubmit={(e) => {
               e.preventDefault();
@@ -241,25 +257,9 @@ export default function ProcessRules({
               />
             </label>
             <p className="cb-control-note">{t("pr.editorHint")}</p>
-            <div className="cb-process-form-actions">
-              <Button disabled={busy !== null} onClick={() => setEditing(null)}>
-                {t("pr.cancel")}
-              </Button>
-              <Button
-                type="submit"
-                variant="primary"
-                loading={busy === "save"}
-                disabled={
-                  busy !== null ||
-                  !editing.process.trim() ||
-                  !(status?.targets ?? []).includes(editing.target)
-                }
-              >
-                {t("pr.save")}
-              </Button>
-            </div>
+
           </form>
-        </Dialog>
+        </Modal>
       )}
     </section>
   );

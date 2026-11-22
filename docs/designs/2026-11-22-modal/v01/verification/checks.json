@@ -1,0 +1,23 @@
+{
+  "baseline": "fa13061f8a737e4d7879b7bea2f99527032342a7",
+  "after": "PR worktree; source hashes in manifest",
+  "platform": "macOS browser; production React + synthetic IPC",
+  "passed": [
+    "tsc + production Vite build",
+    "47 frontend unit tests",
+    "verify-modal",
+    "verify-custom-groups",
+    "verify-process-rules",
+    "verify-user-rules",
+    "verify-rule-sets",
+    "verify-scenes",
+    "verify-package-policies",
+    "verify-node-probes",
+    "verify-scenarios (10 scenarios)"
+  ],
+  "pending": [
+    "native Tauri WebView/installed app",
+    "CI",
+    "Windows/Linux native"
+  ]
+}
