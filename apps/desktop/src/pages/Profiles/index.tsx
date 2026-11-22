@@ -123,7 +123,10 @@ export default function ProfilesPage({
         const previous = await ipc.activeProfileId().catch(() => undefined);
         const result = await notify.run(`profile-import-${index}`, "", task, notificationText("import.done"), {
           titleKey: "profiles.title",
-          nextActions: previous === null ? ["continueSetup"] : ["nodes"],
+          // #632：导入成功不提供「选择节点」动作——节点页展示的是当前仍生效的旧
+          // 订阅，会把用户引到错误的来源。只有首次导入（尚无激活配置）保留设置引导；
+          // activeProfileId 读取失败（undefined）同样不产生带错误上下文的跳转。
+          nextActions: previous === null ? ["continueSetup"] : [],
         });
         if (!result.ok) allSucceeded = false;
         else if (previous === null) {

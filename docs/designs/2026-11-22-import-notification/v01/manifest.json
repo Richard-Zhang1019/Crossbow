@@ -1,0 +1,16 @@
+{
+  "date": "2026-11-22",
+  "version": "v01",
+  "issue": 632,
+  "status": "implemented; production-component IPC scenario and before/after evidence; review pending",
+  "source_sha256": {
+    "apps/desktop/src/pages/Profiles/index.tsx": "ff9ac998be289ceb6879541cb4830e8151ad3be72c45492be4fcf3020d98dda7",
+    "scripts/dev/verify-import-notification.mjs": "e0c0c1f1cf27f12c70972b1d2986f3a874eeeddac1f53a81310475dd5d06a3dc",
+    "scripts/dev/verify-lib.mjs": "7a2218f1f4af049eff072c4a2d75d94633900863482f353f2bfae63bf7e9d1e5"
+  },
+  "artifacts": {
+    "SPEC.md": "c550f4e06f5dbacce5ec4639106e85759999d11f9b5e8f8b76c7c30f244ab8b3",
+    "previews/after.png": "3dcf64ad9302fcb717446cb51337568a789fc1644afaab567aa17b8d187c30eb",
+    "previews/before.png": "bdf6f60f3af0cdefc4ba2db0954c7f6702d746d8466a37af4774cfbed41d73cb"
+  }
+}
