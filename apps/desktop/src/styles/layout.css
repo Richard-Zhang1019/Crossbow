@@ -2345,6 +2345,7 @@ textarea:focus-visible,
   margin: 0;
   font-size: var(--font-xs);
   color: var(--cb-text-dim);
+  overflow-wrap: anywhere;
 }
 .cb-fault-layers {
   display: flex;
@@ -2390,41 +2391,24 @@ textarea:focus-visible,
   flex-direction: column;
 }
 
-/* 状态带：唯一的状态语义出口（结论 + 故障 chip + 检查时间/首个阻塞 + 动作） */
-.cb-diag-summary {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex: none;
-  margin: 16px 0 10px;
-  padding: 12px 16px;
-  border: 1px solid var(--cb-line);
-  border-radius: 12px;
-  background: var(--cb-surface);
-}
-.cb-diag-summary h2 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--font-lg);
-  font-weight: 600;
-}
-.cb-diag-summary p {
-  font-size: var(--font-sm);
-  line-height: 18px;
-  color: var(--cb-text-dim);
-  margin-top: 2px;
-}
-.cb-diag-band-text { min-width: 0; flex: 1; }
-.cb-diag-band-chip {
-  padding: 1px 9px;
-  border-radius: 999px;
-  background: var(--cb-accent-soft);
-  color: var(--cb-accent);
-  font-size: var(--font-xs);
-  font-weight: 600;
-}
-.cb-diag-band-actions { margin-left: auto; display: flex; gap: 8px; flex: none; }
+/* #633: the page header owns actions; content grows only inside one scroll viewport. */
+.cb-diagnostics-page > .cb-page-head { flex-wrap: nowrap; align-items: flex-start; }
+.cb-diagnostics-page .cb-page-heading { flex: 1; }
+.cb-diag-band-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.cb-diag-section-title { font-size: var(--font-md); font-weight: 600; margin: 0; }
+.cb-diag-current { padding: 4px 0 20px; }
+.cb-diag-idle { margin-top: 12px; padding: 18px 20px; border: 1px solid var(--cb-line); border-radius: 10px; }
+.cb-diag-idle h3 { display: flex; align-items: center; gap: 8px; font-size: var(--font-lg); font-weight: 500; }
+.cb-diag-idle h3 svg { color: var(--cb-text-dim); flex: none; }
+.cb-diag-idle p { margin-top: 8px; color: var(--cb-text-dim); font-size: var(--font-sm); line-height: 1.65; }
+.cb-diag-tools { border-top: 1px solid var(--cb-line); padding-top: 18px; }
+.cb-diag-tools-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 16px; margin-bottom: 12px; }
+.cb-diag-tools-head p { color: var(--cb-text-dim); font-size: var(--font-xs); }
+.cb-diag-summary { display: flex; align-items: center; gap: 12px; margin: 12px 0; padding: 12px 16px; border-radius: 10px; background: var(--cb-surface); }
+.cb-diag-summary h2 { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; font-size: var(--font-lg); font-weight: 600; }
+.cb-diag-summary p { font-size: var(--font-sm); line-height: 18px; color: var(--cb-text-dim); margin-top: 4px; }
+.cb-diag-band-text { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.cb-diag-band-chip { padding: 1px 9px; border-radius: 999px; background: var(--cb-accent-soft); color: var(--cb-accent); font-size: var(--font-xs); font-weight: 600; }
 
 /* 故障取证：默认折叠为一行摘要条，展开为探针网格 */
 .cb-fault-evidence {
@@ -2449,12 +2433,8 @@ textarea:focus-visible,
   cursor: pointer;
 }
 .cb-fault-evidence-toggle:focus-visible { outline: 2px solid var(--cb-accent); outline-offset: -2px; }
-.cb-fault-evidence-toggle h2 {
-  margin: 0;
-  font-size: var(--font-md);
-  font-weight: 600;
-  flex: none;
-}
+.cb-diag-disclosure-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.cb-diag-disclosure-title { font-size: var(--font-md); font-weight: 600; }
 .cb-fault-chev {
   display: inline-flex;
   color: var(--cb-text-dim);
@@ -2465,10 +2445,8 @@ textarea:focus-visible,
 @media (prefers-reduced-motion: reduce) { .cb-fault-chev { transition: none; } }
 .cb-fault-evidence-sum {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--font-sm);
+  overflow-wrap: anywhere;
+  font-size: var(--font-xs);
   color: var(--cb-text-dim);
 }
 .cb-fault-state {
@@ -2488,13 +2466,6 @@ textarea:focus-visible,
 .cb-fault-detail {
   border-top: 1px solid var(--cb-line);
   padding: 14px 16px 16px;
-  /* 展开的取证详情封顶内滚：上一条也展开时卡片无限撑高，
-     会把 flex:1 的诊断列表挤到 0（用户实测）。列表必须有保底可见高度。 */
-  max-height: clamp(240px, 42vh, 440px);
-  overflow-y: auto;
-  /* 详情区内滚同样不让滚动条压到 pill 与文字 */
-  padding-inline-end: 12px;
-  scrollbar-gutter: stable;
 }
 .cb-fault-probe-grid {
   display: grid;
@@ -2539,6 +2510,9 @@ textarea:focus-visible,
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding: 4px 11px;
   border: 1px solid var(--cb-line);
   border-radius: 8px;
@@ -2552,20 +2526,8 @@ textarea:focus-visible,
 .cb-fault-prev summary:hover { color: var(--cb-text); }
 .cb-fault-prev .cb-fault-probe-grid { margin-top: 10px; }
 
-/* 诊断列表内容区（不再自己滚动，滚动由外层 .cb-diag-scroll 承担，见下方 #603 段）。 */
-.cb-diag-results {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  /* 保底可见高度：故障详情展开时列表也不允许被完全挤出视口 */
-  min-height: 150px;
-  max-height: none;
-  overflow-y: auto;
-  border-top: 1px solid var(--cb-line);
-  padding-top: 4px;
-  padding-inline-end: 12px;
-  scrollbar-gutter: stable;
-}
+/* Results, fault evidence and DNS share the scroll owner below. */
+.cb-diag-results { display: flex; flex-direction: column; border-top: 1px solid var(--cb-line); padding-top: 4px; }
 .cb-diag-results > section {
   flex: none;
   border: 0;
@@ -2575,23 +2537,15 @@ textarea:focus-visible,
   padding: 13px 0 13px 16px;
   position: relative;
 }
-/* #603：检查列表与 DNS 卡片共用一个滚动区，窗口变矮时不会互相覆盖；
-   列表本身不再单独滚动，避免出现嵌套滚动条。 */
 .cb-diag-scroll {
   flex: 1;
-  min-height: 150px;
+  min-height: 0;
   overflow-y: auto;
   padding-inline-end: 12px;
+  padding-bottom: 12px;
   scrollbar-gutter: stable;
 }
-.cb-diag-scroll > .cb-diag-results {
-  flex: none;
-  min-height: 0;
-  overflow: visible;
-  padding-inline-end: 0;
-  scrollbar-gutter: auto;
-}
-.cb-diag-scroll > .cb-dnsprobe-check { margin: 12px 0 10px; }
+.cb-diag-scroll:focus-visible { outline: 2px solid var(--cb-accent); outline-offset: -2px; }
 /* 首个失败项在列表内升级，替代独立的优先处理大卡 */
 .cb-diagnostic-step.first-failed { background: color-mix(in srgb, var(--cb-warn) 5%, transparent); }
 .cb-diagnostic-step.first-failed::before {
@@ -2614,7 +2568,7 @@ textarea:focus-visible,
   flex: none;
 }
 .cb-check-state-fail { color: var(--cb-bad); font-weight: 600; }
-/* #603 DNS 解析路径：默认折叠为一行；展开后内部滚动，不挤占唯一的检查列表滚动区。 */
+/* Auxiliary disclosures flow naturally within the diagnostics scroll viewport. */
 .cb-dnsprobe-check { flex: none; margin: 0 0 10px; padding: 0; gap: 0; overflow: hidden; }
 .cb-dnsprobe-check-toggle {
   display: flex;
@@ -2631,19 +2585,13 @@ textarea:focus-visible,
   cursor: pointer;
 }
 .cb-dnsprobe-check-toggle:focus-visible { outline: 2px solid var(--cb-accent); outline-offset: -2px; }
-.cb-dnsprobe-check-toggle h2 { margin: 0; font-size: var(--font-md); font-weight: 600; flex: none; }
 .cb-dnsprobe-check.open .cb-fault-chev { transform: rotate(90deg); }
-.cb-dnsprobe-check-sum {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--font-sm);
-  color: var(--cb-text-dim);
-}
+.cb-dnsprobe-check-sum { min-width: 0; overflow-wrap: anywhere; font-size: var(--font-xs); color: var(--cb-text-dim); }
 .cb-dnsprobe-tone {
   margin-left: auto;
-  flex: none;
+  flex: 0 1 auto;
+  max-width: 34%;
+  overflow-wrap: anywhere;
   padding: 2px 10px;
   border-radius: 999px;
   font-size: var(--font-xs);
@@ -2747,7 +2695,6 @@ textarea:focus-visible,
 @media (max-width: 720px) {
   .cb-fault-probe-grid { grid-template-columns: minmax(96px, 110px) minmax(0, 1fr) minmax(0, 1fr); }
   .cb-fault-grid-h, .cb-fault-grid-c { padding-inline: 10px; }
-  .cb-diag-band-actions .cb-button:first-child { display: none; }
 }
 
 /* 连接行操作菜单（#588 ⋯ 触发下拉，PopoverPanel portal） */

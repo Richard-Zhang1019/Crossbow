@@ -296,8 +296,8 @@ async function scenarioDiagnostics(page) {
   // 页面可以展示观测值，但导出摘要必须白名单化
   assert((await faultCard.textContent()).includes("SECRET-TOKEN"), "页面本身应显示系统代理观测值");
 
-  // 首次诊断：2 项失败（空状态 CTA 触发，动作唯一出口已移入状态带）
-  await page.locator(".cb-empty .cb-button", { hasText: "开始诊断" }).click();
+  // 首次诊断：2 项失败；页头保留唯一诊断操作，辅助区展开不遮挡。
+  await page.locator(".cb-diag-run", { hasText: "开始诊断" }).click();
   await eventually(page, "诊断完成并提示 2 项需要处理",
     async (p) => (await p.locator(".cb-diag-summary h2").textContent()).includes("2 项需要处理"), 20_000);
   assert(await page.locator("#cb-check-listener.has-issue").isVisible(), "失败检查行应有 has-issue 标记");

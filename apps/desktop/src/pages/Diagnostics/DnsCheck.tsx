@@ -71,8 +71,10 @@ export default function DnsCheck({ revision }: { revision: MutableRefObject<numb
         onClick={() => setOpen(value => !value)}
       >
         <span className="cb-fault-chev" aria-hidden="true"><Icon name="chevron" size={15} strokeWidth={2} /></span>
-        <h2>{t("dnsprobe.title")}</h2>
-        <span className="cb-dnsprobe-check-sum">{summary}</span>
+        <span className="cb-diag-disclosure-text">
+          <span className="cb-diag-disclosure-title">{t("dnsprobe.title")}</span>
+          <span className="cb-dnsprobe-check-sum">{summary}</span>
+        </span>
         {shown && <span className="cb-dnsprobe-tone" data-state={verdictTone(shown.probe.verdict)}>
           {t(`dnsprobe.verdict.${verdictId(shown.probe.verdict)}`)}
         </span>}

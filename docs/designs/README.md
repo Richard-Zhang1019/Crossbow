@@ -15,6 +15,7 @@
 
 | 日期 | 主题 | 版本 | 状态 | 文件 | 关联 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-11-22 | 诊断页：固定操作、本次结果与单一内容滚动 | v01 | 已实现，本地与模拟通过；原生/CI 待验 | [说明](2026-11-22-diagnostics-layout/v01/SPEC.md) · [改前](2026-11-22-diagnostics-layout/v01/previews/before-expanded-small.png) · [浅色](2026-11-22-diagnostics-layout/v01/previews/idle-light.png) · [小窗口](2026-11-22-diagnostics-layout/v01/previews/result-small-dark-en.png) · [源稿](2026-11-22-diagnostics-layout/v01/source.zip) | #633 |
 | 2026-11-22 | 自定义策略组：来源、成员与有效预览 | v01 | 已实现，本地/模拟/双内核隔离路由通过；待整机验收 | [说明](2026-11-22-custom-groups/v01/SPEC.md) · [改前](2026-11-22-custom-groups/v01/previews/before.png) · [浅色](2026-11-22-custom-groups/v01/previews/list.png) · [小窗口](2026-11-22-custom-groups/v01/previews/dark-small.png) · [源稿](2026-11-22-custom-groups/v01/source.zip) | #606 |
 | 2026-11-22 | 节点分项测试：TCP / HTTPS / UDP 与有界吞吐 | v01 | 已实现，本地/模拟/macOS 双内核通过；原生窗口及其他平台待验 | [规格](2026-11-22-node-probes/v01/SPEC.md) · [改前](2026-11-22-node-probes/v01/previews/before.png) · [分项结果](2026-11-22-node-probes/v01/previews/connectivity-light.png) · [小窗口](2026-11-22-node-probes/v01/previews/small-dark-en.png) · [源稿](2026-11-22-node-probes/v01/source.zip) · [原生证据](2026-11-22-node-probes/v01/verification/native.json) | #604（第二阶段） |
 | 2026-11-22 | 便携包 v2：进程规则与离线规则集迁移 | v01 | 已实现，本地/模拟/隔离原生通过；实际换机待验 | [说明](2026-11-22-portable-policies/v01/SPEC.md) · [预览](2026-11-22-portable-policies/v01/previews/preview.png) · [小窗口](2026-11-22-portable-policies/v01/previews/dark-small.png) · [源稿](2026-11-22-portable-policies/v01/source.zip) | #607 |
