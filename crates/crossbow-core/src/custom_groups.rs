@@ -199,6 +199,40 @@ pub fn inject(config: &str, profile_id: &str, groups: &[Group]) -> Result<String
         .extend(added);
     serde_yaml::to_string(&doc).map_err(|_| "Group serialization failed / 策略组编码失败".into())
 }
+/// Flag enrichment may rename a node into a custom group's name. Check after
+/// enrichment too, so a stopped core cannot persist a configuration it cannot start.
+pub fn validate_effective_names(
+    config: &str,
+    profile_id: &str,
+    groups: &[Group],
+) -> Result<(), String> {
+    let selected: BTreeSet<_> = groups
+        .iter()
+        .filter(|g| g.profile_id == profile_id)
+        .map(|g| &g.name)
+        .collect();
+    if selected.is_empty() {
+        return Ok(());
+    }
+    let doc: Value =
+        serde_yaml::from_str(config).map_err(|_| "Invalid rendered source".to_string())?;
+    let mut seen = BTreeSet::new();
+    for item in doc["proxies"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .chain(doc["proxy-groups"].as_array().into_iter().flatten())
+    {
+        if let Some(name) = item["name"].as_str() {
+            if !seen.insert(name) && selected.iter().any(|g| g.as_str() == name) {
+                return Err(
+                    "Group name collides after flag enrichment / 旗帜补全后组名与节点重名".into(),
+                );
+            }
+        }
+    }
+    Ok(())
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -229,6 +263,19 @@ mod tests {
             assert!(sb.contains("Personal"));
         }
         assert_eq!(inject(SOURCE, "other", &[group()]).unwrap(), SOURCE);
+    }
+    #[test]
+    fn flag_enrichment_cannot_create_a_duplicate_custom_group() {
+        let source = SOURCE
+            .replace("name: A", "name: 香港")
+            .replace("[A]", "[香港]");
+        let mut g = group();
+        g.name = "🇭🇰|香港".into();
+        g.members = vec!["香港".into()];
+        let injected = inject(&source, "p", &[g.clone()]).unwrap();
+        assert!(validate_effective_names(&injected, "p", &[g.clone()]).is_ok());
+        let enriched = crate::emoji::enrich_flags(&injected).unwrap();
+        assert!(validate_effective_names(&enriched, "p", &[g]).is_err());
     }
     #[test]
     fn invalid_references_names_and_empty_filters_fail() {

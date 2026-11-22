@@ -62,6 +62,8 @@ pub fn render_config_with(
         config = crate::emoji::enrich_flags(&config)
             .map_err(|e| RenderError::InvalidYaml(e.to_string()))?;
     }
+    crate::custom_groups::validate_effective_names(&config, profile_id, &store.custom_groups)
+        .map_err(RenderError::InvalidYaml)?;
     // 按进程分流规则（#570）：前插到订阅规则之前；不参与覆写链
     // （安全模式跳过覆写链时进程规则依然生效），目标策略失效的规则
     // 防御性丢弃，避免订阅更新后内核因未知策略启动失败。
