@@ -142,6 +142,9 @@ export interface PackagePreview {
     added_overrides: number;
     replaced_overrides: number;
     selects_profile: boolean;
+    added_process_rules?:number; replaced_process_rules?:number;
+    added_rule_sets?:number; replaced_rule_sets?:number;
+    policy_conflicts?:number; same_name_items?:number; unverified_targets?:number;
   };
 }
 
@@ -317,6 +320,19 @@ export interface NodeDelayOutcome {
   testedAtMs: number;
   sampleCount: number;
   detail: string;
+}
+
+/** #604: bounded local observations; never raw node names or arbitrary URLs on disk. */
+export type NodeQualityTarget = "google-http" | "google-https" | "cloudflare-https";
+export interface NodeQualitySample { atMs: number; class: "ok" | "timeout" | "failed" | "controller"; delayMs: number | null; }
+export interface NodeQualitySummary {
+  target: NodeQualityTarget; total: number; eligible: number; successes: number;
+  timeouts: number; failures: number; controllerErrors: number; successRate: number | null;
+  p50Ms: number | null; p95Ms: number | null; jitterMs: number | null; samples: NodeQualitySample[];
+}
+export interface NodeQualityReport {
+  paused: boolean; epoch: number; retentionDays: number; capacity: number; storedSamples: number;
+  testTargets: NodeQualityTarget[]; storageError: string | null; pendingSave: boolean; targets: NodeQualitySummary[];
 }
 
 export interface NodeDelayContext {
@@ -534,11 +550,14 @@ export const ipc = {
   testGroupDelay: (group: string) =>
     invoke<Record<string, number>>("test_group_delay", { group }),
   proxiesTestSnapshot: () => invoke<{ context: NodeDelayContext; groups: GroupView[] } | null>("proxies_test_snapshot"),
-  beginNodeDelayTest: (context: NodeDelayContext, nodeCount: number) =>
-    invoke<{ id: string; budgetMs: number } | null>("begin_node_delay_test", { context, nodeCount }),
+  beginNodeDelayTest: (context: NodeDelayContext, nodeCount: number, target?: NodeQualityTarget) =>
+    invoke<{ id: string; budgetMs: number } | null>("begin_node_delay_test", { context, nodeCount, target }),
   testNodeDelayStructured: (taskId: string, node: string) =>
     invoke<NodeDelayOutcome>("test_node_delay_structured", { taskId, node }),
   endNodeDelayTest: (taskId: string) => invoke<void>("end_node_delay_test", { taskId }),
+  nodeQualityReport: (node: string, context: NodeDelayContext) => invoke<NodeQualityReport>("node_quality_report", { node, context }),
+  nodeQualitySetPaused: (paused: boolean) => invoke<void>("node_quality_set_paused", { paused }),
+  nodeQualityClear: () => invoke<void>("node_quality_clear"),
   runDiagnosis: (runId: string) => invoke<DiagnosticReport>("run_diagnosis", { runId }),
   openDiagnosisGuide: (url: string) => invoke<void>("open_diagnosis_guide", { url }),
   diagnosisEnableSysproxy: () => invoke<void>("diagnosis_enable_sysproxy"),

@@ -1,0 +1,23 @@
+{
+  "date": "2026-11-22",
+  "issue": 607,
+  "pr": 626,
+  "test": "CB_PACKAGE_MIHOMO=<mihomo> cargo test -p crossbow-core native_migrated_cache -- --ignored",
+  "kernel": "mihomo v1.19.32 (darwin arm64)",
+  "platform": "macOS 27.2 arm64",
+  "isolated": "loopback HTTP origin + temporary Store directory; no system proxy, TUN, subscription or user configuration",
+  "reproduced_by": "PR review; merged base 0af239a",
+  "result": "pass",
+  "observations": [
+    "a package exported from a synthetic store imports into a new temporary Store, saves and reopens",
+    "the migrated ipcidr rule-set cache blocks the loopback HTTP request while the set is enabled",
+    "disabling the migrated set restores the known direct response",
+    "process-rule restoration is checked at render/kernel-acceptance level only; per-process attribution is not simulated"
+  ],
+  "not_verified": [
+    "two physical machines",
+    "installed-app native file dialogs",
+    "live user configuration reload/rollback",
+    "sing-box and other hosts"
+  ]
+}

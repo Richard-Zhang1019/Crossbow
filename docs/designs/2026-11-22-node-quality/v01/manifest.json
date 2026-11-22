@@ -1,0 +1,53 @@
+{
+  "date": "2026-11-22",
+  "version": "v01",
+  "issue": 604,
+  "stage": "质量历史与有限 HTTP/HTTPS 指标；UDP/吞吐后续；待原生/视觉验收",
+  "baseline_commit": "0af239a",
+  "implementation_commit": "336dad5",
+  "input": "#604 与仓库当前 UI 规范；生产 React/共享组件；脱敏 IPC",
+  "source_files": {
+    "apps/desktop/src/pages/Proxies/NodeQuality.tsx": "63e9b8c6e171026a24be0d9384a75fe674672ee7100e2fa34005e7bf6d7d77a8",
+    "apps/desktop/src/pages/Proxies/NodeQuality.css": "f9626b8734f1a986e1453e8cbeca1cab33c69c14f61b59421955e159dfe7a153",
+    "apps/desktop/src/pages/Proxies/index.tsx": "719dba3761a65dbd528ed44b7dbb6ab8d3de42b41fa7982101f489d4219cdaab",
+    "apps/desktop/src/pages/Proxies/Proxies.css": "cb949877ef07a03cffd1e97ec0f47f141867bfc582fcc032b128478be16c4bd0",
+    "apps/desktop/src/services/ipc.ts": "1ca1fc72e728051de2ef7b59039e41b7ddb01ff4d07aa2b30d290a1553212693",
+    "apps/desktop/src/i18n/i18n.ts": "eab122067d25543e79d8c62634fe8492fa699a3e84b231bb592ccab1780eb54d",
+    "apps/desktop/src-tauri/src/node_quality.rs": "1a0d4e8995bf823443fa8f9fc2705533c5f37ce23be3ca04d964adfcca45bf0f",
+    "apps/desktop/src-tauri/src/commands/proxies.rs": "11f37b5951901d791e58f4e5cc51ed79b1177caad7c79c77e94c16ec367a841d",
+    "apps/desktop/src-tauri/src/engine/api.rs": "64e8bd813689372c0193f4c112863a10d53dfc309524a6dca0f54720a27d833e",
+    "apps/desktop/src-tauri/src/app_state.rs": "6f9d5b9a0492c0dc1b4fbe04881952cd2abc58b90e548c229505d65565e76d91",
+    "apps/desktop/src-tauri/src/lib.rs": "bd3b1f5efe08edb4add170f12ce74a54ced3943680b150b8088db33f38f63bab",
+    "scripts/dev/verify-node-quality.mjs": "18c8f45c2df297f162c45c5d4459064d2b09adfe06c83e2bb6e475b184c2745c",
+    "scripts/dev/verify-lib.mjs": "8569ebbef989e6d9833b6851f74f25cbe0ddde1cd7362508121a887140b78689",
+    "docs/NODE-QUALITY.md": "86baeaba47d27b53d6da67c65f84a91ef0facdf024249f3809608281d6b54b5d",
+    ".github/workflows/build.yml": "765479e29bba13c92053198f308a8ec6a49f948517f25586c41cd8b62e1c6a08"
+  },
+  "checks": {
+    "rust_library": "372 passed, 5 ignored",
+    "frontend_unit": "47 passed",
+    "production_build": "passed",
+    "clippy": "passed",
+    "browser": "真实 React + 隔离 IPC；不等于原生客户端",
+    "native": "真实双内核控制器等价请求与独立业务探针；非 Tauri IPC/系统代理/TUN 验收",
+    "ci": "PR 触发后不轮询",
+    "retention": "startup/query pruning regression passed",
+    "source": "source_files SHA-256 and editable source.zip reflect final implementation"
+  },
+  "files": [
+    "SPEC.md",
+    "previews/after-light.png",
+    "previews/before-light.png",
+    "previews/dark.png",
+    "previews/empty.png",
+    "previews/english.png",
+    "previews/nodes-light.png",
+    "previews/small-dark.png",
+    "previews/small-footer.png",
+    "source.zip",
+    "verification/before-browser.json",
+    "verification/browser.json",
+    "verification/native.json",
+    "verification/native.py"
+  ]
+}

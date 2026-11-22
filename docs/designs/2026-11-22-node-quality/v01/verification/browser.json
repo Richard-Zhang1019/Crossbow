@@ -1,0 +1,19 @@
+{
+  "revision": "336dad5e039cee7e3c75ddc516af4d922bc68240",
+  "simulation": true,
+  "before": false,
+  "errors": [],
+  "checks": [
+    "no-automatic-probe",
+    "controlled-target",
+    "separate-card-delay",
+    "cancel",
+    "late-node-report",
+    "pause-failure-real-state",
+    "clear",
+    "singbox-guard",
+    "light-dark-en",
+    "small-window",
+    "focus-restore"
+  ]
+}

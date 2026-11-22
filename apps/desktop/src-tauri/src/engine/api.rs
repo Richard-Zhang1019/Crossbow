@@ -108,7 +108,9 @@ fn comparable_delay(node: &serde_json::Value) -> Option<u64> {
     let extra = node.get("extra");
     let history = if let Some(primary) = extra.and_then(|extra| extra.get(BENCHMARK_URL)) {
         primary.get("history")
-    } else if extra.is_some_and(|extra| extra.get(BENCHMARK_URL_REVIEW).is_some()) {
+    } else if extra.is_some_and(|extra| {
+        extra.get(BENCHMARK_URL_REVIEW).is_some() || extra.get(BENCHMARK_URL_HTTPS).is_some()
+    }) {
         None
     } else {
         node.get("history") // sing-box/旧控制器没有按 URL 分组时保留兼容。
@@ -658,12 +660,36 @@ impl Controller {
     }
 
     /// 主目标固定；仅节点超时复核 HTTPS。每次新请求前及发布结果前均检查取消。
+    ///
+    /// 页面测速改走 `measure_node_delay_observed`（带质量历史回调）后，本包装
+    /// 只剩 macOS 托盘与测试使用；其他平台的 lib 构建不再携带，避免 dead_code。
+    #[cfg(any(target_os = "macos", test))]
     pub(crate) fn measure_node_delay_with_review(
         &self,
         node: &str,
         current: &impl Fn() -> bool,
         deadline: std::time::Instant,
         url_scoped_history: bool,
+    ) -> Result<DelaySample, NodeDelayError> {
+        self.measure_node_delay_observed(
+            node,
+            current,
+            deadline,
+            url_scoped_history,
+            None,
+            &|_, _| {},
+        )
+    }
+
+    /// Observe only completed, still-current requests. No extra network activity.
+    pub(crate) fn measure_node_delay_observed(
+        &self,
+        node: &str,
+        current: &impl Fn() -> bool,
+        deadline: std::time::Instant,
+        url_scoped_history: bool,
+        target: Option<crate::node_quality::Target>,
+        observe: &impl Fn(&str, &Result<u64, NodeDelayError>),
     ) -> Result<DelaySample, NodeDelayError> {
         let check = || {
             if !current() {
@@ -684,18 +710,28 @@ impl Controller {
             }
             let result = self.measure_via_with_timeout(node, url, timeout);
             check()?;
+            observe(url, &result);
             result
         };
         // sing-box 的测速会覆盖同一份选路历史，且忽略 HTTP URL。
         // 未能按 URL 分离历史的控制器只测固定 HTTPS 主目标，不注入异站延迟。
-        let primary = if url_scoped_history {
+        if !url_scoped_history
+            && target.is_some_and(|t| t != crate::node_quality::Target::GoogleHttps)
+        {
+            return Err(NodeDelayError::Skipped(
+                "此内核仅支持固定 Google HTTPS 目标".into(),
+            ));
+        }
+        let primary = if let Some(target) = target {
+            target.url()
+        } else if url_scoped_history {
             BENCHMARK_URL
         } else {
             BENCHMARK_URL_HTTPS
         };
         let (delay_ms, reviewed, target, sample_count) = match probe(primary) {
             Ok(ms) => (ms, false, primary, 1),
-            Err(NodeDelayError::Timeout(_)) if url_scoped_history => {
+            Err(NodeDelayError::Timeout(_)) if url_scoped_history && target.is_none() => {
                 (probe(BENCHMARK_URL_REVIEW)?, true, BENCHMARK_URL_REVIEW, 2)
             }
             Err(other) => return Err(other),
@@ -739,6 +775,97 @@ fn build_path(segments: &[&str]) -> String {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn observer_records_each_target_without_extra_requests_and_ignores_cancelled_response() {
+        use std::cell::{Cell, RefCell};
+        let primary = format!("/proxies/node/delay?url={BENCHMARK_URL}&timeout=5000");
+        let review = format!("/proxies/node/delay?url={BENCHMARK_URL_REVIEW}&timeout=5000");
+        let (controller, server) = scripted_controller(vec![
+            ("GET", primary.clone(), 504, "{}".into()),
+            ("GET", review, 200, "{\"delay\":88}".into()),
+        ]);
+        let observed = RefCell::new(vec![]);
+        controller
+            .measure_node_delay_observed(
+                "node",
+                &|| true,
+                std::time::Instant::now() + Duration::from_secs(20),
+                true,
+                None,
+                &|url, result| {
+                    observed
+                        .borrow_mut()
+                        .push((url.to_string(), result.as_ref().ok().copied()))
+                },
+            )
+            .unwrap();
+        server.join().unwrap();
+        assert_eq!(
+            observed.into_inner(),
+            vec![
+                (BENCHMARK_URL.into(), None),
+                (BENCHMARK_URL_REVIEW.into(), Some(88))
+            ]
+        );
+        let (controller, server) =
+            scripted_controller(vec![("GET", primary, 200, "{\"delay\":22}".into())]);
+        let checks = Cell::new(0);
+        let count = Cell::new(0);
+        let result = controller.measure_node_delay_observed(
+            "node",
+            &|| {
+                checks.set(checks.get() + 1);
+                checks.get() == 1
+            },
+            std::time::Instant::now() + Duration::from_secs(20),
+            true,
+            None,
+            &|_, _| count.set(count.get() + 1),
+        );
+        assert!(matches!(result, Err(NodeDelayError::Cancelled(_))));
+        assert_eq!(count.get(), 0);
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn explicit_target_is_single_request_and_singbox_rejects_cross_target_before_network() {
+        use crate::node_quality::Target;
+        let path = format!("/proxies/node/delay?url={BENCHMARK_URL_HTTPS}&timeout=5000");
+        let (controller, server) = scripted_controller(vec![("GET", path, 504, "{}".into())]);
+        let count = std::cell::Cell::new(0);
+        let result = controller.measure_node_delay_observed(
+            "node",
+            &|| true,
+            std::time::Instant::now() + Duration::from_secs(20),
+            true,
+            Some(Target::GoogleHttps),
+            &|_, _| count.set(count.get() + 1),
+        );
+        assert!(matches!(result, Err(NodeDelayError::Timeout(_))));
+        assert_eq!(count.get(), 1);
+        server.join().unwrap();
+        assert!(matches!(
+            controller.measure_node_delay_observed(
+                "node",
+                &|| true,
+                std::time::Instant::now() + Duration::from_secs(20),
+                false,
+                Some(Target::GoogleHttp),
+                &|_, _| panic!("unsupported target must never run")
+            ),
+            Err(NodeDelayError::Skipped(_))
+        ));
+    }
+
+    #[test]
+    fn explicit_https_history_does_not_become_primary_http_delay() {
+        let node = serde_json::json!({"history":[{"delay":99}],"extra":{BENCHMARK_URL_HTTPS:{"history":[{"delay":99}]}}});
+        assert_eq!(comparable_delay(&node), None);
+        let mut both = node;
+        both["extra"][BENCHMARK_URL] = serde_json::json!({"history":[{"delay":42}]});
+        assert_eq!(comparable_delay(&both), Some(42));
+    }
 
     #[test]
     fn node_delay_distinguishes_controller_timeout_from_other_failures() {
