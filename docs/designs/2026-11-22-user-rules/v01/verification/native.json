@@ -1,0 +1,112 @@
+[
+  {
+    "engine": "mihomo",
+    "case": "suffix",
+    "response": "policy"
+  },
+  {
+    "engine": "mihomo",
+    "case": "root",
+    "response": "policy"
+  },
+  {
+    "engine": "mihomo",
+    "case": "exact",
+    "response": "policy"
+  },
+  {
+    "engine": "mihomo",
+    "case": "ip",
+    "response": "policy"
+  },
+  {
+    "engine": "mihomo",
+    "case": "ipv6",
+    "response": "policy"
+  },
+  {
+    "engine": "mihomo",
+    "case": "disabled",
+    "response": "direct"
+  },
+  {
+    "engine": "mihomo",
+    "case": "deleted",
+    "response": "direct"
+  },
+  {
+    "engine": "mihomo",
+    "case": "near",
+    "response": "policy"
+  },
+  {
+    "engine": "mihomo",
+    "case": "blocked-root",
+    "response": "blocked"
+  },
+  {
+    "engine": "mihomo",
+    "case": "broad-first",
+    "response": "blocked"
+  },
+  {
+    "engine": "mihomo",
+    "case": "narrow-first",
+    "response": "policy"
+  },
+  {
+    "engine": "singbox",
+    "case": "suffix",
+    "response": "policy"
+  },
+  {
+    "engine": "singbox",
+    "case": "root",
+    "response": "policy"
+  },
+  {
+    "engine": "singbox",
+    "case": "exact",
+    "response": "policy"
+  },
+  {
+    "engine": "singbox",
+    "case": "ip",
+    "response": "policy"
+  },
+  {
+    "engine": "singbox",
+    "case": "ipv6",
+    "response": "policy"
+  },
+  {
+    "engine": "singbox",
+    "case": "disabled",
+    "response": "direct"
+  },
+  {
+    "engine": "singbox",
+    "case": "deleted",
+    "response": "direct"
+  },
+  {
+    "engine": "singbox",
+    "case": "near",
+    "response": "policy"
+  },
+  {
+    "engine": "singbox",
+    "case": "blocked-root",
+    "response": "blocked"
+  },
+  {
+    "engine": "singbox",
+    "case": "broad-first",
+    "response": "blocked"
+  },
+  {
+    "engine": "singbox",
+    "case": "narrow-first",
+    "response": "policy"
+  }
+]

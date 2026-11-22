@@ -403,7 +403,11 @@ export interface ImportInspection {
   protocols: string[];
   capabilities: {protocol: "hy2" | "tuic" | "reality"; mihomo: "subset" | "limited" | "unsupported"; singbox: "subset" | "limited" | "unsupported"}[];
 }
+export interface UserRule {id:string; kind:"DOMAIN"|"DOMAIN_SUFFIX"|"IP_CIDR"; value:string; target:string; enabled:boolean}
+export interface UserRuleStatus {rules:UserRule[]; targets:string[]; overlaps?:[number,number][]}
 export const ipc = {
+  userRules:()=>invoke<UserRuleStatus>("user_rules_get"),
+  setUserRules:(expected:UserRule[], rules:UserRule[])=>invoke<void>("user_rules_set",{expected,rules}),
   inspectProfileImport: (content: string) => invoke<ImportInspection>("inspect_profile_import", {content}),
   platformCapabilities: () => invoke<PlatformCapabilities>("platform_capabilities"),
   onUpdateState: (cb: (s: UpdateState | null) => void) =>

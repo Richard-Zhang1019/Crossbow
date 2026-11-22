@@ -85,7 +85,7 @@ export default function App() {
   const [settingSection, setSettingSection] = useState<"network" | "appearance" | "logs" | "app">(
     "network",
   );
-  const [configTab, setConfigTab] = useState<"sources" | "overrides" | "process" | "rulesets">("sources");
+  const [configTab, setConfigTab] = useState<"sources" | "overrides" | "process" | "rulesets" | "user">("sources");
   const [profileName, setProfileName] = useState("");
   const [appVersion, setAppVersion] = useState("");
   const [coreStatus, setCoreStatus] = useState<CoreStatus | null>(null);
@@ -244,7 +244,7 @@ export default function App() {
     setPage(target.page);
     if (target.page === "settings") setSettingSection(target.settingSection ?? "app");
     if (target.page === "profiles")
-      setConfigTab(target.control === "cb-process-rule" ? "process" : "sources");
+      setConfigTab(target.control === "cb-user-rule" ? "user" : target.control === "cb-process-rule" ? "process" : "sources");
   }, []);
   useEffect(() => {
     const onNavigate = (event: Event) => navigate((event as CustomEvent<string>).detail);
@@ -371,6 +371,7 @@ export default function App() {
             >
               {t("studio.processRules")}
             </ButtonBase>
+            <ButtonBase className={configTab === "user" ? "active" : ""} onClick={()=>{setDestination(null);setConfigTab("user");}}>{t("ur.title")}</ButtonBase>
             <ButtonBase className={configTab === "rulesets" ? "active" : ""} onClick={() => {setDestination(null);setConfigTab("rulesets");}}>{t("rs.title")}</ButtonBase>
           </nav>
         )}
