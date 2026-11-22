@@ -1,12 +1,12 @@
 /* A single non-wrapping data toolbar; secondary actions become labelled icons in compact windows. */
-.cb-logs-page .cb-log-toolbar.cb-log-single-toolbar { display:flex; flex:none; align-items:center; gap:10px; min-width:0; padding:0 0 4px; flex-wrap:nowrap; }
-.cb-log-title { margin:0; flex:none; font-size:22px; font-weight:600; line-height:32px; }
+.cb-logs-page .cb-log-toolbar.cb-log-single-toolbar { display:flex; flex:none; align-items:center; gap:var(--cb-space-10); min-width:0; padding:0 0 var(--cb-space-4); flex-wrap:nowrap; }
+.cb-log-title { margin:0; flex:none; font-size:var(--cb-type-compat-22); font-weight:var(--cb-weight-semibold); line-height:var(--cb-leading-32-px); }
 .cb-log-level-select { flex:0 1 140px; min-width:110px; }
-.cb-data-actions { display:flex; align-items:center; gap:6px; flex:none; flex-wrap:nowrap; }
+.cb-data-actions { display:flex; align-items:center; gap:var(--cb-space-6); flex:none; flex-wrap:nowrap; }
 .cb-log-single-toolbar .cb-log-search { margin-left:auto; flex:1 1 180px; max-width:220px; min-width:70px; width:auto; }
 @media(max-width:1100px) {
- .cb-log-single-toolbar { gap:7px; }
+ .cb-log-single-toolbar { gap:var(--cb-space-7); }
  .cb-log-secondary-action .cb-log-action-label { display:none; }
  .cb-log-secondary-action.cb-button { width:32px; padding:0; }
- .cb-log-title { font-size:20px; }
+ .cb-log-title { font-size:var(--cb-type-page); }
 }

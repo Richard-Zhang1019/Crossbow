@@ -460,7 +460,7 @@ export default function LogsPage() {
           const atBottom=el.scrollHeight-el.scrollTop-el.clientHeight<AT_BOTTOM_THRESHOLD_PX;
           if(!atBottom){pinned.current=false;setFollowing(false);}
         }}
-        className="cb-card cb-log-scroll cb-selectable cb-mono text-[13px] leading-5"
+        className="cb-card cb-log-scroll cb-selectable cb-mono text-[var(--cb-type-body)] leading-5"
       >
         {shown.length === 0 ? (
           <div

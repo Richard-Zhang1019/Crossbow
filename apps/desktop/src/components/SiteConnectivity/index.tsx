@@ -129,9 +129,9 @@ export default function SiteConnectivity({
     <section className="cb-site-section" aria-label={t("sites.title")}>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
         <div>
-          <h2 className="text-[13px] font-semibold">{t("sites.title")}</h2>
+          <h2 className="text-[var(--cb-type-body)] font-[var(--cb-weight-semibold)]">{t("sites.title")}</h2>
           <p
-            className="text-[11px] mt-1"
+            className="text-[var(--cb-type-caption)] mt-1"
             style={{ color: "var(--cb-text-dim)" }}
           >
             {t("sites.hint")}
@@ -180,16 +180,16 @@ export default function SiteConnectivity({
               onClick={() => void test([site.id])}
               title={result?.status==="restricted"?t("workflow.httpRestricted"):result?.status==="http_error"?t("workflow.httpError"):undefined}
             >
-              <span className="text-xs font-medium">{site.name}</span>
+              <span className="cb-legacy-text-xs font-[var(--cb-weight-medium)]">{site.name}</span>
               <span
-                className="text-[10px]"
+                className="text-[var(--cb-type-compat-10)]"
                 style={{ color: "var(--cb-faint)" }}
               >
                 {site.host}
               </span>
               {!pending&&result&&<span className="cb-site-context"><span>{t("workflow.measuredAt",{time:new Date(result.testedAt).toLocaleTimeString()})}</span><span title={result.outbound}>{t("workflow.outbound")}: {result.outbound}</span></span>}
               <span
-                className="flex items-center gap-1.5 text-[11px] mt-2"
+                className="flex items-center gap-1.5 text-[var(--cb-type-caption)] mt-2"
                 style={{ color }}
               >
                 {pending ? (
@@ -218,7 +218,7 @@ export default function SiteConnectivity({
         })}
       </div>
       {Object.values(results).some(r=>r.status==="restricted")&&<p className="cb-control-note">{t("workflow.httpRestricted")}</p>}
-      <p className="text-[10px] mt-3" style={{ color: "var(--cb-faint)" }}>
+      <p className="text-[var(--cb-type-compat-10)] mt-3" style={{ color: "var(--cb-faint)" }}>
         {running ? t("sites.scope") : t("sites.stopped")}
       </p>
       </div>

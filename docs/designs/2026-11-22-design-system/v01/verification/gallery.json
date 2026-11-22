@@ -1,0 +1,26 @@
+{
+  "productionControls": true,
+  "roles": [
+    {
+      "role": "page",
+      "size": "20px"
+    },
+    {
+      "role": "section",
+      "size": "16px"
+    },
+    {
+      "role": "body",
+      "size": "13px"
+    },
+    {
+      "role": "secondary",
+      "size": "12px"
+    },
+    {
+      "role": "caption",
+      "size": "11px"
+    }
+  ],
+  "errors": []
+}
