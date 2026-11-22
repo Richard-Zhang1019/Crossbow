@@ -1,0 +1,35 @@
+{
+  "date": "2026-11-22",
+  "integration_commit": "72a055fbee4fa06c4f2ebd1e81c11fd89ac5ce6c",
+  "final_source_identity": "manifest.json source_sha256",
+  "local": {
+    "typescript_vite": "passed",
+    "frontend_tests": 47,
+    "backend_full_tests": 375,
+    "core_full_tests": 189,
+    "final_group_transaction_tests": 2,
+    "clippy": "passed",
+    "fmt": "passed"
+  },
+  "simulated": {
+    "custom_groups": "passed",
+    "window_controls_scenario_4": "passed",
+    "browser": "Chromium 157.0.8103.79",
+    "platform": "darwin/arm64"
+  },
+  "native": {
+    "mihomo": "1.19.32",
+    "singbox": "1.14.2",
+    "cases": 4,
+    "scope": "isolated loopback candidates, selection, routing and Store reopen; no user proxy or TUN changes"
+  },
+  "pending": [
+    "desktop full lifecycle and real subscription update rollback",
+    "Windows/Linux native",
+    "CI after PR creation"
+  ],
+  "notes": [
+    "backend full suite at integration commit; subsequent core flag-name collision guard covered by final core suite, transaction tests and native cases",
+    "ignored native fixture explicitly executed by verify-native.py, not counted as passing by default unit suite"
+  ]
+}

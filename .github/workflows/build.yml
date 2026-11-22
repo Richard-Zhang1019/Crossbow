@@ -135,6 +135,7 @@ jobs:
           node scripts/dev/verify-dns-settings.mjs
           node scripts/dev/verify-dns-probe.mjs
           node scripts/dev/verify-node-quality.mjs
+          node scripts/dev/verify-custom-groups.mjs
           node scripts/dev/verify-node-probes.mjs
       - uses: actions/upload-artifact@v7
         if: failure() && steps.desktop-scenarios.outcome == 'failure'
@@ -204,6 +205,7 @@ jobs:
           node scripts/dev/verify-dns-settings.mjs
           node scripts/dev/verify-dns-probe.mjs
           node scripts/dev/verify-node-quality.mjs
+          node scripts/dev/verify-custom-groups.mjs
           node scripts/dev/verify-node-probes.mjs
       - uses: actions/upload-artifact@v7
         if: failure() && steps.desktop-scenarios.outcome == 'failure'

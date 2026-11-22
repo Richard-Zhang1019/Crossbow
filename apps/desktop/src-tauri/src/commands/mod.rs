@@ -1,6 +1,7 @@
 //! Tauri command 按域分组（#423 从 lib.rs 提取）。
 pub mod activity;
 pub mod core;
+pub mod custom_groups;
 pub mod feedback;
 pub(crate) mod helpers;
 pub mod monitor;

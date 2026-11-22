@@ -1,0 +1,71 @@
+{
+  "date": "2026-11-22",
+  "version": "v01",
+  "issue": 606,
+  "base": "b7a2133",
+  "status": "implemented; local/simulated/controlled native checked; desktop lifecycle and other platforms pending",
+  "viewports": {
+    "before.png": [
+      1120,
+      734
+    ],
+    "list.png": [
+      1120,
+      734
+    ],
+    "preview.png": [
+      1120,
+      734
+    ],
+    "failure.png": [
+      1120,
+      734
+    ],
+    "dark-small.png": [
+      880,
+      560
+    ],
+    "auto-small.png": [
+      880,
+      560
+    ],
+    "auto-small-bottom.png": [
+      880,
+      560
+    ]
+  },
+  "source_sha256": {
+    "crates/crossbow-core/src/custom_groups.rs": "ac144d2d4c8f8fe66cebe5146ae935e67fc3d07404b9c4431040bdaf4b7533d0",
+    "crates/crossbow-core/src/model.rs": "e06983aeb713914717131b2a59006ff679a8cb7e829e773bbfd477d351e42c2d",
+    "crates/crossbow-core/src/lib.rs": "76bfafd3d8e8a7d8ba9726daa597220f7a1bbf0e1e47187865d9704b8789610d",
+    "crates/crossbow-core/src/render.rs": "323fa4f54ae3bd5dbf976c9be048095f37d2480915e5cbf24857ff4dbcafd1bc",
+    "apps/desktop/src-tauri/src/commands/custom_groups.rs": "363c57ae8a2d0a07c04987f4fbf710f5b09f11ec2d78d90ac346689a8fc34ec1",
+    "apps/desktop/src-tauri/src/commands/mod.rs": "fa01d9a2809e712acb7ca8d56fba9c3c5e7f67e85cc4b8b2422c6eb640c3f011",
+    "apps/desktop/src-tauri/src/lib.rs": "1174042998103c92ac3ab955110798f5bb4305dc663b230b6f01b4770024311c",
+    "apps/desktop/src/components/CustomGroups/index.tsx": "4a77dc773e937f57631f9b5f9a851b9419a6206ede3895c1269fddc9446360f5",
+    "apps/desktop/src/components/CustomGroups/CustomGroups.css": "805be8bc0c112c1dbeeebec9958c49b02083990d3a7138938e3f20aa3011c4d2",
+    "apps/desktop/src/components/ProcessRules/ProcessRules.css": "ac703ded12d4877efc5b215e6932b771884664ba8ed9bf173d3645748e4de781",
+    "apps/desktop/src/pages/Proxies/index.tsx": "51ea82b851c8d1b1f9062b26e995a54557b604f00e27bed61009a5666d0f9bc4",
+    "apps/desktop/src/pages/Proxies/Proxies.css": "7a010dc76139beeb8c4ae1b7ebc1269be0f718c44d62e1fe28f9d9bffa95ed65",
+    "apps/desktop/src/services/ipc.ts": "29a146b17654ea32c39ecec598b992bb2618ddb1b05119af8af95e242d873010",
+    "apps/desktop/src/i18n/i18n.ts": "8172df63ebc2ccd958bffdfbc72aa6af5bc1b76617ff31526e56c5c4c84fc16e",
+    "scripts/dev/verify-custom-groups.mjs": "95f4524ddab96a11213750eb35fa16ee08f1c29f38c56509219ea45a74cfde48",
+    "docs/CUSTOM-GROUPS.md": "e96f0ac750b9a7dfd7fa16688132dab7f9f827618c8724e024ef8896e58755cc"
+  },
+  "artifacts": {
+    "source.zip": "74bcee6146027039f4377b7ab708165376be00a38dbbe8f3b80d1789abe88e6a",
+    "verify-native.py": "c9768d84349270f335ce49718445e9d9daa0fccbaf64050091b7653855e8530e",
+    "SPEC.md": "f02b9ab2bbd826527d77a6b738bc7bb46556a54aab2a8035cb580c2ff1d50e6f",
+    "verification/native.json": "c0d1760c2067c5471f83bc9d68eac6d5f00647d0011be1c01369432a66825188",
+    "verification/checks.json": "c8c90aa73967c1ee907a43c19e732d5dc6e7f6e63600bf5f8263e94a619c1264",
+    "previews/before.png": "c711fdcdad4eb3cf270d9ad7dcb8eb435f3bda9b4aeda885a17d38b7077276a9",
+    "previews/preview.png": "70d67b06041c9227a1cb39fef8d032cc086a60e317d9c41757001c98e85809ce",
+    "previews/list.png": "f1077f4254867b3a16b2b0f0231a775c2f35e2bd3d2c9026a58688e82698d549",
+    "previews/dark-small.png": "8c6193a109b23b0436a27f661cce9de553d9a4503c53e22542d895acda97b4b0",
+    "previews/auto-small.png": "1316e481d26e5936200c89f2de2daee52ec90d9e266f6b1af1696d1726fd18b0",
+    "previews/failure.png": "2590cbcdb2b513aea41c62c863161f26f3f2f10fb430033a0f3671d593af306c",
+    "previews/auto-small-bottom.png": "b2dbc6c3ad254d8416f2554724fd99829e8843511870182d1c427350ec0dff89"
+  },
+  "before_base": "0af239a",
+  "integration_commit": "72a055fbee4fa06c4f2ebd1e81c11fd89ac5ce6c"
+}

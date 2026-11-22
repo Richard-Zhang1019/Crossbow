@@ -1,3 +1,4 @@
+import CustomGroups from "@/components/CustomGroups";
 import { useInterval } from "@/hooks/useTimers";
 import {ChoiceChip} from "@/components/ChoiceChip";
 import {SearchField} from "@/components/Controls";
@@ -105,6 +106,7 @@ function testOutcome(kind: NodeDelayOutcome["class"]): NodeDelayDisplay {
 
 /** 代理组页（v3，#141）：地区聚类 + 过滤工具栏 + 悬停单节点测速。 */
 export default function ProxiesPage() {
+  const [manageGroups,setManageGroups]=useState(false);
   const t = useT();
   const [groupName, setGroupName] = useState("");
   const [groupQuery, setGroupQuery] = useState("");
@@ -325,7 +327,9 @@ export default function ProxiesPage() {
           <Icon name="refresh" />
           {t("proxies.refresh")}
         </Button>
+        <Button onClick={()=>setManageGroups(true)}>{t("cg.title")}</Button>
       </PageHead>}
+      {manageGroups&&<CustomGroups onClose={()=>setManageGroups(false)} onChanged={()=>void load()}/>}
       {phase !== "ready" || groups.length === 0 ? (
         <div className="cb-empty" role="status" aria-busy={phase === "loading"}>
           <Icon name="bolt" size={24} />
@@ -344,6 +348,7 @@ export default function ProxiesPage() {
         <div className="cb-context-layout">
           <nav className="cb-context-nav" aria-label={t("studio.groups")}>
             <h2 className="cb-node-page-title">{t("studio.nodes")}</h2>
+            <div className="cb-node-custom-manage"><Button size="small" onClick={()=>setManageGroups(true)}>{t("cg.title")}</Button></div>
             <p className="cb-node-nav-caption">{t("studio.groups")}</p>
             <SearchField className="cb-group-search" label={t("layout.searchGroups")} placeholder={t("layout.searchGroups")} value={groupQuery} onChange={e=>setGroupQuery(e.target.value)}/>
             <div className="cb-context-scroll">
