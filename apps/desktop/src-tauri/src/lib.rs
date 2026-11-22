@@ -959,6 +959,7 @@ pub fn run() {
             sysproxy_fault_evidence,
             sysproxy_toggle,
             diagnosis_enable_sysproxy,
+            diagnose_dns,
             core_mode,
             set_core_mode,
             subscribe_traffic,

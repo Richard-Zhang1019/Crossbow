@@ -418,6 +418,14 @@ impl Controller {
             .to_string())
     }
 
+    /// #603：经内核自己的解析器查询 DNS（Clash 兼容 `GET /dns/query`）。
+    ///
+    /// 返回 DNS 报文 JSON（Status/Answer），不含上游与缓存字段——调用方不得
+    /// 从 TTL 反推缓存命中。
+    pub fn dns_query(&self, name: &str, record_type: &str) -> Result<serde_json::Value, String> {
+        self.get_json(&dns_query_path(name, record_type))
+    }
+
     /// 当前出口：规则模式取最后一条 MATCH 规则的目标组并解析其当前节点；
     /// 全局模式取 GLOBAL.now。`final_fallback` 用于 /rules 里没有 MATCH
     /// 规则的内核（sing-box clash api 不合成 MATCH）：读配置的 route.final。
@@ -680,6 +688,12 @@ impl Controller {
                 .as_millis() as u64,
         })
     }
+}
+
+/// `/dns/query` 的查询串：域名已由调用方校验，仍做一次百分号编码防御。
+pub(crate) fn dns_query_path(name: &str, record_type: &str) -> String {
+    let encoded: String = url::form_urlencoded::byte_serialize(name.as_bytes()).collect();
+    format!("/dns/query?name={encoded}&type={record_type}")
 }
 
 /// 拼接并编码路径段（组名常含中文/空格/emoji）。
@@ -1573,6 +1587,50 @@ pub(crate) mod tests {
         let delay = c.test_node_delay("OUT-DIRECT").unwrap();
         assert!(delay > 0, "direct adapter should answer the probe");
 
+        mgr.stop();
+    }
+
+    /// #603：真实内核的 `/dns/query`。需要联网解析上游，默认跳过；
+    /// `CROSSBOW_CORE_BIN=<mihomo> cargo test -- --ignored real_core_dns_query`。
+    #[test]
+    #[ignore = "requires CROSSBOW_CORE_BIN (mihomo) and network access for the upstream resolver"]
+    fn real_core_dns_query_reports_answers_and_nxdomain() {
+        let _serial = crate::engine::manager::tests::REAL_CORE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let Ok(bin) = std::env::var("CROSSBOW_CORE_BIN") else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let mgr = crate::engine::manager::CoreManager::new(bin.into(), dir.path().to_path_buf());
+        mgr.set_options(crate::engine::manager::CoreOptions {
+            ensure_geo_files: false,
+            ..Default::default()
+        });
+        let config = "dns:\n  enable: true\n  ipv6: true\n  nameserver:\n    - 1.1.1.1\nrules:\n  - MATCH,DIRECT\n";
+        mgr.start(
+            config,
+            &crossbow_core::RuntimeConfig {
+                mixed_port: crate::engine::manager::tests::tests_free_port(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        for _ in 0..100 {
+            if mgr.status() == crate::engine::manager::CoreStatus::Running {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        let (port, secret) = mgr.controller().unwrap();
+        let c = Controller { port, secret };
+        let reply = c.dns_query("example.com", "A").unwrap();
+        assert_eq!(reply["Status"].as_i64(), Some(0));
+        assert!(!reply["Answer"].as_array().unwrap().is_empty());
+        let missing = c
+            .dns_query("crossbow-603-nonexistent.invalid", "A")
+            .unwrap();
+        assert_eq!(missing["Status"].as_i64(), Some(3));
         mgr.stop();
     }
 }
