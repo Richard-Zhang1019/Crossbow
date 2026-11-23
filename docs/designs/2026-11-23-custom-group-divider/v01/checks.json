@@ -1,0 +1,8 @@
+{
+  "baseline": "86260396f65571441b30c48e274f7c679552d816",
+  "production_ui": "passed: empty, single, three rows; zh/light 1120x734; en/dark 880x560; help expansion; draft, failure/retry, source invalidation and editing footer",
+  "design_token_gate": "passed",
+  "native": "pending",
+  "CI": "pending; existing scenario reused, no polling",
+  "data": "synthetic IPC only"
+}

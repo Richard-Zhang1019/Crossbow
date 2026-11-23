@@ -16,8 +16,8 @@
 
 | 用途 | 变量 | 当前值 | 何时使用 |
 | --- | --- | --- | --- |
-| 页标题 | --cb-type-page | 20px | 每页主要名称；Modal 标题复用，不给每张卡都加大标题 |
-| 区块标题 | --cb-type-section | 16px | 页面内主要分组/状态结论；不用于普通按钮 |
+| 页标题 | --cb-type-page | 20px | 每页主要名称；不用于 Modal 或每张卡的标题 |
+| 区块标题 | --cb-type-section | 16px | 页面内主要分组/状态结论、Modal 标题；不用于普通按钮 |
 | 正文 | --cb-type-body | 13px | 表单名称、表格主信息、列表名称、常规正文 |
 | 次要信息 | --cb-type-secondary | 12px | 描述、按钮、辅助数值、表格次行、操作说明 |
 | 图注/元信息 | --cb-type-caption | 11px | 时间、单位、徽标、轴标签等低密度短内容；不能拿来装下长正文 |
@@ -95,3 +95,5 @@ z-content=1、raised=10、overlay=40、modal=90、notification=100、popover=110
 门禁不等于视觉验收：还应检查真实生产组件的默认/880×560、明暗主题、中英文、长文本、空数据、加载/错误、Tab/Esc/焦点及滚动；语义是否正确仍需评审，脚本无法判断“红色是否误标正常”。新属性或其他技术栈不自动受此门禁保护，应显式扩展。
 
 设计规范的可复跑生产组件图谱：`node scripts/dev/verify-design-system.mjs`，覆盖默认/880px与明暗主题，展示五档字号、文字/状态色和公共按钮/输入/选择器。设 CB_DESIGN_EVIDENCE 可保存截图。
+
+Modal 标题使用 --cb-modal-title-size（16px）/--cb-modal-title-line-height（24px），标题栏上下留白使用 --cb-modal-header-padding-block（12px），窗口高度不超过600px时使用 --cb-modal-header-padding-block-compact（8px）；水平留白仍为24px/20px。关闭按钮保留原点击尺寸并与标题垂直居中。标题继续最多三行，不改变页面标题20px规则（#641 / PR #642 用户补充）。

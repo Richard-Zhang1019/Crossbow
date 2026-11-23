@@ -2,6 +2,8 @@
 .cb-custom-preview {border-top:var(--cb-stroke-1) solid var(--cb-line);padding-top:var(--cb-space-12);font-size:var(--cb-type-secondary);overflow-wrap:anywhere}
 .cb-custom-preview p {margin:var(--cb-space-8) 0;color:var(--cb-text-dim)}
 .cb-custom-list-row {display:flex;align-items:center;justify-content:space-between;gap:var(--cb-space-16);padding:var(--cb-space-12) 0;border-bottom:var(--cb-stroke-1) solid var(--cb-line)}
+/* Separators belong between items; the list has no footer boundary. */
+.cb-custom-list-row:last-child {border-bottom:0}
 .cb-custom-list-row > div {min-width:0;overflow-wrap:anywhere}
 .cb-custom-list-row small {display:block;color:var(--cb-text-dim);margin-top:var(--cb-space-4)}
 .cb-custom-list-row p {font-size:var(--cb-type-secondary);color:var(--cb-text-dim);margin:var(--cb-space-8) 0 0}

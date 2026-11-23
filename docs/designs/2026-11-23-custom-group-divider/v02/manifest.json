@@ -1,0 +1,30 @@
+{
+  "date": "2026-11-23",
+  "version": "v02",
+  "issue": 641,
+  "pr": 642,
+  "baseline": "f7d6fb12a4aecb8831d64db46ed107c8cf4340d9",
+  "input": "User requested smaller public Modal title and vertical header padding in the same PR",
+  "source_sha256": {
+    "apps/desktop/src/components/Modal/Modal.css": "4402b5f51eeef18305f598c86e1be6f915bf4e835166743140b395c3beacea65",
+    "apps/desktop/src/styles/tokens.css": "4c31cb33250fad95e7d171b77354acb9c916b246b0485eb3d55804ab9806178c",
+    "apps/desktop/src/components/CustomGroups/CustomGroups.css": "76bf6c4879d630c089426ee950cead0ff710a456f4d51f321a186e4d11886963",
+    "docs/MODAL.md": "1dc6bf936615b814b024e29e5d634cbba37c802ce717ad1d60935da77ca2004a",
+    "docs/DESIGN-SYSTEM.md": "b824b576b19006b324591afc4e7206764a3b5a2e08c3da454c4c5b29bab7d9ba",
+    "scripts/dev/verify-modal.mjs": "0325d2cb11a0fec86c872c4f2d931b8957bae9f63f4c9740ec9af962033b4f82",
+    "scripts/dev/verify-custom-groups.mjs": "8700b344f69f58405d8d749b5c1da6469b7a55a12c3c8aa35c8607ff117f09c2"
+  },
+  "artifacts": {
+    "modal-checks.json": "45c29dba3cc841feb1a93f03077a273f6a092d4613bef0cfdc23a369348b9627",
+    "source.zip": "17583d27870c50d293c34f2c55ad00b9c7ee9046ec881cf567a529a954369357",
+    "checks.json": "45f3610e8d0b7cd354b682887220be92175da73ccc5de798a7f2642c6f84d705",
+    "SPEC.md": "c85d0a4fcbdb286cbc352e42167696e91d4cdeb8c0a606da9f00d55171b36d7c",
+    "previews/before.png": "f8cb193c7ff647620a2739a041b57b548c4067e0ec4688dc0781fc01de4af8d0",
+    "previews/modal-before.png": "6f76c62a11562f83fe65d7fc459ebb4a9d71d90646492425c4a99ded15f65189",
+    "previews/after.png": "0b9689f4aac73c5e0847b89a5c58a7179923229d7a981d2a10e9394565dce3fe",
+    "previews/dark-small.png": "35e576cfda8ec3ee4853a05c5de5b5aa7437e982139bf30921c920439218376c",
+    "previews/long-title-dark.png": "3850d34c8d1ae3fa04205011cec74539dfda0518d0c5418c66ee99bbd967f00e",
+    "previews/modal-after.png": "4bae357aa72bf291103e1928d2132572dac91bc34c2719a8b054dbbd7b4e2bdf",
+    "previews/editor-footer.png": "16bfd9975afdb46cd7e58ba5a67de535c8adb8cbf92c2a4181c1f662256b2a51"
+  }
+}

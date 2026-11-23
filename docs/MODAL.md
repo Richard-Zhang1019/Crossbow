@@ -58,3 +58,7 @@ main fa13061 的 12 个消费文件、14 处原 Dialog 全部迁移，旧实现�
 `node scripts/dev/verify-modal.mjs`：生产 Modal/Select 的合成业务夹具，验证异步失败留草稿、成功等待受控关闭、重复提交/关闭保护、嵌套及兄弟层级、ARIA、Select Esc、双向 Tab、焦点恢复、隐藏保留、默认/最小窗口与固定底栏、极长标题的操作可达及晚到通知可访问性。已纳入两处 CI 场景列表。
 既有 custom-groups、process-rules、user-rules、rule-sets、scenes、package-policies、node-probes 和 verify-scenarios 继续保护业务；仅更新旧组件 CSS 选择器，不削弱业务断言。生产构建和前端单测检查 API 与按钮统一性。
 这是浏览器生产组件+脱敏 IPC 验证；原生 WebView、系统对话框及完整安装环境待实机验收，不以模拟替代。
+
+## 标题栏规格（#641 / PR #642）
+
+标题统一使用区块标题16px，行高24px；默认上下留白12px，矮窗口（高度≤600px）8px，分别通过 --cb-modal-title-size/line-height 与 --cb-modal-header-padding-block/-compact 消费。保留水平留白、关闭按钮点击区域、三行长标题及底栏保护，标题与关闭按钮垂直居中。此规则作用于全部公共 Modal 消费方，不是自定义组专用覆盖。

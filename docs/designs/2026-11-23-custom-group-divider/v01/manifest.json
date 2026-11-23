@@ -1,0 +1,23 @@
+{
+  "date": "2026-11-23",
+  "version": "v01",
+  "issue": 641,
+  "baseline": "86260396f65571441b30c48e274f7c679552d816",
+  "status": "implemented; synthetic passed; native and CI pending",
+  "input": "User screenshot showing a trailing divider in the custom-group list modal",
+  "source_sha256": {
+    "apps/desktop/src/components/CustomGroups/CustomGroups.css": "76bf6c4879d630c089426ee950cead0ff710a456f4d51f321a186e4d11886963",
+    "apps/desktop/src/components/CustomGroups/index.tsx": "b2e56024512eb78ae7ba1de778259152cebc18b5023ebc8a4edc03d071a0e8b9",
+    "scripts/dev/verify-custom-groups.mjs": "8700b344f69f58405d8d749b5c1da6469b7a55a12c3c8aa35c8607ff117f09c2"
+  },
+  "artifacts": {
+    "source.zip": "94c46d47215894b24c8ea692bfe2d5c1e4c64117075f185d16db71b8d36e30dd",
+    "checks.json": "7b9d0a05385cdfe86ed220aa8c2b8ae23b9c4146dcb8a7798f8d9d600d0fef3c",
+    "SPEC.md": "14dfa997e1684fb15d9574b8cc119caa200b8980aa1d3a98bc59baba76bf284f",
+    "previews/before.png": "b501677803f7abecd5dd1a7e9de438daeecb0b5a09c92c4427d6ad9918917336",
+    "previews/after.png": "f8cb193c7ff647620a2739a041b57b548c4067e0ec4688dc0781fc01de4af8d0",
+    "previews/dark-small.png": "aa1e4d745d0cfe55fdfd4c5284f56234a92691043a2cce3cb08ed1982e17fb97",
+    "previews/editor-footer.png": "1b77928334646ba364709e3032c051b37daafadfd4ba772d2d4f9a9c770d388d",
+    "previews/multi-row.png": "8e929dfd68a230dd259a4e7a151a293a02f14efb72e42b5eeb597a2fb8a109d2"
+  }
+}

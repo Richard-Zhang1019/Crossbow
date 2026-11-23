@@ -1,0 +1,7 @@
+{
+  "base": "f7d6fb12a4aecb8831d64db46ed107c8cf4340d9",
+  "local": "TypeScript/Vite and design token gate passed",
+  "production": "Modal/Select/Notification + CustomGroups checks passed",
+  "native": "pending",
+  "CI": "pending; no polling"
+}
