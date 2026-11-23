@@ -29,10 +29,11 @@
 @media(max-width:760px) { .cb-node-heading-copy { flex-basis:100%; } .cb-node-heading-actions { margin-left:auto; } }
 
 
-/* A page owns placement: keep the shared action button outside the card's text flow. */
-.cb-node-card .cb-node-test { position:absolute; right:6px; top:6px; }
-
-.cb-node-card .cb-node-title { padding-right:var(--cb-space-28); }
+/* State and action have independent, always understandable locations (#647). */
+.cb-node-card .cb-node-test { position:relative; margin-left:var(--cb-space-2); }
+.cb-node-card[data-selected] .cb-node-title { padding-right:var(--cb-space-24); }
+.cb-node-card .cb-node-bottom { min-height:var(--cb-control-height-compact); }
+.cb-node-card .cb-node-bottom > .cb-mono { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
 .cb-node-automatic { display:flex; flex:none; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:var(--cb-space-12); padding:var(--cb-space-8) var(--cb-space-12); margin-bottom:var(--cb-space-8); border:var(--cb-stroke-1) solid var(--cb-line); border-radius:var(--cb-radius-8); color:var(--cb-text-dim); background:var(--cb-surface); font-size:var(--cb-type-secondary); line-height:var(--cb-leading-20-px); }
 .cb-node-automatic-copy { display:flex; flex-wrap:wrap; align-items:center; gap:var(--cb-space-4) var(--cb-space-12); min-width:0; }
