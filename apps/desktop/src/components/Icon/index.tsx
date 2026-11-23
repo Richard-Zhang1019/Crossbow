@@ -11,6 +11,10 @@ export function Icon({
   strokeWidth?: number;
 }) {
   const paths: Record<string, React.ReactNode> = {
+    "arrow-up": <path d="M12 20V4M6 10l6-6 6 6"/>,
+    "arrow-down": <path d="M12 4v16M6 14l6 6 6-6"/>,
+    edit: <><path d="m15 4 5 5M5 17l1-5L16 2l5 5L11 17l-6 1Z"/><path d="M3 22h18"/></>,
+    copy: <><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V3H3v13h5"/></>,
     automatic: <><path d="M20 8a8 8 0 0 0-13-3L3 9m0-6v6h6M4 16a8 8 0 0 0 13 3l4-4m0 6v-6h-6"/></>,
     bell: (
       <>

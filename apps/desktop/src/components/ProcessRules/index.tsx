@@ -1,3 +1,4 @@
+import { IconAction } from "@/components/IconAction";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Select from "@/components/Select";
 import Modal from "@/components/Modal";
@@ -172,7 +173,7 @@ export default function ProcessRules({
                   )}
                 </div>
                 <div className="cb-process-actions" role="cell">
-                  <Button
+                  <IconAction icon="edit" label={t("pr.edit")}
                     size="small"
                     disabled={busy !== null}
                     onClick={() =>
@@ -182,9 +183,7 @@ export default function ProcessRules({
                         target: rule.target,
                       })
                     }
-                  >
-                    {t("pr.edit")}
-                  </Button>
+                   />
                   <Button
                     size="small"
                     tone="danger"

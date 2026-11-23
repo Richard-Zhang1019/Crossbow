@@ -1,0 +1,14 @@
+{
+  "revision": "825c295def00a0d9825bfd580c6c89d071cbc738",
+  "before": false,
+  "source": "production pages + synthetic IPC/clipboard",
+  "errors": [],
+  "checks": [
+    "rename-cancel-save",
+    "rename-disabled",
+    "hover-and-focus-tooltip",
+    "clipboard-success-failure",
+    "dark-en-small-no-overflow",
+    "connection-copy-field-feedback"
+  ]
+}

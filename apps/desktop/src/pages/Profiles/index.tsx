@@ -1,3 +1,4 @@
+import { IconAction } from "@/components/IconAction";
 import ImportCompatibility from "./ImportCompatibility";
 import {Input} from "@/components/Controls";
 import type { NavigationTarget } from "@/lib/workflow";
@@ -556,7 +557,7 @@ function ProfileCard({
 
   return (
     <section>
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-1">
         {editing ? (
           <Input
             autoFocus
@@ -584,16 +585,14 @@ function ProfileCard({
         ) : (
           <h2 className="cb-legacy-text-xl font-[var(--cb-weight-medium)] cb-selectable">{profile.name}</h2>
         )}
-        <Button
+        <IconAction icon="edit" label={t("profiles.rename")}
           disabled={busy}
           onClick={() => {
             cancelRename.current = false;
             setNameDraft(profile.name);
             setEditing(true);
           }}
-        >
-          {t("profiles.rename")}
-        </Button>
+         />
         {active && <span className="cb-badge">{t("profiles.current")}</span>}
       </div>
       <dl className="cb-profile-facts">

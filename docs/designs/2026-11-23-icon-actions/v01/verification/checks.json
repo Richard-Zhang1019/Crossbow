@@ -1,0 +1,15 @@
+{
+  "build": "TypeScript + Vite passed (existing large chunk warning)",
+  "frontend_unit": "47 passed",
+  "production_ui": [
+    "verify-icon-actions",
+    "verify-lan",
+    "verify-process-rules",
+    "verify-user-rules",
+    "verify-custom-groups",
+    "verify-dns-probe",
+    "verify-scenarios --scenario 6"
+  ],
+  "native": "pending; no installed app or host network changes",
+  "ci": "triggered on PR; not polled"
+}
