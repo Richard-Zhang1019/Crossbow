@@ -1,0 +1,37 @@
+---
+import { createI18n, t, type Lang } from "../../i18n";
+import { REPO, LATEST } from "../../site-meta";
+
+const { lang } = Astro.props;
+const i18n = createI18n(lang);
+
+const base = import.meta.env.BASE_URL.replace(/\/+$/, "");
+const route = (input: string) => { const p = input.startsWith("/guide#") ? "/guide/" + input.slice(7) : input; return `${base}${lang === "zh" ? "/zh" : ""}${p === "/" ? "/" : p}`; };
+
+const CODE_FILTER = `function main(config) {
+  const keep = name => /香港|JP/.test(name);
+  const removed = new Set((config.proxies || [])
+    .filter(p => !keep(p.name)).map(p => p.name));
+  config.proxies = (config.proxies || []).filter(p => keep(p.name));
+  if (!config.proxies.length) throw new Error("No matching nodes");
+  for (const group of config["proxy-groups"] || []) {
+    if (Array.isArray(group.proxies)) {
+      group.proxies = group.proxies.filter(name => !removed.has(name));
+    }
+  }
+  return config;
+}`;
+const CODE_FILTER_EN = CODE_FILTER;
+---
+<p class="g-sum">{i18n("guide.48")} <code class="g-code">function main(config)</code>{i18n("guide.49")}</p>
+      <ul class="guide-intro code-preconditions">
+        <li>{lang === "zh" ? "示例只过滤内联节点，保留原规则；同时清理被移除节点的组引用。" : "This example filters inline nodes, preserves rules and removes references to deleted nodes."}</li>
+        <li>{lang === "zh" ? "请先确认组仍有有效成员；空组或内核不支持的配置应按校验错误修正。" : "Check that groups retain valid members; correct empty groups or unsupported configuration reported by validation."}</li>
+      </ul>
+      <div class="code-wrap">
+        <pre class="code-block"><code>{lang === "en" ? CODE_FILTER_EN : CODE_FILTER}</code></pre>
+        <button class="code-copy" data-copy-code title={i18n("guide.52")} aria-label={i18n("guide.52")}>{i18n("guide.53")}</button>
+      </div>
+      <div class="guide-step"><span>01</span><div><h3>{i18n("guide.54")}</h3><div>{i18n("guide.55")}</div></div></div>
+      <div class="guide-step"><span>02</span><div><h3>{i18n("guide.56")}</h3><div>{i18n("guide.57")}</div></div></div>
+      <div class="guide-step"><span>03</span><div><h3>{i18n("guide.58")}</h3><div>{i18n("guide.59")}</div></div></div>

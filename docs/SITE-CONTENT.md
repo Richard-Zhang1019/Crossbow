@@ -1,4 +1,50 @@
-# 官网内容覆盖与优化清单
+# 官网内容覆盖与维护
+
+## 当前文档标准（2026-11-23，#651）
+
+基线为 main `0267e60004846bbf54fa3f97c304449f7d8fa0ce`，核对 v0.15.0 至已发布 v0.15.3 的代码。本节替代旧版单页指南的组织方式；下方历史记录保留追溯。
+
+### 信息架构与视觉规范
+
+- `/guide`、`/zh/guide` 是文档概览；31 个功能各有中英独立静态路由文件，16 个原章节保留，新增15篇功能说明。全站构建72页，其中功能文档62页，加双语概览共64个文档页面。
+- 导航源在 `apps/site/src/docs/navigation.ts`，页面源为 `src/pages/guide/` / `src/pages/zh/guide/`；旧内容按功能拆到 `components/docs-content/`，不是继续渲染一个大文件并隐藏无关章节。
+- 桌面是常驻目录 + 独立正文滚动 + 宽屏本文目录，保留品牌、Manrope/中文系统字体和明暗色阶；文档标题32px、分组22px、小节17px、正文15px、目录13px、辅助12px，消费文档语义/刻度变量，保持文章行宽约740px。
+- 800px及以下目录为原生 details 披露控件，可筛选目录、Escape关闭，选中路由后收起；输入16px避免手机聚焦放大。代码/表格溢出只在自身区域处理。
+- 真实路由支持直接访问、刷新、前进/后退、语言对应和独立 title/description/canonical/hreflang/sitemap。旧 `/guide#章节` 自动转对应路由，无JS提供手动旧章节索引；未知锚点不任意跳转。
+- 目录筛选仅筛标题/简介，不冒充全文搜索。没有引入SPA/客户端Markdown解析依赖；无JavaScript时仍提供内容和原生目录导航。
+
+### 新补内容与实现依据
+
+| 文档路由 | 核对的实际实现 | 重要边界 |
+| --- | --- | --- |
+| local-import | `pages/Profiles/ImportCompatibility.tsx`；`src-tauri/src/commands/profiles.rs`；core `subscription.rs` | 本地解析、整批预检、TUIC/REALITY跨内核限制；导入不等于切换 |
+| nodes | `pages/Proxies/index.tsx` | 选择与测速分开；自动组手动固定/恢复 |
+| custom-groups | `components/CustomGroups` | 当前来源内联具体节点；创建不自动改变出口；自动测试会联网 |
+| user-rules | `components/UserRules`；core `user_rules.rs` | 进程→用户规则→规则集→订阅；仅规则模式；失效目标不降级DIRECT |
+| process-rules | `components/ProcessRules` | 使用实际进程身份；未知进程不可猜测；失效目标暂不生效 |
+| rule-sets | `components/RuleSets`；core `rule_sets.rs` | 文本子集、缓存与刷新；2MiB/50000条，不支持MRS/SRS |
+| dns | `pages/Settings/DnsSettings.tsx` | 沿用/自定义；mihomo多上游与sing-box单上游/引导限制 |
+| network-scenes | `components/SceneRules` | SSID与macOS权限；进入/离开恢复偏好，不额外开启TUN |
+| lan-sharing | `pages/Settings/LanSharing.tsx` | 地址/混合端口、网络隔离/防火墙；不对外网作连通保证 |
+| connections | `pages/Connections/index.tsx` | 真实命中/最后快照/未知进程；规则入口 |
+| statistics | `pages/Stats` | 本机快照估算、30天/容量裁剪、暂停/清除，不作为账单 |
+| node-quality | `pages/Proxies/NodeQuality.tsx` | 按目标统计、手动采样、控制器错误排除，不参与自动选路 |
+| node-tests | `components/NodeProbes` | 隔离测试，30秒，4MiB下载/1MiB上传，非带宽上限 |
+| dns-diagnostics | `pages/Diagnostics/DnsCheck.tsx` | A/AAAA和上下文、未观测不等于失败、不臆测上游/缓存 |
+| migration | core `config_package.rs`；`docs/config-package/README.md` | v2未加密且8MiB；不含域名/IP用户规则、自定义组、机器接管状态 |
+
+原章节补正：恢复入口改为「配置来源 → 备份与迁移 → 恢复快照」；原脚本示例改为保留规则、同步清理已移除节点的组引用，并增加可执行例子回归。快照恢复与配置包范围不同，不承诺完整应用备份。
+
+### 后续添加或修改文档
+
+1. 在导航源登记 slug、组别、双语标题/简介；在两种语言的 pages 目录新增同名 `.md` 或 `.astro`，每功能每语言仅一个路由。使用公共 DocsLayout。
+2. 内容按「入口→步骤→结果解释→支持边界→失败后下一步」书写，对照当前生产实现。Markdown内跨文档链接使用语言无关 `/guide/slug`，构建插件补语言和 SITE_BASE。
+3. 功能行为变化时同步两种语言、相关互链与覆盖表。新旧协议支持要区分本客户端导入/转换路径和上游内核能力；安全/隐私范围不能靠推测扩大。
+4. `npm run build --prefix apps/site` 同时执行网站单元回归；`node scripts/dev/verify-site-docs.mjs` 验证实际静态页面及交互。子路径验收需以同一 SITE_BASE 构建并运行脚本。
+5. 设计变化另存版本化源稿、说明、manifest和实际预览；本次见 `docs/designs/2026-11-23-site-docs/v01/`。不要把旧长页截图当成新路由效果。
+
+## 历史记录：v0.13 系列官网补充
+
 
 审查日期：2026-11-05。关联 #313。基线：main `a2063c1dfee9992dc35393fb1c42081a746b6113`（v0.13.5）。
 本轮补充已有功能说明，保持用户确认的白色/深色主题、简洁首屏和非截图式连接示意。

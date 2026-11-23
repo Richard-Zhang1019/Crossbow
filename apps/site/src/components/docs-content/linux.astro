@@ -1,0 +1,16 @@
+---
+import { createI18n, t, type Lang } from "../../i18n";
+import { REPO, LATEST } from "../../site-meta";
+
+const { lang } = Astro.props;
+const i18n = createI18n(lang);
+
+const base = import.meta.env.BASE_URL.replace(/\/+$/, "");
+const route = (input: string) => { const p = input.startsWith("/guide#") ? "/guide/" + input.slice(7) : input; return `${base}${lang === "zh" ? "/zh" : ""}${p === "/" ? "/" : p}`; };
+
+---
+<p class="guide-intro">{i18n("guide.68")} <a href="https://github.com/YangYuS8" target="_blank" rel="noopener noreferrer">YangYuS8</a>{i18n("guide.69")}</p>
+      <div class="guide-step"><span>01</span><div><h3>{i18n("guide.70")}</h3><div>{i18n("guide.71")}<a class="text-link" href={route("/download")}>{i18n("guide.72")}</a>{i18n("guide.73")} <code>./run.sh</code>{i18n("guide.74")}</div></div></div>
+      <div class="guide-step"><span>02</span><div><h3>{i18n("guide.75")}</h3><div>{i18n("guide.76")}</div></div></div>
+      <div class="guide-step"><span>03</span><div><h3>{i18n("guide.77")}</h3><div>{i18n("guide.78")} <a href={`${REPO}/blob/main/docs/LINUX-NETWORK.md`} target="_blank" rel="noopener noreferrer">{i18n("guide.79")}</a>{i18n("guide.80")}</div></div></div>
+      <p class="release-scope">{i18n("guide.81")} <a href={LATEST} target="_blank" rel="noopener noreferrer">{i18n("guide.82")}</a>{i18n("guide.83")} <a href={`${REPO}/blob/main/docs/LINUX-TESTING.md`} target="_blank" rel="noopener noreferrer">{i18n("guide.84")}</a>{i18n("guide.30")}</p>
