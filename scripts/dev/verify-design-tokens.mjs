@@ -38,7 +38,7 @@ for(const file of files){const source=readFileSync(file,'utf8');
  });
  for(const m of source.matchAll(/var\((--(?:cb-|font-|z-)[\w-]+)/g))references.push({name:m[1],file});
  if(file.endsWith('.tsx')){
-  if(/\b(?:fontSize|fontWeight|lineHeight)\s*:\s*\d/.test(source))errors.push(`${path.relative(root,file)}: literal inline typography`);
+  if(/\b(?:fontSize|fontWeight|lineHeight|padding|paddingTop|paddingBottom|paddingLeft|paddingRight|margin|marginTop|marginBottom|marginLeft|marginRight|gap|rowGap|columnGap)\s*:\s*\d/.test(source))errors.push(`${path.relative(root,file)}: literal inline typography/spacing`);
   if(/text-\[[\d.]+px\]|(?<![\w-])text-(?:xs|sm|base|lg|xl|[2-9]xl)\b/.test(source))errors.push(`${path.relative(root,file)}: literal Tailwind type scale`);
   if(/["']#[\da-f]{3,8}["']/i.test(source))errors.push(`${path.relative(root,file)}: inline palette`);
  }

@@ -238,7 +238,7 @@ function Row({ row, onClose, onInspect, onRule }: { row: ConnRow; onClose: () =>
         style={{ color: "var(--cb-text)" }}
       >
         {row.network && (
-          <span style={{ color: "var(--cb-faint)", marginRight: 6 }}>
+          <span style={{ color: "var(--cb-faint)", marginRight: "var(--cb-space-6)" }}>
             {row.network.toUpperCase()}
           </span>
         )}
