@@ -1,5 +1,10 @@
 /* Paint and interaction stay in Button; auxiliary actions only select semantic colors. */
 .cb-icon-action { --button-bg:transparent; --button-line:transparent; --button-ink:var(--cb-text-dim); --button-hover:var(--cb-surface-2); --button-hover-line:var(--cb-line-strong); }
+/* Inline content actions read as links, never as bordered mini-buttons. */
+.cb-icon-action[data-presentation="inline"] { --button-height:var(--cb-space-24); --button-ink:var(--cb-accent); --button-hover:transparent; --button-hover-line:transparent; --button-pressed:transparent; vertical-align:middle; }
+@media (hover:hover) and (pointer:fine) {
+  .cb-icon-action[data-presentation="inline"]:hover:not(:disabled):not([data-success]) { --button-ink:color-mix(in srgb,var(--cb-accent) 75%,var(--cb-text)); }
+}
 .cb-icon-action[data-success] { --button-ink:var(--cb-ok); }
 .cb-icon-action-status { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 .cb-icon-tooltip-positioner { z-index:var(--z-popover); }

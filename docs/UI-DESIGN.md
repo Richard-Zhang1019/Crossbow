@@ -100,11 +100,11 @@ macOS Dock、安装包、Windows/Linux 应用图标、iOS AppIcon、网站 favic
 
 ## 语义图标辅助操作（#643，2026-11-23）
 
-名称旁重命名、列表行编辑、字段/地址复制和紧凑刷新采用共享 IconAction（Button + 现有线性 Icon + Base UI Tooltip）。重命名/编辑为下划线铅笔，复制为双页，刷新为回转箭头；默认 16px 图标、28px 紧凑按钮。常态使用次要文字色与透明边框，hover 采用 surface-2 与边框提示，键盘焦点、pressed、disabled、loading、减少动效复用 Button。成功复制显示 cb-ok 勾选与对应状态，失败不假成功；每个字段反馈独立。
+名称旁重命名、列表行编辑、字段/地址复制和紧凑刷新采用共享 IconAction（Button + 现有线性 Icon + Base UI Tooltip）。重命名/编辑为下划线铅笔，复制为双页，刷新为回转箭头；按用户确认参考：名称/字段内容后使用 16px 强调色随文图标、24px 点击区，常态及 hover 均不画按钮框/背景；hover 通过图标颜色变化反馈。刷新等工具栏操作可保留 28px 紧凑按钮形态。键盘焦点、pressed、disabled、loading、减少动效复用 Button。成功复制在原位置显示 cb-ok 小勾与对应状态，不改变内容位置；图标紧跟内容而非靠整行右侧，失败不假成功；每个字段反馈独立。
 
 图标按钮必须有当前语言 aria-label，鼠标 hover（350ms）/键盘 focus 提供 portal Tooltip，明确 role 和描述关联；禁用/加载期间关闭提示。菜单中的编辑、主要新增/保存/测试/复制全部、危险删除、状态切换保留文字。日志行复制沿用固定占位和读窗冻结，仅替换为相同 copy/check 图形，保留原 title/aria-label 与 hover/focus 行为，避免实时列表内每行新增浮层状态。不要仅因“可以画图标”就删除操作含义。
 
-范围与生产前后/hover/成功/禁用截图见 `docs/designs/2026-11-23-icon-actions/v01`。
+最新确认方向和生产前后/hover/成功/禁用截图见 `docs/designs/2026-11-23-icon-actions/v02`，v01 留作历史。
 ## 流量统计工具栏（#644 / PR #645）
 
 同排的时间范围、刷新、暂停/继续记录和清除统计统一为34px高、12px字号。操作按钮使用公共 Button 的 `context="toolbar"`，由 `--cb-control-height-toolbar` / `--cb-type-control` 消费现有变量，不使用 small 档或页面私有尺寸。刷新保持等高正方形，文字按钮自然宽度；保留危险色、加载/禁用、键盘焦点和窄窗口换行。生产证据见 `docs/designs/2026-11-23-stats-toolbar/v01/`。

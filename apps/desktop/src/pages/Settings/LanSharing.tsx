@@ -94,8 +94,6 @@ function LanAccess({ id, port }: { id: string; port: number }) {
               <li key={key}>
                 <div className="cb-lan-address">
                   <span className="cb-lan-endpoint cb-selectable">{endpoint}</span>
-                  <span>{name}</span>
-                </div>
                 <IconAction icon="copy" success={justCopied}
                   label={
                     justCopied
@@ -104,6 +102,9 @@ function LanAccess({ id, port }: { id: string; port: number }) {
                   }
                   onClick={() => void copy(key, () => endpoint)}
                 />
+                  <span>{name}</span>
+                </div>
+
               </li>
             );
           })}
@@ -113,7 +114,7 @@ function LanAccess({ id, port }: { id: string; port: number }) {
         <p className="cb-lan-access-note" role={hasAddresses ? undefined : "status"}>
           {t(accessNote)}
         </p>
-        <IconAction icon="refresh" label={t("settings.lanRefresh")} loading={loading} onClick={refresh} />
+        <IconAction presentation="button" icon="refresh" label={t("settings.lanRefresh")} loading={loading} onClick={refresh} />
       </div>
     </section>
   );

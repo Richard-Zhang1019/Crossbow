@@ -8,17 +8,18 @@ type Props = Omit<ButtonProps,"children"|"iconOnly"|"aria-label"|"title"> & {
   icon: string;
   label: string;
   success?: boolean;
+  presentation?: "inline" | "button";
 };
 
 /** Quiet auxiliary action: one shared button interaction model, accessible tooltip. */
 export const IconAction = forwardRef<HTMLButtonElement,Props>(function IconAction(
-  {icon,label,success=false,size="small",className,disabled,loading,...props},ref,
+  {icon,label,success=false,presentation="inline",size="small",className,disabled,loading,...props},ref,
 ){
   const id=useId(), [open,setOpen]=useState(false);
   useEffect(()=>{if(disabled||loading)setOpen(false);},[disabled,loading]);
   return <Tooltip.Root open={open&&!disabled&&!loading} onOpenChange={setOpen} disabled={disabled||loading}>
     <Tooltip.Trigger delay={350} aria-describedby={open&&!disabled&&!loading?id:undefined} render={<Button {...props} ref={ref} size={size} iconOnly disabled={disabled} loading={loading}
-      aria-label={label} data-success={success||undefined} className={["cb-icon-action",className].filter(Boolean).join(" ")} />}>
+      aria-label={label} data-presentation={presentation} data-success={success||undefined} className={["cb-icon-action",className].filter(Boolean).join(" ")} />}>
       <Icon name={success?"check":icon} size={16}/>
       <span className="cb-icon-action-status" role="status">{success?label:""}</span>
     </Tooltip.Trigger>
