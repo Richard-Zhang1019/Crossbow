@@ -129,10 +129,10 @@ export default function StatsPage() {
   const range = RANGES.find(r => r.days === days)!;
   return <div className="cb-stats-page" aria-busy={loading}>
     <header className="cb-stats-heading"><div><h1>{t('stats.title')}</h1><p>{t('stats.localHint')}</p></div>
-      <div className="cb-stats-controls"><SegmentedControl label={t('stats.range')} value={String(days)} onChange={v => {if(v){setDays(Number(v));setSelected(null);}}} options={RANGES.map(r => ({value:String(r.days),label:t(r.labelKey)}))}/><Button iconOnly aria-label={t('stats.refresh')} title={t('stats.refresh')} onClick={() => { void load(); void loadControl(); }} disabled={controlPending} loading={loading}><Icon name="refresh" size={16}/></Button>
+      <div className="cb-stats-controls"><SegmentedControl label={t('stats.range')} value={String(days)} onChange={v => {if(v){setDays(Number(v));setSelected(null);}}} options={RANGES.map(r => ({value:String(r.days),label:t(r.labelKey)}))}/><Button context="toolbar" iconOnly aria-label={t('stats.refresh')} title={t('stats.refresh')} onClick={() => { void load(); void loadControl(); }} disabled={controlPending} loading={loading}><Icon name="refresh" size={16}/></Button>
         <div className="cb-stats-privacy">
-          <Button size="small" disabled={paused === null || controlPending} loading={controlPending && !clearing} onClick={() => void changeControl(false)}>{paused ? t('stats.resumeRecord') : t('stats.pauseRecord')}</Button>
-          <Button size="small" tone="danger" disabled={controlPending} loading={clearing} onClick={() => void changeControl(true)}>{t('stats.clearLocal')}</Button>
+          <Button context="toolbar" disabled={paused === null || controlPending} loading={controlPending && !clearing} onClick={() => void changeControl(false)}>{paused ? t('stats.resumeRecord') : t('stats.pauseRecord')}</Button>
+          <Button context="toolbar" tone="danger" disabled={controlPending} loading={clearing} onClick={() => void changeControl(true)}>{t('stats.clearLocal')}</Button>
         </div>
       </div>
     </header>
