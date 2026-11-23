@@ -15,6 +15,7 @@
 
 | 日期 | 主题 | 版本 | 状态 | 文件 | 关联 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-11-23 | 自定义组列表：行间分隔与末行去尾线 | v01 | 已修复，生产模拟/变量门禁通过；原生/CI待验 | [说明](2026-11-23-custom-group-divider/v01/SPEC.md) · [改前](2026-11-23-custom-group-divider/v01/previews/before.png) · [改后](2026-11-23-custom-group-divider/v01/previews/after.png) · [多行](2026-11-23-custom-group-divider/v01/previews/multi-row.png) · [源稿](2026-11-23-custom-group-divider/v01/source.zip) | #641 |
 | 2026-11-22 | 设计系统：语义规范、变量消费与门禁 | v01 | 已实现，本地/生产模拟通过；原生/CI待验 | [规范](../DESIGN-SYSTEM.md) · [说明](2026-11-22-design-system/v01/SPEC.md) · [图谱](2026-11-22-design-system/v01/previews/gallery-1120-light.png) · [深色](2026-11-22-design-system/v01/previews/gallery-880-dark.png) · [源稿](2026-11-22-design-system/v01/source.zip) | #639 |
 | 2026-11-22 | 统一 Modal 评审：长标题操作可达与失败通知可访问性 | v03 | 已修复，本地与生产模拟通过；原生/读屏/新 CI 待验 | [说明](2026-11-22-modal/v03/SPEC.md) · [改前](2026-11-22-modal/v03/previews/before-long-title-light.png) · [改后](2026-11-22-modal/v03/previews/after-long-title-dark.png) · [通知](2026-11-22-modal/v03/previews/after-notification-light.png) · [源稿](2026-11-22-modal/v03/source.zip) | #631 / PR #638 |
 | 2026-11-22 | 统一业务 Modal：同步 #634 自定义组新版 | v02 | 已实现，本地/生产组件模拟通过；原生 WebView 待验 | [说明](2026-11-22-modal/v02/SPEC.md) · [编辑](2026-11-22-modal/v02/previews/preview.png) · [小窗口](2026-11-22-modal/v02/previews/auto-small-bottom.png) · [源稿](2026-11-22-modal/v02/source.zip) | #631 / PR #638 |
