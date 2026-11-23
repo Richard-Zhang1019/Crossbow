@@ -65,3 +65,5 @@
 .cb-lan-access-note {
   font-size: var(--cb-type-caption);
 }
+
+.cb-lan-address-heading { display:flex; align-items:center; gap:var(--cb-space-4); color:var(--cb-text); font-weight:var(--cb-weight-medium); }

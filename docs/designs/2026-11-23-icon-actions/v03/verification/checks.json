@@ -1,0 +1,16 @@
+{
+  "CI_failure": {
+    "job": 137451399546,
+    "reason": "verify-design-tokens rejected margin:-1px in hidden copy status",
+    "fix": "remove unnecessary negative spacing; margin:0, no gate exemptions"
+  },
+  "local_pass": [
+    "verify-design-tokens (90 sources/230 definitions)",
+    "verify-design-system",
+    "verify-icon-actions including grouped refresh",
+    "verify-lan including loading/error/empty/retry",
+    "tsc + Vite"
+  ],
+  "native": "not run; WebView pending",
+  "new_CI": "triggered by push; not polled"
+}

@@ -84,6 +84,10 @@ function LanAccess({ id, port }: { id: string; port: number }) {
   return (
     <section id={id} className="cb-lan-access" aria-label={t("settings.lanAccess")}>
       <p>{t("settings.lanSetup")}</p>
+      <div className="cb-lan-address-heading" role="group" aria-label={t("settings.lanAddresses")}>
+        <span>{t("settings.lanAddresses")}</span>
+        <IconAction icon="refresh" label={t("settings.lanRefresh")} loading={loading} onClick={refresh} />
+      </div>
       {hasAddresses && (
         <ul className="cb-lan-addresses">
           {addresses?.map(({ interface: name, address }) => {
@@ -114,7 +118,6 @@ function LanAccess({ id, port }: { id: string; port: number }) {
         <p className="cb-lan-access-note" role={hasAddresses ? undefined : "status"}>
           {t(accessNote)}
         </p>
-        <IconAction presentation="button" icon="refresh" label={t("settings.lanRefresh")} loading={loading} onClick={refresh} />
       </div>
     </section>
   );

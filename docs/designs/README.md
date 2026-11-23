@@ -15,6 +15,7 @@
 
 | 日期 | 主题 | 版本 | 状态 | 文件 | 关联 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-11-23 | LAN 地址组刷新入口与图标 CI 规范修复 | v03 | 已实现，本地设计门禁/生产回归通过 | [说明](2026-11-23-icon-actions/v03/SPEC.md) · [调整前](2026-11-23-icon-actions/v03/previews/previous-lan-dark-small-hover.png) · [调整后](2026-11-23-icon-actions/v03/previews/after-lan-dark-small-hover.png) · [源稿](2026-11-23-icon-actions/v03/source.zip) | #643 / PR #646 |
 | 2026-11-23 | 随文修改/复制：内容后轻量图标与原位绿色小勾 | v02 | 已实现，按用户新参考；生产模拟通过 | [说明](2026-11-23-icon-actions/v02/SPEC.md) · [重命名](2026-11-23-icon-actions/v02/previews/after-rename-hover.png) · [成功小勾](2026-11-23-icon-actions/v02/previews/after-copy-success.png) · [源稿](2026-11-23-icon-actions/v02/source.zip) | #643 / PR #646 |
 | 2026-11-23 | 语义图标辅助操作：重命名、复制、编辑与刷新 | v01 | 已实现，本地/生产组件模拟通过；原生待验 | [说明](2026-11-23-icon-actions/v01/SPEC.md) · [改前](2026-11-23-icon-actions/v01/previews/before-profiles-light.png) · [hover](2026-11-23-icon-actions/v01/previews/after-rename-hover.png) · [深色小窗口](2026-11-23-icon-actions/v01/previews/after-lan-dark-small-hover.png) · [源稿](2026-11-23-icon-actions/v01/source.zip) | #643 |
 | 2026-11-23 | 流量统计：同排控件高度与字级统一 | v01 | 已实现，生产模拟/变量门禁通过；原生/CI待验 | [说明](2026-11-23-stats-toolbar/v01/SPEC.md) · [改前](2026-11-23-stats-toolbar/v01/previews/before-dark.png) · [改后](2026-11-23-stats-toolbar/v01/previews/after-dark.png) · [小窗口](2026-11-23-stats-toolbar/v01/previews/after-small-en.png) · [源稿](2026-11-23-stats-toolbar/v01/source.zip) | #644 / PR #645 |

@@ -6,6 +6,6 @@
   .cb-icon-action[data-presentation="inline"]:hover:not(:disabled):not([data-success]) { --button-ink:color-mix(in srgb,var(--cb-accent) 75%,var(--cb-text)); }
 }
 .cb-icon-action[data-success] { --button-ink:var(--cb-ok); }
-.cb-icon-action-status { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.cb-icon-action-status { position:absolute; width:1px; height:1px; padding:0; margin:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 .cb-icon-tooltip-positioner { z-index:var(--z-popover); }
 .cb-icon-tooltip { max-width:min(320px,calc(100vw - 24px)); padding:var(--cb-space-6) var(--cb-space-10); border:var(--cb-stroke-1) solid var(--cb-line-strong); border-radius:var(--cb-radius-6); background:var(--cb-floating); color:var(--cb-text); font-size:var(--cb-type-secondary); line-height:var(--cb-leading-1_5); overflow-wrap:anywhere; box-shadow:var(--cb-shadow-menu-soft); }
