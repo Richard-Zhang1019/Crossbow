@@ -1,0 +1,40 @@
+{
+  "date": "2026-11-23",
+  "version": "v01",
+  "issue": 647,
+  "baseline": "ba3b61dfafd87dd090d2525e1593db418521495b",
+  "input": "User supplied three screenshots of blank filter icon slot and node selected marker offset for hover test button",
+  "status": "implemented; simulated production checks passed; native and CI pending",
+  "source_sha256": {
+    "apps/desktop/src/components/ChoiceChip/index.tsx": "22048e0f49095bdffa8709568dd910a9bf090909d4c27737252c532ee4365a9b",
+    "apps/desktop/src/components/ChoiceChip/Choices.css": "fa2f2baae2aff48e7ec3bc67e153d6f82913eea3ef642cd783f210fa99dc0f32",
+    "apps/desktop/src/pages/Proxies/index.tsx": "89f1c7d987d7abeaf0eb157d6fd5f93654df3ef732693e0967d90623702d437b",
+    "apps/desktop/src/pages/Proxies/Proxies.css": "a509b32b2290d683af9af79dcca598d60f30fbaea310dbc5fb5f4e656e4b4c16",
+    "apps/desktop/src/styles/layout.css": "62c425e498413d2ccb930d1e32fe0608e17cd0150630ee360e8c80d3ec38f576",
+    "apps/desktop/src/layouts/Layout.css": "7a99e87b6e8d27c836343c01f96044a9a789b4938f29f32d1477b45de20a4ecc",
+    "scripts/dev/verify-choice-node-actions.mjs": "dad1af540c43677d5b909deb7af63f7e6fa9803b4d6996a7e2c64c29751f7076",
+    "scripts/dev/verify-node-quality.mjs": "18c8f45c2df297f162c45c5d4459064d2b09adfe06c83e2bb6e475b184c2745c",
+    "scripts/dev/verify-node-probes.mjs": "88a39d9cf7d371be3b8c95785e54023da0ca3801a41b6fe3e0d28fbf4098410c",
+    "scripts/dev/verify-lib.mjs": "7a2218f1f4af049eff072c4a2d75d94633900863482f353f2bfae63bf7e9d1e5",
+    "docs/UI-DESIGN.md": "cdb9832bed2927434ff723745bc2ef93e650425fce9f08fd15e2dc94d9a5d54b"
+  },
+  "artifacts": {
+    "SPEC.md": "248e89fa860da5a14ff4d21948d916c25058d3cde0b3aa9b2f56fe1d2119e7c5",
+    "after-checks.json": "c602fcdca71920519ea63f03c07ab33953c9ece7a3fa75202304a6fe58bceccb",
+    "before-checks.json": "3bc9a138359a7e697134d14003e719bb9522ab6393c96e4af6ae4f2a2bc31601",
+    "previews/after-light-hover.png": "f70a70c00033bd23ffbe49fe9e4ed11d4e6e2eda3de51c2a98d25d805306f9be",
+    "previews/after-light-off.png": "c49a5dedd1ff18d0fa1d9453fe0d2132865152ae958dcc83c873eddb688bb275",
+    "previews/after-light-on.png": "391f2174a17d5d2d84e45c460b046d2056cc60c28eec6c043ca06c3b29a9c9eb",
+    "previews/after-small-dark-en.png": "5cfaf1270c5c0dac2b732fca7a0e6c271cca81deb98eae5fb0a16e4020b8667a",
+    "previews/before-light-hover.png": "50dca16bf4e7ccfd18cd20faa077906c54d1572e0e919453d308d52eb4ec8ba9",
+    "previews/before-light-off.png": "e953963c3a37ac4b3e9ea8b4ed3ba0c7a85914626cd8320f9a0b429109d65c7f",
+    "previews/before-light-on.png": "74785667f750f3a54353b1c89a31033c60b23dd12aec91e1c9ef1f7738e6758b",
+    "previews/before-small-dark-en.png": "aa535e6fedf2776df272a2d8374e0df336822b1b61698d6d582d1c561b72f548",
+    "previews/quality-filters.png": "b84cb007e233139b6f91316865a1d6ee0432195f0903e3da1b9c4551c9fe452c",
+    "previews/small-keyboard.png": "ba4d061dbd51c16069345ae4784e1e9d2223892edf67deb5348c239c9886eaa7",
+    "previews/testing.png": "d424b24091b9ab8a79b1e2c678e350a9a43c344d89b1bb49dd9638f74d83c6c1",
+    "probes-checks.json": "de5d8193fc56ea573458b0cd951f118a4be330f9acf5c274dad55e67bffd6db5",
+    "quality-checks.json": "0b159839e34985d32595bbb0cb77b212e3462c9a25d22072b0facf4193e93180",
+    "source.zip": "6fb29c2ba67730edca529f3be424f09cf283f77d1ff1e3b03e1a08fa8b7bc27a"
+  }
+}

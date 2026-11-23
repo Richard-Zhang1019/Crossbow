@@ -1,0 +1,18 @@
+{
+  "revision": "ba3b61dfafd87dd090d2525e1593db418521495b",
+  "before": false,
+  "simulation": true,
+  "errors": [],
+  "checks": [
+    "no-automatic-probe",
+    "TCP-HTTPS-UDP-separate",
+    "payload-warning",
+    "partial-upload",
+    "late-ticket-cancel",
+    "status-read-failure",
+    "history-clear",
+    "close-cancel",
+    "small-dark-en",
+    "no-selection-side-effects"
+  ]
+}

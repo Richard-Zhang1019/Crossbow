@@ -574,6 +574,8 @@ function GroupCard({
                 }
               }}
               aria-disabled={selecting !== null}
+              aria-pressed={sel}
+              data-selected={sel || undefined}
               className={`cb-node-card group relative rounded-[10px] px-3 py-2.5 text-left cursor-pointer transition-colors ${
                 selecting === `${group.name}:${n.name}` ? "opacity-60" : ""
               }`}
@@ -585,31 +587,18 @@ function GroupCard({
               }}
               title={[group.kind === "URLTest" ? t("proxies.pinHint") : n.kind, testDetails].join("\n")}
             >
-              {sel && !nodeTesting && (
-                <span className="cb-node-selected">
+              {sel && (
+                <span className="cb-node-selected" aria-hidden="true">
                   <Icon name="check" size={17} strokeWidth={2} />
                 </span>
               )}
-              <Button iconOnly size="small"
-                className="cb-node-test z-10 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-                title={`${t("proxies.testNode")} ${nodeNameText(n.name)}`}
-                aria-label={`${t("proxies.testNode")} ${nodeNameText(n.name)}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onTestNode(n.name);
-                }}
-                style={{ opacity: nodeTesting ? 1 : undefined }}
-                disabled={nodeTesting || busy} loading={nodeTesting}
-              >
-                <Icon name="bolt" size={13} />
-              </Button>
               <div
                 className="cb-node-title pointer-events-none truncate text-[var(--cb-type-body)] font-[var(--cb-weight-medium)]"
                 title={nodeNameText(n.name)}
               >
                 <NodeName name={n.name} />
               </div>
-              <div className="cb-node-bottom pointer-events-none mt-1.5 flex items-center gap-1.5">
+              <div className="cb-node-bottom mt-1.5 flex items-center gap-1.5">
                 <span className="cb-node-kind" title={n.kind}>{friendlyKind(n.kind,t)}</span>
                 <i
                   className="h-[5px] w-[5px] flex-none rounded-full"
@@ -634,6 +623,18 @@ function GroupCard({
                 >
                   {nodeTesting ? t("proxies.testing") : testLabel}
                 </span>
+                <Button iconOnly size="small"
+                  className="cb-node-test"
+                  title={`${t("proxies.testNode")} ${nodeNameText(n.name)}`}
+                  aria-label={`${t("proxies.testNode")} ${nodeNameText(n.name)}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onTestNode(n.name);
+                  }}
+                  disabled={nodeTesting || busy} loading={nodeTesting}
+                >
+                  <Icon name="bolt" size={13} />
+                </Button>
               </div>
             </div>
           );

@@ -212,11 +212,10 @@
   justify-content: space-between;
 }
 .cb-node-toolbar-page .cb-node-selected {
-  right: 38px;
-  top: 8px;
+  right: var(--cb-space-10);
+  top: var(--cb-space-8);
 }
 .cb-node-toolbar-page .cb-node-title {
-  padding-right: var(--cb-space-50);
   display: flex;
   align-items: center;
   gap: var(--cb-space-4);
