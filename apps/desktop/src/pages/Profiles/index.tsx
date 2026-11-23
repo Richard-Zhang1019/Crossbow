@@ -582,7 +582,7 @@ function ProfileCard({
             }}
           />
         ) : (
-          <h2 className="text-xl font-medium cb-selectable">{profile.name}</h2>
+          <h2 className="cb-legacy-text-xl font-[var(--cb-weight-medium)] cb-selectable">{profile.name}</h2>
         )}
         <Button
           disabled={busy}
@@ -626,7 +626,7 @@ function ProfileCard({
       {profile.kind === "remote" && (
         <div className="cb-setting-row flex items-center justify-between">
           <div>
-            <div className="text-sm">{t("profiles.remote")}</div>
+            <div className="cb-legacy-text-sm">{t("profiles.remote")}</div>
 
           </div>
           <Select
@@ -652,7 +652,7 @@ function ProfileCard({
                 value={pct}
                 label={`${Math.round(pct)}%`}
               />
-              <p className="text-[13px] tabular-nums">
+              <p className="text-[var(--cb-type-body)] tabular-nums">
                 {fmtBytesLocal(used)} / {fmtBytesLocal(traffic.total)}
               </p>
             </>

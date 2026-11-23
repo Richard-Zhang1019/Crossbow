@@ -604,7 +604,7 @@ function GroupCard({
                 <Icon name="bolt" size={13} />
               </Button>
               <div
-                className="cb-node-title pointer-events-none truncate text-[13px] font-medium"
+                className="cb-node-title pointer-events-none truncate text-[var(--cb-type-body)] font-[var(--cb-weight-medium)]"
                 title={nodeNameText(n.name)}
               >
                 <NodeName name={n.name} />
@@ -625,7 +625,7 @@ function GroupCard({
                   }}
                 />
                 <span
-                  className="cb-mono text-[10.5px]"
+                  className="cb-mono text-[var(--cb-type-compat-10_5)]"
                   style={{
                     color: nodeTesting
                       ? "var(--cb-accent)"

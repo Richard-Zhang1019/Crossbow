@@ -135,6 +135,8 @@ jobs:
           node scripts/dev/verify-dns-settings.mjs
           node scripts/dev/verify-dns-probe.mjs
           node scripts/dev/verify-modal.mjs
+          node scripts/dev/verify-design-tokens.mjs
+          node scripts/dev/verify-design-system.mjs
           node scripts/dev/verify-diagnostics-layout.mjs
           node scripts/dev/verify-node-quality.mjs
           node scripts/dev/verify-custom-groups.mjs
@@ -208,6 +210,8 @@ jobs:
           node scripts/dev/verify-dns-settings.mjs
           node scripts/dev/verify-dns-probe.mjs
           node scripts/dev/verify-modal.mjs
+          node scripts/dev/verify-design-tokens.mjs
+          node scripts/dev/verify-design-system.mjs
           node scripts/dev/verify-diagnostics-layout.mjs
           node scripts/dev/verify-node-quality.mjs
           node scripts/dev/verify-custom-groups.mjs

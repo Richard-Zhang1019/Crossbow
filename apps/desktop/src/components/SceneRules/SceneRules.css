@@ -1,19 +1,19 @@
 .cb-scene-rules {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding-block: 4px 8px;
+  gap: var(--cb-space-14);
+  padding-block: var(--cb-space-4) var(--cb-space-8);
   min-width: 0;
 }
 .cb-scene-intro {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
+  gap: var(--cb-space-24);
 }
 .cb-scene-intro > p {
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: var(--cb-type-secondary);
+  line-height: var(--cb-leading-1_6);
   color: var(--cb-text-dim);
   margin: 0;
   max-width: 500px;
@@ -21,50 +21,50 @@
 .cb-scene-tools {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--cb-space-8);
   flex-shrink: 0;
 }
 .cb-scene-network {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
-  padding: 15px 16px;
+  gap: var(--cb-space-20);
+  padding: var(--cb-space-15) var(--cb-space-16);
   background: var(--cb-surface);
-  border-radius: 8px;
+  border-radius: var(--cb-radius-8);
   min-width: 0;
 }
 .cb-scene-network-name {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: var(--cb-space-14);
   min-width: 0;
 }
 .cb-scene-current-label {
-  font-size: 12px;
+  font-size: var(--cb-type-secondary);
   color: var(--cb-text-dim);
   flex-shrink: 0;
 }
 .cb-scene-network-name strong {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--cb-type-body);
+  font-weight: var(--cb-weight-semibold);
   color: var(--cb-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .cb-scene-status {
-  font-size: 12px;
+  font-size: var(--cb-type-secondary);
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--cb-space-7);
   color: var(--cb-text-dim);
   white-space: nowrap;
 }
 .cb-scene-status i {
   height: 6px;
   width: 6px;
-  border-radius: 50%;
+  border-radius: var(--cb-radius-circle);
   background: var(--cb-text-dim);
 }
 .cb-scene-status i[data-active] {
@@ -74,34 +74,34 @@
 .cb-scene-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 160px 30px;
-  gap: 16px;
+  gap: var(--cb-space-16);
   align-items: center;
 }
 .cb-scene-table-head {
-  font-size: 11px;
+  font-size: var(--cb-type-caption);
   color: var(--cb-text-dim);
-  padding: 0 0 10px;
+  padding: 0 0 var(--cb-space-10);
 }
 .cb-scene-row {
-  padding: 12px 0;
-  border-top: 1px solid var(--cb-line);
+  padding: var(--cb-space-12) 0;
+  border-top: var(--cb-stroke-1) solid var(--cb-line);
 }
 .cb-scene-identity {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--cb-space-10);
   min-width: 0;
 }
 .cb-scene-identity strong {
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--cb-type-body);
+  font-weight: var(--cb-weight-medium);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
   color: var(--cb-text);
 }
 .cb-scene-identity > span {
-  font-size: 11px;
+  font-size: var(--cb-type-caption);
   color: var(--cb-text-dim);
   white-space: nowrap;
   flex-shrink: 0;
@@ -113,35 +113,35 @@
 .cb-scene-footnote,
 .cb-scene-access-note,
 .cb-scene-empty {
-  font-size: 11px;
-  line-height: 1.6;
+  font-size: var(--cb-type-caption);
+  line-height: var(--cb-leading-1_6);
   color: var(--cb-text-dim);
   margin: 0;
 }
 .cb-scene-empty {
-  padding: 12px 0;
+  padding: var(--cb-space-12) 0;
 }
 .cb-scene-error {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  font-size: 12px;
+  gap: var(--cb-space-16);
+  font-size: var(--cb-type-secondary);
   color: var(--cb-text-dim);
 }
 .cb-scene-form {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--cb-space-12);
   min-width: 320px;
 }
 .cb-scene-form > label {
-  font-size: 13px;
+  font-size: var(--cb-type-body);
   color: var(--cb-text);
 }
 @media (max-width: 900px) {
   .cb-scene-intro {
-    gap: 16px;
+    gap: var(--cb-space-16);
     align-items: flex-start;
   }
   .cb-scene-intro > p {
@@ -150,18 +150,18 @@
   .cb-scene-table-head,
   .cb-scene-row {
     grid-template-columns: minmax(0, 1fr) 132px 30px;
-    gap: 10px;
+    gap: var(--cb-space-10);
   }
   .cb-scene-network {
-    padding: 12px;
+    padding: var(--cb-space-12);
   }
   .cb-scene-network-name {
-    gap: 10px;
+    gap: var(--cb-space-10);
   }
   .cb-scene-identity {
     flex-direction: column;
     align-items: flex-start;
-    gap: 2px;
+    gap: var(--cb-space-2);
   }
   .cb-scene-identity strong {
     max-width: 100%;

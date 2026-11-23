@@ -389,7 +389,7 @@ export default function SettingsPage({
           )}
           <Row label={t("settings.version")} hint={selectedEngine === "singbox" ? "sing-box" : "mihomo"}>
             <span
-              className="cb-selectable text-xs"
+              className="cb-selectable cb-legacy-text-xs"
               style={{ color: "var(--cb-text-dim)" }}
             >
               {engineBin?.source === "missing"
@@ -459,7 +459,7 @@ export default function SettingsPage({
                 </svg>
               )}
               {tunBusy && (
-                <span className="text-xs text-[var(--cb-text-dim)]">
+                <span className="cb-legacy-text-xs text-[var(--cb-text-dim)]">
                   {t("settings.tunSwitching")}
                 </span>
               )}
@@ -489,7 +489,7 @@ export default function SettingsPage({
               hint={t(isLinux ? "linux.tunHint" : "settings.tunStateHint")}
             >
               <span
-                className="text-xs"
+                className="cb-legacy-text-xs"
                 style={{ color: tun?.ready ? "var(--cb-ok)" : "var(--cb-warn)" }}
               >
                 {isLinux ? t(tun?.ready ? "linux.serviceReady" : "linux.serviceMissing")
@@ -714,7 +714,7 @@ export default function SettingsPage({
           </Row>
           <Row label={t("settings.appVersion")} hint="Crossbow">
             <span
-              className="text-xs tabular-nums"
+              className="cb-legacy-text-xs tabular-nums"
               style={{ fontFamily: "var(--cb-mono)", color: "var(--cb-text)" }}
             >
               {appVersion === "…" || appVersion === "—"

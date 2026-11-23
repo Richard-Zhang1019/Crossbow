@@ -1,0 +1,15 @@
+{
+  "reason": "Ceilings for existing legacy font consumers; new UI uses semantic roles. Changes require explicit review.",
+  "maximumReferences": {
+    "--cb-type-compat-14": 5,
+    "--cb-type-compat-11_5": 5,
+    "--cb-type-compat-18": 1,
+    "--cb-type-compat-10": 6,
+    "--cb-type-compat-21": 1,
+    "--cb-type-compat-22": 3,
+    "--cb-type-compat-10_5": 1,
+    "--cb-type-compat-23": 1,
+    "--cb-type-compat-34": 1,
+    "--cb-type-compat-30": 1
+  }
+}

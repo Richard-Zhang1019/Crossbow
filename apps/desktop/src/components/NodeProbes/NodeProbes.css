@@ -1,16 +1,16 @@
-.cb-node-probes { border-top:1px solid var(--cb-line); padding-top:14px; }
-.cb-probe-note, .cb-probe-date, .cb-probe-demand { color:var(--cb-text-dim); font-size:12px; }
+.cb-node-probes { border-top:var(--cb-stroke-1) solid var(--cb-line); padding-top:var(--cb-space-14); }
+.cb-probe-note, .cb-probe-date, .cb-probe-demand { color:var(--cb-text-dim); font-size:var(--cb-type-secondary); }
 .cb-probe-demand { margin-left:auto; align-self:center; }
-.cb-probe-mode { display:flex; flex-wrap:wrap; gap:6px; }
-.cb-probe-budget { color:var(--cb-text); font-size:12px; margin:12px 0 6px; }
-.cb-probe-note { margin:6px 0; line-height:1.6; }
-.cb-probe-action { display:flex; align-items:center; gap:12px; margin:12px 0; }
-.cb-probe-action > span { display:flex; flex:1; align-items:center; gap:8px; color:var(--cb-accent); }
-.cb-probe-date { margin-bottom:8px; }
+.cb-probe-mode { display:flex; flex-wrap:wrap; gap:var(--cb-space-6); }
+.cb-probe-budget { color:var(--cb-text); font-size:var(--cb-type-secondary); margin:var(--cb-space-12) 0 var(--cb-space-6); }
+.cb-probe-note { margin:var(--cb-space-6) 0; line-height:var(--cb-leading-1_6); }
+.cb-probe-action { display:flex; align-items:center; gap:var(--cb-space-12); margin:var(--cb-space-12) 0; }
+.cb-probe-action > span { display:flex; flex:1; align-items:center; gap:var(--cb-space-8); color:var(--cb-accent); }
+.cb-probe-date { margin-bottom:var(--cb-space-8); }
 .cb-probe-report dl { margin:0; }
-.cb-probe-report dl > div { display:flex; align-items:baseline; justify-content:space-between; gap:16px; padding:8px 0; border-bottom:1px solid var(--cb-line); }
+.cb-probe-report dl > div { display:flex; align-items:baseline; justify-content:space-between; gap:var(--cb-space-16); padding:var(--cb-space-8) 0; border-bottom:var(--cb-stroke-1) solid var(--cb-line); }
 .cb-probe-report dt { color:var(--cb-text-dim); flex:none; }
 .cb-probe-report dd { margin:0; text-align:right; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
-.cb-probe-history { margin-top:12px; }
+.cb-probe-history { margin-top:var(--cb-space-12); }
 .cb-probe-history summary { color:var(--cb-text-dim); cursor:pointer; }
-.cb-probe-history > button { display:block; margin-top:6px; }
+.cb-probe-history > button { display:block; margin-top:var(--cb-space-6); }

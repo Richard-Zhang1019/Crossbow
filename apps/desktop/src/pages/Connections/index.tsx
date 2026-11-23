@@ -208,7 +208,7 @@ export default function ConnectionsPage() {
 function Empty({ text }: { text: string }) {
   return (
     <div
-      className="flex items-center justify-center text-xs"
+      className="flex items-center justify-center cb-legacy-text-xs"
       style={{ minHeight: 160, color: "var(--cb-text-dim)" }}
     >
       {text}
@@ -228,7 +228,7 @@ function Row({ row, onClose, onInspect, onRule }: { row: ConnRow; onClose: () =>
         height: ROW_H,
         gridTemplateColumns: CONNECTION_COLUMNS,
         borderBottom: "1px solid var(--cb-line)",
-        fontSize: 13,
+        fontSize: "var(--cb-type-body)",
         color: "var(--cb-text-dim)",
       }}
     >
@@ -238,7 +238,7 @@ function Row({ row, onClose, onInspect, onRule }: { row: ConnRow; onClose: () =>
         style={{ color: "var(--cb-text)" }}
       >
         {row.network && (
-          <span style={{ color: "var(--cb-faint)", marginRight: 6 }}>
+          <span style={{ color: "var(--cb-faint)", marginRight: "var(--cb-space-6)" }}>
             {row.network.toUpperCase()}
           </span>
         )}
@@ -347,26 +347,26 @@ function AppRow({
       <span className="flex items-center gap-2 truncate">
         <ProcessAvatar name={agg.process} size={22} />
         <span
-          className="cb-selectable truncate text-[12px]"
+          className="cb-selectable truncate text-[var(--cb-type-secondary)]"
           style={{ color: "var(--cb-text)" }}
         >
           {agg.process.trim() ? agg.process : t("conn.unknownProcess")}
         </span>
       </span>
       <span
-        className="cb-mono text-right text-[11.5px]"
+        className="cb-mono text-right text-[var(--cb-type-compat-11_5)]"
         style={{ color: "var(--cb-text-dim)" }}
       >
         {agg.count}
       </span>
-      <span className="cb-mono text-right text-[11.5px]">
+      <span className="cb-mono text-right text-[var(--cb-type-compat-11_5)]">
         {fmtBytes(agg.up)}
       </span>
-      <span className="cb-mono text-right text-[11.5px]">
+      <span className="cb-mono text-right text-[var(--cb-type-compat-11_5)]">
         {fmtBytes(agg.down)}
       </span>
       <span
-        className="cb-mono text-right text-[11.5px]"
+        className="cb-mono text-right text-[var(--cb-type-compat-11_5)]"
         style={{ color: "var(--cb-faint)" }}
       >
         {fmtDuration(agg.maxElapsed)}
@@ -378,12 +378,12 @@ function AppRow({
 // ---------- 进程图标（首字母圆形 badge，色板哈希） ----------
 
 const AVATAR_COLORS: [string, string][] = [
-  ["rgba(122,162,255,.16)", "#7aa2ff"],
-  ["rgba(157,140,255,.16)", "#9d8cff"],
-  ["rgba(74,222,128,.14)", "#4ade80"],
-  ["rgba(251,191,36,.14)", "#fbbf24"],
-  ["rgba(248,113,113,.14)", "#f87171"],
-  ["rgba(34,211,238,.14)", "#22d3ee"],
+  ["var(--cb-avatar-0-bg)", "var(--cb-avatar-0-fg)"],
+  ["var(--cb-avatar-1-bg)", "var(--cb-avatar-1-fg)"],
+  ["var(--cb-avatar-2-bg)", "var(--cb-avatar-2-fg)"],
+  ["var(--cb-avatar-3-bg)", "var(--cb-avatar-3-fg)"],
+  ["var(--cb-avatar-4-bg)", "var(--cb-avatar-4-fg)"],
+  ["var(--cb-avatar-5-bg)", "var(--cb-avatar-5-fg)"],
 ];
 
 export function ProcessAvatar({
@@ -402,14 +402,14 @@ export function ProcessAvatar({
   const [bg, fg] = AVATAR_COLORS[hash % AVATAR_COLORS.length];
   return (
     <span
-      className="grid flex-none place-items-center rounded-full font-semibold"
+      className="grid flex-none place-items-center rounded-full font-[var(--cb-weight-semibold)]"
       style={{
         width: size,
         height: size,
         background: bg,
         color: fg,
-        fontSize: size * 0.58,
-        lineHeight: 1,
+        fontSize: `calc(${size}px * var(--cb-avatar-label-scale))`,
+        lineHeight: "var(--cb-leading-1)",
       }}
     >
       {letter}

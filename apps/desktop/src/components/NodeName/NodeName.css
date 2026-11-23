@@ -1,7 +1,7 @@
-.cb-node-flag { display: inline-block; width: 1.25em; height: .9375em; object-fit: contain; vertical-align: -.08em; margin-inline-end: .4em; flex: none; }
-.cb-node-region { display: inline-block; color: var(--cb-text-dim); font-size: .85em; margin-inline-end: .4em; }
+.cb-node-flag { display: inline-block; width: 1.25em; height: .9375em; object-fit: contain; vertical-align: -.08em; margin-inline-end: var(--cb-space-relative-_4em); flex: none; }
+.cb-node-region { display: inline-block; color: var(--cb-text-dim); font-size: var(--cb-node-region-scale); margin-inline-end: var(--cb-space-relative-_4em); }
 
 /* The outline belongs to the image box, preserving white regions in light mode. */
-.cb-node-flag { outline: 1px solid var(--cb-line-strong); outline-offset: 0; border-radius: 1px; }
+.cb-node-flag { outline: var(--cb-stroke-1) solid var(--cb-line-strong); outline-offset: 0; border-radius: var(--cb-radius-1); }
 
-.cb-node-auto-mark { display:inline-flex; vertical-align:-2px; margin-right:4px; flex:none; }
+.cb-node-auto-mark { display:inline-flex; vertical-align:-2px; margin-right:var(--cb-space-4); flex:none; }

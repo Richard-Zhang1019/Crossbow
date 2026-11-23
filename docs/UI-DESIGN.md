@@ -1,5 +1,7 @@
 # Crossbow B 版界面规范
 
+基础视觉与变量消费规则见 [界面设计系统](DESIGN-SYSTEM.md)。新增界面先按语义选择字号、文字颜色、间距及组件规格；桌面基础值由 styles/tokens.css 维护，生产消费门禁为 verify-design-tokens.mjs。
+
 本次采用用户确认的 **Frame Studio** 布局与平衡冷灰深色主题，关联 #149。布局改动保留已有 IPC、通知队列、配置与 VPN 生命周期。
 
 ## 导航与功能

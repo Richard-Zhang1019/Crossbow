@@ -1,0 +1,16 @@
+{
+  "baseline": "bfc7583346353a89aa07e3b2402021c4e2531b18",
+  "build": "passed; existing large bundle warning",
+  "unit": "47 passed",
+  "production_scenarios": "10 passed; zh/en light/dark default/minimum",
+  "modal": "passed with production Select and NotificationProvider",
+  "design_gate": "passed;88 sources,226 definitions, hardcoding/undefined refs/legacy budget",
+  "gallery": "production components, five type roles checked; 1120/880 light/dark",
+  "native": "pending",
+  "CI": "pending; no polling",
+  "visual_sample": {
+    "light": "byte-identical",
+    "dark": "71 pixels in background trigger buttons; modal itself unchanged"
+  },
+  "scope": "desktop CSS/TSX; geometry, assets, web and native platforms documented separately"
+}

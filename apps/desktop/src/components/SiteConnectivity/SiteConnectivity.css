@@ -1,2 +1,2 @@
 /* Keep text away from both edges of every hover target, including the first. */
-.cb-site-section .cb-site-grid > .cb-site-card { padding-inline: 14px; }
+.cb-site-section .cb-site-grid > .cb-site-card { padding-inline: var(--cb-space-14); }

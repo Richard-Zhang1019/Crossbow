@@ -1,7 +1,7 @@
 .cb-rulesets {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--cb-space-16);
   min-height: 0;
   flex: 1;
 }
@@ -9,12 +9,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--cb-space-16);
 }
 .cb-rulesets-toolbar > span {
-  font-weight: 600;
+  font-weight: var(--cb-weight-semibold);
   display: flex;
-  gap: 10px;
+  gap: var(--cb-space-10);
   align-items: center;
 }
 .cb-rulesets-table.cb-card {
@@ -30,8 +30,8 @@
 }
 .cb-rulesets-row {
   min-height: 68px;
-  padding-block: 12px;
-  border-bottom: 1px solid var(--cb-line);
+  padding-block: var(--cb-space-12);
+  border-bottom: var(--cb-stroke-1) solid var(--cb-line);
 }
 .cb-rulesets-row:last-child {
   border-bottom: 0;
@@ -45,49 +45,49 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--cb-space-5);
 }
 .cb-rulesets-identity strong,
 .cb-rulesets-policy > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 500;
+  font-weight: var(--cb-weight-medium);
 }
 .cb-rulesets-identity > span,
 .cb-rulesets-cache small,
 .cb-rulesets-policy small {
   color: var(--cb-text-dim);
-  font-size: var(--font-sm);
+  font-size: var(--cb-type-secondary);
   overflow-wrap: anywhere;
 }
 .cb-rulesets-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 12px;
+  gap: var(--cb-space-12);
 }
 .cb-rulesets-empty {
-  padding: 44px 24px;
+  padding: var(--cb-space-44) var(--cb-space-24);
   text-align: center;
-  border: 1px solid var(--cb-line);
-  border-radius: 12px;
+  border: var(--cb-stroke-1) solid var(--cb-line);
+  border-radius: var(--cb-radius-12);
   color: var(--cb-text-dim);
 }
 .cb-rulesets-empty h3 {
-  margin: 0 0 12px;
+  margin: 0 0 var(--cb-space-12);
   color: var(--cb-text);
-  font-size: var(--font-lg);
+  font-size: var(--cb-type-section);
 }
 .cb-rulesets-empty p {
   margin: 0;
-  line-height: 1.6;
+  line-height: var(--cb-leading-1_6);
 }
 .cb-rulesets-menu {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 6px;
+  gap: var(--cb-space-6);
+  padding: var(--cb-space-6);
 }
 .cb-rulesets-menu .cb-button {
   justify-content: flex-start;
@@ -95,13 +95,13 @@
 .cb-rulesets-form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--cb-space-14);
 }
 .cb-rulesets-form label {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  font-weight: 500;
+  gap: var(--cb-space-6);
+  font-weight: var(--cb-weight-medium);
   min-width: 0;
 }
 .cb-rulesets-form .cb-input,
@@ -112,12 +112,12 @@
 .cb-rulesets-form-pair {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: var(--cb-space-12);
 }
 .cb-rulesets-form-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--cb-space-8);
 }
 .cb-rulesets-form .cb-control-note {
   margin: 0;
@@ -127,7 +127,7 @@
     grid-template-columns: minmax(160px, 1.4fr) minmax(100px, 1fr) 125px 116px;
   }
   .cb-rulesets-cache small {
-    font-size: var(--font-xs);
+    font-size: var(--cb-type-caption);
   }
 }
 /* Shared dialog labels carry standalone-field margins. This grouped form uses
