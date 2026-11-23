@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from "react";
-import { Button } from "@/components/Button";
+import { IconAction } from "@/components/IconAction";
 import { ControlRow, Switch } from "@/components/Controls";
 import { useClipboardFeedback } from "@/hooks/useClipboardFeedback";
 import { useT } from "@/i18n/i18n";
@@ -84,6 +84,10 @@ function LanAccess({ id, port }: { id: string; port: number }) {
   return (
     <section id={id} className="cb-lan-access" aria-label={t("settings.lanAccess")}>
       <p>{t("settings.lanSetup")}</p>
+      <div className="cb-lan-address-heading" role="group" aria-label={t("settings.lanAddresses")}>
+        <span>{t("settings.lanAddresses")}</span>
+        <IconAction icon="refresh" label={t("settings.lanRefresh")} loading={loading} onClick={refresh} />
+      </div>
       {hasAddresses && (
         <ul className="cb-lan-addresses">
           {addresses?.map(({ interface: name, address }) => {
@@ -94,19 +98,17 @@ function LanAccess({ id, port }: { id: string; port: number }) {
               <li key={key}>
                 <div className="cb-lan-address">
                   <span className="cb-lan-endpoint cb-selectable">{endpoint}</span>
-                  <span>{name}</span>
-                </div>
-                <Button
-                  size="small"
-                  aria-label={
+                <IconAction icon="copy" success={justCopied}
+                  label={
                     justCopied
                       ? t("workflow.copied")
                       : t("settings.lanCopyAddress", { address: endpoint })
                   }
                   onClick={() => void copy(key, () => endpoint)}
-                >
-                  {justCopied ? t("workflow.copied") : t("settings.lanCopy")}
-                </Button>
+                />
+                  <span>{name}</span>
+                </div>
+
               </li>
             );
           })}
@@ -116,9 +118,6 @@ function LanAccess({ id, port }: { id: string; port: number }) {
         <p className="cb-lan-access-note" role={hasAddresses ? undefined : "status"}>
           {t(accessNote)}
         </p>
-        <Button size="small" loading={loading} onClick={refresh}>
-          {t("settings.lanRefresh")}
-        </Button>
       </div>
     </section>
   );

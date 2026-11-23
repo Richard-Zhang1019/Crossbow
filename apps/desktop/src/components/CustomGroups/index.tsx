@@ -1,3 +1,4 @@
+import { IconAction } from "@/components/IconAction";
 import {useCallback,useEffect,useRef,useState} from "react";
 import Modal from "@/components/Modal";
 import Select from "@/components/Select";
@@ -37,7 +38,7 @@ export default function CustomGroups({onClose,onChanged}:{onClose:()=>void;onCha
   <p className="cb-control-note cb-custom-summary">{t("cg.summary")}</p>
   <details className="cb-custom-help"><summary>{t("cg.help")}</summary><p className="cb-control-note">{t("cg.scope")}</p><p className="cb-control-note">{t("cg.route")}</p></details>
   {failed?<Button onClick={()=>void load()}>{t("home.retryState")}</Button>:status?.error?<p className="cb-control-note">{status.error}</p>:!status?<p role="status">{t("workflow.loading")}</p>:null}
-  <div className="cb-custom-list">{status?.groups.length===0&&<p className="cb-control-note">{t("cg.empty")}</p>}{status?.groups.map(g=>{const resolved=status.resolutions.find(([id])=>id===g.id)?.[1];return <div className="cb-custom-list-row" key={g.id}><div><strong>{g.name}</strong><small>{t(g.kind==="select"?"cg.manual":"cg.auto")} · {status.sources?.find(([id])=>id===g.profile_id)?.[1]??t("cg.inactive")}</small><p title={resolved?.members.join(", ")}>{memberText(resolved)}</p></div><Button size="small" disabled={busy} onClick={()=>open(g)}>{t("pr.edit")}</Button></div>;})}</div>
+  <div className="cb-custom-list">{status?.groups.length===0&&<p className="cb-control-note">{t("cg.empty")}</p>}{status?.groups.map(g=>{const resolved=status.resolutions.find(([id])=>id===g.id)?.[1];return <div className="cb-custom-list-row" key={g.id}><div><strong>{g.name}</strong><small>{t(g.kind==="select"?"cg.manual":"cg.auto")} · {status.sources?.find(([id])=>id===g.profile_id)?.[1]??t("cg.inactive")}</small><p title={resolved?.members.join(", ")}>{memberText(resolved)}</p></div><IconAction icon="edit" label={t("pr.edit")} size="small" disabled={busy} onClick={()=>open(g)} /></div>;})}</div>
  </section>}
  </Modal>;
 }

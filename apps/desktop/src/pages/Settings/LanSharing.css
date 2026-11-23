@@ -42,11 +42,13 @@
   gap: var(--cb-space-12);
 }
 
+.cb-lan-addresses li { justify-content:flex-start; }
+
 .cb-lan-address {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--cb-space-2) var(--cb-space-10);
+  align-items: center;
+  gap: var(--cb-space-4);
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -63,3 +65,5 @@
 .cb-lan-access-note {
   font-size: var(--cb-type-caption);
 }
+
+.cb-lan-address-heading { display:flex; align-items:center; gap:var(--cb-space-4); color:var(--cb-text); font-weight:var(--cb-weight-medium); }
