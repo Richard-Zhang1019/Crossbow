@@ -1,0 +1,36 @@
+{
+  "date": "2026-11-23",
+  "version": "v01",
+  "issue": 644,
+  "pr": 645,
+  "status": "implemented; production simulated checks passed; native and CI pending",
+  "baseline": "825c295",
+  "implementation": "553342b21cba71a055f828002fb4246f30ce5e4e",
+  "input": "User screenshot: statistics toolbar right action buttons look too small; documentation overlap explicitly approved",
+  "source_sha256": {
+    "apps/desktop/src/pages/Stats/index.tsx": "7d463324215143c98c97da545133c06fc589465768e25aa888051df858dde7fb",
+    "apps/desktop/src/pages/Stats/Stats.css": "fdac92155ae5f88c4235b8142977ab5ad7bbc9658c279274d9a47061718ba5f4",
+    "apps/desktop/src/components/Button/index.tsx": "6aa20581189388e11895874ee27d6cced3e3f3574978f2cccf7450243cda5b43",
+    "apps/desktop/src/components/Button/Button.css": "1cc0b9e72940007a6468a133c5aff90dcfb48c5322990d19515a03df8dc007d3",
+    "apps/desktop/src/components/SegmentedControl/index.tsx": "32b6d220b22eae6e842c8016bd2c51751b8642ce22afb25cc7478f2317752352",
+    "apps/desktop/src/components/ChoiceChip/Choices.css": "0e7ef4a2821af93856d5e063ab5e831b49a5e4628ba0a938ca5b05225e437d27",
+    "apps/desktop/src/styles/tokens.css": "4c31cb33250fad95e7d171b77354acb9c916b246b0485eb3d55804ab9806178c",
+    "scripts/dev/verify-lib.mjs": "7a2218f1f4af049eff072c4a2d75d94633900863482f353f2bfae63bf7e9d1e5",
+    "scripts/dev/verify-stats.mjs": "413345e37e0f6b60bd3cf2ff12d0a227f534cf0f2854414a0fbe9d1b5d3f2cea",
+    "docs/UI-DESIGN.md": "3bb01c42af91070a633e9450ae6dc31568b0ef442d0c181ae6012f3cc2562ebf",
+    "docs/designs/2026-11-23-stats-toolbar/v01/preview.mjs": "bb3074b345596bf2776ba9527b1527b44e700a38c2aa7b93a5a82f1210defe17"
+  },
+  "artifacts": {
+    "SPEC.md": "b28d42d008aabc5727eb54a928dc2467d74fa685cbd7141d7a5a81790f4de314",
+    "after-checks.json": "8cc229973b80ea0692951b44eb15cb633fbd48c957007c9ddc7419a2d0ea4817",
+    "before-checks.json": "0bffc3f1dfed81cf0da8edc70d4bb94bfbcc328a531ecb0cdadd2229023c37af",
+    "preview.mjs": "bb3074b345596bf2776ba9527b1527b44e700a38c2aa7b93a5a82f1210defe17",
+    "previews/after-dark.png": "e47821b655438f69a9aa34fcaa8bb4603ee7138e5c95701e2794010382011df9",
+    "previews/after-light.png": "a349d571e053d5d0773c5b8066b7ed20122b41a44488692df6d16a3c75e816b3",
+    "previews/after-small-en.png": "8c28ff9874fe7834a0e1bce39a92e34c9697a0c5a7dee6681e5e96eb3032a74d",
+    "previews/before-dark.png": "af6749c32a41afd578375d9fec65cec022365c7440cd6feb81659237be85e20e",
+    "previews/before-light.png": "2eb8036f70675b368f2f4a8aba0c804f751b59b15ac5e488a3eb5a7db062d617",
+    "previews/before-small-en.png": "cfb205855bf8117f6613ba8082f0172f89187ce47e0c58e62e643887bcf2d87a",
+    "source.zip": "85e3771d88a0aaade7e11afb5f2373b1e9a8220f378e43580cae4667f21ddc87"
+  }
+}

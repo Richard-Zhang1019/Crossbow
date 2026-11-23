@@ -1,0 +1,86 @@
+[
+  {
+    "name": "light",
+    "width": 1120,
+    "height": 720,
+    "overflow": false,
+    "controls": [
+      {
+        "label": "今日近 7 天近 30 天",
+        "height": 34,
+        "font": "12px"
+      },
+      {
+        "label": "刷新统计",
+        "height": 32,
+        "font": "12px"
+      },
+      {
+        "label": "暂停记录",
+        "height": 28,
+        "font": "11px"
+      },
+      {
+        "label": "清除本地统计",
+        "height": 28,
+        "font": "11px"
+      }
+    ]
+  },
+  {
+    "name": "dark",
+    "width": 1120,
+    "height": 720,
+    "overflow": false,
+    "controls": [
+      {
+        "label": "今日近 7 天近 30 天",
+        "height": 34,
+        "font": "12px"
+      },
+      {
+        "label": "刷新统计",
+        "height": 32,
+        "font": "12px"
+      },
+      {
+        "label": "暂停记录",
+        "height": 28,
+        "font": "11px"
+      },
+      {
+        "label": "清除本地统计",
+        "height": 28,
+        "font": "11px"
+      }
+    ]
+  },
+  {
+    "name": "small-en",
+    "width": 880,
+    "height": 560,
+    "overflow": false,
+    "controls": [
+      {
+        "label": "TodayLast 7 daysLast 30 days",
+        "height": 34,
+        "font": "12px"
+      },
+      {
+        "label": "Refresh statistics",
+        "height": 32,
+        "font": "12px"
+      },
+      {
+        "label": "Pause recording",
+        "height": 28,
+        "font": "11px"
+      },
+      {
+        "label": "Clear local stats",
+        "height": 28,
+        "font": "11px"
+      }
+    ]
+  }
+]
