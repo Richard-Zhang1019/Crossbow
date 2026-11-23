@@ -1,3 +1,4 @@
+import { IconAction } from "@/components/IconAction";
 import { useClipboardFeedback } from "@/hooks/useClipboardFeedback";
 import SegmentedControl from "@/components/SegmentedControl";
 import {SearchField} from "@/components/Controls";
@@ -36,7 +37,7 @@ export default function ConnectionsPage() {
   });
   const [inspected, setInspected] = useState<ConnRow | null>(null);
   const [sort, setSort] = useState("default");
-  const { copied, copy, clear: clearCopyFeedback } = useClipboardFeedback<boolean>("connection-copy");
+  const { copied, copy, clear: clearCopyFeedback } = useClipboardFeedback<string>("connection-copy");
   const [filter, setFilter] = useState("");
   const [paused, setPaused] = useState(false);
   const [view, setView] = useState<"list" | "apps">("list");
@@ -99,7 +100,7 @@ export default function ConnectionsPage() {
 
   const apps = useMemo(() => aggregateByProcess(rows), [rows]);
   const selected = snapshot.rows.find(r => r.id === inspected?.id) ?? inspected;
-  const copyDetails = (value: string) => copy(true, () => value);
+  const copyDetails = (value: string, key = "all") => copy(key, () => value);
 
   return (
     <div className="cb-connections-page">
@@ -196,7 +197,7 @@ export default function ConnectionsPage() {
       </div>
       {selected && <Modal open footer={<div className="actions"><span role="status">{copied?t("workflow.copied"):""}</span><Button onClick={()=>void copyDetails(JSON.stringify({...connectionDetails(selected),upload:selected.up,download:selected.down,elapsed_ms:selected.elapsed_ms},null,2))}>{t("workflow.copyAll")}</Button></div>} title={t("conn.details")} onCancel={() => { clearCopyFeedback(); setInspected(null); }}>
         {!snapshot.rows.some(r=>r.id===selected.id) && <p className="cb-control-note">{t("conn.closedDetail")}</p>}
-        <dl className="cb-connection-details">{Object.entries(connectionDetails(selected)).map(([key,value])=><div key={key}><dt>{t(({Target:"col.target",Network:"workflow.network",Type:"workflow.type",Rule:"col.rule",Chain:"col.chains",Process:"col.process",ID:"workflow.id"} as Record<string,string>)[key])}</dt><dd className="cb-selectable">{value||"—"}</dd><Button size="small" disabled={!value} onClick={()=>void copyDetails(value)} aria-label={`${t("workflow.copy")} ${t(({Target:"col.target",Network:"workflow.network",Type:"workflow.type",Rule:"col.rule",Chain:"col.chains",Process:"col.process",ID:"workflow.id"} as Record<string,string>)[key])}`}>{t("workflow.copy")}</Button></div>)}</dl>
+        <dl className="cb-connection-details">{Object.entries(connectionDetails(selected)).map(([key,value])=><div key={key}><dt>{t(({Target:"col.target",Network:"workflow.network",Type:"workflow.type",Rule:"col.rule",Chain:"col.chains",Process:"col.process",ID:"workflow.id"} as Record<string,string>)[key])}</dt><dd className="cb-selectable">{value||"—"}</dd><IconAction icon="copy" success={copied===key} disabled={!value} onClick={()=>void copyDetails(value,key)} label={copied===key ? t("workflow.copied") : `${t("workflow.copy")} ${t(({Target:"col.target",Network:"workflow.network",Type:"workflow.type",Rule:"col.rule",Chain:"col.chains",Process:"col.process",ID:"workflow.id"} as Record<string,string>)[key])}`} /></div>)}</dl>
         <p className="cb-control-note">{t("ur.priority")}</p><Button onClick={()=>navigateTo({page:"profiles",control:"cb-user-rule",source:selected.host})}>{t("ur.fromConnection")}</Button>
 
       </Modal>}

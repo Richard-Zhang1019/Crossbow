@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from "react";
-import { Button } from "@/components/Button";
+import { IconAction } from "@/components/IconAction";
 import { ControlRow, Switch } from "@/components/Controls";
 import { useClipboardFeedback } from "@/hooks/useClipboardFeedback";
 import { useT } from "@/i18n/i18n";
@@ -96,17 +96,14 @@ function LanAccess({ id, port }: { id: string; port: number }) {
                   <span className="cb-lan-endpoint cb-selectable">{endpoint}</span>
                   <span>{name}</span>
                 </div>
-                <Button
-                  size="small"
-                  aria-label={
+                <IconAction icon="copy" success={justCopied}
+                  label={
                     justCopied
                       ? t("workflow.copied")
                       : t("settings.lanCopyAddress", { address: endpoint })
                   }
                   onClick={() => void copy(key, () => endpoint)}
-                >
-                  {justCopied ? t("workflow.copied") : t("settings.lanCopy")}
-                </Button>
+                />
               </li>
             );
           })}
@@ -116,9 +113,7 @@ function LanAccess({ id, port }: { id: string; port: number }) {
         <p className="cb-lan-access-note" role={hasAddresses ? undefined : "status"}>
           {t(accessNote)}
         </p>
-        <Button size="small" loading={loading} onClick={refresh}>
-          {t("settings.lanRefresh")}
-        </Button>
+        <IconAction icon="refresh" label={t("settings.lanRefresh")} loading={loading} onClick={refresh} />
       </div>
     </section>
   );

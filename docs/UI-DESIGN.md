@@ -96,3 +96,12 @@ macOS Dock、安装包、Windows/Linux 应用图标、iOS AppIcon、网站 favic
 自定义组继续使用公共 Modal，列表态无 footer；列表只保留行间分隔，末项不显示尾线。编辑态保存/取消底栏及公共 Modal 的标题分隔保持原标准。生产预览与回归见 `docs/designs/2026-11-23-custom-group-divider/v01/`。
 
 公共 Modal 标题栏统一采用16px标题/24px行高，上下留白默认12px、矮窗口8px，关闭按钮与标题居中；使用组件语义变量，不再复用20px页标题档。其他标题/正文/底栏边界不变。用户确认的补充与实际预览见 `docs/designs/2026-11-23-custom-group-divider/v02/`（PR #642）。
+
+
+## 语义图标辅助操作（#643，2026-11-23）
+
+名称旁重命名、列表行编辑、字段/地址复制和紧凑刷新采用共享 IconAction（Button + 现有线性 Icon + Base UI Tooltip）。重命名/编辑为下划线铅笔，复制为双页，刷新为回转箭头；默认 16px 图标、28px 紧凑按钮。常态使用次要文字色与透明边框，hover 采用 surface-2 与边框提示，键盘焦点、pressed、disabled、loading、减少动效复用 Button。成功复制显示 cb-ok 勾选与对应状态，失败不假成功；每个字段反馈独立。
+
+图标按钮必须有当前语言 aria-label，鼠标 hover（350ms）/键盘 focus 提供 portal Tooltip，明确 role 和描述关联；禁用/加载期间关闭提示。菜单中的编辑、主要新增/保存/测试/复制全部、危险删除、状态切换保留文字。日志行复制沿用固定占位和读窗冻结，仅替换为相同 copy/check 图形，保留原 title/aria-label 与 hover/focus 行为，避免实时列表内每行新增浮层状态。不要仅因“可以画图标”就删除操作含义。
+
+范围与生产前后/hover/成功/禁用截图见 `docs/designs/2026-11-23-icon-actions/v01`。

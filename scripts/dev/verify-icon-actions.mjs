@@ -1,0 +1,34 @@
+// Production pages + synthetic IPC and clipboard only.
+import assert from 'node:assert/strict';
+import {mkdirSync,writeFileSync} from 'node:fs';
+import {startVite,launchBrowser,stubSource,revision,artifactsDir} from './verify-lib.mjs';
+const before=process.env.CB_ICONS_BEFORE==='1',out=process.env.CB_ICONS_OUT||artifactsDir();mkdirSync(out,{recursive:true});
+const vite=await startVite(),browser=await launchBrowser(true),errors=[];
+try{
+ const ctx=await browser.newContext({viewport:{width:1120,height:734}});await ctx.addInitScript(stubSource());await ctx.route('**/*',r=>new URL(r.request().url()).origin===new URL(vite.url).origin?r.continue():r.abort());
+ await ctx.addInitScript(()=>{const f=window.__cb.iconFixture={copyFails:false,holdRename:false,renameCount:0,profiles:[{id:'p-a',name:'研发订阅',kind:'remote',url:'https://stub.invalid/a',update_interval_min:0,override_ids:[],last_updated:null,traffic:null,last_update:null}]};
+ window.__cb.setCommands({list_profiles:()=>f.profiles,rename_profile:async({id,name})=>{f.renameCount++;if(f.holdRename)await new Promise(resolve=>f.release=resolve);f.profiles=f.profiles.map(p=>p.id===id?{...p,name}:p);},get_engine_config:()=>({engine:'mihomo',mixed_port:7898,allow_lan:true,flag_emoji:true,unified_delay:true,core_installed:true}),lan_addresses:()=>[{interface:'en0',address:'192.168.50.24'}]});
+ Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{if(f.copyFails)throw Error('Synthetic clipboard denied');window.__cb.copiedText=text;}}});});
+ const p=await ctx.newPage();p.setDefaultTimeout(10000);p.on('pageerror',e=>errors.push(e.message));await p.goto(vite.url);await p.locator('.cb-system-foot').waitFor();
+ const shot=async name=>{await p.screenshot({path:`${out}/${name}.png`,animations:'disabled'});};
+ await p.locator('.cb-primary-nav button',{hasText:'配置'}).click();const rename=p.getByRole('button',{name:'重命名',exact:true});await rename.waitFor();await p.mouse.move(0,0);await shot('profiles-light');
+ if(!before){
+  const normal=await rename.evaluate(e=>getComputedStyle(e).backgroundColor);await rename.hover();await p.getByRole('tooltip',{name:'重命名',exact:true}).waitFor();assert.notEqual(await rename.evaluate(e=>getComputedStyle(e).backgroundColor),normal);await shot('rename-hover');
+  await rename.click();const input=p.locator('.cb-profile-detail input').first();await input.fill('临时草稿');await input.press('Escape');assert.equal(await p.evaluate(()=>window.__cb.iconFixture.renameCount),0);
+  await rename.click();await input.fill('更新后的订阅');await p.evaluate(()=>window.__cb.iconFixture.holdRename=true);await input.press('Enter');await p.waitForFunction(()=>window.__cb.iconFixture.renameCount===1);assert(await rename.isDisabled());await shot('rename-disabled');await p.evaluate(()=>window.__cb.iconFixture.release());await p.getByRole('heading',{name:'更新后的订阅',exact:true}).waitFor();
+  await rename.focus();await p.getByRole('tooltip',{name:'重命名',exact:true}).waitFor();await shot('rename-focus');
+ }
+ await p.locator('.cb-primary-nav button',{hasText:'设置'}).click();const panel=p.locator('.cb-lan-access');await panel.getByText('192.168.50.24:7898',{exact:true}).waitFor();await panel.scrollIntoViewIfNeeded();await p.mouse.move(0,0);await shot('lan-light');
+ if(!before){
+  const copy=panel.getByRole('button',{name:'复制 192.168.50.24:7898',exact:true});await copy.hover();await p.getByRole('tooltip',{name:'复制 192.168.50.24:7898',exact:true}).waitFor();await shot('copy-hover');await copy.click();await panel.getByRole('button',{name:'已复制',exact:true}).waitFor();assert.equal(await p.evaluate(()=>window.__cb.copiedText),'192.168.50.24:7898');await shot('copy-success');await copy.waitFor();
+  await p.evaluate(()=>window.__cb.iconFixture.copyFails=true);await copy.click();await p.waitForTimeout(120);assert.equal(await panel.locator('[data-success]').count(),0,'clipboard denial must not display success');
+  await p.evaluate(()=>{window.__cb.emit('ui://lang','en');window.__cb.emit('ui://theme','dark');});await p.setViewportSize({width:880,height:560});await panel.getByRole('button',{name:'Refresh addresses',exact:true}).waitFor();await panel.scrollIntoViewIfNeeded();await panel.getByRole('button',{name:'Refresh addresses',exact:true}).hover();await p.getByRole('tooltip',{name:'Refresh addresses',exact:true}).waitFor();await shot('lan-dark-small-hover');assert(await panel.evaluate(e=>e.scrollWidth<=e.clientWidth));
+ }
+ if(!before){
+  await p.evaluate(()=>{window.__cb.iconFixture.copyFails=false;window.__cb.emit('ui://lang','zh');window.__cb.emit('ui://theme','light');});await p.setViewportSize({width:1120,height:734});
+  await p.locator('.cb-primary-nav button',{hasText:'监测'}).click();await p.locator('.cb-view-connections').waitFor();
+  await p.evaluate(()=>window.__cb.emit('connections://data',{rows:[{id:'synthetic',host:'example.invalid:443',rule:'MATCH',chains:'DIRECT',process:'Synthetic',up:0,down:1024,network:'tcp',kind:'HTTP',elapsed_ms:2000}],upload_total:0,download_total:1024,memory:0}));
+  await p.locator('.cb-connection-row',{hasText:'example.invalid:443'}).click();const modal=p.getByRole('dialog');await modal.waitFor();const buttons=modal.locator('.cb-connection-details button');await buttons.first().hover();await p.getByRole('tooltip').filter({hasText:'复制'}).waitFor();await shot('connection-copy-hover');await buttons.first().click();await p.waitForFunction(()=>window.__cb.copiedText==='example.invalid:443');assert.equal(await modal.locator('[data-success]').count(),1);await buttons.nth(1).click();assert.equal(await buttons.first().getAttribute('data-success'),null);assert.equal(await modal.locator('[data-success]').count(),1,'feedback identifies the copied field');
+ }
+ assert.deepEqual(errors,[]);writeFileSync(`${out}/checks.json`,JSON.stringify({revision:revision(),before,source:'production pages + synthetic IPC/clipboard',errors,checks:before?['baseline']:['rename-cancel-save','rename-disabled','hover-and-focus-tooltip','clipboard-success-failure','dark-en-small-no-overflow','connection-copy-field-feedback']},null,2));console.log(out);
+}finally{await browser.close();await vite.close();}

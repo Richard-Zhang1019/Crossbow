@@ -1,3 +1,4 @@
+import { IconAction } from "@/components/IconAction";
 import { useState, useEffect, useRef, type MutableRefObject } from "react";
 import SegmentedControl from "@/components/SegmentedControl";
 import { Button, ButtonBase } from "@/components/Button";
@@ -167,9 +168,9 @@ export default function DnsCheck({ revision }: { revision: MutableRefObject<numb
               <span className="cb-dnsprobe-unknown-hint">{t("dnsprobe.unknownHint")}</span>
             </div>
             <div className="cb-dnsprobe-actions">
-              <Button size="small" onClick={() => void copy(shown.probe.domain + shown.probe.at_ms, () => probeSummary(shown.probe))}>
-                <span role="status">{t(copied ? "dnsprobe.copied" : "dnsprobe.copy")}</span>
-              </Button>
+              <IconAction icon="copy" success={copied === shown.probe.domain + shown.probe.at_ms}
+                label={t(copied === shown.probe.domain + shown.probe.at_ms ? "dnsprobe.copied" : "dnsprobe.copy")}
+                onClick={() => void copy(shown.probe.domain + shown.probe.at_ms, () => probeSummary(shown.probe))} />
               {history.length > 0 && (
                 <Button size="small" onClick={() => { cancel(); setHistory([]); setSelected(0); clearCopy(); }}>
                   {t("dnsprobe.clear")}

@@ -1,3 +1,4 @@
+import { IconAction } from "@/components/IconAction";
 import {useCallback,useEffect,useRef,useState} from "react";
 import {ipc,type UserRule,type UserRuleStatus} from "@/services/ipc";
 import {useT} from "@/i18n/i18n";
@@ -43,7 +44,7 @@ export default function UserRules({preset}:{preset?:string}) {
    {status.rules.map((rule,index)=><div className="cb-table-row cb-process-row cb-user-row" role="row" key={rule.id}>
     <div className="cb-process-identity" role="cell"><small>{index+1} · {rule.kind.replaceAll("_","-")}</small>{rule.value}{status.overlaps?.some(([i])=>i===index)&&<small>{t("ur.overlap")}</small>}</div>
     <div className="cb-process-route" role="cell">{rule.target}{!status.targets.includes(rule.target)&&<small>{t("pr.unavailable")}</small>}</div>
-    <div className="cb-process-actions" role="cell"><Button size="small" disabled={busy||index===0} aria-label={t("ur.up")} onClick={()=>move(index,-1)}>↑</Button><Button size="small" disabled={busy||index===status.rules.length-1} aria-label={t("ur.down")} onClick={()=>move(index,1)}>↓</Button><Button size="small" aria-pressed={rule.enabled} disabled={busy} onClick={()=>void change(status.rules.map(r=>r.id===rule.id?{...r,enabled:!r.enabled}:r))}>{t(rule.enabled?"ur.on":"ur.off")}</Button><Button size="small" disabled={busy} onClick={()=>openDraft({...rule})}>{t("pr.edit")}</Button></div>
+    <div className="cb-process-actions" role="cell"><IconAction icon="arrow-up" disabled={busy||index===0} label={t("ur.up")} onClick={()=>move(index,-1)} /><IconAction icon="arrow-down" disabled={busy||index===status.rules.length-1} label={t("ur.down")} onClick={()=>move(index,1)} /><Button size="small" aria-pressed={rule.enabled} disabled={busy} onClick={()=>void change(status.rules.map(r=>r.id===rule.id?{...r,enabled:!r.enabled}:r))}>{t(rule.enabled?"ur.on":"ur.off")}</Button><IconAction icon="edit" label={t("pr.edit")} size="small" disabled={busy} onClick={()=>openDraft({...rule})} /></div>
    </div>)}
   </div>}
   <p className="cb-process-footnote">{t("ur.explain")}</p>

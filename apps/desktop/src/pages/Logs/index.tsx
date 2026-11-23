@@ -421,7 +421,7 @@ export default function LogsPage() {
     }
   });
   const resume=()=>{pinned.current=true;setFollowing(true);if(boxRef.current)boxRef.current.scrollTop=boxRef.current.scrollHeight;};
-  const copyButton=(line:LogEntry)=><ButtonBase className="cb-log-copy" onClick={()=>void copyLine(line)} aria-label={t("logs.copyLine")} title={t("logs.copyLine")}>{copiedLine===line?"✓":t("workflow.copy")}</ButtonBase>;
+  const copyButton=(line:LogEntry)=><ButtonBase className="cb-log-copy" onClick={()=>void copyLine(line)} aria-label={t(copiedLine===line?"workflow.copied":"logs.copyLine")} title={t(copiedLine===line?"workflow.copied":"logs.copyLine")}><Icon name={copiedLine===line?"check":"copy"} size={15}/></ButtonBase>;
 
   return (
     <div className="cb-logs-page">

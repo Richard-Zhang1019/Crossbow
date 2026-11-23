@@ -1,3 +1,4 @@
+import { IconAction } from "@/components/IconAction";
 import Modal from "@/components/Modal";
 import SegmentedControl from "@/components/SegmentedControl";
 import {Input, Switch} from "@/components/Controls";
@@ -208,14 +209,12 @@ export default function OverridePanel({
                   ) : (
                     <h2 title={selected.name}>{selected.name}</h2>
                   )}
-                  <Button size="small"
+                  <IconAction icon="edit" label={t("profiles.rename")} size="small"
                     onClick={() => {
                       setNameDraft(selected.name);
                       setRenamingId(selected.id);
                     }}
-                  >
-                    {t("profiles.rename")}
-                  </Button>
+                   />
                 </div>
                 <div className="cb-override-state-controls"><label>
                   <span>{t("ov.enabled")}</span>

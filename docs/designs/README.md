@@ -15,6 +15,7 @@
 
 | 日期 | 主题 | 版本 | 状态 | 文件 | 关联 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-11-23 | 语义图标辅助操作：重命名、复制、编辑与刷新 | v01 | 已实现，本地/生产组件模拟通过；原生待验 | [说明](2026-11-23-icon-actions/v01/SPEC.md) · [改前](2026-11-23-icon-actions/v01/previews/before-profiles-light.png) · [hover](2026-11-23-icon-actions/v01/previews/after-rename-hover.png) · [深色小窗口](2026-11-23-icon-actions/v01/previews/after-lan-dark-small-hover.png) · [源稿](2026-11-23-icon-actions/v01/source.zip) | #643 |
 | 2026-11-23 | 公共 Modal 紧凑标题栏与自定义组尾线 | v02 | 已实现，构建/生产回归/变量门禁通过；原生/CI待验 | [说明](2026-11-23-custom-group-divider/v02/SPEC.md) · [改前](2026-11-23-custom-group-divider/v02/previews/before.png) · [改后](2026-11-23-custom-group-divider/v02/previews/after.png) · [长标题](2026-11-23-custom-group-divider/v02/previews/long-title-dark.png) · [源稿](2026-11-23-custom-group-divider/v02/source.zip) | #641 / PR #642 |
 | 2026-11-23 | 自定义组列表：行间分隔与末行去尾线 | v01 | 已修复，生产模拟/变量门禁通过；原生/CI待验 | [说明](2026-11-23-custom-group-divider/v01/SPEC.md) · [改前](2026-11-23-custom-group-divider/v01/previews/before.png) · [改后](2026-11-23-custom-group-divider/v01/previews/after.png) · [多行](2026-11-23-custom-group-divider/v01/previews/multi-row.png) · [源稿](2026-11-23-custom-group-divider/v01/source.zip) | #641 |
 | 2026-11-22 | 设计系统：语义规范、变量消费与门禁 | v01 | 已实现，本地/生产模拟通过；原生/CI待验 | [规范](../DESIGN-SYSTEM.md) · [说明](2026-11-22-design-system/v01/SPEC.md) · [图谱](2026-11-22-design-system/v01/previews/gallery-1120-light.png) · [深色](2026-11-22-design-system/v01/previews/gallery-880-dark.png) · [源稿](2026-11-22-design-system/v01/source.zip) | #639 |

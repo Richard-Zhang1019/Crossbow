@@ -1,0 +1,9 @@
+{
+  "revision": "825c295def00a0d9825bfd580c6c89d071cbc738",
+  "before": true,
+  "source": "production pages + synthetic IPC/clipboard",
+  "errors": [],
+  "checks": [
+    "baseline"
+  ]
+}

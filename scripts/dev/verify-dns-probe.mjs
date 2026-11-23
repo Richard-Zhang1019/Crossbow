@@ -95,7 +95,7 @@ try {
       value: { writeText: async (text) => { window.__cb.copiedProbe = text; } },
     });
   });
-  await card.locator(".cb-dnsprobe-actions button", { hasText: "复制结果" }).click();
+  await card.getByRole("button", { name: "复制结果", exact: true }).click();
   const copied = await page.evaluate(() => window.__cb.copiedProbe);
   for (const must of ["DNS resolution check", "Domain: www.gstatic.com A", "Verdict: system_only", "Unknown fields: upstream, cache, kernel_time"]) {
     assert(copied.includes(must), `摘要应包含：${must}`);

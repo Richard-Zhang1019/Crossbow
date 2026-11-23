@@ -130,6 +130,7 @@ jobs:
           node scripts/dev/verify-import-capabilities.mjs
           node scripts/dev/verify-process-rules.mjs
           node scripts/dev/verify-scenes.mjs
+          node scripts/dev/verify-icon-actions.mjs
           node scripts/dev/verify-lan.mjs
           node scripts/dev/verify-user-rules.mjs
           node scripts/dev/verify-dns-settings.mjs
@@ -205,6 +206,7 @@ jobs:
           node scripts/dev/verify-import-capabilities.mjs
           node scripts/dev/verify-process-rules.mjs
           node scripts/dev/verify-scenes.mjs
+          node scripts/dev/verify-icon-actions.mjs
           node scripts/dev/verify-lan.mjs
           node scripts/dev/verify-user-rules.mjs
           node scripts/dev/verify-dns-settings.mjs
