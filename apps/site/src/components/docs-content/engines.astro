@@ -1,0 +1,15 @@
+---
+import { createI18n, t, type Lang } from "../../i18n";
+import { REPO, LATEST } from "../../site-meta";
+
+const { lang } = Astro.props;
+const i18n = createI18n(lang);
+
+const base = import.meta.env.BASE_URL.replace(/\/+$/, "");
+const route = (input: string) => { const p = input.startsWith("/guide#") ? "/guide/" + input.slice(7) : input; return `${base}${lang === "zh" ? "/zh" : ""}${p === "/" ? "/" : p}`; };
+
+---
+<p class="g-sum">{i18n("guide.40")}</p>
+      <div class="guide-step"><span>01</span><div><h3>{i18n("guide.41")}</h3><div>{i18n("guide.42")}</div></div></div>
+      <div class="guide-step"><span>02</span><div><h3>{i18n("guide.43")}</h3><div>{i18n("guide.44")}</div></div></div>
+      <div class="guide-step"><span>03</span><div><h3>{i18n("guide.45")}</h3><div>{i18n("guide.46")}</div></div></div>

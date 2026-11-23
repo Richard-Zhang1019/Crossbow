@@ -57,7 +57,7 @@ const nav = [
     <link rel="apple-touch-icon" href={`${import.meta.env.BASE_URL}apple-touch-icon.png`} />
     <script is:inline set:html={BOOTSTRAP} />
   </head>
-  <body>
+  <body class={path === "/guide" || path.startsWith("/guide/") ? "documentation" : undefined}>
     <a class="skip-link" href="#main">{i18n("layout.1")}</a>
     <header class="site-header">
       <div class="shell nav-shell">
@@ -66,7 +66,7 @@ const nav = [
           {nav.map((n) => (
             <a
               href={withBase(pathFor(lang, n.to))}
-              aria-current={path === n.to ? "page" : undefined}
+              aria-current={(path === n.to || (n.to === "/guide" && path.startsWith("/guide/"))) ? "page" : undefined}
             >{t(lang, n.label)}</a>
           ))}
           <a class="mobile-github" href={REPO} target="_blank" rel="noopener noreferrer">GitHub<span aria-hidden="true">↗</span></a>
@@ -92,7 +92,7 @@ const nav = [
             <button class="nav-tool language-tool" data-pref-button aria-expanded="false" aria-haspopup="true" title={i18n("layout.10")}>
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 5h9M8.5 3v2M11.5 5c-.7 3.9-3 7-6.5 9M6 9.5c1.6 2.6 4 4.6 7 5.5" /><path d="m13.5 21 4-9 4 9M14.8 18h5.4" /></svg>
             </button>
-            <form class="preference-popover" data-lang-pop hidden>
+            <form class="preference-popover" data-lang-pop data-reset-hash={path.startsWith("/guide/") || undefined} data-en-href={withBase(pathFor("en", path))} data-zh-href={withBase(pathFor("zh", path))} hidden>
               <fieldset>
                 <legend>{i18n("layout.10")}</legend>
                 <label class="preference-option"><input type="radio" name="lang" value="zh" checked={lang === "zh"} /><span>{i18n("layout.11")}</span></label>
@@ -174,9 +174,9 @@ const nav = [
         const value = (e.target as HTMLInputElement).value;
         try { localStorage.setItem(LANGUAGE_KEY, value === "en" ? "en" : "zh-CN"); } catch {}
         // trailingSlash: never —— /zh 不带尾斜杠；根路径两种语言都是 "/"
-        const rest = location.pathname.replace(/^\/zh/, "").replace(/\/+$/, "");
-        const target = value === "zh" ? "/zh" + rest : rest || "/";
-        location.href = new URL(target, location.origin).href;
+        const form = document.querySelector<HTMLElement>("[data-lang-pop]");
+        const target = value === "zh" ? form?.dataset.zhHref : form?.dataset.enHref;
+        if (target) location.href = new URL(target + location.search + (form?.dataset.resetHash ? "" : location.hash), location.origin).href;
       });
 
       const menuButton = document.querySelector(".menu-button");

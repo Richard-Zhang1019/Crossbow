@@ -1,0 +1,23 @@
+{
+  "staticPages": 62,
+  "broken": [],
+  "errors": [],
+  "base": "",
+  "checks": [
+    "all-routes-refreshable",
+    "local-links",
+    "canonical-hreflang",
+    "one-title",
+    "sticky-directory",
+    "directory-filter-empty",
+    "same-doc-language-switch",
+    "legacy-hash-migration",
+    "theme",
+    "mobile-menu-navigation",
+    "tablet",
+    "section-and-pagination-navigation",
+    "360px",
+    "no-horizontal-overflow",
+    "no-javascript-content"
+  ]
+}

@@ -1,6 +1,7 @@
 import { defineConfig } from "astro/config";
 import react from "@astrojs/react";
 import sitemap from "@astrojs/sitemap";
+import documentationLinks from "./src/docs/markdown-links.mjs";
 
 // 部署路径可配：
 // - Netlify（默认）：根路径
@@ -14,4 +15,5 @@ export default defineConfig({
   output: "static",
   trailingSlash: "never",
   integrations: [react(), sitemap()],
+  markdown: { remarkPlugins: [[documentationLinks, {base}]] },
 });

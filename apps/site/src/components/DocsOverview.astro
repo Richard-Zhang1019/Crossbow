@@ -1,0 +1,24 @@
+---
+import {documents,groups,docHref,legacySections,type DocLang} from '../docs/navigation';
+const {lang}=Astro.props as {lang:DocLang};
+const base=import.meta.env.BASE_URL.replace(/\/$/,'');
+const href=(s='')=>docHref(lang,s,base);
+---
+<div class="docs-start"><div><strong>{lang==='zh'?'先连通，再按需要配置':'Connect first. Configure as you go.'}</strong><p>{lang==='zh'?'第一次使用？按五个步骤完成安装、导入和连接验证。':'New to Crossbow? Follow five steps to install, import and verify.'}</p></div><a class="btn-primary" href={href('quick-start')}>{lang==='zh'?'开始使用 →':'Get started →'}</a></div>
+<h2>{lang==='zh'?'按当前任务查找':'Find the task at hand'}</h2>
+<p>{lang==='zh'?'每个功能都有独立文档。左侧目录可按名称筛选，文档内的步骤、支持范围和限制与 v0.15.3 实现对照。':'Each feature has its own page. Filter the directory by name; steps, support and limits follow the v0.15.3 implementation.'}</p>
+<div class="docs-topics">{groups.map(g=><section class="docs-topic"><h3>{g[lang]}</h3><p>{({start:{zh:'导入配置并验证第一次连接。',en:'Import a profile and verify the first connection.'},routing:{zh:'为应用、网站和节点定义自己的策略。',en:'Set policies for applications, websites and nodes.'},network:{zh:'选择接管方式，管理 DNS 和网络变化。',en:'Choose takeover, DNS and network behavior.'},observe:{zh:'用连接、统计和测试结果定位问题。',en:'Investigate using connections, statistics and tests.'},maintenance:{zh:'迁移、恢复和更新本地环境。',en:'Migrate, recover and update your local setup.'}})[g.id][lang]}</p><ul>{documents.filter(d=>d.group===g.id).slice(0,4).map(d=><li><a href={href(d.slug)}>{d.title[lang]} <span aria-hidden="true">→</span></a></li>)}</ul></section>)}</div>
+<h2>{lang==='zh'?'v0.15 系列新增能力':'Explore the v0.15 series'}</h2>
+<p>{lang==='zh'?'除了界面调整，这个系列增加了独立规则、诊断和本地管理能力。可从下面三条路径继续：':'Beyond interface changes, this series adds routing, diagnosis and local management tools. Continue along one of these paths:'}</p>
+<ul>
+ <li><a href={href('local-import')}>{lang==='zh'?'本地分享链接导入':'Local share-link import'}</a> → <a href={href('custom-groups')}>{lang==='zh'?'自定义组':'Custom groups'}</a> → <a href={href('user-rules')}>{lang==='zh'?'域名与 IP 分流':'Domain and IP routing'}</a></li>
+ <li><a href={href('dns')}>{lang==='zh'?'DNS 设置':'DNS settings'}</a> → <a href={href('dns-diagnostics')}>{lang==='zh'?'DNS 路径诊断':'DNS path diagnosis'}</a> → <a href={href('node-tests')}>{lang==='zh'?'节点分项测试':'Component tests'}</a></li>
+ <li><a href={href('statistics')}>{lang==='zh'?'本地流量统计':'Local statistics'}</a> → <a href={href('node-quality')}>{lang==='zh'?'质量历史':'Quality history'}</a> → <a href={href('migration')}>{lang==='zh'?'配置迁移':'Portable configuration'}</a></li>
+</ul>
+<noscript><p>{lang==='zh'?'旧版章节链接：请选择对应文档。':'Legacy section links: choose the corresponding document.'}</p><ul>{legacySections.map(id=><li id={id}><a href={href(id)}>{documents.find(d=>d.slug===id)?.title[lang]}</a></li>)}</ul></noscript>
+<div data-doc-legacy data-root={href()} data-sections={JSON.stringify(legacySections)}></div>
+<script>
+ const el=document.querySelector<HTMLElement>('[data-doc-legacy]');
+ const migrate=()=>{if(!el)return;const id=location.hash.slice(1);const sections=JSON.parse(el.dataset.sections||'[]') as string[];if(sections.includes(id))location.replace(`${el.dataset.root}/${id}${location.search}`);};
+ migrate();addEventListener('hashchange',migrate);
+</script>
