@@ -94,3 +94,5 @@ macOS Dock、安装包、Windows/Linux 应用图标、iOS AppIcon、网站 favic
 ## 自定义组列表分隔（#641）
 
 自定义组继续使用公共 Modal，列表态无 footer；列表只保留行间分隔，末项不显示尾线。编辑态保存/取消底栏及公共 Modal 的标题分隔保持原标准。生产预览与回归见 `docs/designs/2026-11-23-custom-group-divider/v01/`。
+
+公共 Modal 标题栏统一采用16px标题/24px行高，上下留白默认12px、矮窗口8px，关闭按钮与标题居中；使用组件语义变量，不再复用20px页标题档。其他标题/正文/底栏边界不变。用户确认的补充与实际预览见 `docs/designs/2026-11-23-custom-group-divider/v02/`（PR #642）。

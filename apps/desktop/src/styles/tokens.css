@@ -257,3 +257,11 @@
   --cb-stroke-3: 3px;
   --cb-space-relative-_4em: .4em;
 }
+
+/* #641 / PR #642: Modal headings are section titles, with compact header rhythm. */
+:root {
+  --cb-modal-title-size: var(--cb-type-section);
+  --cb-modal-title-line-height: var(--cb-leading-24-px);
+  --cb-modal-header-padding-block: var(--cb-space-12);
+  --cb-modal-header-padding-block-compact: var(--cb-space-8);
+}

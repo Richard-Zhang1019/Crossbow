@@ -1,0 +1,23 @@
+{
+  "revision": "f7d6fb12a4aecb8831d64db46ed107c8cf4340d9",
+  "source": "production Modal/Select + synthetic async business fixture",
+  "errors": [],
+  "checks": [
+    "failure-preserves-draft",
+    "async-single-submit",
+    "busy-dismissal-guard",
+    "controlled-success",
+    "sibling-only-top-escape",
+    "nested-only-top-escape",
+    "unique-title-ids",
+    "select-escape",
+    "tab-trap",
+    "focus-return",
+    "keep-mounted-state",
+    "small-fixed-footer",
+    "close-callback",
+    "late-notification-accessibility",
+    "notification-details-preserve-draft",
+    "long-title-fixed-actions"
+  ]
+}
