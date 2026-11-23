@@ -104,7 +104,7 @@ macOS Dock、安装包、Windows/Linux 应用图标、iOS AppIcon、网站 favic
 
 图标按钮必须有当前语言 aria-label，鼠标 hover（350ms）/键盘 focus 提供 portal Tooltip，明确 role 和描述关联；禁用/加载期间关闭提示。菜单中的编辑、主要新增/保存/测试/复制全部、危险删除、状态切换保留文字。日志行复制沿用固定占位和读窗冻结，仅替换为相同 copy/check 图形，保留原 title/aria-label 与 hover/focus 行为，避免实时列表内每行新增浮层状态。不要仅因“可以画图标”就删除操作含义。
 
-最新方向与截图见 `docs/designs/2026-11-23-icon-actions/v03`；LAN 刷新紧跟“本机地址”标题、与地址列表成组，底部只保留连接提示。v01/v02 留作历史。
+最新方向与截图见 `docs/designs/2026-11-23-icon-actions/v04`；LAN 刷新紧跟“本机地址”标题、与地址列表成组，底部只保留连接提示。连接详情正文仅保留字段和规则优先级说明，“创建域名/IP 规则”放固定底栏左侧，“复制全部详情”与复制反馈放右侧，使用相同按钮尺寸与基线。小窗口正文滚动时操作入口保持可见。v01/v02/v03 留作历史。
 ## 流量统计工具栏（#644 / PR #645）
 
 同排的时间范围、刷新、暂停/继续记录和清除统计统一为34px高、12px字号。操作按钮使用公共 Button 的 `context="toolbar"`，由 `--cb-control-height-toolbar` / `--cb-type-control` 消费现有变量，不使用 small 档或页面私有尺寸。刷新保持等高正方形，文字按钮自然宽度；保留危险色、加载/禁用、键盘焦点和窄窗口换行。生产证据见 `docs/designs/2026-11-23-stats-toolbar/v01/`。

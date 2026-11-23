@@ -1,0 +1,19 @@
+{
+  "revision": "6c32c7dc034833f8db2c711d06bab28151b7d045",
+  "before": false,
+  "source": "production pages + synthetic IPC/clipboard",
+  "errors": [],
+  "checks": [
+    "rename-cancel-save",
+    "rename-disabled",
+    "hover-and-focus-tooltip",
+    "clipboard-success-failure",
+    "dark-en-small-no-overflow",
+    "connection-copy-field-feedback",
+    "inline-content-placement",
+    "success-check-no-shift",
+    "refresh-grouped-with-addresses",
+    "connection-footer-action-group",
+    "copy-all-and-rule-prefill"
+  ]
+}
