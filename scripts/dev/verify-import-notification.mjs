@@ -45,16 +45,12 @@ try {
     const start = await page.evaluate(() => (window.__cb.payloadLog.notification_publish ?? []).length);
     await page.locator(".cb-primary-nav button", { hasText: "配置" }).click();
     await page.getByRole("button", { name: "添加订阅", exact: true }).first().click();
-    const dialog = page.locator(".cb-dialog");
+    const dialog = page.getByRole("dialog");
     await dialog.waitFor();
     await dialog.locator("#profile-url").fill(link);
     const submit = dialog.getByRole("button", { name: "＋ 导入", exact: true });
-    // The button unlocks only after the local compatibility preflight finishes.
-    await waitFor("导入按钮可用", () => {
-      const target = [...document.querySelectorAll(".cb-dialog button")]
-        .find(button => (button.textContent ?? "").includes("导入"));
-      return !!target && !target.disabled;
-    });
+    // Playwright waits for this semantic action to be enabled after preflight;
+    // do not bind the test to a retired popup implementation's CSS class.
     await submit.click();
     // notification_publish 是静默命令：stub 保留最近 50 次参数，核对真实发布的动作。
     // 导入后的 refresh 也可能发布一条读取错误，所以只看本次导入之后的成功通知。
