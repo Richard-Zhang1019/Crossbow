@@ -63,6 +63,11 @@
 - 验证新增：点击目录后 `window` 标记存活、`performance.getEntriesByType("navigation").length` 保持 1（连续三次导航），导航后目录筛选与主题切换仍生效。
 - 已知：下载页 React 岛的 hydration mismatch 为既有问题（主分支同样出现 #418），本次未新增；下载页依赖外网 API，验证脚本屏蔽外网，未覆盖其数据加载。
 
+## 评审调整（第六轮：顶部导航高亮）
+
+- 功能详解的 16 个单节路由此前只匹配 `path === "/features"`，在 `/features/<slug>` 上顶部「功能详解」未高亮；改为 `path.startsWith("/features/")` 一并匹配（与使用文档的 `/guide/` 规则一致）。
+- 验证新增：进入单节路由后 `.nav-shell nav a[aria-current="page"]` 文本为「功能详解」。
+
 ## 边界与待验
 
 - 无头截图不绘制滚动条本身，槽宽用几何测量 + CSS 计算值验证；系统"始终显示滚动条"下的真实观感需在浏览器/安装版复查。

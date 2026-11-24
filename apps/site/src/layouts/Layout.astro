@@ -68,7 +68,7 @@ const nav = [
           {nav.map((n) => (
             <a
               href={withBase(pathFor(lang, n.to))}
-              aria-current={(path === n.to || (n.to === "/guide" && path.startsWith("/guide/"))) ? "page" : undefined}
+              aria-current={(path === n.to || (n.to === "/guide" && path.startsWith("/guide/")) || (n.to === "/features" && path.startsWith("/features/"))) ? "page" : undefined}
             >{t(lang, n.label)}</a>
           ))}
           <a class="mobile-github" href={REPO} target="_blank" rel="noopener noreferrer">GitHub<span aria-hidden="true">↗</span></a>

@@ -78,6 +78,7 @@ try {
     assert.equal(spa.marker, "alive", "directory navigation keeps the document alive");
     assert.equal(spa.navigations, 1, "directory navigation does not reload the page");
     assert.equal(await p.locator("h1").innerText(), "节点选择与测速");
+    assert.equal(await p.locator('.nav-shell nav a[aria-current="page"]').innerText(), "功能详解", "header highlights the features section on its routes");
     await p.locator("[data-pref-button]").first().click();
     await p.locator("[data-theme-pop] input[value='light']").check();
     await p.waitForTimeout(150);
