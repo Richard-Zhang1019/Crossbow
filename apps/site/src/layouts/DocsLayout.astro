@@ -58,26 +58,5 @@ const body=(await Astro.slots.render('default')).replace(/<h([23])([^>]*)>([\s\S
    <a class="docs-feedback" href="https://github.com/Richard-Zhang1019/Crossbow/issues/new" target="_blank" rel="noopener noreferrer">{lang==='zh'?'反馈文档问题 ↗':'Report a docs issue ↗'}</a>
   </aside>
  </div>
- {isFeatures&&!slug&&<script define:vars={{sections:featureLegacySections,root:href()}}>
-  const migrate=()=>{const id=location.hash.slice(1);if(sections.includes(id))location.replace(`${root}/${id}${location.search}`);};
-  migrate();addEventListener("hashchange",migrate);
- </script>}
+ {isFeatures&&!slug&&<div data-doc-legacy data-root={href()} data-sections={JSON.stringify(featureLegacySections)} hidden></div>}
 </Layout>
-<script>
- const sidebar=document.querySelector<HTMLDetailsElement>('.docs-sidebar');
- const mobile=matchMedia('(max-width: 800px)');
- sidebar?.addEventListener('keydown',e=>{if(e.key==='Escape'&&mobile.matches&&sidebar.open){sidebar.open=false;sidebar.querySelector('summary')?.focus();}});
- const adapt=()=>{if(sidebar)sidebar.open=!mobile.matches;};adapt();mobile.addEventListener('change',adapt);
- const search=document.querySelector<HTMLInputElement>('[data-doc-search]');
- search?.addEventListener('input',()=>{
-  const q=search.value.trim().toLocaleLowerCase();let total=0;
-  document.querySelectorAll<HTMLElement>('[data-doc-group]').forEach(group=>{let shown=0;group.querySelectorAll<HTMLElement>('[data-doc-topic]').forEach(item=>{const match=(item.dataset.search??'').toLocaleLowerCase().includes(q);item.hidden=!match;if(match)shown++;});group.hidden=shown===0;total+=shown;});
-  const empty=document.querySelector<HTMLElement>('[data-doc-empty]');if(empty)empty.hidden=total!==0;
- });
- // Keep the directory's reading position between real static route navigations.
- const pane=document.querySelector<HTMLElement>('.docs-sidebar-body');
- try {if(pane)pane.scrollTop=Number(sessionStorage.getItem('crossbow.docs.scroll')||0);}catch{}
- const selected=pane?.querySelector<HTMLElement>('[aria-current="page"]');
- if(pane&&selected){const a=selected.getBoundingClientRect(),b=pane.getBoundingClientRect();if(a.top<b.top||a.bottom>b.bottom)pane.scrollTop+=a.top-b.top-80;}
- document.querySelectorAll<HTMLAnchorElement>('.docs-navigation a').forEach(a=>a.addEventListener('click',()=>{try{sessionStorage.setItem('crossbow.docs.scroll',String(pane?.scrollTop||0));}catch{}}));
-</script>

@@ -153,21 +153,4 @@ const FAQS = [
   </div>
 </section>
 
-<script>
-  // Hero 动效暂停（原 React 状态的 vanilla 版）
-  const lane = document.querySelector<HTMLElement>("[data-packet]");
-  const button = document.querySelector<HTMLButtonElement>("[data-pause]");
-  let paused = document.hidden;
-  const render = () => {
-    if (!lane || !button) return;
-    lane.style.animationPlayState = paused ? "paused" : "running";
-    button.setAttribute("aria-pressed", String(paused));
-    button.firstElementChild!.textContent = paused ? "▷" : "Ⅱ";
-    button.lastChild!.textContent = paused
-      ? button.dataset.resumeText ?? " Resume motion"
-      : button.dataset.pauseText ?? " Pause motion";
-  };
-  document.addEventListener("visibilitychange", () => { paused = document.hidden; render(); });
-  button?.addEventListener("click", () => { paused = !paused; render(); });
-  render();
-</script>
+

@@ -17,8 +17,4 @@ const href=(s='')=>docHref(lang,s,base);
 </ul>
 <noscript><p>{lang==='zh'?'旧版章节链接：请选择对应文档。':'Legacy section links: choose the corresponding document.'}</p><ul>{legacySections.map(id=><li id={id}><a href={href(id)}>{documents.find(d=>d.slug===id)?.title[lang]}</a></li>)}</ul></noscript>
 <div data-doc-legacy data-root={href()} data-sections={JSON.stringify(legacySections)}></div>
-<script>
- const el=document.querySelector<HTMLElement>('[data-doc-legacy]');
- const migrate=()=>{if(!el)return;const id=location.hash.slice(1);const sections=JSON.parse(el.dataset.sections||'[]') as string[];if(sections.includes(id))location.replace(`${el.dataset.root}/${id}${location.search}`);};
- migrate();addEventListener('hashchange',migrate);
-</script>
+

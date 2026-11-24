@@ -70,10 +70,18 @@ try {
     assert(await p.locator("[data-doc-empty]").isVisible(), "empty search state");
     await p.locator("[data-doc-search]").fill("");
 
-    // Each section is its own route with its own title and current-directory marker.
+    // Each section is its own route; navigation swaps content without reloading the document.
+    await p.evaluate(() => { window.__spaMarker = "alive"; });
     await p.locator('.docs-navigation a[href$="/features/nodes"]').click();
     await p.waitForURL("**/zh/features/nodes");
+    const spa = await p.evaluate(() => ({ marker: window.__spaMarker, navigations: performance.getEntriesByType("navigation").length }));
+    assert.equal(spa.marker, "alive", "directory navigation keeps the document alive");
+    assert.equal(spa.navigations, 1, "directory navigation does not reload the page");
     assert.equal(await p.locator("h1").innerText(), "节点选择与测速");
+    await p.locator("[data-pref-button]").first().click();
+    await p.locator("[data-theme-pop] input[value='light']").check();
+    await p.waitForTimeout(150);
+    assert.equal(await p.evaluate(() => document.documentElement.dataset.theme), "light", "header controls work after client-side navigation");
     assert.equal(await p.locator('.docs-navigation [aria-current="page"]').count(), 1, "current directory item is marked");
     assert.equal(await p.locator(".docs-onpage nav a").count(), 1, "section page lists its in-page heading");
     const scrollbar = await p.locator(".docs-article").evaluate((e) => ({ width: e.offsetWidth - e.clientWidth, css: getComputedStyle(e, "::-webkit-scrollbar").width }));
