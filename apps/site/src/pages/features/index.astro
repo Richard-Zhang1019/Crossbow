@@ -22,7 +22,7 @@ const copy = {
 } as const;
 ---
 <DocsLayout nav="features" lang={lang} slug="">
-  <div class="docs-start"><div><strong>{copy.start[lang]}</strong><p>{copy.findHint[lang]}</p></div><a class="btn-primary" href={href("support-matrix")}>{copy.startLink[lang]}</a></div>
+  <div class="docs-start"><div><strong>{copy.start[lang]}</strong><p>{copy.findHint[lang]}</p></div><a class="docs-start-link" href={href("support-matrix")}>{copy.startLink[lang]}</a></div>
   <h2>{copy.find[lang]}</h2>
   <div class="docs-topics">
     {featureGroups.map((group) => (

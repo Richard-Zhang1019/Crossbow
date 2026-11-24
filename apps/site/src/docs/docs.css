@@ -1,6 +1,7 @@
 /* Documentation follows the existing Crossbow palette and font; scoped type/space roles. */
-:root { --doc-title:32px; --doc-section:22px; --doc-subsection:17px; --doc-body:15px; --doc-small:13px; --doc-caption:12px; --doc-leading:1.85; --doc-gap:var(--doc-space-40); --doc-step:24px; --doc-space:16px; --doc-rail:220px; --doc-header:68px; --doc-radius:8px; }
-.docs-shell { display:grid; grid-template-columns:var(--doc-rail) minmax(0,1fr) 150px; gap:var(--doc-gap); align-items:start; padding-block:var(--doc-space-24) var(--doc-space-80); }
+:root { --doc-title:32px; --doc-section:22px; --doc-subsection:17px; --doc-body:15px; --doc-small:13px; --doc-caption:12px; --doc-leading:1.85; --doc-gap:var(--doc-space-40); --doc-step:24px; --doc-space:16px; --doc-rail:220px; --doc-onpage:160px; --doc-header:68px; --doc-radius:8px; }
+.documentation .shell { width: min(1400px, calc(100% - 2 * var(--gutter))); }
+.docs-shell { display:grid; grid-template-columns:var(--doc-rail) minmax(0,1fr) var(--doc-onpage); gap:var(--doc-gap); align-items:start; padding-block:var(--doc-space-24) var(--doc-space-80); }
 .docs-sidebar { position:sticky; top:calc(var(--doc-header) + 16px); max-height:calc(100svh - var(--doc-header) - 32px); min-width:0; border-right:1px solid var(--line); }
 .docs-sidebar>summary { display:none; }
 .docs-sidebar-body { overflow-y:auto; overscroll-behavior:contain; max-height:calc(100svh - var(--doc-header) - 32px); padding-right:var(--doc-space-20); padding-bottom:var(--doc-space); scrollbar-width:thin; }
@@ -17,7 +18,7 @@
 .docs-navigation a[aria-current=page] { background:var(--surface-2); color:var(--text); font-weight:var(--doc-weight-strong); }
 .docs-navigation a:hover { color:var(--text); background:var(--surface); }
 .docs-sidebar-download { display:flex; justify-content:space-between; margin-top:var(--doc-step); padding:var(--doc-space) var(--doc-space-10) 0; border-top:1px solid var(--line); color:var(--dim); font-size:var(--doc-small); }
-.docs-article { min-width:0; max-width:740px; }
+.docs-article { min-width:0; max-width:860px; }
 .docs-heading { padding-bottom:var(--doc-step); margin-bottom:var(--doc-space-32); border-bottom:1px solid var(--line); }
 .docs-context { display:flex; align-items:center; flex-wrap:wrap; gap:var(--doc-space-10); margin-bottom:var(--doc-space-20); color:var(--faint); font-size:var(--doc-caption); }
 .docs-context a:hover { color:var(--accent); }
@@ -59,7 +60,8 @@
 .docs-pagination a:hover span { color:var(--accent); }
 .docs-start { display:flex; align-items:center; justify-content:space-between; gap:var(--doc-step); background:var(--surface); border:1px solid var(--line); border-radius:var(--doc-radius); padding:var(--doc-step); margin-bottom:var(--doc-space-32); }
 .docs-start p { margin:var(--doc-space-4) 0 0; color:var(--dim); }
-.docs-start a { flex:none; text-decoration:none; }
+.docs-start-link { flex:none; align-self:center; font-size:var(--doc-small); color:var(--accent); white-space:nowrap; }
+.docs-start-link:hover { text-decoration:underline; }
 .docs-topics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--doc-step); margin-top:var(--doc-space-20); }
 .docs-topic { padding-block:var(--doc-space); border-top:1px solid var(--line); }
 .docs-topic h3 { margin:0; font-size:var(--doc-subsection); }

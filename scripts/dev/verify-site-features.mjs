@@ -49,6 +49,9 @@ try {
     assert.equal(links.length, 16, "directory lists every section");
     assert(links.every((h) => h && h.startsWith(base + "/zh/features/")), "directory links are real routes");
     assert.equal(await p.evaluate(() => document.documentElement.scrollHeight <= innerHeight || getComputedStyle(document.body).overflowY === "hidden"), true, "workspace does not grow the page");
+    const articleWidth = await p.locator(".docs-article").evaluate((e) => e.clientWidth);
+    assert(articleWidth >= 800, `content column uses the available width (got ${articleWidth}px)`);
+    assert.equal(await p.locator(".docs-start .btn-primary").count(), 0, "overview entry is a quiet link, not a primary button");
 
     // Filter narrows the directory and shows an empty state.
     await p.locator("[data-doc-search]").fill("DNS");
