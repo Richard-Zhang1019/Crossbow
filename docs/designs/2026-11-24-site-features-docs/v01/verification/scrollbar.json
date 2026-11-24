@@ -1,0 +1,13 @@
+{
+  "measurement": "Chromium classic scrollbars (--disable-features=OverlayScrollbar), 1440x1000, /zh/guide/dns",
+  "before": {
+    "gutter_px": 15,
+    "webkit_scrollbar_width": "auto",
+    "scrollbar_width": "auto"
+  },
+  "after": {
+    "gutter_px": 11,
+    "webkit_scrollbar_width": "11px",
+    "scrollbar_width": "thin"
+  }
+}

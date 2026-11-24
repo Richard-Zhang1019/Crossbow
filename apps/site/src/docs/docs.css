@@ -104,3 +104,60 @@ body.documentation { height:100svh; min-height:0; overflow:hidden; }
 @media(max-width:800px) { .docs-sidebar-body {height:auto;max-height:65svh}.docs-search input{font-size:var(--doc-type-16)} }
 
 :root { --doc-leading-1-6:1.6; --doc-leading-1-7:1.7; --doc-leading-1-75:1.75; --doc-radius-4:4px; --doc-radius-6:6px; --doc-space-10:10px; --doc-space-12:12px; --doc-space-14:14px; --doc-space-16:16px; --doc-space-2:2px; --doc-space-20:20px; --doc-space-22:22px; --doc-space-24:24px; --doc-space-3:3px; --doc-space-32:32px; --doc-space-36:36px; --doc-space-4:4px; --doc-space-40:40px; --doc-space-48:48px; --doc-space-5:5px; --doc-space-6:6px; --doc-space-7:7px; --doc-space-70:70px; --doc-space-8:8px; --doc-space-80:80px; --doc-space-9:9px; --doc-type-16:16px; --doc-weight-strong:600; }
+
+/* #653: the article is the workspace scroller; keep its scrollbar quiet instead of a
+   wide grey gutter between the prose and the on-page directory. */
+.docs-article {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text) 18%, transparent) transparent;
+}
+.docs-article::-webkit-scrollbar { width: 11px; height: 11px; }
+.docs-article::-webkit-scrollbar-track { background: transparent; }
+.docs-article::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--text) 16%, transparent);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+.docs-article::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--text) 30%, transparent);
+}
+/* Long feature pages can have a taller on-page directory than the viewport. */
+.docs-onpage {
+  max-height: calc(100svh - var(--doc-header) - 64px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding-right: 4px;
+}
+.docs-onpage nav a[aria-current="true"] { color: var(--text); }
+
+/* #653: feature sections reuse the documentation prose and the same shell as /guide. */
+.docs-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--doc-space-12);
+  margin: var(--doc-space-36) 0 var(--doc-space);
+  color: var(--faint);
+  font-size: var(--doc-caption);
+  font-weight: var(--doc-weight-strong);
+}
+.docs-group-head::after { content: ""; height: 1px; flex: 1; background: var(--line); }
+.docs-feature { margin-top: var(--doc-space-32); }
+.docs-feature h2 { margin-top: 0; }
+.docs-feature .anchor-button { margin-left: var(--doc-space-8); }
+.docs-feature-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--doc-space-16);
+  margin-top: var(--doc-space-24);
+  font-size: var(--doc-caption);
+  color: var(--faint);
+}
+.docs-feature-meta a { color: var(--dim); }
+.docs-feature-meta a:hover { color: var(--accent); }
+.docs-support-matrix .matrix-note { color: var(--dim); font-size: var(--doc-small); }
+/* The platform matrix keeps its platform sub-label under the column title. */
+.docs-prose .th-sub { display: block; margin-top: 2px; font-size: var(--doc-caption); font-weight: 400; color: var(--faint); white-space: normal; }
+/* The capability matrix keeps a readable column width and scrolls sideways on phones. */
+@media (max-width: 800px) { .docs-support-matrix table { min-width: 640px; } }

@@ -1,0 +1,28 @@
+{
+  "date": "2026-11-24",
+  "version": "v01",
+  "issue": 653,
+  "status": "implemented; production static build + Chromium scenario; review pending",
+  "source_sha256": {
+    "apps/site/src/components/FeatureDocs.astro": "cbe149e7c7f5e75815fdfce8fe8f320bdf3cdef167b9aa3bb6e71434a0838c10",
+    "apps/site/src/docs/features.ts": "ccc460e985901b54e854a77af7691fa858fec6908e5736d7e14e25f74d62fdc1",
+    "apps/site/src/docs/docs.css": "72c99fc8d35beddbc7410ff658dd2ee2a9861b4f83edc761615f22f5be9e9a0d",
+    "apps/site/src/layouts/Layout.astro": "bd97152ecff02be4890aedfa3d4504ea7e8a029ba677a75c9bb0a53b28d67749",
+    "apps/site/src/pages/features.astro": "96d0cb8176b9ae67990812c77b6a87f2a4b88813a41d87441dae68c4e5bd2ddc",
+    "apps/site/src/pages/zh/features.astro": "bbb087cc68437daf8af9d4c929ebf821e61139abf5d953193f6ab62940e161df",
+    "scripts/dev/verify-site-features.mjs": "fc49fb26faa9f29e61dee5516768c04a4b41f335ac3583bab3688b2d389b227f"
+  },
+  "artifacts": {
+    "SPEC.md": "9bfc00a4c1557cdcb53b5392f07781057aeba651b0a7413e5492624544cfe79d",
+    "verification/build.log": "0fd0b6963194fac0b1204da8f13d611730a387a82e9496125f9e0fdfcaeb1266",
+    "verification/scrollbar.json": "cc90573def661f53041ae619a1db198f89dc382d67049aab1a200795ac1d3928",
+    "verification/verify.log": "62876690f6513ddccada9af9ac48a3e8810ea2312b81eea8763ec3be03f5dc08",
+    "previews/after-features-dark.png": "072490231fe28cb92394674faf2645326a5ddd03a8d1ef4cd7158106e891f2b3",
+    "previews/after-features-light.png": "9314bf41166f40b8c22ffc9380a676ccf79ef7be72f41d8c604b14d5e1d06f7e",
+    "previews/after-features-mobile.png": "b1fafd62cac0948531ade1887f57563871fb446bf68b623df2fccd90078fd33d",
+    "previews/after-features-scrolled.png": "627c8ad8ff68e2b35ef00ad80a05c4570c179b6a0c504cdd1ab54cd92d77bd6d",
+    "previews/after-guide-article.png": "550b866e7c012124682fda5aa8ec3c149772af89d9239680a4d34c8a1123a773",
+    "previews/before-features.png": "dde459e167f7acce5bee4e4723744cae3216015f1bafb151442c0a894c21b9f2",
+    "previews/before-mobile.png": "c5857a6304eb2ad201ce710743495aa77b8cdf3d7717e8eb4bb7fc7181dc1c29"
+  }
+}
