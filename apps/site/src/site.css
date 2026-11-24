@@ -56,7 +56,7 @@ svg, img { display: block; flex-shrink: 0; max-width: 100%; }
 body { min-height: 100svh; display: flex; flex-direction: column; }
 main { flex: 1; }
 main:focus { outline: none; }
-.shell { width: min(1240px, calc(100% - 2 * var(--gutter))); margin-inline: auto; }
+.shell { width: min(1320px, calc(100% - 2 * var(--gutter))); margin-inline: auto; }
 .skip-link { position: fixed; z-index: 100; left: 16px; top: 12px; transform: translateY(-200%); padding: 10px 20px; background: var(--button); color: var(--on-button); border-radius: 6px; }
 .skip-link:focus { transform: none; }
 .site-header { position: sticky; top: 0; z-index: 30; background: var(--bg); }

@@ -52,6 +52,15 @@ try {
     const articleWidth = await p.locator(".docs-article").evaluate((e) => e.clientWidth);
     assert(articleWidth >= 800, `content column uses the available width (got ${articleWidth}px)`);
     assert.equal(await p.locator(".docs-start .btn-primary").count(), 0, "overview entry is a quiet link, not a primary button");
+    const geometry = await p.evaluate(() => {
+      const article = document.querySelector(".docs-article").getBoundingClientRect();
+      const onpage = document.querySelector(".docs-onpage").getBoundingClientRect();
+      const brand = document.querySelector(".nav-shell .brand").getBoundingClientRect();
+      const sidebar = document.querySelector(".docs-sidebar").getBoundingClientRect();
+      return { gap: Math.round(onpage.left - article.right), brandLeft: Math.round(brand.left), sidebarLeft: Math.round(sidebar.left) };
+    });
+    assert(geometry.gap >= 36 && geometry.gap <= 44, `on-page directory sits one column gap from the prose (got ${geometry.gap}px)`);
+    assert(Math.abs(geometry.brandLeft - geometry.sidebarLeft) <= 1, "header brand aligns with the documentation column");
 
     // Filter narrows the directory and shows an empty state.
     await p.locator("[data-doc-search]").fill("DNS");

@@ -1,6 +1,5 @@
 /* Documentation follows the existing Crossbow palette and font; scoped type/space roles. */
 :root { --doc-title:32px; --doc-section:22px; --doc-subsection:17px; --doc-body:15px; --doc-small:13px; --doc-caption:12px; --doc-leading:1.85; --doc-gap:var(--doc-space-40); --doc-step:24px; --doc-space:16px; --doc-rail:220px; --doc-onpage:160px; --doc-header:68px; --doc-radius:8px; }
-.documentation .shell { width: min(1400px, calc(100% - 2 * var(--gutter))); }
 .docs-shell { display:grid; grid-template-columns:var(--doc-rail) minmax(0,1fr) var(--doc-onpage); gap:var(--doc-gap); align-items:start; padding-block:var(--doc-space-24) var(--doc-space-80); }
 .docs-sidebar { position:sticky; top:calc(var(--doc-header) + 16px); max-height:calc(100svh - var(--doc-header) - 32px); min-width:0; border-right:1px solid var(--line); }
 .docs-sidebar>summary { display:none; }
