@@ -81,6 +81,25 @@ try {
     assert.equal(await p.locator(".docs-navigation [aria-current=page]").count(), 1);
     assert.equal(await p.locator("table.docs-matrix").count(), 1, "matrix renders on its own route");
 
+    // Header, directory search and article gutter keep their tuned geometry (#653 review).
+    await p.goto(origin + base + "/zh/guide/dns");
+    const header = await p.locator(".nav-shell").evaluate((e) => e.getBoundingClientRect().height);
+    assert.equal(Math.round(header), 68, "header uses the compact height");
+    const articleMetrics = await p.locator(".docs-article").evaluate((e) => ({ pad: parseFloat(getComputedStyle(e).paddingRight), gutter: e.offsetWidth - e.clientWidth }));
+    assert(articleMetrics.pad >= 20, `article keeps space before the scrollbar (got ${articleMetrics.pad}px)`);
+    assert(articleMetrics.gutter > 0 && articleMetrics.gutter <= 12, "gutter stays thin");
+    const searchBox = await p.locator(".docs-search").evaluate((e) => e.getBoundingClientRect().height);
+    assert(searchBox <= 30, `search field stays compact (got ${searchBox}px)`);
+    await p.locator("[data-doc-search]").focus();
+    const ring = await p.evaluate(() => {
+      const s = document.querySelector(".docs-search").getBoundingClientRect();
+      const pane = document.querySelector(".docs-sidebar-body").getBoundingClientRect();
+      return { insetLeft: s.left - pane.left };
+    });
+    assert(ring.insetLeft >= 0, "focus ring is not clipped by the directory pane");
+    await p.locator(".docs-article").evaluate((e) => e.scrollTop = 0);
+    await p.screenshot({ path: out + "/guide-header-search.png" });
+
     // Legacy section hashes still land on the matching route.
     await p.goto(origin + base + "/zh/features#diagnostics");
     await p.waitForURL("**/zh/features/diagnostics");

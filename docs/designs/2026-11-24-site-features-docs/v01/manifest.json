@@ -2,7 +2,7 @@
   "date": "2026-11-24",
   "version": "v01",
   "issue": 653,
-  "status": "implemented; routed feature docs (16 sections x 2 languages) + thin article scrollbar; production static build + Chromium scenario; review pending",
+  "status": "implemented; routed feature docs + header/search/gutter review tweaks; production static build + Chromium scenario; review pending",
   "source_sha256": {
     "apps/site/src/docs/feature-navigation.ts": "d5605436f419631e05a00c0d10fb7cf8a4a415dbded805e7226ef0f397d4646e",
     "apps/site/src/docs/features.ts": "ccc460e985901b54e854a77af7691fa858fec6908e5736d7e14e25f74d62fdc1",
@@ -14,20 +14,24 @@
     "apps/site/src/pages/zh/features/index.astro": "8d62f93d7e0c306a32212006a132bfd584a4837292ad1b37c85cb674f2edac53",
     "apps/site/src/pages/zh/features/[slug].astro": "6c8f2441de3ebd7abd5b0d9ba3e28a830874a8bbe64fd3ab6256b0802b31bca9",
     "apps/site/src/docs/docs.css": "17f5ed179d3a1a284cf22d2dbb35b4a4dacf871595e7ed595c53c3d2c1c1938a",
-    "scripts/dev/verify-site-features.mjs": "18ef0818198c0082b154d84457a5bf8776b94bec748cb21afc1192242b57bc6c"
+    "scripts/dev/verify-site-features.mjs": "18ef0818198c0082b154d84457a5bf8776b94bec748cb21afc1192242b57bc6c",
+    "apps/site/src/site.css": "78826077be5c6353c56513c3470c8096d53a424f2e0308534bb64dba6cf79626"
   },
   "artifacts": {
-    "SPEC.md": "279eae3cd669d4adf081fe2931f747ae7b041cfa53256103c4064a661a8b5ad1",
-    "verification/build.log": "667813209a5f55aa8b7ebc22fd019ac9a6699711e0398ad96f5fcba9b2e436a4",
+    "SPEC.md": "686a9b49982bae08add8d60af70d227078e5bb060dbccd712dde287c5462a30e",
+    "verification/build.log": "0265b2a14d5e11b7304c6fcd6704ed02c33fbfbf767ad2561b486aca0c1d013c",
+    "verification/layout.json": "c4f0a1a9debe3196ac9ba21ef3be3831a7e4a38937729a61da4db1e9812e0249",
     "verification/scrollbar.json": "cc90573def661f53041ae619a1db198f89dc382d67049aab1a200795ac1d3928",
     "verification/verify-features.log": "6efda1190ae8da7260d74d205de448f43cd184c4cd6eb987734c5e464fa79f75",
     "verification/verify-guide.log": "ccf4ce282f7a28d3354d62e5f746cf5e6dd361ac45faa3b21421c787d8819e2e",
     "verification/verify.log": "62876690f6513ddccada9af9ac48a3e8810ea2312b81eea8763ec3be03f5dc08",
+    "previews/after-guide-header-search.png": "e3167f8dae482fa0a86c2c423dc574ebd182830552e68f84dc534372f6e92443",
+    "previews/after-home-header.png": "9311cd5357c6e96aac776a648170a9162255765855b17ab97c4eb1d652dfd76c",
     "previews/after-mobile.png": "56e2a530bfb35f97cea9b187de4e3b8f1cc02f2b37c786ce7f2bc19098e0bf71",
-    "previews/after-overview-dark.png": "5df9a58197affe8f13227a5673a02192cc2a15a60585b0fa83ce018fe6dd1815",
-    "previews/after-overview-light.png": "8c84118b6cc3e68c04bed8a088f1e64a3b8629d7d434b8c5bf8213cf671a31aa",
-    "previews/after-section-dark.png": "2a4ab0121f587d8abc266a97a90034a3c27a7e8356cb86cf89ce9daab5ad6217",
-    "previews/after-section-light.png": "0eca1aa8efab0897251c306b77f9b2ab846fb202c72cd97402a684aeea99c1ca",
+    "previews/after-overview-dark.png": "aaaabee095d79818e0e7bee5d79d4fe2d6e1aaf200d62becfa1ddf16ae3f8528",
+    "previews/after-overview-light.png": "5d1393744fdc366fc73c42de7f68c2fb89630dbe5f59a01cdf0c149a483c8a46",
+    "previews/after-section-dark.png": "46e293e69289fbd955b5716913267493ccfdd7266707fdd9fd046b5696890b11",
+    "previews/after-section-light.png": "8945a310d91d38552190fd9c97cca743cfe59389177329530de059b54d95cde4",
     "previews/before-features.png": "dde459e167f7acce5bee4e4723744cae3216015f1bafb151442c0a894c21b9f2",
     "previews/before-mobile.png": "c5857a6304eb2ad201ce710743495aa77b8cdf3d7717e8eb4bb7fc7181dc1c29"
   }
