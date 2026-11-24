@@ -1,0 +1,12 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+import FeatureSection from "../../components/FeatureSection.astro";
+import { featureDocuments } from "../../docs/feature-navigation";
+export function getStaticPaths() {
+  return featureDocuments.map((doc) => ({ params: { slug: doc.slug } }));
+}
+const { slug } = Astro.params as { slug: string };
+---
+<DocsLayout nav="features" lang="en" slug={slug}>
+  <FeatureSection lang="en" slug={slug} />
+</DocsLayout>

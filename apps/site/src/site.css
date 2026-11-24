@@ -2,6 +2,7 @@
 @font-face { font-family: Manrope; src: url('./assets/fonts/manrope-regular.woff2') format('woff2'); font-weight: 400; font-display: swap; }
 @font-face { font-family: Manrope; src: url('./assets/fonts/manrope-semibold.woff2') format('woff2'); font-weight: 500 700; font-display: swap; }
 :root {
+  --header-h: 68px;
   color-scheme: light;
   --bg: #fff;
   --surface: #f7f8fb;
@@ -55,11 +56,11 @@ svg, img { display: block; flex-shrink: 0; max-width: 100%; }
 body { min-height: 100svh; display: flex; flex-direction: column; }
 main { flex: 1; }
 main:focus { outline: none; }
-.shell { width: min(1240px, calc(100% - 2 * var(--gutter))); margin-inline: auto; }
+.shell { width: min(1320px, calc(100% - 2 * var(--gutter))); margin-inline: auto; }
 .skip-link { position: fixed; z-index: 100; left: 16px; top: 12px; transform: translateY(-200%); padding: 10px 20px; background: var(--button); color: var(--on-button); border-radius: 6px; }
 .skip-link:focus { transform: none; }
 .site-header { position: sticky; top: 0; z-index: 30; background: var(--bg); }
-.nav-shell { height: 80px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 32px; }
+.nav-shell { height: var(--header-h); display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 32px; }
 .brand { display: inline-flex; align-items: center; gap: 10px; font-size: 24px; font-weight: 600; letter-spacing: -.8px; }
 .nav-shell nav { display: flex; justify-content: center; align-items: center; gap: 4px; }
 .nav-shell nav a { position: relative; min-height: 40px; padding: 7px 16px; display: flex; align-items: center; font-size: 14px; border-radius: 7px; color: var(--dim); white-space: nowrap; transition: color 150ms ease, background 150ms ease; }
@@ -89,7 +90,7 @@ main:focus { outline: none; }
 .option-check { margin-left: auto; color: var(--accent); font-weight: 600; opacity: 0; }
 .preference-option:has(input:checked) .option-check { opacity: 1; }
 @keyframes preference-in { from { opacity: 0; transform: translateY(-3px) scale(.98); } to { opacity: 1; transform: none; } }
-.hero { min-height: calc(100svh - 80px); padding-block: 64px 72px; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+.hero { min-height: calc(100svh - var(--header-h)); padding-block: 64px 72px; display: flex; flex-direction: column; justify-content: center; align-items: center; }
 .hero-intro { text-align: center; }
 .hero h1 { font-size: 60px; line-height: 1.2; }
 .hero-intro p { max-width: 840px; margin-inline: auto; margin-top: 20px; color: var(--dim); font-size: 16px; line-height: 1.8; }
@@ -144,8 +145,8 @@ main:focus { outline: none; }
 .download-platform .platform-guide { font-size: 12px; min-height: 44px; margin-top: 8px; }
 .community-note { margin-top: 40px; padding-block: 24px; color: var(--dim); font-size: 14px; text-align: center; }
 .community-note a, .guide-card a { color: var(--accent); text-decoration: underline; text-underline-offset: 4px; }
-/* P1（#349）：sticky 导航高 80px，目标统一预留定位高度，跳转后标题不被遮挡 */
-.guide-card, .detail-section { scroll-margin-top: 96px; }
+/* P1（#349）：sticky 导航高度随 --header-h，目标统一预留定位高度，跳转后标题不被遮挡 */
+.guide-card, .detail-section { scroll-margin-top: calc(var(--header-h) + 16px); }
 .guide-intro { margin-top: 12px; color: var(--dim); font-size: 14px; }
 .release-scope { margin-top: 24px; padding-top: 20px; font-size: 14px; color: var(--dim); }
 .download-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px 24px; color: var(--dim); font-size: 14px; margin-top: 24px; }

@@ -3,6 +3,7 @@ import "../site.css";
 import Logo from "../components/Logo.astro";
 import { createI18n, other, pathFor, t, type Lang } from "../i18n";
 import { BOOTSTRAP } from "../lib/bootstrap.js";
+import { ClientRouter } from "astro:transitions";
 import { REPO, RELEASES } from "../site-meta";
 
 export interface Props {
@@ -55,9 +56,10 @@ const nav = [
     <link rel="icon" href={`${import.meta.env.BASE_URL}favicon.svg`} type="image/svg+xml" />
     <link rel="icon" href={`${import.meta.env.BASE_URL}favicon-32.png`} sizes="32x32" />
     <link rel="apple-touch-icon" href={`${import.meta.env.BASE_URL}apple-touch-icon.png`} />
+    <ClientRouter />
     <script is:inline set:html={BOOTSTRAP} />
   </head>
-  <body class={path === "/guide" || path.startsWith("/guide/") ? "documentation" : undefined}>
+  <body class={path === "/guide" || path.startsWith("/guide/") || path === "/features" || path.startsWith("/features/") ? "documentation" : undefined}>
     <a class="skip-link" href="#main">{i18n("layout.1")}</a>
     <header class="site-header">
       <div class="shell nav-shell">
@@ -66,7 +68,7 @@ const nav = [
           {nav.map((n) => (
             <a
               href={withBase(pathFor(lang, n.to))}
-              aria-current={(path === n.to || (n.to === "/guide" && path.startsWith("/guide/"))) ? "page" : undefined}
+              aria-current={(path === n.to || (n.to === "/guide" && path.startsWith("/guide/")) || (n.to === "/features" && path.startsWith("/features/"))) ? "page" : undefined}
             >{t(lang, n.label)}</a>
           ))}
           <a class="mobile-github" href={REPO} target="_blank" rel="noopener noreferrer">GitHub<span aria-hidden="true">↗</span></a>
@@ -128,96 +130,6 @@ const nav = [
         <span><a href={`${REPO}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer">{i18n("layout.18")}</a>{i18n("layout.19")}</span>
       </div>
     </footer>
-    <script>
-      // 外观循环切换 + 移动菜单 + 复制章节链接（原 React 偏好组件的 vanilla 版）
-      const root = document.documentElement;
-      const THEME_KEY = "crossbow.site.theme";
-      const LANGUAGE_KEY = "crossbow.site.language";
-      const read = () => { try { return localStorage.getItem(THEME_KEY) || "system"; } catch { return "system"; } };
-      const SUN_ICON = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2" /><path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5 5l1.9 1.9M17.1 17.1 19 19M19 5l-1.9 1.9M6.9 17.1 5 19" /></svg>';
-      const MOON_ICON = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>';
-      const paint = () => {
-        const stored = read();
-        const dark = stored === "dark" || (stored !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
-        root.dataset.theme = dark ? "dark" : "light";
-        document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? "#1a1c21" : "#ffffff");
-        const icon = document.querySelector("[data-theme-icon]");
-        // 图标反映当前主题：深色 = 月亮，浅色 = 太阳
-        if (icon) icon.innerHTML = dark ? MOON_ICON : SUN_ICON;
-        const radio = document.querySelector(`[data-theme-pop] input[value="${stored}"]`);
-        if (radio) radio.checked = true;
-      };
-      paint();
-
-      // 下拉开合：点击按钮切换、点击外部与 Escape 关闭
-      document.querySelectorAll<HTMLElement>("[data-pref]").forEach((anchor) => {
-        const button = anchor.querySelector<HTMLButtonElement>("[data-pref-button]");
-        const pop = anchor.querySelector<HTMLElement>(".preference-popover");
-        if (!button || !pop) return;
-        const setOpen = (open: boolean) => {
-          pop.hidden = !open;
-          button.setAttribute("aria-expanded", String(open));
-        };
-        button.addEventListener("click", () => setOpen(pop.hidden));
-        document.addEventListener("click", (e) => {
-          if (!anchor.contains(e.target as Node)) setOpen(false);
-        });
-        window.addEventListener("keydown", (e) => { if (e.key === "Escape") setOpen(false); });
-      });
-
-      document.querySelector("[data-theme-pop]")?.addEventListener("change", (e) => {
-        const value = (e.target as HTMLInputElement).value;
-        try { localStorage.setItem(THEME_KEY, value); } catch {}
-        paint();
-      });
-      document.querySelector("[data-lang-pop]")?.addEventListener("change", (e) => {
-        const value = (e.target as HTMLInputElement).value;
-        try { localStorage.setItem(LANGUAGE_KEY, value === "en" ? "en" : "zh-CN"); } catch {}
-        // trailingSlash: never —— /zh 不带尾斜杠；根路径两种语言都是 "/"
-        const form = document.querySelector<HTMLElement>("[data-lang-pop]");
-        const target = value === "zh" ? form?.dataset.zhHref : form?.dataset.enHref;
-        if (target) location.href = new URL(target + location.search + (form?.dataset.resetHash ? "" : location.hash), location.origin).href;
-      });
-
-      const menuButton = document.querySelector(".menu-button");
-      const siteNav = document.getElementById("site-nav");
-      const main = document.getElementById("main");
-      const footer = document.querySelector(".site-footer");
-      const setMenu = (open: boolean) => {
-        if (!siteNav || !menuButton) return;
-        siteNav.classList.toggle("nav-open", open);
-        menuButton.setAttribute("aria-expanded", String(open));
-        if (main) (main as HTMLElement).inert = open;
-        if (footer) (footer as HTMLElement).inert = open;
-        document.body.style.overflow = open ? "hidden" : "";
-      };
-      menuButton?.addEventListener("click", () => setMenu(siteNav?.classList.contains("nav-open") === false));
-      siteNav?.querySelectorAll("a").forEach((a) => a.addEventListener("click", () => setMenu(false)));
-      window.addEventListener("keydown", (e) => { if (e.key === "Escape") setMenu(false); });
-      const wide = matchMedia("(min-width: 1001px)");
-      wide.addEventListener("change", (e) => { if (e.matches) setMenu(false); });
-
-      document.querySelectorAll<HTMLElement>("[data-copy]").forEach((button) => {
-        button.addEventListener("click", () => {
-          const share = new URL(button.dataset.copy ?? "", location.origin).href;
-          navigator.clipboard?.writeText(share).then(() => {
-            const previous = button.textContent;
-            button.textContent = "✓";
-            window.setTimeout(() => { button.textContent = previous; }, 1500);
-          }, () => {});
-        });
-      });
-      document.querySelectorAll<HTMLButtonElement>("[data-copy-code]").forEach((button) => {
-        button.addEventListener("click", () => {
-          const pre = button.closest(".code-wrap")?.querySelector("pre");
-          if (!pre) return;
-          navigator.clipboard?.writeText(pre.textContent ?? "").then(() => {
-            const previous = button.textContent;
-            button.textContent = "✓";
-            window.setTimeout(() => { button.textContent = previous; }, 1500);
-          }, () => {});
-        });
-      });
-    </script>
+    <script>import "../lib/client.js";</script>
   </body>
 </html>

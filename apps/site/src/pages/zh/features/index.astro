@@ -1,0 +1,36 @@
+---
+import DocsLayout from "../../../layouts/DocsLayout.astro";
+import { featureGroups, featureDocuments } from "../../../docs/feature-navigation";
+const lang = "zh" as const;
+const base = import.meta.env.BASE_URL.replace(/\/+$/, "");
+const href = (slug: string) => `${base}${lang === "zh" ? "/zh" : ""}/features/${slug}`;
+const copy = {
+  start: { zh: "从能力边界开始，再按需要深入单个功能。", en: "Start with the capability boundary, then read the section you need." },
+  startLink: { zh: "平台支持矩阵 →", en: "Platform support matrix →" },
+  find: { zh: "按主题查找", en: "Find a topic" },
+  findHint: {
+    zh: "每个功能都有独立文档。左侧目录可按名称筛选，正文与 v0.15.3 实现对照。",
+    en: "Each feature has its own page. Filter the directory by name; each page follows the v0.15.3 implementation.",
+  },
+  groupHint: {
+    overview: { zh: "先确认系统、TUN、双内核和自动更新的能力边界。", en: "Check system, TUN, dual engine and update boundaries first." },
+    manage: { zh: "订阅、节点与个人偏好。", en: "Subscriptions, nodes and personal preferences." },
+    connection: { zh: "接管方式、内核与覆写。", en: "Takeover, engines and overrides." },
+    observe: { zh: "诊断、统计与通知。", en: "Diagnostics, statistics and notifications." },
+    maintenance: { zh: "轻量、快照、迁移与更新。", en: "Lightweight mode, snapshots, migration and updates." },
+  },
+} as const;
+---
+<DocsLayout nav="features" lang={lang} slug="">
+  <div class="docs-start"><div><strong>{copy.start[lang]}</strong><p>{copy.findHint[lang]}</p></div><a class="docs-start-link" href={href("support-matrix")}>{copy.startLink[lang]}</a></div>
+  <h2>{copy.find[lang]}</h2>
+  <div class="docs-topics">
+    {featureGroups.map((group) => (
+      <section class="docs-topic">
+        <h3>{group[lang]}</h3>
+        <p>{copy.groupHint[group.id][lang]}</p>
+        <ul>{featureDocuments.filter((d) => d.group === group.id).map((d) => <li><a href={href(d.slug)}>{d.tag[lang]} <span aria-hidden="true">→</span></a></li>)}</ul>
+      </section>
+    ))}
+  </div>
+</DocsLayout>

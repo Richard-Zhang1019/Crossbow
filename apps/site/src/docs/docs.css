@@ -1,14 +1,15 @@
 /* Documentation follows the existing Crossbow palette and font; scoped type/space roles. */
-:root { --doc-title:32px; --doc-section:22px; --doc-subsection:17px; --doc-body:15px; --doc-small:13px; --doc-caption:12px; --doc-leading:1.85; --doc-gap:var(--doc-space-40); --doc-step:24px; --doc-space:16px; --doc-rail:220px; --doc-header:80px; --doc-radius:8px; }
-.docs-shell { display:grid; grid-template-columns:var(--doc-rail) minmax(0,1fr) 150px; gap:var(--doc-gap); align-items:start; padding-block:var(--doc-space-32) var(--doc-space-80); }
+:root { --doc-title:32px; --doc-section:22px; --doc-subsection:17px; --doc-body:15px; --doc-small:13px; --doc-caption:12px; --doc-leading:1.85; --doc-gap:var(--doc-space-40); --doc-step:24px; --doc-space:16px; --doc-rail:220px; --doc-onpage:160px; --doc-header:68px; --doc-radius:8px; }
+.docs-shell { display:grid; grid-template-columns:var(--doc-rail) minmax(0,1fr) var(--doc-onpage); gap:var(--doc-gap); align-items:start; padding-block:var(--doc-space-24) var(--doc-space-80); }
 .docs-sidebar { position:sticky; top:calc(var(--doc-header) + 16px); max-height:calc(100svh - var(--doc-header) - 32px); min-width:0; border-right:1px solid var(--line); }
 .docs-sidebar>summary { display:none; }
 .docs-sidebar-body { overflow-y:auto; overscroll-behavior:contain; max-height:calc(100svh - var(--doc-header) - 32px); padding-right:var(--doc-space-20); padding-bottom:var(--doc-space); scrollbar-width:thin; }
 .docs-home { display:block; font-size:var(--doc-body); font-weight:var(--doc-weight-strong); padding:var(--doc-space-4) var(--doc-space-10); margin-bottom:var(--doc-space); }
 .docs-home[aria-current=page] { color:var(--accent); }
-.docs-search { display:flex; align-items:center; gap:var(--doc-space-8); border:1px solid var(--line-strong); border-radius:var(--doc-radius-6); padding:var(--doc-space-7) var(--doc-space-9); margin:0 0 var(--doc-step); color:var(--faint); }
-.docs-search input { width:100%; min-width:0; background:transparent; border:0; outline:0; font:inherit; font-size:var(--doc-small); color:var(--text); }
-.docs-search:focus-within { outline:2px solid var(--accent); outline-offset:2px; }
+.docs-search { display:flex; align-items:center; gap:var(--doc-space-6); border:1px solid var(--line-strong); border-radius:var(--doc-radius-6); padding:var(--doc-space-4) var(--doc-space-8); margin:0 0 var(--doc-step); color:var(--faint); transition: border-color 120ms ease, box-shadow 120ms ease; }
+.docs-search svg { width:14px; height:14px; flex:none; }
+.docs-search input { width:100%; min-width:0; background:transparent; border:0; outline:0; font:inherit; font-size:var(--doc-caption); line-height:1.4; color:var(--text); }
+.docs-search:focus-within { border-color:var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .docs-navigation section { margin-bottom:var(--doc-step); }
 .docs-navigation h2,.docs-onpage h2 { font-size:var(--doc-caption); font-weight:var(--doc-weight-strong); color:var(--faint); letter-spacing:0; margin:0 var(--doc-space-10) var(--doc-space-8); }
 .docs-navigation ul { list-style:none; }
@@ -16,7 +17,7 @@
 .docs-navigation a[aria-current=page] { background:var(--surface-2); color:var(--text); font-weight:var(--doc-weight-strong); }
 .docs-navigation a:hover { color:var(--text); background:var(--surface); }
 .docs-sidebar-download { display:flex; justify-content:space-between; margin-top:var(--doc-step); padding:var(--doc-space) var(--doc-space-10) 0; border-top:1px solid var(--line); color:var(--dim); font-size:var(--doc-small); }
-.docs-article { min-width:0; max-width:740px; }
+.docs-article { min-width:0; max-width:860px; }
 .docs-heading { padding-bottom:var(--doc-step); margin-bottom:var(--doc-space-32); border-bottom:1px solid var(--line); }
 .docs-context { display:flex; align-items:center; flex-wrap:wrap; gap:var(--doc-space-10); margin-bottom:var(--doc-space-20); color:var(--faint); font-size:var(--doc-caption); }
 .docs-context a:hover { color:var(--accent); }
@@ -58,7 +59,8 @@
 .docs-pagination a:hover span { color:var(--accent); }
 .docs-start { display:flex; align-items:center; justify-content:space-between; gap:var(--doc-step); background:var(--surface); border:1px solid var(--line); border-radius:var(--doc-radius); padding:var(--doc-step); margin-bottom:var(--doc-space-32); }
 .docs-start p { margin:var(--doc-space-4) 0 0; color:var(--dim); }
-.docs-start a { flex:none; text-decoration:none; }
+.docs-start-link { flex:none; align-self:center; font-size:var(--doc-small); color:var(--accent); white-space:nowrap; }
+.docs-start-link:hover { text-decoration:underline; }
 .docs-topics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--doc-step); margin-top:var(--doc-space-20); }
 .docs-topic { padding-block:var(--doc-space); border-top:1px solid var(--line); }
 .docs-topic h3 { margin:0; font-size:var(--doc-subsection); }
@@ -87,7 +89,7 @@ body.documentation { height:100svh; min-height:0; overflow:hidden; }
 .docs-shell { height:100%; min-height:0; grid-template-rows:minmax(0,1fr); padding-bottom:var(--doc-space-32); }
 .docs-sidebar { height:100%; max-height:100%; }
 .docs-sidebar-body { max-height:100%; }
-.docs-article { height:100%; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; padding-right:var(--doc-space-12); padding-bottom:var(--doc-space-16); }
+.docs-article { height:100%; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; padding-right:var(--doc-gap); padding-bottom:var(--doc-space-16); }
 .docs-prose :is(h2,h3) { scroll-margin-top:var(--doc-space-24); }
 .docs-start .btn-primary { color:var(--on-button); }
 @media(max-width:800px) {
@@ -104,3 +106,35 @@ body.documentation { height:100svh; min-height:0; overflow:hidden; }
 @media(max-width:800px) { .docs-sidebar-body {height:auto;max-height:65svh}.docs-search input{font-size:var(--doc-type-16)} }
 
 :root { --doc-leading-1-6:1.6; --doc-leading-1-7:1.7; --doc-leading-1-75:1.75; --doc-radius-4:4px; --doc-radius-6:6px; --doc-space-10:10px; --doc-space-12:12px; --doc-space-14:14px; --doc-space-16:16px; --doc-space-2:2px; --doc-space-20:20px; --doc-space-22:22px; --doc-space-24:24px; --doc-space-3:3px; --doc-space-32:32px; --doc-space-36:36px; --doc-space-4:4px; --doc-space-40:40px; --doc-space-48:48px; --doc-space-5:5px; --doc-space-6:6px; --doc-space-7:7px; --doc-space-70:70px; --doc-space-8:8px; --doc-space-80:80px; --doc-space-9:9px; --doc-type-16:16px; --doc-weight-strong:600; }
+
+/* #653: the article is the workspace scroller; keep its scrollbar quiet instead of a
+   wide grey gutter between the prose and the on-page directory. */
+.docs-article {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text) 18%, transparent) transparent;
+}
+.docs-article::-webkit-scrollbar { width: 11px; height: 11px; }
+.docs-article::-webkit-scrollbar-track { background: transparent; }
+.docs-article::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--text) 16%, transparent);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+.docs-article::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--text) 30%, transparent);
+}
+/* Long feature pages can have a taller on-page directory than the viewport. */
+.docs-onpage {
+  max-height: calc(100svh - var(--doc-header) - 64px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding-right: 4px;
+}
+.docs-onpage nav a[aria-current="true"] { color: var(--text); }
+
+/* #653: routed feature pages reuse the documentation prose and shell. */
+.docs-prose .th-sub { display: block; margin-top: 2px; font-size: var(--doc-caption); font-weight: 400; color: var(--faint); white-space: normal; }
+/* The capability matrix keeps a readable column width and scrolls sideways on phones. */
+@media (max-width: 800px) { .docs-matrix { min-width: 640px; } }

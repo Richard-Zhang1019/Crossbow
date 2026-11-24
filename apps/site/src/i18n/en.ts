@@ -314,6 +314,8 @@ export default {
   "features.140": "Features",
   "features.141": "From subscriptions and nodes to routing and monitoring. Understand what makes up each connection.",
   "features.142": "Feature sections",
+  "features.capabilities": "Capabilities and limits",
+  "features.matrixHeading": "Platform capability matrix",
   "features.107": "Copy section link",
   "features.108": "Capability",
   "features.109": "Community experiment",

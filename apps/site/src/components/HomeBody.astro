@@ -46,7 +46,7 @@ const FAQS = [
     q: i18n("home.22"),
     a: [
       { text: i18n("home.23") },
-      { href: route("/features#support-matrix"), label: i18n("home.24") },
+      { href: route("/features/support-matrix"), label: i18n("home.24") },
       { text: i18n("home.25") },
     ],
   },
@@ -64,7 +64,7 @@ const FAQS = [
     q: i18n("home.28"),
     a: [
       { text: i18n("home.29") },
-      { href: route("/features#diagnostics"), label: i18n("home.5") },
+      { href: route("/features/diagnostics"), label: i18n("home.5") },
       { text: i18n("home.30") },
       { href: route("/guide/troubleshooting"), label: i18n("home.31") },
       { text: i18n("home.21") },
@@ -153,21 +153,4 @@ const FAQS = [
   </div>
 </section>
 
-<script>
-  // Hero 动效暂停（原 React 状态的 vanilla 版）
-  const lane = document.querySelector<HTMLElement>("[data-packet]");
-  const button = document.querySelector<HTMLButtonElement>("[data-pause]");
-  let paused = document.hidden;
-  const render = () => {
-    if (!lane || !button) return;
-    lane.style.animationPlayState = paused ? "paused" : "running";
-    button.setAttribute("aria-pressed", String(paused));
-    button.firstElementChild!.textContent = paused ? "▷" : "Ⅱ";
-    button.lastChild!.textContent = paused
-      ? button.dataset.resumeText ?? " Resume motion"
-      : button.dataset.pauseText ?? " Pause motion";
-  };
-  document.addEventListener("visibilitychange", () => { paused = document.hidden; render(); });
-  button?.addEventListener("click", () => { paused = !paused; render(); });
-  render();
-</script>
+

@@ -1,18 +1,25 @@
 ---
 import Layout from './Layout.astro';
-import {documents,groups,overview,docHref,type DocLang} from '../docs/navigation';
+import {documents as guideDocuments,groups as guideGroups,overview as guideOverview,docHref,type DocLang} from '../docs/navigation';
+import {featureDocuments,featureGroups,featureOverview,featureHref,featureLegacySections} from '../docs/feature-navigation';
 import '../docs/docs.css';
-interface Props { lang?:DocLang; slug?:string; frontmatter?:{lang:DocLang;slug:string} }
+interface Props { lang?:DocLang; slug?:string; frontmatter?:{lang:DocLang;slug:string}; nav?:'guide'|'features' }
+const isFeatures=Astro.props.nav==='features';
 const lang=Astro.props.lang??Astro.props.frontmatter?.lang??'en';
 const slug=Astro.props.slug??Astro.props.frontmatter?.slug??'';
+const documents=isFeatures?featureDocuments:guideDocuments;
+const groups=isFeatures?featureGroups:guideGroups;
+const overview=isFeatures?featureOverview:guideOverview;
+const labels=isFeatures?{menu:{zh:'功能目录',en:'Feature menu'},home:{zh:'功能详解',en:'Features'},aria:{zh:'功能目录',en:'Feature topics'}}:{menu:{zh:'文档目录',en:'Documentation menu'},home:{zh:'文档概览',en:'Documentation overview'},aria:{zh:'文档目录',en:'Documentation topics'}};
+const base=import.meta.env.BASE_URL.replace(/\/$/,'');
+const href=(s='')=>isFeatures?featureHref(lang,s,base):docHref(lang,s,base);
 const page=slug?documents.find(d=>d.slug===slug):overview;
 if(!page) throw new Error(`Unknown documentation page: ${slug}`);
-const base=import.meta.env.BASE_URL.replace(/\/$/,'');
-const href=(s='')=>docHref(lang,s,base);
 const group=groups.find(g=>g.id===page.group)!;
 const index=documents.findIndex(d=>d.slug===slug);
 const previous=slug?(index>0?documents[index-1]:overview):null;
 const next=slug?documents[index+1]:documents[0];
+const path=isFeatures?(slug?`/features/${slug}`:'/features'):(slug?`/guide/${slug}`:'/guide');
 const toc:{id:string;label:string}[]=[];
 const body=(await Astro.slots.render('default')).replace(/<h([23])([^>]*)>([\s\S]*?)<\/h\1>/g,(match,level,attrs,text)=>{
  const id=attrs.match(/\bid="([^"]+)"/)?.[1]??`section-${toc.length+1}`;
@@ -20,14 +27,14 @@ const body=(await Astro.slots.render('default')).replace(/<h([23])([^>]*)>([\s\S
  return `<h${level}${attrs.includes('id=')?attrs:`${attrs} id="${id}"`}>${text}</h${level}>`;
 }).replace(/<table[\s\S]*?<\/table>/g, table=>`<div class="docs-table-scroll">${table}</div>`);
 ---
-<Layout lang={lang} path={slug?`/guide/${slug}`:'/guide'} title={`${page.title[lang]} · Crossbow`} description={page.description[lang]}>
+<Layout lang={lang} path={path} title={`${page.title[lang]} · Crossbow`} description={page.description[lang]}>
  <div class="shell docs-shell">
   <details class="docs-sidebar" open>
-   <summary>{lang==='zh'?'文档目录':'Documentation menu'}<span aria-hidden="true">⌄</span></summary>
+   <summary>{labels.menu[lang]}<span aria-hidden="true">⌄</span></summary>
    <div class="docs-sidebar-body">
-    <a class="docs-home" href={href()} aria-current={!slug?'page':undefined}>{lang==='zh'?'文档概览':'Documentation overview'}</a>
-    <label class="docs-search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><input type="search" data-doc-search placeholder={lang==='zh'?'筛选目录…':'Filter topics…'} aria-label={lang==='zh'?'筛选文档目录':'Filter documentation topics'}/></label>
-    <nav class="docs-navigation" aria-label={lang==='zh'?'文档目录':'Documentation topics'}>
+    <a class="docs-home" href={href()} aria-current={!slug?'page':undefined}>{labels.home[lang]}</a>
+    <label class="docs-search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><input type="search" data-doc-search placeholder={lang==='zh'?'筛选目录…':'Filter topics…'} aria-label={labels.aria[lang]}/></label>
+    <nav class="docs-navigation" aria-label={labels.aria[lang]}>
      {groups.map(g=><section data-doc-group><h2>{g[lang]}</h2><ul>{documents.filter(d=>d.group===g.id).map(d=><li data-doc-topic data-search={`${d.title[lang]} ${d.description[lang]}`}><a href={href(d.slug)} aria-current={slug===d.slug?'page':undefined}>{d.title[lang]}</a></li>)}</ul></section>)}
      <p data-doc-empty hidden>{lang==='zh'?'没有匹配的目录项。':'No matching topics.'}</p>
     </nav>
@@ -36,7 +43,7 @@ const body=(await Astro.slots.render('default')).replace(/<h([23])([^>]*)>([\s\S
   </details>
   <article class="docs-article" data-doc-page={slug||'overview'}>
    <header class="docs-heading">
-    <div class="docs-context"><a href={href()}>{lang==='zh'?'使用文档':'Documentation'}</a><span aria-hidden="true">/</span><span>{group[lang]}</span></div>
+    <div class="docs-context"><a href={href()}>{labels.home[lang]}</a><span aria-hidden="true">/</span><span>{group[lang]}</span></div>
     <h1>{page.title[lang]}</h1><p>{page.description[lang]}</p>
     <div class="docs-meta"><span>{lang==='zh'?'适用于桌面版 v0.15.3':'Desktop v0.15.3'}</span><span>{lang==='zh'?'开源 · 本地优先':'Open source · Local first'}</span></div>
    </header>
@@ -51,22 +58,5 @@ const body=(await Astro.slots.render('default')).replace(/<h([23])([^>]*)>([\s\S
    <a class="docs-feedback" href="https://github.com/Richard-Zhang1019/Crossbow/issues/new" target="_blank" rel="noopener noreferrer">{lang==='zh'?'反馈文档问题 ↗':'Report a docs issue ↗'}</a>
   </aside>
  </div>
+ {isFeatures&&!slug&&<div data-doc-legacy data-root={href()} data-sections={JSON.stringify(featureLegacySections)} hidden></div>}
 </Layout>
-<script>
- const sidebar=document.querySelector<HTMLDetailsElement>('.docs-sidebar');
- const mobile=matchMedia('(max-width: 800px)');
- sidebar?.addEventListener('keydown',e=>{if(e.key==='Escape'&&mobile.matches&&sidebar.open){sidebar.open=false;sidebar.querySelector('summary')?.focus();}});
- const adapt=()=>{if(sidebar)sidebar.open=!mobile.matches;};adapt();mobile.addEventListener('change',adapt);
- const search=document.querySelector<HTMLInputElement>('[data-doc-search]');
- search?.addEventListener('input',()=>{
-  const q=search.value.trim().toLocaleLowerCase();let total=0;
-  document.querySelectorAll<HTMLElement>('[data-doc-group]').forEach(group=>{let shown=0;group.querySelectorAll<HTMLElement>('[data-doc-topic]').forEach(item=>{const match=(item.dataset.search??'').toLocaleLowerCase().includes(q);item.hidden=!match;if(match)shown++;});group.hidden=shown===0;total+=shown;});
-  const empty=document.querySelector<HTMLElement>('[data-doc-empty]');if(empty)empty.hidden=total!==0;
- });
- // Keep the directory's reading position between real static route navigations.
- const pane=document.querySelector<HTMLElement>('.docs-sidebar-body');
- try {if(pane)pane.scrollTop=Number(sessionStorage.getItem('crossbow.docs.scroll')||0);}catch{}
- const selected=pane?.querySelector<HTMLElement>('[aria-current="page"]');
- if(pane&&selected){const a=selected.getBoundingClientRect(),b=pane.getBoundingClientRect();if(a.top<b.top||a.bottom>b.bottom)pane.scrollTop+=a.top-b.top-80;}
- document.querySelectorAll<HTMLAnchorElement>('.docs-navigation a').forEach(a=>a.addEventListener('click',()=>{try{sessionStorage.setItem('crossbow.docs.scroll',String(pane?.scrollTop||0));}catch{}}));
-</script>
