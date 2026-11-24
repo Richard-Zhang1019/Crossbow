@@ -5,17 +5,17 @@
   "status": "implemented; production static build + intercepted GitHub API scenario; review pending",
   "source_sha256": {
     "apps/site/src/components/DownloadCards.tsx": "d958435b08af5e6c4d07ae79993aa5904cf927edae71040443106b7127faef7a",
-    "apps/site/src/site.css": "76569db0881d5c9c638135894806ff8b78eb9b1939e730c14cec7b32736dfea1",
+    "apps/site/src/site.css": "1c620529b4ebd593ca3980dedc47787d3c4e1ca8c384eb2da47b4d42c6b39ea4",
     "scripts/dev/verify-site-download.mjs": "c0ef76db1cfc042db960339cdda211335015ad69c9a817af0a4fe0342021160c"
   },
   "artifacts": {
-    "SPEC.md": "38a891f95158d76fe047173cffc70f788d0e9065546ce8c3ef32f36189261833",
-    "verification/build.log": "ac3bdfe4a092b5a415406b82a51a45af76abd985e1d675ed7536fd9b11f36a86",
+    "SPEC.md": "baa233ea08d492612c9b3cd76b20ca74c24faa786d9c13ce470abcc49ecb372d",
+    "verification/build.log": "a08e7ccb950ce86546984541853faeab54f306d2fba13318ce502612cbda0ba7",
     "verification/verify.log": "84456ff6abdeb9b8a0da50c09c5dba6c6adfff3e60a2ca2c6c8f1328d0b8eac2",
-    "previews/after-failed.png": "814ae08c53c240ecdc2cbc596ae4277a84e767a1589709611611eee80554d2a3",
+    "previews/after-failed.png": "796d716dfce20900068072aff792f8b001e63988638f0eebd19e485d429e9834",
     "previews/after-fresh-cache.png": "ff6e815bd5294ecbd0cc8bb54ee397cbb799d347b73429bcc860b1dde57db819",
-    "previews/after-notice-dark.png": "abb9381f7686308d8833a3f3da5a9ab87f05dd2fabe67d694c6c6d6d5df8dbb3",
-    "previews/after-notice-light.png": "631ceb72236e9f4c184b9ae2cf14c71ad3f51f51d89937c25ad218e019b32f41",
+    "previews/after-notice-dark.png": "98cc254ab722cfe4c720a8a3bef2086587a303384d8a7926be8eb9f44cedf130",
+    "previews/after-notice-light.png": "f726f425164552beef3bf25ebd20bfb5ee818c7463f77a43ef7a225a961be1f0",
     "previews/before-notice.png": "c420748292ae99dde37f361646ef201e588fb12ae36aa65baade75ebf99718cd"
   }
 }
