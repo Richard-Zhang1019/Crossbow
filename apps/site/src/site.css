@@ -269,6 +269,7 @@ main:focus { outline: none; }
   .flow-node > span { font-size: 12px; }
   .feature-card, .step-card { padding: 24px; }
   .download-platforms { grid-template-columns: 1fr; max-width: 560px; }
+  .download-notice { max-width: 560px; }
   .platform-actions { min-height: 0; }
   .detail-section { gap: 40px; }
   .feature-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
@@ -289,6 +290,7 @@ main:focus { outline: none; }
   .feature-callout { display: block; padding: 24px; }
   .feature-callout .text-link { margin-top: 16px; }
   .download-platforms { grid-template-columns: 1fr; max-width: 560px; }
+  .download-notice { max-width: 560px; }
   .platform-actions { min-height: 0; }
   .download-platform { padding: 28px; }
   .download-platform h3 { font-size: 24px; }
@@ -365,8 +367,12 @@ h2:hover .anchor-button, .anchor-button:focus-visible { opacity: 1; }
   .support-matrix thead th:first-child, .support-matrix tbody th { position: sticky; left: 0; background: var(--bg); }
 }
 .download-state { color: var(--dim); font-size: 14px; }
-.download-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; padding: 10px 14px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); font-size: 14px; color: var(--dim); }
-.download-retry { min-height: 36px; padding: 0 8px; border: 0; background: none; color: var(--accent); cursor: pointer; font-size: 14px; text-decoration: underline; text-underline-offset: 4px; }
+.download-notice { display: flex; align-items: center; gap: 10px; max-width: 1240px; margin: 16px auto 20px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--dim); font-size: 13px; line-height: 1.5; }
+.download-notice-icon { flex: none; color: var(--faint); }
+.download-notice-copy { flex: 1; min-width: 0; }
+.download-retry { flex: none; min-height: 32px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--bg); color: var(--text); font-size: 12px; cursor: pointer; transition: border-color 120ms ease, color 120ms ease; }
+.download-retry:hover { border-color: var(--accent); color: var(--accent); }
+.download-retry:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .platform-badge { align-self: flex-start; margin-top: 8px; padding: 3px 8px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 600; }
 .download-platform.recommended { border-color: var(--accent); }
 @media (max-width: 900px) { .guide-toc { grid-template-columns: 1fr; } }

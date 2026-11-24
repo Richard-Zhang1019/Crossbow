@@ -1,0 +1,21 @@
+{
+  "date": "2026-11-24",
+  "version": "v01",
+  "issue": 655,
+  "status": "implemented; production static build + intercepted GitHub API scenario; review pending",
+  "source_sha256": {
+    "apps/site/src/components/DownloadCards.tsx": "d958435b08af5e6c4d07ae79993aa5904cf927edae71040443106b7127faef7a",
+    "apps/site/src/site.css": "1c620529b4ebd593ca3980dedc47787d3c4e1ca8c384eb2da47b4d42c6b39ea4",
+    "scripts/dev/verify-site-download.mjs": "c0ef76db1cfc042db960339cdda211335015ad69c9a817af0a4fe0342021160c"
+  },
+  "artifacts": {
+    "SPEC.md": "baa233ea08d492612c9b3cd76b20ca74c24faa786d9c13ce470abcc49ecb372d",
+    "verification/build.log": "a08e7ccb950ce86546984541853faeab54f306d2fba13318ce502612cbda0ba7",
+    "verification/verify.log": "84456ff6abdeb9b8a0da50c09c5dba6c6adfff3e60a2ca2c6c8f1328d0b8eac2",
+    "previews/after-failed.png": "796d716dfce20900068072aff792f8b001e63988638f0eebd19e485d429e9834",
+    "previews/after-fresh-cache.png": "ff6e815bd5294ecbd0cc8bb54ee397cbb799d347b73429bcc860b1dde57db819",
+    "previews/after-notice-dark.png": "98cc254ab722cfe4c720a8a3bef2086587a303384d8a7926be8eb9f44cedf130",
+    "previews/after-notice-light.png": "f726f425164552beef3bf25ebd20bfb5ee818c7463f77a43ef7a225a961be1f0",
+    "previews/before-notice.png": "c420748292ae99dde37f361646ef201e588fb12ae36aa65baade75ebf99718cd"
+  }
+}

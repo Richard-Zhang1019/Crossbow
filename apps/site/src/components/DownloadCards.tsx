@@ -21,12 +21,22 @@ interface CacheShape {
   info: ReleaseInfo;
 }
 
-function readCache(): ReleaseInfo | null {
+const CACHE_TTL_MS = 10 * 60 * 1000;
+
+interface CachedRelease {
+  info: ReleaseInfo;
+  fresh: boolean;
+}
+
+function readCache(): CachedRelease | null {
   try {
     const raw = localStorage.getItem(CACHE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as CacheShape;
-    return parsed?.info?.version ? parsed.info : null;
+    if (!parsed?.info?.version) return null;
+    const savedAt = Date.parse(parsed.savedAt);
+    const fresh = Number.isFinite(savedAt) && Date.now() - savedAt < CACHE_TTL_MS;
+    return { info: parsed.info, fresh };
   } catch {
     return null;
   }
@@ -66,29 +76,49 @@ function parseRelease(d: {
  *  状态机区分加载中 / 失败 / 就绪，失败可重试，成功结果本地缓存。 */
 export default function DownloadCards({ lang }: { lang: Lang }) {
   const i18n = createI18n(lang);
-  const [release, setRelease] = useState<ReleaseInfo | null>(() => readCache());
-  const [status, setStatus] = useState<ReleaseStatus>(() => (readCache() ? "ready" : "loading"));
+  const [release, setRelease] = useState<ReleaseInfo | null>(null);
+  const [status, setStatus] = useState<ReleaseStatus>("loading");
   const [stale, setStale] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    // Hydrate from the cache after mount (server HTML must not depend on localStorage),
+    // and trust a warm cache for ten minutes; manual retry always refreshes.
+    const cached = readCache();
+    if (cached) {
+      setRelease(cached.info);
+      setStatus((s) => (s === "loading" ? "ready" : s));
+      if (attempt === 0 && cached.fresh) return;
+    }
     let dead = false;
-    fetch(API)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((d) => {
+    const run = async (retriesLeft: number) => {
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), 8000);
+      try {
+        const response = await fetch(API, { signal: controller.signal, cache: "no-store" });
+        if (!response.ok) throw new Error(String(response.status));
+        const info = parseRelease(await response.json());
+        if (!info) throw new Error("release payload");
         if (dead) return;
-        const info = parseRelease(d);
-        if (!info) return;
         setRelease(info);
         writeCache(info);
         setStale(false);
         setStatus("ready");
-      })
-      .catch(() => {
+      } catch {
         if (dead) return;
+        if (retriesLeft > 0) {
+          window.setTimeout(() => {
+            if (!dead) void run(retriesLeft - 1);
+          }, 1500);
+          return;
+        }
         setStale(true);
         setStatus((s) => (s === "ready" ? "ready" : "failed"));
-      });
+      } finally {
+        window.clearTimeout(timer);
+      }
+    };
+    void run(1);
     return () => {
       dead = true;
     };
@@ -126,7 +156,8 @@ export default function DownloadCards({ lang }: { lang: Lang }) {
       </div>
       {(status === "failed" || stale) && (
         <p className="download-notice" role="status">
-          {status === "failed" ? i18n("card.12") : i18n("card.13")}
+          <svg className="download-notice-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v6M12 7.6v.4" /></svg>
+          <span className="download-notice-copy">{status === "failed" ? i18n("card.12") : i18n("card.13")}</span>
           <button className="download-retry" onClick={retry}>{i18n("card.14")}</button>
         </p>
       )}
@@ -144,7 +175,9 @@ export default function DownloadCards({ lang }: { lang: Lang }) {
                 <a className="primary-button" href={p.url} target="_blank" rel="noopener noreferrer">{p.label}</a>
               ) : (
                 <a className="primary-button" href={LATEST} target="_blank" rel="noopener noreferrer">
-                  {_(status === "failed" ? "前往发布页下载" : "该版本暂无此安装包，前往发布页")}
+                  {status === "failed"
+                    ? (lang === "zh" ? "前往发布页下载" : "Download from releases")
+                    : (lang === "zh" ? "该版本暂无此安装包，前往发布页" : "Package missing — open releases")}
                 </a>
               )}
             </div>
