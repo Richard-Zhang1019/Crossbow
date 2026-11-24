@@ -57,7 +57,7 @@ const nav = [
     <link rel="apple-touch-icon" href={`${import.meta.env.BASE_URL}apple-touch-icon.png`} />
     <script is:inline set:html={BOOTSTRAP} />
   </head>
-  <body class={path === "/guide" || path.startsWith("/guide/") || path === "/features" ? "documentation" : undefined}>
+  <body class={path === "/guide" || path.startsWith("/guide/") || path === "/features" || path.startsWith("/features/") ? "documentation" : undefined}>
     <a class="skip-link" href="#main">{i18n("layout.1")}</a>
     <header class="site-header">
       <div class="shell nav-shell">

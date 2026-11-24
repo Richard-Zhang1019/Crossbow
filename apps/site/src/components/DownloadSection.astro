@@ -16,7 +16,7 @@ const route = (p: string) => `${base}${lang === "zh" ? "/zh" : ""}${p === "/" ? 
   <DownloadCards client:load lang={lang} />
   <div class="download-links">
     <a href={RELEASES} target="_blank" rel="noopener noreferrer">{i18n("download.2")}</a>
-    <a class="text-link" href={route("/features#support-matrix")}>{i18n("download.3")}</a>
+    <a class="text-link" href={route("/features/support-matrix")}>{i18n("download.3")}</a>
   </div>
   <p class="download-note">{i18n("download.4")}<a class="text-link" href={route("/guide")}>{i18n("download.5")}</a>{i18n("download.6")}</p>
 </section>

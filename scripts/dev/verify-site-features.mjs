@@ -1,4 +1,4 @@
-// #653: real static Astro output for the feature page; no desktop IPC or user data.
+// #653: real static Astro routes for the feature documentation; no desktop IPC or user data.
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
@@ -37,70 +37,87 @@ try {
   p.on("pageerror", (e) => failures.push(e.message));
 
   await p.goto(origin + base + "/zh/features");
-  await p.screenshot({ path: out + (before ? "/before-features.png" : "/features-light.png"), fullPage: before });
+  await p.screenshot({ path: out + (before ? "/before-features.png" : "/features-overview-light.png"), fullPage: before });
   if (before) {
-    await p.setViewportSize({ width: 390, height: 844 });
-    await p.screenshot({ path: out + "/before-mobile.png" });
     await p.setViewportSize({ width: 1440, height: 1000 });
     await p.goto(origin + base + "/zh/guide/dns");
     await p.locator(".docs-article").evaluate((e) => e.scrollTop = 450);
     await p.screenshot({ path: out + "/before-guide-scrollbar.png" });
   } else {
-    // Same shell as /guide: sidebar, article, on-page directory.
-    assert.equal(await p.locator(".docs-shell").count(), 1, "uses docs shell");
-    assert(await p.locator(".docs-sidebar .docs-navigation section").count() >= 5, "grouped directory");
-    assert(await p.locator(".docs-onpage nav a").count() === 16, "on-page directory lists every section");
-    const pageScroll = await p.evaluate(() => { window.scrollTo(0, 400); return { y: window.scrollY, overflow: getComputedStyle(document.body).overflowY }; });
-    assert.equal(pageScroll.y, 0, "page itself does not scroll");
-    assert.equal(pageScroll.overflow, "hidden", "workspace keeps the viewport fixed");
-    const scrollbar = await p.locator(".docs-article").evaluate((e) => ({ width: e.offsetWidth - e.clientWidth, css: getComputedStyle(e, "::-webkit-scrollbar").width }));
-    assert(scrollbar.width > 0 && scrollbar.width <= 12, `article scrollbar stays narrow (got ${scrollbar.width}px)`);
-    assert.equal(scrollbar.css, "11px", "thin scrollbar is styled explicitly");
-    assert(await p.locator(".docs-article").evaluate((e) => e.scrollHeight > e.clientHeight), "article scrolls internally");
+    // The overview is a documentation index, one link per section route.
+    const links = await p.locator(".docs-navigation a").evaluateAll((as) => as.map((a) => a.getAttribute("href")));
+    assert.equal(links.length, 16, "directory lists every section");
+    assert(links.every((h) => h && h.startsWith(base + "/zh/features/")), "directory links are real routes");
+    assert.equal(await p.evaluate(() => document.documentElement.scrollHeight <= innerHeight || getComputedStyle(document.body).overflowY === "hidden"), true, "workspace does not grow the page");
 
-    // Directory search filters topics and shows an empty state.
-    const total = await p.locator("[data-doc-topic]").count();
+    // Filter narrows the directory and shows an empty state.
     await p.locator("[data-doc-search]").fill("DNS");
     const visible = await p.locator("[data-doc-topic]:visible").count();
-    assert(visible > 0 && visible < total, "search narrows the directory");
+    assert(visible > 0 && visible < 16, "search narrows the directory");
     await p.locator("[data-doc-search]").fill("没有这个功能xyz");
     assert(await p.locator("[data-doc-empty]").isVisible(), "empty search state");
     await p.locator("[data-doc-search]").fill("");
 
-    // Anchor navigation still targets the same ids and scrolls the article only.
-    await p.locator('.docs-navigation a[href="#linux"]').click();
-    assert(await p.locator(".docs-article").evaluate((e) => e.scrollTop > 0), "directory anchors scroll the article");
-    assert(p.url().endsWith("#linux"), "anchor keeps the deep link");
-    await p.locator(".docs-article").evaluate((e) => e.scrollTop = 0);
+    // Each section is its own route with its own title and current-directory marker.
+    await p.locator('.docs-navigation a[href$="/features/nodes"]').click();
+    await p.waitForURL("**/zh/features/nodes");
+    assert.equal(await p.locator("h1").innerText(), "节点选择与测速");
+    assert.equal(await p.locator('.docs-navigation [aria-current="page"]').count(), 1, "current directory item is marked");
+    assert.equal(await p.locator(".docs-onpage nav a").count(), 1, "section page lists its in-page heading");
+    const scrollbar = await p.locator(".docs-article").evaluate((e) => ({ width: e.offsetWidth - e.clientWidth, css: getComputedStyle(e, "::-webkit-scrollbar").width }));
+    assert(scrollbar.width > 0 && scrollbar.width <= 12, `article scrollbar stays narrow (got ${scrollbar.width}px)`);
+    assert.equal(scrollbar.css, "11px", "thin scrollbar is styled explicitly");
+    await p.screenshot({ path: out + "/features-section-light.png" });
 
-    // On-page directory jumps and highlights the current section.
-    await p.locator(".docs-onpage nav a").last().click();
-    assert(await p.locator(".docs-article").evaluate((e) => e.scrollTop > 0), "on-page directory scrolls the article");
-    await p.locator(".docs-article").evaluate((e) => e.scrollTop = 1200);
-    await p.waitForTimeout(150);
-    assert(await p.locator('.docs-navigation a[aria-current="true"]').count() === 1, "current section is highlighted");
-    await p.screenshot({ path: out + "/features-scrolled.png" });
-    await p.locator(".docs-article").evaluate((e) => e.scrollTop = 0);
+    // Pagination keeps the documentation flow.
+    await p.locator(".docs-pagination a").last().click();
+    await p.waitForURL("**/zh/features/subscription");
+    await p.goBack();
+    await p.waitForURL("**/zh/features/nodes");
 
-    // English route keeps the same structure.
-    const en = await context.request.get(origin + base + "/features");
-    assert.equal(en.status(), 200);
-    const html = await en.text();
-    assert(html.includes("docs-shell") && html.includes("On this page") && html.includes('id="support-matrix"'), "English page shares the shell and anchors");
+    // English routes share the shell.
+    await p.goto(origin + base + "/features/support-matrix");
+    assert.equal(await p.locator("h1").innerText(), "Platform support matrix");
+    assert.equal(await p.locator(".docs-navigation [aria-current=page]").count(), 1);
+    assert.equal(await p.locator("table.docs-matrix").count(), 1, "matrix renders on its own route");
 
+    // Legacy section hashes still land on the matching route.
+    await p.goto(origin + base + "/zh/features#diagnostics");
+    await p.waitForURL("**/zh/features/diagnostics");
+
+    // All 32 routes exist, have a single title and no broken internal links.
+    let pages = 0;
+    const broken = [];
+    for (const lang of ["zh", "en"]) {
+      for (const link of links) {
+        const path = lang === "zh" ? link : link.replace("/zh/features/", "/features/");
+        const response = await context.request.get(origin + path);
+        assert.equal(response.status(), 200, path);
+        const html = await response.text();
+        assert.equal((html.match(/<h1[ >]/g) || []).length, 1, path + " has one title");
+        assert(html.includes("docs-shell") && html.includes('aria-current="page"'), path + " shares the docs shell");
+        assert(html.includes('rel="canonical"') && html.includes('hreflang="zh-CN"'), path + " has language metadata");
+        const checks = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1].replaceAll("&amp;", "&")).filter((h) => h.startsWith(base + "/") && !h.startsWith("//"));
+        for (const h of new Set(checks)) {
+          const target = await context.request.get(new URL(h, origin).href);
+          if (target.status() !== 200) broken.push(new URL(h, origin).pathname);
+        }
+        pages++;
+      }
+    }
+    assert.equal(pages, 32, "every section has a route in both languages");
+    assert.deepEqual([...new Set(broken)], [], "internal links");
+
+    // Dark theme and mobile keep the workspace usable.
+    await p.goto(origin + base + "/zh/features/nodes");
     await p.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
     await p.waitForTimeout(100);
-    await p.screenshot({ path: out + "/features-dark.png" });
-    await p.evaluate(() => { document.documentElement.dataset.theme = "light"; });
-
-    // Mobile keeps the directory collapsed and the article readable.
-    await p.goto(origin + base + "/zh/guide/dns");
-    const guideBar = await p.locator(".docs-article").evaluate((e) => e.offsetWidth - e.clientWidth);
-    assert(guideBar <= 12, `guide article scrollbar stays narrow (got ${guideBar}px)`);
-    await p.locator(".docs-article").evaluate((e) => e.scrollTop = 450);
-    await p.screenshot({ path: out + "/guide-scrollbar.png" });
-
+    await p.screenshot({ path: out + "/features-section-dark.png" });
     await p.goto(origin + base + "/zh/features");
+    await p.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
+    await p.waitForTimeout(100);
+    await p.screenshot({ path: out + "/features-overview-dark.png" });
+    await p.evaluate(() => { document.documentElement.dataset.theme = "light"; });
     await p.setViewportSize({ width: 390, height: 844 });
     await p.waitForTimeout(200);
     assert.equal(await p.locator(".docs-sidebar").evaluate((e) => e.open), false, "mobile directory starts collapsed");
@@ -118,4 +135,4 @@ if (failures.length) {
   failures.forEach((f) => console.error(" -", f));
   process.exit(1);
 }
-console.log("verify-site-features 通过：docs shell、筛选、锚点、本文目录、移动端折叠");
+console.log("verify-site-features 通过：16 节独立路由、目录筛选、当前项、分页、旧锚点迁移、明暗与移动端");

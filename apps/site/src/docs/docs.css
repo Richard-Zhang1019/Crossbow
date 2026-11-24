@@ -132,32 +132,7 @@ body.documentation { height:100svh; min-height:0; overflow:hidden; }
 }
 .docs-onpage nav a[aria-current="true"] { color: var(--text); }
 
-/* #653: feature sections reuse the documentation prose and the same shell as /guide. */
-.docs-group-head {
-  display: flex;
-  align-items: center;
-  gap: var(--doc-space-12);
-  margin: var(--doc-space-36) 0 var(--doc-space);
-  color: var(--faint);
-  font-size: var(--doc-caption);
-  font-weight: var(--doc-weight-strong);
-}
-.docs-group-head::after { content: ""; height: 1px; flex: 1; background: var(--line); }
-.docs-feature { margin-top: var(--doc-space-32); }
-.docs-feature h2 { margin-top: 0; }
-.docs-feature .anchor-button { margin-left: var(--doc-space-8); }
-.docs-feature-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--doc-space-16);
-  margin-top: var(--doc-space-24);
-  font-size: var(--doc-caption);
-  color: var(--faint);
-}
-.docs-feature-meta a { color: var(--dim); }
-.docs-feature-meta a:hover { color: var(--accent); }
-.docs-support-matrix .matrix-note { color: var(--dim); font-size: var(--doc-small); }
-/* The platform matrix keeps its platform sub-label under the column title. */
+/* #653: routed feature pages reuse the documentation prose and shell. */
 .docs-prose .th-sub { display: block; margin-top: 2px; font-size: var(--doc-caption); font-weight: 400; color: var(--faint); white-space: normal; }
 /* The capability matrix keeps a readable column width and scrolls sideways on phones. */
-@media (max-width: 800px) { .docs-support-matrix table { min-width: 640px; } }
+@media (max-width: 800px) { .docs-matrix { min-width: 640px; } }

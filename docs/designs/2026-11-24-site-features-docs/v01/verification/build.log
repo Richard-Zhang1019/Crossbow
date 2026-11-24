@@ -2,283 +2,316 @@
 > @crossbow/site@0.3.0 build
 > astro build && node --test tests/*.test.mjs
 
-11:26:32 [vite] Re-optimizing dependencies because vite config has changed
-11:26:32 [content] Syncing content
-11:26:32 [content] Synced content
-11:26:32 [types] Generated 85ms
-11:26:32 [build] output: "static"
-11:26:32 [build] mode: "static"
-11:26:32 [build] directory: /private/tmp/cb-653/apps/site/dist/
-11:26:32 [build] Collecting build info...
-11:26:32 [build] ✓ Completed in 103ms.
-11:26:32 [build] Building static entrypoints...
-11:26:32 [WARN] [vite] [plugin vite:esbuild] src/i18n/zh.ts: Duplicate key "features.107" in object literal
-316|    "features.141": "从订阅与节点，到接管与观测。了解每一步连接由什么组成。",
-317|    "features.142": "功能目录",
-318|    "features.107": "复制章节链接",
+11:33:23 [content] Syncing content
+11:33:23 [content] Synced content
+11:33:23 [types] Generated 16ms
+11:33:23 [build] output: "static"
+11:33:23 [build] mode: "static"
+11:33:23 [build] directory: /private/tmp/cb-653/apps/site/dist/
+11:33:23 [build] Collecting build info...
+11:33:23 [build] ✓ Completed in 36ms.
+11:33:23 [build] Building static entrypoints...
+11:33:23 [WARN] [vite] [plugin vite:esbuild] src/i18n/zh.ts: Duplicate key "features.107" in object literal
+318|    "features.capabilities": "能力与边界",
+319|    "features.matrixHeading": "各平台能力对照",
+320|    "features.107": "复制章节链接",
    |    ^
-319|    "features.108": "能力",
-320|    "features.109": "社区实验",
+321|    "features.108": "能力",
+322|    "features.109": "社区实验",
 
-11:26:32 [WARN] [vite] [plugin vite:esbuild] src/i18n/zh.ts: Duplicate key "features.108" in object literal
-317|    "features.142": "功能目录",
-318|    "features.107": "复制章节链接",
-319|    "features.108": "能力",
+11:33:23 [WARN] [vite] [plugin vite:esbuild] src/i18n/zh.ts: Duplicate key "features.108" in object literal
+319|    "features.matrixHeading": "各平台能力对照",
+320|    "features.107": "复制章节链接",
+321|    "features.108": "能力",
    |    ^
-320|    "features.109": "社区实验",
-321|    "features.110": "开发验证中",
+322|    "features.109": "社区实验",
+323|    "features.110": "开发验证中",
 
-11:26:32 [WARN] [vite] [plugin vite:esbuild] src/i18n/zh.ts: Duplicate key "features.110" in object literal
-319|    "features.108": "能力",
-320|    "features.109": "社区实验",
-321|    "features.110": "开发验证中",
+11:33:23 [WARN] [vite] [plugin vite:esbuild] src/i18n/zh.ts: Duplicate key "features.110" in object literal
+321|    "features.108": "能力",
+322|    "features.109": "社区实验",
+323|    "features.110": "开发验证中",
    |    ^
-322|    "features.111": "安装包",
-323|    "features.112": "签名与公证",
+324|    "features.111": "安装包",
+325|    "features.112": "签名与公证",
 
-11:26:32 [WARN] [vite] [plugin vite:esbuild] src/i18n/en.ts: Duplicate key "features.107" in object literal
-315|    "features.141": "From subscriptions and nodes to routing and monitoring. Understand what makes up each connection.",
-316|    "features.142": "Feature sections",
-317|    "features.107": "Copy section link",
+11:33:23 [WARN] [vite] [plugin vite:esbuild] src/i18n/en.ts: Duplicate key "features.107" in object literal
+317|    "features.capabilities": "Capabilities and limits",
+318|    "features.matrixHeading": "Platform capability matrix",
+319|    "features.107": "Copy section link",
    |    ^
-318|    "features.108": "Capability",
-319|    "features.109": "Community experiment",
+320|    "features.108": "Capability",
+321|    "features.109": "Community experiment",
 
-11:26:32 [WARN] [vite] [plugin vite:esbuild] src/i18n/en.ts: Duplicate key "features.108" in object literal
-316|    "features.142": "Feature sections",
-317|    "features.107": "Copy section link",
-318|    "features.108": "Capability",
+11:33:23 [WARN] [vite] [plugin vite:esbuild] src/i18n/en.ts: Duplicate key "features.108" in object literal
+318|    "features.matrixHeading": "Platform capability matrix",
+319|    "features.107": "Copy section link",
+320|    "features.108": "Capability",
    |    ^
-319|    "features.109": "Community experiment",
-320|    "features.110": "In development",
+321|    "features.109": "Community experiment",
+322|    "features.110": "In development",
 
-11:26:32 [WARN] [vite] [plugin vite:esbuild] src/i18n/en.ts: Duplicate key "features.110" in object literal
-318|    "features.108": "Capability",
-319|    "features.109": "Community experiment",
-320|    "features.110": "In development",
+11:33:23 [WARN] [vite] [plugin vite:esbuild] src/i18n/en.ts: Duplicate key "features.110" in object literal
+320|    "features.108": "Capability",
+321|    "features.109": "Community experiment",
+322|    "features.110": "In development",
    |    ^
-321|    "features.111": "Installer",
-322|    "features.112": "signed & notarized",
+323|    "features.111": "Installer",
+324|    "features.112": "signed & notarized",
 
-11:26:33 [vite] ✓ built in 750ms
-11:26:33 [build] ✓ Completed in 766ms.
+11:33:24 [vite] ✓ built in 717ms
+11:33:24 [build] ✓ Completed in 735ms.
 
  building client (vite) 
-11:26:33 [vite] transforming...
-11:26:33 [WARN] [vite] [plugin vite:esbuild] src/i18n/en.ts: Duplicate key "features.107" in object literal
-315|    "features.141": "From subscriptions and nodes to routing and monitoring. Understand what makes up each connection.",
-316|    "features.142": "Feature sections",
-317|    "features.107": "Copy section link",
+11:33:24 [vite] transforming...
+11:33:24 [WARN] [vite] [plugin vite:esbuild] src/i18n/zh.ts: Duplicate key "features.107" in object literal
+318|    "features.capabilities": "能力与边界",
+319|    "features.matrixHeading": "各平台能力对照",
+320|    "features.107": "复制章节链接",
    |    ^
-318|    "features.108": "Capability",
-319|    "features.109": "Community experiment",
+321|    "features.108": "能力",
+322|    "features.109": "社区实验",
 
-11:26:33 [WARN] [vite] [plugin vite:esbuild] src/i18n/en.ts: Duplicate key "features.108" in object literal
-316|    "features.142": "Feature sections",
-317|    "features.107": "Copy section link",
-318|    "features.108": "Capability",
+11:33:24 [WARN] [vite] [plugin vite:esbuild] src/i18n/zh.ts: Duplicate key "features.108" in object literal
+319|    "features.matrixHeading": "各平台能力对照",
+320|    "features.107": "复制章节链接",
+321|    "features.108": "能力",
    |    ^
-319|    "features.109": "Community experiment",
-320|    "features.110": "In development",
+322|    "features.109": "社区实验",
+323|    "features.110": "开发验证中",
 
-11:26:33 [WARN] [vite] [plugin vite:esbuild] src/i18n/en.ts: Duplicate key "features.110" in object literal
-318|    "features.108": "Capability",
-319|    "features.109": "Community experiment",
-320|    "features.110": "In development",
+11:33:24 [WARN] [vite] [plugin vite:esbuild] src/i18n/zh.ts: Duplicate key "features.110" in object literal
+321|    "features.108": "能力",
+322|    "features.109": "社区实验",
+323|    "features.110": "开发验证中",
    |    ^
-321|    "features.111": "Installer",
-322|    "features.112": "signed & notarized",
+324|    "features.111": "安装包",
+325|    "features.112": "签名与公证",
 
-11:26:33 [WARN] [vite] [plugin vite:esbuild] src/i18n/zh.ts: Duplicate key "features.107" in object literal
-316|    "features.141": "从订阅与节点，到接管与观测。了解每一步连接由什么组成。",
-317|    "features.142": "功能目录",
-318|    "features.107": "复制章节链接",
+11:33:24 [WARN] [vite] [plugin vite:esbuild] src/i18n/en.ts: Duplicate key "features.107" in object literal
+317|    "features.capabilities": "Capabilities and limits",
+318|    "features.matrixHeading": "Platform capability matrix",
+319|    "features.107": "Copy section link",
    |    ^
-319|    "features.108": "能力",
-320|    "features.109": "社区实验",
+320|    "features.108": "Capability",
+321|    "features.109": "Community experiment",
 
-11:26:33 [WARN] [vite] [plugin vite:esbuild] src/i18n/zh.ts: Duplicate key "features.108" in object literal
-317|    "features.142": "功能目录",
-318|    "features.107": "复制章节链接",
-319|    "features.108": "能力",
+11:33:24 [WARN] [vite] [plugin vite:esbuild] src/i18n/en.ts: Duplicate key "features.108" in object literal
+318|    "features.matrixHeading": "Platform capability matrix",
+319|    "features.107": "Copy section link",
+320|    "features.108": "Capability",
    |    ^
-320|    "features.109": "社区实验",
-321|    "features.110": "开发验证中",
+321|    "features.109": "Community experiment",
+322|    "features.110": "In development",
 
-11:26:33 [WARN] [vite] [plugin vite:esbuild] src/i18n/zh.ts: Duplicate key "features.110" in object literal
-319|    "features.108": "能力",
-320|    "features.109": "社区实验",
-321|    "features.110": "开发验证中",
+11:33:24 [WARN] [vite] [plugin vite:esbuild] src/i18n/en.ts: Duplicate key "features.110" in object literal
+320|    "features.108": "Capability",
+321|    "features.109": "Community experiment",
+322|    "features.110": "In development",
    |    ^
-322|    "features.111": "安装包",
-323|    "features.112": "签名与公证",
+323|    "features.111": "Installer",
+324|    "features.112": "signed & notarized",
 
-11:26:33 [vite] ✓ 35 modules transformed.
-11:26:33 [vite] rendering chunks...
-11:26:33 [vite] computing gzip size...
-11:26:33 [vite] dist/_astro/index._OACqPSs.js            6.81 kB │ gzip:  2.73 kB
-11:26:33 [vite] dist/_astro/DownloadCards.Oz20Rv_y.js   72.62 kB │ gzip: 27.02 kB
-11:26:33 [vite] dist/_astro/client.CimA0ymp.js         136.51 kB │ gzip: 44.01 kB
-11:26:33 [vite] ✓ built in 230ms
+11:33:24 [vite] ✓ 34 modules transformed.
+11:33:24 [vite] rendering chunks...
+11:33:24 [vite] computing gzip size...
+11:33:24 [vite] dist/_astro/index._OACqPSs.js            6.81 kB │ gzip:  2.73 kB
+11:33:24 [vite] dist/_astro/DownloadCards.nxiQH1Wo.js   72.81 kB │ gzip: 27.09 kB
+11:33:24 [vite] dist/_astro/client.CimA0ymp.js         136.51 kB │ gzip: 44.01 kB
+11:33:24 [vite] ✓ built in 227ms
 
  generating static routes 
-11:26:33 ▶ src/pages/404.astro
-11:26:33   └─ /404.html (+4ms) 
-11:26:33 ▶ src/pages/download.astro
-11:26:33   └─ /download/index.html (+4ms) 
-11:26:33 ▶ src/pages/features.astro
-11:26:33   └─ /features/index.html (+2ms) 
-11:26:33 ▶ src/pages/guide/connections.md
-11:26:33   └─ /guide/connections/index.html (+2ms) 
-11:26:33 ▶ src/pages/guide/custom-groups.md
-11:26:33   └─ /guide/custom-groups/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/data-locations.astro
-11:26:33   └─ /guide/data-locations/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/deeplink.astro
-11:26:33   └─ /guide/deeplink/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/dns-diagnostics.md
-11:26:33   └─ /guide/dns-diagnostics/index.html (+2ms) 
-11:26:33 ▶ src/pages/guide/dns.md
-11:26:33   └─ /guide/dns/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/engines.astro
-11:26:33   └─ /guide/engines/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/lan-sharing.md
-11:26:33   └─ /guide/lan-sharing/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/lightweight.astro
-11:26:33   └─ /guide/lightweight/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/linux.astro
-11:26:33   └─ /guide/linux/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/local-import.md
-11:26:33   └─ /guide/local-import/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/migration.md
-11:26:33   └─ /guide/migration/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/network-scenes.md
-11:26:33   └─ /guide/network-scenes/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/node-quality.md
-11:26:33   └─ /guide/node-quality/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/node-tests.md
-11:26:33   └─ /guide/node-tests/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/nodes.md
-11:26:33   └─ /guide/nodes/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/notifications.astro
-11:26:33   └─ /guide/notifications/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/override.astro
-11:26:33   └─ /guide/override/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/ports.astro
-11:26:33   └─ /guide/ports/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/process-rules.md
-11:26:33   └─ /guide/process-rules/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/proxy-vs-tun.astro
-11:26:33   └─ /guide/proxy-vs-tun/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/quick-start.astro
-11:26:33   └─ /guide/quick-start/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/recovery.astro
-11:26:33   └─ /guide/recovery/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/rule-sets.md
-11:26:33   └─ /guide/rule-sets/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/statistics.md
-11:26:33   └─ /guide/statistics/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/subscriptions.astro
-11:26:33   └─ /guide/subscriptions/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/tray-speed.astro
-11:26:33   └─ /guide/tray-speed/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/troubleshooting.astro
-11:26:33   └─ /guide/troubleshooting/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/updates.astro
-11:26:33   └─ /guide/updates/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/user-rules.md
-11:26:33   └─ /guide/user-rules/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide/windows.astro
-11:26:33   └─ /guide/windows/index.html (+1ms) 
-11:26:33 ▶ src/pages/guide.astro
-11:26:33   └─ /guide/index.html (+1ms) 
-11:26:33 ▶ src/pages/index.astro
-11:26:33   └─ /index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/404.astro
-11:26:33   └─ /zh/404/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/download.astro
-11:26:33   └─ /zh/download/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/features.astro
-11:26:33   └─ /zh/features/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/connections.md
-11:26:33   └─ /zh/guide/connections/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/custom-groups.md
-11:26:33   └─ /zh/guide/custom-groups/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/data-locations.astro
-11:26:33   └─ /zh/guide/data-locations/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/deeplink.astro
-11:26:33   └─ /zh/guide/deeplink/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/dns-diagnostics.md
-11:26:33   └─ /zh/guide/dns-diagnostics/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/dns.md
-11:26:33   └─ /zh/guide/dns/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/engines.astro
-11:26:33   └─ /zh/guide/engines/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/lan-sharing.md
-11:26:33   └─ /zh/guide/lan-sharing/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/lightweight.astro
-11:26:33   └─ /zh/guide/lightweight/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/linux.astro
-11:26:33   └─ /zh/guide/linux/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/local-import.md
-11:26:33   └─ /zh/guide/local-import/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/migration.md
-11:26:33   └─ /zh/guide/migration/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/network-scenes.md
-11:26:33   └─ /zh/guide/network-scenes/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/node-quality.md
-11:26:33   └─ /zh/guide/node-quality/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/node-tests.md
-11:26:33   └─ /zh/guide/node-tests/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/nodes.md
-11:26:33   └─ /zh/guide/nodes/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/notifications.astro
-11:26:33   └─ /zh/guide/notifications/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/override.astro
-11:26:33   └─ /zh/guide/override/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/ports.astro
-11:26:33   └─ /zh/guide/ports/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/process-rules.md
-11:26:33   └─ /zh/guide/process-rules/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/proxy-vs-tun.astro
-11:26:33   └─ /zh/guide/proxy-vs-tun/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/quick-start.astro
-11:26:33   └─ /zh/guide/quick-start/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/recovery.astro
-11:26:33   └─ /zh/guide/recovery/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/rule-sets.md
-11:26:33   └─ /zh/guide/rule-sets/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/statistics.md
-11:26:33   └─ /zh/guide/statistics/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/subscriptions.astro
-11:26:33   └─ /zh/guide/subscriptions/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/tray-speed.astro
-11:26:33   └─ /zh/guide/tray-speed/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/troubleshooting.astro
-11:26:33   └─ /zh/guide/troubleshooting/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/updates.astro
-11:26:33   └─ /zh/guide/updates/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/user-rules.md
-11:26:33   └─ /zh/guide/user-rules/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide/windows.astro
-11:26:33   └─ /zh/guide/windows/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/guide.astro
-11:26:33   └─ /zh/guide/index.html (+1ms) 
-11:26:33 ▶ src/pages/zh/index.astro
-11:26:33   └─ /zh/index.html (+1ms) 
-11:26:33 ✓ Completed in 99ms.
+11:33:24 ▶ src/pages/404.astro
+11:33:24   └─ /404.html (+4ms) 
+11:33:24 ▶ src/pages/download.astro
+11:33:24   └─ /download/index.html (+4ms) 
+11:33:24 ▶ src/pages/features/[slug].astro
+11:33:24   ├─ /features/support-matrix/index.html (+2ms) 
+11:33:24   ├─ /features/nodes/index.html (+1ms) 
+11:33:24   ├─ /features/subscription/index.html (+1ms) 
+11:33:24   ├─ /features/preferences/index.html (+1ms) 
+11:33:24   ├─ /features/sysproxy-guard/index.html (+1ms) 
+11:33:24   ├─ /features/tun/index.html (+1ms) 
+11:33:24   ├─ /features/engines/index.html (+1ms) 
+11:33:24   ├─ /features/js-override/index.html (+1ms) 
+11:33:24   ├─ /features/diagnostics/index.html (+1ms) 
+11:33:24   ├─ /features/observability/index.html (+1ms) 
+11:33:24   ├─ /features/notifications/index.html (+1ms) 
+11:33:24   ├─ /features/lightweight/index.html (+1ms) 
+11:33:24   ├─ /features/snapshots/index.html (+1ms) 
+11:33:24   ├─ /features/config-package/index.html (+1ms) 
+11:33:24   ├─ /features/updates/index.html (+1ms) 
+11:33:24   └─ /features/linux/index.html (+1ms) 
+11:33:24 ▶ src/pages/features/index.astro
+11:33:24   └─ /features/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/connections.md
+11:33:24   └─ /guide/connections/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/custom-groups.md
+11:33:24   └─ /guide/custom-groups/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/data-locations.astro
+11:33:24   └─ /guide/data-locations/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/deeplink.astro
+11:33:24   └─ /guide/deeplink/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/dns-diagnostics.md
+11:33:24   └─ /guide/dns-diagnostics/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/dns.md
+11:33:24   └─ /guide/dns/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/engines.astro
+11:33:24   └─ /guide/engines/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/lan-sharing.md
+11:33:24   └─ /guide/lan-sharing/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/lightweight.astro
+11:33:24   └─ /guide/lightweight/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/linux.astro
+11:33:24   └─ /guide/linux/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/local-import.md
+11:33:24   └─ /guide/local-import/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/migration.md
+11:33:24   └─ /guide/migration/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/network-scenes.md
+11:33:24   └─ /guide/network-scenes/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/node-quality.md
+11:33:24   └─ /guide/node-quality/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/node-tests.md
+11:33:24   └─ /guide/node-tests/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/nodes.md
+11:33:24   └─ /guide/nodes/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/notifications.astro
+11:33:24   └─ /guide/notifications/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/override.astro
+11:33:24   └─ /guide/override/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/ports.astro
+11:33:24   └─ /guide/ports/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/process-rules.md
+11:33:24   └─ /guide/process-rules/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/proxy-vs-tun.astro
+11:33:24   └─ /guide/proxy-vs-tun/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/quick-start.astro
+11:33:24   └─ /guide/quick-start/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/recovery.astro
+11:33:24   └─ /guide/recovery/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/rule-sets.md
+11:33:24   └─ /guide/rule-sets/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/statistics.md
+11:33:24   └─ /guide/statistics/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/subscriptions.astro
+11:33:24   └─ /guide/subscriptions/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/tray-speed.astro
+11:33:24   └─ /guide/tray-speed/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/troubleshooting.astro
+11:33:24   └─ /guide/troubleshooting/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/updates.astro
+11:33:24   └─ /guide/updates/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/user-rules.md
+11:33:24   └─ /guide/user-rules/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide/windows.astro
+11:33:24   └─ /guide/windows/index.html (+1ms) 
+11:33:24 ▶ src/pages/guide.astro
+11:33:24   └─ /guide/index.html (+1ms) 
+11:33:24 ▶ src/pages/index.astro
+11:33:24   └─ /index.html (+2ms) 
+11:33:24 ▶ src/pages/zh/404.astro
+11:33:24   └─ /zh/404/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/download.astro
+11:33:24   └─ /zh/download/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/features/[slug].astro
+11:33:24   ├─ /zh/features/support-matrix/index.html (+1ms) 
+11:33:24   ├─ /zh/features/nodes/index.html (+0ms) 
+11:33:24   ├─ /zh/features/subscription/index.html (+1ms) 
+11:33:24   ├─ /zh/features/preferences/index.html (+1ms) 
+11:33:24   ├─ /zh/features/sysproxy-guard/index.html (+1ms) 
+11:33:24   ├─ /zh/features/tun/index.html (+1ms) 
+11:33:24   ├─ /zh/features/engines/index.html (+1ms) 
+11:33:24   ├─ /zh/features/js-override/index.html (+1ms) 
+11:33:24   ├─ /zh/features/diagnostics/index.html (+1ms) 
+11:33:24   ├─ /zh/features/observability/index.html (+1ms) 
+11:33:24   ├─ /zh/features/notifications/index.html (+1ms) 
+11:33:24   ├─ /zh/features/lightweight/index.html (+0ms) 
+11:33:24   ├─ /zh/features/snapshots/index.html (+0ms) 
+11:33:24   ├─ /zh/features/config-package/index.html (+0ms) 
+11:33:24   ├─ /zh/features/updates/index.html (+0ms) 
+11:33:24   └─ /zh/features/linux/index.html (+0ms) 
+11:33:24 ▶ src/pages/zh/features/index.astro
+11:33:24   └─ /zh/features/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/guide/connections.md
+11:33:24   └─ /zh/guide/connections/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/guide/custom-groups.md
+11:33:24   └─ /zh/guide/custom-groups/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/guide/data-locations.astro
+11:33:24   └─ /zh/guide/data-locations/index.html (+0ms) 
+11:33:24 ▶ src/pages/zh/guide/deeplink.astro
+11:33:24   └─ /zh/guide/deeplink/index.html (+0ms) 
+11:33:24 ▶ src/pages/zh/guide/dns-diagnostics.md
+11:33:24   └─ /zh/guide/dns-diagnostics/index.html (+0ms) 
+11:33:24 ▶ src/pages/zh/guide/dns.md
+11:33:24   └─ /zh/guide/dns/index.html (+0ms) 
+11:33:24 ▶ src/pages/zh/guide/engines.astro
+11:33:24   └─ /zh/guide/engines/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/guide/lan-sharing.md
+11:33:24   └─ /zh/guide/lan-sharing/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/guide/lightweight.astro
+11:33:24   └─ /zh/guide/lightweight/index.html (+0ms) 
+11:33:24 ▶ src/pages/zh/guide/linux.astro
+11:33:24   └─ /zh/guide/linux/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/guide/local-import.md
+11:33:24   └─ /zh/guide/local-import/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/guide/migration.md
+11:33:24   └─ /zh/guide/migration/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/guide/network-scenes.md
+11:33:24   └─ /zh/guide/network-scenes/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/guide/node-quality.md
+11:33:24   └─ /zh/guide/node-quality/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/guide/node-tests.md
+11:33:24   └─ /zh/guide/node-tests/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/guide/nodes.md
+11:33:24   └─ /zh/guide/nodes/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/guide/notifications.astro
+11:33:24   └─ /zh/guide/notifications/index.html (+0ms) 
+11:33:24 ▶ src/pages/zh/guide/override.astro
+11:33:24   └─ /zh/guide/override/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/guide/ports.astro
+11:33:24   └─ /zh/guide/ports/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/guide/process-rules.md
+11:33:24   └─ /zh/guide/process-rules/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/guide/proxy-vs-tun.astro
+11:33:24   └─ /zh/guide/proxy-vs-tun/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/guide/quick-start.astro
+11:33:24   └─ /zh/guide/quick-start/index.html (+2ms) 
+11:33:24 ▶ src/pages/zh/guide/recovery.astro
+11:33:24   └─ /zh/guide/recovery/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/guide/rule-sets.md
+11:33:24   └─ /zh/guide/rule-sets/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/guide/statistics.md
+11:33:24   └─ /zh/guide/statistics/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/guide/subscriptions.astro
+11:33:24   └─ /zh/guide/subscriptions/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/guide/tray-speed.astro
+11:33:24   └─ /zh/guide/tray-speed/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/guide/troubleshooting.astro
+11:33:24   └─ /zh/guide/troubleshooting/index.html (+0ms) 
+11:33:24 ▶ src/pages/zh/guide/updates.astro
+11:33:24   └─ /zh/guide/updates/index.html (+0ms) 
+11:33:24 ▶ src/pages/zh/guide/user-rules.md
+11:33:24   └─ /zh/guide/user-rules/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/guide/windows.astro
+11:33:24   └─ /zh/guide/windows/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/guide.astro
+11:33:24   └─ /zh/guide/index.html (+1ms) 
+11:33:24 ▶ src/pages/zh/index.astro
+11:33:24   └─ /zh/index.html (+1ms) 
+11:33:24 ✓ Completed in 117ms.
 
-11:26:33 [@astrojs/sitemap] `sitemap-index.xml` created at `dist`
-11:26:33 [build] 72 page(s) built in 1.23s
-11:26:33 [build] Complete!
-✔ saved light appearance overrides a dark system before paint (1.170958ms)
-✔ saved dark appearance survives a new document (0.3375ms)
-✔ system and absent preferences use the device appearance (2.806917ms)
-✔ blocked storage does not prevent startup or theme resolution (0.352666ms)
-✔ every navigation entry has an independent route in both languages (2.119625ms)
-✔ documentation links use language and deployment base without touching external links (0.542125ms)
-✔ all former section links have routes after migration (0.084292ms)
-✔ published script example preserves rules and removes deleted-node references (0.891041ms)
+11:33:24 [@astrojs/sitemap] `sitemap-index.xml` created at `dist`
+11:33:24 [build] 104 page(s) built in 1.16s
+11:33:24 [build] Complete!
+✔ saved light appearance overrides a dark system before paint (1.2335ms)
+✔ saved dark appearance survives a new document (0.3615ms)
+✔ system and absent preferences use the device appearance (2.022417ms)
+✔ blocked storage does not prevent startup or theme resolution (0.657625ms)
+✔ every navigation entry has an independent route in both languages (1.368042ms)
+✔ documentation links use language and deployment base without touching external links (0.5075ms)
+✔ all former section links have routes after migration (0.086958ms)
+✔ published script example preserves rules and removes deleted-node references (0.902375ms)
 ℹ tests 8
 ℹ suites 0
 ℹ pass 8
@@ -286,4 +319,4 @@
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 50.69525
+ℹ duration_ms 50.255583

@@ -315,6 +315,8 @@ export default {
   "features.140": "功能详解",
   "features.141": "从订阅与节点，到接管与观测。了解每一步连接由什么组成。",
   "features.142": "功能目录",
+  "features.capabilities": "能力与边界",
+  "features.matrixHeading": "各平台能力对照",
   "features.107": "复制章节链接",
   "features.108": "能力",
   "features.109": "社区实验",
