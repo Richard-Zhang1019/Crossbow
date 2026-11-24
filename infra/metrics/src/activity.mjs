@@ -3,7 +3,8 @@ const SHANGHAI_OFFSET_MS = 8 * 3600_000;
 const MAX_BODY_BYTES = 1024;
 const MIDNIGHT_GRACE_MS = 5 * 60_000;
 const PLATFORMS = new Set(["macos", "windows", "linux"]);
-const VERSION = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.-]+)?(?:\+[a-z0-9.-]+)?$/i;
+export const VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.-]+)?(?:\+[a-z0-9.-]+)?$/i;
+const VERSION = VERSION_PATTERN;
 
 function beijingDay(time) {
   return Math.floor((time + SHANGHAI_OFFSET_MS) / DAY_MS);
@@ -42,6 +43,14 @@ function validReport(report, now) {
     typeof version === "string" && version.length <= 48 && VERSION.test(version) && version.trim() === version;
 }
 
+async function knownVersion(db, version) {
+  const hit = await db.prepare("SELECT 1 AS ok FROM release_versions WHERE version = ?").bind(version).first();
+  if (hit) return true;
+  // Before the first release snapshot seeds the table, keep collecting instead of dropping data.
+  const row = await db.prepare("SELECT COUNT(*) AS n FROM release_versions").first();
+  return !(row?.n > 0);
+}
+
 export async function receiveActivity(request, db, now = Date.now()) {
   if (request.method !== "POST") {
     return new Response(null, { status: 405, headers: { allow: "POST" } });
@@ -53,6 +62,13 @@ export async function receiveActivity(request, db, now = Date.now()) {
   if (!validReport(report, now)) return new Response(null, { status: 400 });
 
   const { day, daily_id, platform, version } = report;
+  let released;
+  try {
+    released = await knownVersion(db, version);
+  } catch {
+    return new Response(null, { status: 503 });
+  }
+  if (!released) return new Response(null, { status: 400 });
   try {
     await db.prepare(
       `INSERT INTO activity_reports (day, daily_id, platform, version)

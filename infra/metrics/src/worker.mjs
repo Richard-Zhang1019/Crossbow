@@ -1,4 +1,4 @@
-import { pruneActivity, receiveActivity } from "./activity.mjs";
+import { pruneActivity, receiveActivity, VERSION_PATTERN } from "./activity.mjs";
 
 const GITHUB_API = "https://api.github.com";
 const REPOSITORY = `${GITHUB_API}/repos/Richard-Zhang1019/Crossbow`;
@@ -120,6 +120,7 @@ async function githubJson(url, request, context) {
 
 async function releaseAssets(request, context) {
   const assets = new Map();
+  const versions = new Set();
   let url = `${REPOSITORY}/releases?per_page=50`;
   for (let page = 0; url; page++) {
     if (page === RELEASE_PAGE_LIMIT || new URL(url).origin !== GITHUB_API) {
@@ -133,6 +134,8 @@ async function releaseAssets(request, context) {
       if (typeof release?.tag_name !== "string" || !Array.isArray(release.assets)) {
         throw new SnapshotError("github_incomplete_release");
       }
+      const version = release.tag_name.replace(/^v/i, "");
+      if (VERSION_PATTERN.test(version)) versions.add(version);
       for (const asset of release.assets) {
         const platform = typeof asset?.name === "string" && platformFor(asset.name);
         if (!platform) continue;
@@ -153,7 +156,7 @@ async function releaseAssets(request, context) {
     url = link?.match(/<([^>]+)>;\s*rel="next"/)?.[1] ?? null;
   }
   if (assets.size === 0) throw new SnapshotError("github_no_installers");
-  return [...assets.values()];
+  return { assets: [...assets.values()], versions: [...versions] };
 }
 
 export async function collectSnapshot(db, scheduledTime, request = fetch, {
@@ -184,8 +187,24 @@ export async function collectSnapshot(db, scheduledTime, request = fetch, {
     return repo.data.stargazers_count;
   });
   logger.log({ day, stage: "github_stars", outcome: "ok" });
-  const assets = await snapshotStage("github_releases", context, () => releaseAssets(request, context));
-  logger.log({ day, stage: "github_releases", outcome: "ok", assetCount: assets.length });
+  const releases = await snapshotStage("github_releases", context, () => releaseAssets(request, context));
+  const { assets, versions } = releases;
+  logger.log({ day, stage: "github_releases", outcome: "ok", assetCount: assets.length, versionCount: versions.length });
+  // Keep the activity allowlist current; a failure here must not lose the download snapshot.
+  try {
+    await d1(async () => {
+      const stamp = Math.floor(now() / 1000);
+      for (const version of versions) {
+        await db.prepare(
+          `INSERT INTO release_versions (version, first_seen, last_seen) VALUES (?, ?, ?)
+           ON CONFLICT(version) DO UPDATE SET last_seen = excluded.last_seen`,
+        ).bind(version, stamp, stamp).run();
+      }
+    });
+    logger.log({ day, stage: "write_versions", outcome: "ok", versionCount: versions.length });
+  } catch (error) {
+    logger.warn({ day, stage: "write_versions", outcome: "failed", code: error instanceof SnapshotError ? error.code : "unexpected_error" });
+  }
 
   const collectedAt = new Date(now()).toISOString();
   const { meta } = await snapshotStage("write_snapshot", context, () => d1(() => db.prepare(

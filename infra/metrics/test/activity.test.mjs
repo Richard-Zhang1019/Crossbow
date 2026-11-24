@@ -16,16 +16,26 @@ const report = {
 function activityDatabase(t) {
   const sqlite = new DatabaseSync(":memory:");
   t.after(() => sqlite.close());
-  sqlite.exec(readFileSync(new URL("../migrations/0002_activity_reports.sql", import.meta.url), "utf8"));
+  for (const name of ["0002_activity_reports.sql", "0004_release_versions.sql"]) {
+    sqlite.exec(readFileSync(new URL(`../migrations/${name}`, import.meta.url), "utf8"));
+  }
   return {
     prepare(sql) {
       return {
+        first: async () => sqlite.prepare(sql).get() ?? null,
         bind(...values) {
-          return { run: async () => sqlite.prepare(sql).run(...values) };
+          return {
+            first: async () => sqlite.prepare(sql).get(...values) ?? null,
+            run: async () => sqlite.prepare(sql).run(...values),
+          };
         },
       };
     },
     rawCount: () => sqlite.prepare("SELECT count(*) AS n FROM activity_reports").get().n,
+    seedVersions: (versions) => {
+      const insert = sqlite.prepare("INSERT INTO release_versions (version, first_seen, last_seen) VALUES (?, 0, 0)");
+      for (const version of versions) insert.run(version);
+    },
     totals: () => sqlite.prepare("SELECT devices FROM activity_daily_totals ORDER BY day").all().map(row => row.devices),
   };
 }
@@ -74,4 +84,19 @@ test("allows an in-flight report to arrive just after Beijing midnight", async (
   assert.equal((await receiveActivity(post(previous), db, midnight + 300_000)).status, 400);
   assert.equal((await receiveActivity(post(report), null, midnight)).status, 503);
   assert.deepEqual(db.totals(), [1]);
+});
+
+test("rejects versions that were never released once the allowlist is seeded", async (t) => {
+  const db = activityDatabase(t);
+  db.seedVersions(["0.14.2"]);
+  assert.equal((await receiveActivity(post({ ...report, version: "9.9.9" }), db, midnight)).status, 400);
+  assert.equal(db.rawCount(), 0);
+  assert.equal((await receiveActivity(post(report), db, midnight)).status, 204);
+  assert.equal(db.rawCount(), 1);
+});
+
+test("keeps accepting reports until the first release snapshot seeds the allowlist", async (t) => {
+  const db = activityDatabase(t);
+  assert.equal((await receiveActivity(post({ ...report, version: "0.0.1" }), db, midnight)).status, 204);
+  assert.equal(db.rawCount(), 1);
 });

@@ -8,6 +8,7 @@ const schema = [
   "0001_github_daily_snapshots.sql",
   "0002_activity_reports.sql",
   "0003_github_snapshot_cooldown.sql",
+  "0004_release_versions.sql",
 ].map(name => readFileSync(new URL(`../migrations/${name}`, import.meta.url), "utf8")).join("\n");
 const tick = Date.parse("2026-11-10T16:05:00Z");
 
@@ -31,6 +32,7 @@ function testDatabase(t) {
       };
     },
     rows: () => sqlite.prepare("SELECT * FROM github_daily_snapshots").all(),
+    versions: () => sqlite.prepare("SELECT version FROM release_versions ORDER BY version").all().map(row => row.version),
   };
 }
 
@@ -107,6 +109,8 @@ test("collects stable installation assets across pages in one Beijing-day snapsh
   assert.deepEqual(assets.map(({ id, platform, download_count }) => [id, platform, download_count]), [
     [1, "macos", 10], [2, "windows", 10], [3, "linux", 10],
   ]);
+  // Prereleases never enter the activity allowlist.
+  assert.deepEqual(db.versions(), ["0.14.1"]);
 });
 
 test("retry preserves the first snapshot; the next day stores a separate one", async (t) => {
