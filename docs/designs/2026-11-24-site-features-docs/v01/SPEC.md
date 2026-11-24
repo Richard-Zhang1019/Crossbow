@@ -39,9 +39,9 @@
 ## 评审调整（2026-11-24）
 
 - **Header**：桌面 `.nav-shell` 80 → 68px（`--header-h`），hero 高度与锚点预留同步使用该变量；文档工作区顶部留白 32 → 24px，内容起点上移约 20px。
-- **目录搜索框**：内边距 7/9 → 3/8，字号 13 → 12，图标 16 → 14（实测高度 24.8px）；focus 由外扩 `outline` 改为 inset ring（1px 内阴影 + 2px 内描边），不再被目录滚动容器裁掉左边缘。
-- **文章滚动条间距**：`.docs-article` 右内边距 12 → 24px，滚动条与正文之间留出 24px 空白；gutter 仍为 11px。
-- 实测见 `verification/layout.json`：header 68、标题距 header 24、搜索框 24.8、文章右内边距 24、gutter 11。
+- **目录搜索框**：内边距 7/9 → 4/8，字号 13 → 12，图标 16 → 14（实测高度 26.8px）；focus 去掉 `outline`，改为“边框切 accent + 1px inset 阴影”，不再被目录滚动容器裁切，观感也更轻。
+- **文章滚动条间距**：`.docs-article` 右内边距 12 → 40px（= 文档三栏的列间距 `--doc-gap`），正文到滚动条的距离与正文左侧到目录栏的距离一致；gutter 仍为 11px。
+- 实测见 `verification/layout.json`：header 68、标题距 header 24、搜索框 26.8、focus 边框 accent 且无 outline、文章右内边距 40（列间距 40）、gutter 11。
 
 ## 边界与待验
 

@@ -86,11 +86,17 @@ try {
     const header = await p.locator(".nav-shell").evaluate((e) => e.getBoundingClientRect().height);
     assert.equal(Math.round(header), 68, "header uses the compact height");
     const articleMetrics = await p.locator(".docs-article").evaluate((e) => ({ pad: parseFloat(getComputedStyle(e).paddingRight), gutter: e.offsetWidth - e.clientWidth }));
-    assert(articleMetrics.pad >= 20, `article keeps space before the scrollbar (got ${articleMetrics.pad}px)`);
+    assert(articleMetrics.pad >= 36, `article keeps space before the scrollbar (got ${articleMetrics.pad}px)`);
     assert(articleMetrics.gutter > 0 && articleMetrics.gutter <= 12, "gutter stays thin");
     const searchBox = await p.locator(".docs-search").evaluate((e) => e.getBoundingClientRect().height);
     assert(searchBox <= 30, `search field stays compact (got ${searchBox}px)`);
+    const borderIdle = await p.locator(".docs-search").evaluate((e) => getComputedStyle(e).borderTopColor);
     await p.locator("[data-doc-search]").focus();
+    await p.waitForTimeout(250);
+    const focusStyle = await p.locator(".docs-search").evaluate((e) => { const s = getComputedStyle(e); return { outline: s.outlineStyle, border: s.borderTopColor, inset: s.boxShadow }; });
+    assert.equal(focusStyle.outline, "none", "focus ring stays inside the field (no clipped outline)");
+    assert(focusStyle.inset.includes("inset"), "focus ring is an inset shadow");
+    assert.notEqual(focusStyle.border, borderIdle, "focus switches the border to the accent color");
     const ring = await p.evaluate(() => {
       const s = document.querySelector(".docs-search").getBoundingClientRect();
       const pane = document.querySelector(".docs-sidebar-body").getBoundingClientRect();

@@ -1,7 +1,10 @@
 {
   "header_height": 68,
   "heading_top_below_header": 24,
-  "search_height": 24.8,
-  "article_padding_right": 24,
+  "search_height": 26.8,
+  "search_focus_outline": "none",
+  "search_focus_border": "rgb(69, 90, 181)",
+  "shell_column_gap": "40px",
+  "article_padding_right": 40,
   "article_scrollbar_gutter": 11
 }
