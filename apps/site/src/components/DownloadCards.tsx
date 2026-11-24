@@ -73,22 +73,35 @@ export default function DownloadCards({ lang }: { lang: Lang }) {
 
   useEffect(() => {
     let dead = false;
-    fetch(API)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((d) => {
+    const run = async (retriesLeft: number) => {
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), 8000);
+      try {
+        const response = await fetch(API, { signal: controller.signal, cache: "no-store" });
+        if (!response.ok) throw new Error(String(response.status));
+        const info = parseRelease(await response.json());
+        if (!info) throw new Error("release payload");
         if (dead) return;
-        const info = parseRelease(d);
-        if (!info) return;
         setRelease(info);
         writeCache(info);
         setStale(false);
         setStatus("ready");
-      })
-      .catch(() => {
+      } catch {
         if (dead) return;
+        // One quiet retry absorbs transient proxy/DNS failures before telling the user.
+        if (retriesLeft > 0) {
+          window.setTimeout(() => {
+            if (!dead) void run(retriesLeft - 1);
+          }, 1500);
+          return;
+        }
         setStale(true);
         setStatus((s) => (s === "ready" ? "ready" : "failed"));
-      });
+      } finally {
+        window.clearTimeout(timer);
+      }
+    };
+    void run(1);
     return () => {
       dead = true;
     };
@@ -144,7 +157,9 @@ export default function DownloadCards({ lang }: { lang: Lang }) {
                 <a className="primary-button" href={p.url} target="_blank" rel="noopener noreferrer">{p.label}</a>
               ) : (
                 <a className="primary-button" href={LATEST} target="_blank" rel="noopener noreferrer">
-                  {_(status === "failed" ? "前往发布页下载" : "该版本暂无此安装包，前往发布页")}
+                  {status === "failed"
+                    ? (lang === "zh" ? "前往发布页下载" : "Download from releases")
+                    : (lang === "zh" ? "该版本暂无此安装包，前往发布页" : "Package missing — open releases")}
                 </a>
               )}
             </div>

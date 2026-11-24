@@ -2,7 +2,7 @@
   "date": "2026-11-24",
   "version": "v01",
   "issue": 653,
-  "status": "implemented; routed feature docs + client-side navigation + header highlight; production static build + Chromium scenarios; review pending",
+  "status": "implemented; routed feature docs + client navigation + download retry/timeout; production static build + Chromium scenarios; review pending",
   "source_sha256": {
     "apps/site/src/docs/feature-navigation.ts": "d5605436f419631e05a00c0d10fb7cf8a4a415dbded805e7226ef0f397d4646e",
     "apps/site/src/docs/features.ts": "ccc460e985901b54e854a77af7691fa858fec6908e5736d7e14e25f74d62fdc1",
@@ -19,10 +19,11 @@
     "apps/site/src/lib/client.js": "42d3c56f7eaf18d81641df83e4e6853071d450ead33a0f7d5b50bd6349a3174a",
     "apps/site/src/components/DocsOverview.astro": "70d89e2fcba446145d7e8a6c306d7b96338d0d2d8cef82b968093da4911669de",
     "apps/site/src/components/HomeBody.astro": "9400392167ec1a44666cfeb9eaee1c0ed6bc65ba6cfe9bab3e73235a4f363a0b",
-    "scripts/dev/verify-site-docs.mjs": "1769b7811cbd75a8dcb54067752c42646bc8375bf1243c221313ec7b16111586"
+    "scripts/dev/verify-site-docs.mjs": "1769b7811cbd75a8dcb54067752c42646bc8375bf1243c221313ec7b16111586",
+    "apps/site/src/components/DownloadCards.tsx": "019e54ca902f7eb916752e0f6f8dcc269997c1186385c0c7ae4c5dde47c458aa"
   },
   "artifacts": {
-    "SPEC.md": "6f0f6f25a7d768a3a83aa48892674fcecbe1dc53b7bb4ebf20840394a33586ad",
+    "SPEC.md": "99ac3816faf6bad169bf98d813185e13ef1897ba3409dd11cf70399fe707356f",
     "verification/build.log": "19dd6ef599e61ee5e8d518fc5e8fc612b68037f295c10b9a4bad806b17b28f7e",
     "verification/layout.json": "b42be86a80a4e7d601e970914ae82a229088c06fcf75966957eb16ecf872c31a",
     "verification/scrollbar.json": "cc90573def661f53041ae619a1db198f89dc382d67049aab1a200795ac1d3928",
