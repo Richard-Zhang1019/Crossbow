@@ -12,6 +12,8 @@ pub mod ssid;
 pub mod sysproxy;
 #[cfg(target_os = "macos")]
 pub mod tun;
+#[cfg(target_os = "macos")]
+pub mod tun_health;
 #[cfg(target_os = "linux")]
 pub mod tun_linux;
 #[cfg(windows)]

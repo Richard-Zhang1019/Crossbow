@@ -24,6 +24,13 @@ pub const WEDGE_RESTART_BUDGET: u8 = 2;
 #[cfg(any(target_os = "macos", windows))]
 pub const WEDGE_COOLDOWN: Duration = Duration::from_secs(90);
 
+/// TUN 进入开启状态后的稳定期：内核刚启动或 TUN 刚热开时，路由与 DNS
+/// 尚在建立，这段时间内的探测失败不累计。楔死重启之后另有冷却期
+/// （`WEDGE_COOLDOWN`）；崩溃自启、手动重启内核与开关冷启动没有，
+/// 由本常量统一覆盖（#662）。
+#[cfg(target_os = "macos")]
+pub const TUN_STARTUP_GRACE: Duration = Duration::from_secs(30);
+
 /// 接管漂移关开重建立冷却（#154）。
 #[cfg(any(target_os = "macos", windows))]
 pub const REESTABLISH_COOLDOWN: Duration = Duration::from_secs(120);

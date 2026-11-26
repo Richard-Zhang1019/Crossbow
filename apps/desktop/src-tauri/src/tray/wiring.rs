@@ -508,6 +508,89 @@ pub(crate) enum HealthRecovery {
     Disabled,
 }
 
+/// 判定内核是否仍在响应控制接口的超时（#661/#662）。
+#[cfg(target_os = "macos")]
+const CORE_ANSWER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// 内核控制接口是否应答。控制接口走 127.0.0.1，不需要系统网络，因此
+/// 能区分「系统没有网络」（内核仍应答）与「内核僵死或监听线程失效」
+/// （不应答）——两者在混合端口上都表现为拨不出去。
+#[cfg(target_os = "macos")]
+fn core_answers(state: &AppState) -> bool {
+    state.core().controller().is_some_and(|(port, secret)| {
+        ureq::AgentBuilder::new()
+            .try_proxy_from_env(false)
+            .redirects(0)
+            .timeout(CORE_ANSWER_TIMEOUT)
+            .build()
+            .get(&format!("http://127.0.0.1:{port}/version"))
+            .set("Authorization", &format!("Bearer {secret}"))
+            .call()
+            .is_ok_and(|response| response.status() == 200)
+    })
+}
+
+/// 决策日志里的进程标识。
+#[cfg(target_os = "macos")]
+fn pid_label(pid: Option<u32>) -> String {
+    pid.map(|pid| pid.to_string()).unwrap_or_else(|| "-".into())
+}
+
+/// 隧道探测连续失败达到预算、内核仍在运行时的故障分层（#661/#662）。
+/// 先确认内核控制接口是否应答：不应答说明内核僵死，按隧道故障恢复；
+/// 应答后用两条绕过 TUN 的对照通道定位，并写入生命周期日志。
+///
+/// 返回 true 表示是上游或节点故障：此时重启内核、关闭 TUN 都无济于事，
+/// 调用方按住不动，等网络或节点恢复后隧道探测自然转绿。内核僵死与
+/// 隧道自身不通返回 false，交由 `recover_for_health` 按既有预算恢复。
+#[cfg(target_os = "macos")]
+fn hold_for_non_tunnel_failure(
+    state: &AppState,
+    tun_failures: &mut crate::network::tun_health::FailureState,
+    core_pid: Option<u32>,
+) -> bool {
+    use crate::network::tun_health::FailureLayer;
+    let mixed_port = state
+        .store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .data()
+        .engine
+        .mixed_port;
+    let core_alive = core_answers(state);
+    let compared = if core_alive {
+        crate::network::tun_health::compare_via_mixed_port(mixed_port)
+    } else {
+        // 控制接口不应答时不必再走代理探测：两条通道都拨不出去。
+        crate::network::tun_health::Comparison {
+            physical: false,
+            node: false,
+        }
+    };
+    let layer = crate::network::tun_health::classify_with_core(
+        core_alive,
+        compared.physical,
+        compared.node,
+    );
+    // 故障层持续期间只记第一条，避免长时间断网时刷屏
+    if tun_failures.note_layer(layer) {
+        let verdict = match layer {
+            FailureLayer::Upstream => "system has no network; holding",
+            FailureLayer::Node => "node unreachable; holding",
+            FailureLayer::Core => "core not answering; restarting",
+            FailureLayer::Tunnel => "only the tunnel path failed",
+        };
+        state.core().log_decision(&format!(
+            "tun health: layer={} physical={} node={} pid={}: {verdict}",
+            layer.label(),
+            compared.physical,
+            compared.node,
+            pid_label(core_pid)
+        ));
+    }
+    matches!(layer, FailureLayer::Upstream | FailureLayer::Node)
+}
+
 #[cfg(target_os = "macos")]
 fn recover_for_health(
     state: &AppState,
@@ -559,7 +642,9 @@ fn emit_tun_recovery_status(app: &AppHandle, state: &AppState) {
 
 /// TUN 健康检查：每 5 秒检查真实网络连通性；连续 3 次失败时关闭 TUN
 /// 并通知界面，避免流量持续被送入失效的隧道。
-/// macOS 额外检查捕获路由，漂移时走与开关同一把锁的重建立。
+/// macOS 额外检查捕获路由，漂移时走与开关同一把锁的重建立；失败达到
+/// 预算且内核仍在运行时先定位故障层，只有隧道自身的问题才恢复
+/// （#661/#662，见 `network::tun_health`）。
 #[cfg(any(target_os = "macos", windows))]
 pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -584,6 +669,9 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
         let mut sysproxy_dead_ticks = 0u8;
         let mut last_probe_pid = None;
         let mut evidence_ticks: u32 = 0;
+        // TUN 进入开启状态后的稳定期，以及隧道失败时最近定位到的故障层。
+        #[cfg(target_os = "macos")]
+        let mut tun_failures = crate::network::tun_health::FailureState::default();
         loop {
             let cycle_started = std::time::Instant::now();
             if let Some(state) = handle.try_state::<AppState>() {
@@ -599,6 +687,17 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                 if last_probe_pid != core_pid {
                     failures = 0;
                     last_probe_pid = core_pid;
+                }
+                // TUN 刚打开，或 TUN 开启期间内核换了进程：路由与 DNS 尚在
+                // 建立，重新开始一个稳定期，期间探测失败不累计（#662）。
+                #[cfg(target_os = "macos")]
+                if tun_failures.observe(tun_enabled, core_pid, cycle_started) {
+                    failures = 0;
+                    state.core().log_decision(&format!(
+                        "tun health: startup grace {}s (pid={})",
+                        timing::TUN_STARTUP_GRACE.as_secs(),
+                        pid_label(core_pid)
+                    ));
                 }
                 if !tun_enabled
                     || core_status == CoreStatus::Starting
@@ -770,7 +869,15 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                         }
                     }
 
+                    // 本轮是否真的探测了隧道：冷却期与重建立周期的 Ok(()) 不是
+                    // 探测结果，不能据此报告恢复。
+                    #[cfg(target_os = "macos")]
+                    let mut probed = true;
                     let probe = if wedge_cooling {
+                        #[cfg(target_os = "macos")]
+                        {
+                            probed = false;
+                        }
                         Ok(())
                     } else if core_status == CoreStatus::Running {
                         // A second proxy client may re-enable a stale macOS
@@ -808,6 +915,10 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                         }
                         if skip_probe {
                             // 重建立/放弃周期跳过连通性探测
+                            #[cfg(target_os = "macos")]
+                            {
+                                probed = false;
+                            }
                             Ok(())
                         } else {
                             probe_tun_network()
@@ -826,65 +937,133 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                                 wedge_restarts = 0;
                             }
                             failures = 0;
+                            #[cfg(target_os = "macos")]
+                            if probed {
+                                if let Some(layer) = tun_failures.recovered() {
+                                    state.core().log_decision(&format!(
+                                        "tun health: recovered from layer={}",
+                                        layer.label()
+                                    ));
+                                }
+                            }
                         }
                         Err(error) => {
-                            failures = failures.saturating_add(1);
+                            // 稳定期内的失败不累计。内核未运行时没有稳定期，仍按
+                            // 原节奏处理：内核已死的 TUN 是黑洞。
+                            #[cfg(target_os = "macos")]
+                            let in_grace = core_status == CoreStatus::Running
+                                && tun_failures.in_grace(cycle_started, timing::TUN_STARTUP_GRACE);
+                            #[cfg(not(target_os = "macos"))]
+                            let in_grace = false;
+                            failures = if in_grace {
+                                0
+                            } else {
+                                failures.saturating_add(1)
+                            };
                             eprintln!(
                                 "tun health check failed ({failures}/{}): {error}",
                                 timing::FAILURE_BUDGET
                             );
                             if failures >= timing::FAILURE_BUDGET {
                                 failures = 0;
-                                let outcome = recover_for_health(
-                                    &state,
-                                    core_pid,
-                                    &core_status,
-                                    wedge_restarts < timing::WEDGE_RESTART_BUDGET,
-                                );
-                                match outcome {
-                                    Ok(HealthRecovery::Superseded) => {}
-                                    Ok(HealthRecovery::Restarted) => {
-                                        wedge_restarts = wedge_restarts.saturating_add(1);
-                                        wedge_cooldown_until =
-                                            std::time::Instant::now() + timing::WEDGE_COOLDOWN;
-                                        reported_recovery_failure = false;
-                                        let mut notice = notifications::Notice::new(
-                                            notifications::Kind::Warning,
-                                            if cfg!(windows) {
-                                                "tun.wedgeRecovered"
-                                            } else {
-                                                "tun.wedgeRestart"
-                                            },
-                                            "tun-health",
-                                        );
-                                        notice.duration = Some(0);
-                                        notice.actions = vec![notifications::Action::Diagnostics];
-                                        notifications::publish(&handle, notice);
-                                    }
-                                    Ok(HealthRecovery::Disabled) => {
-                                        reported_recovery_failure = false;
-                                        emit_tun_recovery_status(&handle, &state);
-                                        let mut notice = notifications::Notice::new(
-                                            notifications::Kind::Warning,
-                                            "tun.disabled",
-                                            "tun-health",
-                                        );
-                                        notice.duration = Some(0);
-                                        notice.actions = vec![notifications::Action::Diagnostics];
-                                        notifications::publish(&handle, notice);
-                                    }
-                                    Err(disable_error) => {
-                                        eprintln!("tun health recovery failed: {disable_error}");
-                                        emit_tun_recovery_status(&handle, &state);
-                                        if !reported_recovery_failure {
-                                            notifications::tun_result(
-                                                &handle,
-                                                &state,
+                                // 内核仍在运行时先定位故障层（#661/#662）：系统没有
+                                // 网络或节点不通时按住不动，此时重启内核、关闭 TUN
+                                // 都无济于事，等它恢复后隧道探测自然转绿。
+                                #[cfg(target_os = "macos")]
+                                let held = core_status == CoreStatus::Running
+                                    && hold_for_non_tunnel_failure(
+                                        &state,
+                                        &mut tun_failures,
+                                        core_pid,
+                                    );
+                                #[cfg(not(target_os = "macos"))]
+                                let held = false;
+                                if held {
+                                    // 上游或节点故障：不恢复
+                                } else {
+                                    let outcome = recover_for_health(
+                                        &state,
+                                        core_pid,
+                                        &core_status,
+                                        wedge_restarts < timing::WEDGE_RESTART_BUDGET,
+                                    );
+                                    match outcome {
+                                        Ok(HealthRecovery::Superseded) => {}
+                                        Ok(HealthRecovery::Restarted) => {
+                                            wedge_restarts = wedge_restarts.saturating_add(1);
+                                            wedge_cooldown_until =
+                                                std::time::Instant::now() + timing::WEDGE_COOLDOWN;
+                                            #[cfg(target_os = "macos")]
+                                            {
+                                                state.core().log_decision(&format!(
+                                                    "tun health: tunnel-only failure; core restart signalled (used {}/{}, pid={})",
+                                                    wedge_restarts,
+                                                    timing::WEDGE_RESTART_BUDGET,
+                                                    pid_label(core_pid)
+                                                ));
+                                            }
+                                            reported_recovery_failure = false;
+                                            let mut notice = notifications::Notice::new(
+                                                notifications::Kind::Warning,
+                                                if cfg!(windows) {
+                                                    "tun.wedgeRecovered"
+                                                } else {
+                                                    "tun.wedgeRestart"
+                                                },
                                                 "tun-health",
-                                                "tun.disableFailed",
-                                                Err(disable_error),
                                             );
-                                            reported_recovery_failure = true;
+                                            notice.duration = Some(0);
+                                            notice.actions =
+                                                vec![notifications::Action::Diagnostics];
+                                            notifications::publish(&handle, notice);
+                                        }
+                                        Ok(HealthRecovery::Disabled) => {
+                                            reported_recovery_failure = false;
+                                            #[cfg(target_os = "macos")]
+                                            {
+                                                state.core().log_decision(&format!(
+                                                    "tun health: TUN disabled (core={core_status:?}, restarts used {}/{}, pid={})",
+                                                    wedge_restarts,
+                                                    timing::WEDGE_RESTART_BUDGET,
+                                                    pid_label(core_pid)
+                                                ));
+                                            }
+                                            emit_tun_recovery_status(&handle, &state);
+                                            let mut notice = notifications::Notice::new(
+                                                notifications::Kind::Warning,
+                                                "tun.disabled",
+                                                "tun-health",
+                                            );
+                                            notice.duration = Some(0);
+                                            notice.actions =
+                                                vec![notifications::Action::Diagnostics];
+                                            notifications::publish(&handle, notice);
+                                        }
+                                        Err(disable_error) => {
+                                            eprintln!(
+                                                "tun health recovery failed: {disable_error}"
+                                            );
+                                            #[cfg(target_os = "macos")]
+                                            {
+                                                state.core().log_decision(&format!(
+                                                    "tun health: recovery failed: {}",
+                                                    disable_error
+                                                        .chars()
+                                                        .take(200)
+                                                        .collect::<String>()
+                                                ));
+                                            }
+                                            emit_tun_recovery_status(&handle, &state);
+                                            if !reported_recovery_failure {
+                                                notifications::tun_result(
+                                                    &handle,
+                                                    &state,
+                                                    "tun-health",
+                                                    "tun.disableFailed",
+                                                    Err(disable_error),
+                                                );
+                                                reported_recovery_failure = true;
+                                            }
                                         }
                                     }
                                 }
