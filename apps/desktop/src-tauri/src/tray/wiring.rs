@@ -508,6 +508,28 @@ pub(crate) enum HealthRecovery {
     Disabled,
 }
 
+/// 判定内核是否仍在响应控制接口的超时（#661/#662）。
+#[cfg(target_os = "macos")]
+const CORE_ANSWER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// 内核控制接口是否应答。控制接口走 127.0.0.1，不需要系统网络，因此
+/// 能区分「系统没有网络」（内核仍应答）与「内核僵死或监听线程失效」
+/// （不应答）——两者在混合端口上都表现为拨不出去。
+#[cfg(target_os = "macos")]
+fn core_answers(state: &AppState) -> bool {
+    state.core().controller().is_some_and(|(port, secret)| {
+        ureq::AgentBuilder::new()
+            .try_proxy_from_env(false)
+            .redirects(0)
+            .timeout(CORE_ANSWER_TIMEOUT)
+            .build()
+            .get(&format!("http://127.0.0.1:{port}/version"))
+            .set("Authorization", &format!("Bearer {secret}"))
+            .call()
+            .is_ok_and(|response| response.status() == 200)
+    })
+}
+
 /// 决策日志里的进程标识。
 #[cfg(target_os = "macos")]
 fn pid_label(pid: Option<u32>) -> String {
@@ -515,11 +537,12 @@ fn pid_label(pid: Option<u32>) -> String {
 }
 
 /// 隧道探测连续失败达到预算、内核仍在运行时的故障分层（#661/#662）。
-/// 用两条绕过 TUN 的对照通道定位故障层，并写入生命周期日志。
+/// 先确认内核控制接口是否应答：不应答说明内核僵死，按隧道故障恢复；
+/// 应答后用两条绕过 TUN 的对照通道定位，并写入生命周期日志。
 ///
 /// 返回 true 表示是上游或节点故障：此时重启内核、关闭 TUN 都无济于事，
-/// 调用方按住不动，等网络或节点恢复后隧道探测自然转绿。只有隧道自身
-/// 不通才返回 false，交由 `recover_for_health` 按既有预算恢复。
+/// 调用方按住不动，等网络或节点恢复后隧道探测自然转绿。内核僵死与
+/// 隧道自身不通返回 false，交由 `recover_for_health` 按既有预算恢复。
 #[cfg(target_os = "macos")]
 fn hold_for_non_tunnel_failure(
     state: &AppState,
@@ -534,13 +557,27 @@ fn hold_for_non_tunnel_failure(
         .data()
         .engine
         .mixed_port;
-    let compared = crate::network::tun_health::compare_via_mixed_port(mixed_port);
-    let layer = crate::network::tun_health::classify(compared.physical, compared.node);
+    let core_alive = core_answers(state);
+    let compared = if core_alive {
+        crate::network::tun_health::compare_via_mixed_port(mixed_port)
+    } else {
+        // 控制接口不应答时不必再走代理探测：两条通道都拨不出去。
+        crate::network::tun_health::Comparison {
+            physical: false,
+            node: false,
+        }
+    };
+    let layer = crate::network::tun_health::classify_with_core(
+        core_alive,
+        compared.physical,
+        compared.node,
+    );
     // 故障层持续期间只记第一条，避免长时间断网时刷屏
     if tun_failures.note_layer(layer) {
         let verdict = match layer {
             FailureLayer::Upstream => "system has no network; holding",
             FailureLayer::Node => "node unreachable; holding",
+            FailureLayer::Core => "core not answering; restarting",
             FailureLayer::Tunnel => "only the tunnel path failed",
         };
         state.core().log_decision(&format!(
@@ -551,7 +588,7 @@ fn hold_for_non_tunnel_failure(
             pid_label(core_pid)
         ));
     }
-    layer != FailureLayer::Tunnel
+    matches!(layer, FailureLayer::Upstream | FailureLayer::Node)
 }
 
 #[cfg(target_os = "macos")]

@@ -44,6 +44,9 @@ pub(crate) enum FailureLayer {
     /// 物理网络可达，但当前出口节点不通。
     /// 关闭 TUN 不能恢复连通（系统代理模式走同一个节点），看门狗不动作。
     Node,
+    /// 内核控制接口不可达：进程僵死、监听线程失效，或正在切换配置。
+    /// 这种情况下混合端口拨不出去，重启内核是有效动作，与隧道自身故障同样处理。
+    Core,
     /// 物理网络与节点都可达，只有 TUN 路径不通：栈或路由自身的问题。
     /// 按既有预算重启内核，预算用尽才关闭 TUN。
     Tunnel,
@@ -55,6 +58,7 @@ impl FailureLayer {
         match self {
             Self::Upstream => "upstream",
             Self::Node => "node",
+            Self::Core => "core",
             Self::Tunnel => "tunnel",
         }
     }
@@ -68,6 +72,20 @@ pub(crate) fn classify(physical_reachable: bool, node_reachable: bool) -> Failur
         FailureLayer::Node
     } else {
         FailureLayer::Tunnel
+    }
+}
+
+/// 纯判定：内核控制接口先于两条对照通道——僵死的内核与「系统没有网络」
+/// 在混合端口上表现一样（都拨不出去），不能把它当成上游故障按住不动。
+pub(crate) fn classify_with_core(
+    core_alive: bool,
+    physical_reachable: bool,
+    node_reachable: bool,
+) -> FailureLayer {
+    if !core_alive {
+        FailureLayer::Core
+    } else {
+        classify(physical_reachable, node_reachable)
     }
 }
 
@@ -239,6 +257,14 @@ mod tests {
     }
 
     #[test]
+    fn dead_core_is_its_own_layer() {
+        assert_eq!(classify_with_core(false, true, true), FailureLayer::Core);
+        assert_eq!(classify_with_core(false, false, false), FailureLayer::Core);
+        assert_eq!(classify_with_core(true, true, false), FailureLayer::Node);
+        assert_ne!(FailureLayer::Core.label(), FailureLayer::Tunnel.label());
+    }
+
+    #[test]
     fn classify_separates_the_three_layers() {
         assert_eq!(classify(false, false), FailureLayer::Upstream);
         assert_eq!(classify(true, false), FailureLayer::Node);
@@ -259,8 +285,9 @@ mod tests {
             }
         );
         assert_eq!(
-            classify(result.physical, result.node),
-            FailureLayer::Upstream
+            classify_with_core(false, result.physical, result.node),
+            FailureLayer::Core,
+            "内核没在监听时不能判成上游故障，否则僵死内核永远不会被重启"
         );
     }
 
