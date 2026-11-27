@@ -3,7 +3,7 @@ import { UpdateEntry } from "@/components/UpdateEntry";
 import { parseNavigation, type NavigationTarget } from "@/lib/workflow";
 import { subscriptionCleanup, unsubscribe } from "@/lib/unlisten";
 import { ButtonBase, Button } from "@/components/Button";
-import { notify } from "@/notifications/service";
+import { notify, resolveRestartHints } from "@/notifications/service";
 import { useCallback, useEffect, useRef, useState } from "react";
 import HomePage, { coreText } from "@/pages/Home";
 import ProxiesPage from "@/pages/Proxies";
@@ -139,6 +139,8 @@ export default function App() {
     let receivedStatus = false;
     const un = ipc.onCoreStatus((status) => {
       receivedStatus = true;
+      // 内核从重启窗口恢复：把「内核重启中」提示统一标记为已恢复（#666）。
+      if (status.state === "Running") void resolveRestartHints();
       if (active) setCoreStatus(status);
     });
     void un

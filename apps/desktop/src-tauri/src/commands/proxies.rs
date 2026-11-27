@@ -353,10 +353,13 @@ pub(crate) async fn test_group_delay(
 pub(crate) async fn reset_proxy_selection(app: AppHandle, group: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        let _op = state.proxy_op.lock().unwrap_or_else(|e| e.into_inner());
-        controller_client(&state)?.reset_proxy_selection(&group)?;
-        let _ = app.emit("proxy://selection-changed", ());
-        Ok(())
+        // 内核重启窗口内等控制接口就绪再重试（#666）。
+        crate::engine::flow::with_core_ready(&state, || {
+            let _op = state.proxy_op.lock().unwrap_or_else(|e| e.into_inner());
+            controller_client(&state)?.reset_proxy_selection(&group)?;
+            let _ = app.emit("proxy://selection-changed", ());
+            Ok(())
+        })
     })
     .await
     .map_err(|e| e.to_string())?
@@ -368,7 +371,11 @@ pub(crate) async fn select_proxy(
     name: String,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        select_proxy_inner(&app.state::<AppState>(), &group, &name)
+        let state = app.state::<AppState>();
+        // 内核重启窗口内等控制接口就绪再重试（#666）；真实错误立即返回。
+        crate::engine::flow::with_core_ready(&state, || {
+            crate::engine::flow::select_proxy_inner(&state, &group, &name)
+        })
     })
     .await
     .map_err(|e| e.to_string())?

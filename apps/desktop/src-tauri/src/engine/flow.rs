@@ -769,6 +769,74 @@ pub(crate) fn select_proxy_inner(state: &AppState, group: &str, name: &str) -> R
     Ok(())
 }
 
+/// 内核重启窗口：控制接口暂时不可达时，节点操作最多等待的时长（#666）。
+pub(crate) const CORE_READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+/// 前端据此把「内核重启中」渲染成提示，而不是失败通知（#666）。
+pub(crate) const CORE_RESTARTING_MARKER: &str = "core:restarting";
+
+/// 控制接口是否应答。走 127.0.0.1，不需要系统网络，因此内核重启期间
+/// （状态仍可能是 Running）也能分辨「还没起来」与「真的失败了」。
+pub(crate) fn controller_answers(state: &AppState) -> bool {
+    let Some((port, secret)) = state.core().controller() else {
+        return false;
+    };
+    ureq::AgentBuilder::new()
+        .try_proxy_from_env(false)
+        .redirects(0)
+        .timeout(std::time::Duration::from_millis(800))
+        .build()
+        .get(&format!("http://127.0.0.1:{port}/version"))
+        .set("Authorization", &format!("Bearer {secret}"))
+        .call()
+        .is_ok_and(|response| response.status() == 200)
+}
+
+/// 节点操作先执行；只有控制接口不可达（内核正在启动或重启）才等待就绪
+/// 后重试一次。节点名不存在、控制器返回 4xx 等真实错误立即返回，不吞掉。
+pub(crate) fn with_core_ready<T>(
+    state: &AppState,
+    op: impl Fn() -> Result<T, String>,
+) -> Result<T, String> {
+    use crate::engine::manager::CoreStatus;
+    let waitable = matches!(
+        state.core().status(),
+        CoreStatus::Starting | CoreStatus::Running
+    );
+    if !waitable {
+        return op();
+    }
+    retry_when_core_unready(
+        op,
+        || controller_answers(state),
+        CORE_READY_TIMEOUT,
+        std::time::Duration::from_millis(150),
+    )
+}
+
+/// 可测试的重试骨架：第一次失败且控制接口不可达时轮询等待，重新就绪后
+/// 重试一次；超时返回带 `CORE_RESTARTING_MARKER` 的错误。
+fn retry_when_core_unready<T>(
+    op: impl Fn() -> Result<T, String>,
+    ready: impl Fn() -> bool,
+    timeout: std::time::Duration,
+    step: std::time::Duration,
+) -> Result<T, String> {
+    match op() {
+        Ok(value) => Ok(value),
+        Err(first) if ready() => Err(first),
+        Err(first) => {
+            let started = std::time::Instant::now();
+            while started.elapsed() < timeout {
+                std::thread::sleep(step);
+                if ready() {
+                    return op();
+                }
+            }
+            Err(format!("{CORE_RESTARTING_MARKER}: {first}"))
+        }
+    }
+}
+
 // ---------- 设置命令 ----------
 
 #[derive(serde::Serialize)]
@@ -789,3 +857,79 @@ pub(crate) struct EngineView {
 // 同步命令会在主线程执行直接卡死整个 UI（实测 hang 1.07s 报告）。
 
 // ---------- 深链接 ----------
+
+#[cfg(test)]
+mod restart_window_tests {
+    use super::*;
+    use std::cell::Cell;
+    use std::time::Duration;
+
+    #[test]
+    fn fast_path_does_not_wait() {
+        let calls = Cell::new(0);
+        let out = retry_when_core_unready(
+            || {
+                calls.set(calls.get() + 1);
+                Ok::<u8, String>(7)
+            },
+            || false,
+            Duration::from_millis(50),
+            Duration::from_millis(1),
+        );
+        assert_eq!(out.unwrap(), 7);
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn real_error_is_not_swallowed() {
+        let calls = Cell::new(0);
+        let out = retry_when_core_unready(
+            || {
+                calls.set(calls.get() + 1);
+                Err::<(), String>("节点不存在".into())
+            },
+            || true,
+            Duration::from_millis(50),
+            Duration::from_millis(1),
+        );
+        assert_eq!(out.unwrap_err(), "节点不存在");
+        assert_eq!(calls.get(), 1, "真实错误不重试");
+    }
+
+    #[test]
+    fn waits_for_restarting_core_then_retries() {
+        let attempts = Cell::new(0);
+        let checks = Cell::new(0);
+        let out = retry_when_core_unready(
+            || {
+                attempts.set(attempts.get() + 1);
+                if attempts.get() == 1 {
+                    Err("Connection refused".into())
+                } else {
+                    Ok(())
+                }
+            },
+            || {
+                checks.set(checks.get() + 1);
+                checks.get() >= 3
+            },
+            Duration::from_millis(200),
+            Duration::from_millis(1),
+        );
+        assert!(out.is_ok(), "内核重新就绪后重试成功");
+        assert_eq!(attempts.get(), 2);
+    }
+
+    #[test]
+    fn timeout_reports_restarting_marker() {
+        let out = retry_when_core_unready(
+            || Err::<(), String>("Connection refused".into()),
+            || false,
+            Duration::from_millis(20),
+            Duration::from_millis(1),
+        );
+        let error = out.unwrap_err();
+        assert!(error.starts_with(CORE_RESTARTING_MARKER));
+        assert!(error.contains("Connection refused"));
+    }
+}
