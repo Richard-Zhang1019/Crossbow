@@ -121,9 +121,6 @@
   background: var(--cb-bad);
   box-shadow: var(--cb-shadow-status-bad);
 }
-.cb-dot.warn {
-  background: var(--cb-warn);
-}
 .cb-dot.idle {
   background: var(--cb-faint);
 }

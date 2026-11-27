@@ -459,26 +459,36 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
   // 内核 → 流量接管 → 出口节点。内核在跑但系统代理与 TUN 均未开启时，
   // 状态灯为琥珀色「待机」，并在旁侧提供一键开启入口。
   const standby = running && !routingEnabled && canControl && !explicitProxy;
-  const engineLabel =
-    engine === null
-      ? "—"
-      : engine.engine === "singbox"
-        ? "sing-box"
-        : "mihomo";
+  const engineName =
+    engine?.engine === "singbox" ? "sing-box" : engine ? "mihomo" : null;
+  // 链路语义下沉到连接路径（2026-11-27 用户建议）：接管是「这台电脑 → 内核」
+  // 这条边——流量如何进入内核；内核状态在中间卡；出口卡本就是节点。
+  // 内核在跑而系统代理与 TUN 均未开启时，这条边为琥珀色待机并提供一键开启。
+  const edgeKnown = canControl && known.has("proxy") && known.has("tun");
+  const edgeState = !edgeKnown
+    ? "idle"
+    : routingEnabled && !running
+      ? "bad"
+      : standby
+        ? "warn"
+        : routingEnabled
+          ? "ok"
+          : "idle";
   // explicit 平台（无系统代接管能力）没有「待机」概念：TUN 关时即手动接入
-  const takeoverLabel = tun.enabled
-    ? proxy.enabled
-      ? t("home.tunAndSysproxyOn")
-      : t("home.tunOn")
-    : explicitProxy
-      ? t("home.manualTakeover")
-      : proxy.enabled
-        ? t("home.sysproxy")
-        : t("home.linkStandby");
-  const nodeDelay =
-    outbound?.delay_ms != null && outbound.delay_ms > 0
-      ? `${outbound.delay_ms} ms`
-      : null;
+  const edgeLabel = !edgeKnown
+    ? t("home.statePending")
+    : routingEnabled && !running
+      ? t("home.takeoverCoreStopped")
+      : tun.enabled
+        ? proxy.enabled ? t("home.linkBothOn") : t("home.linkTun")
+        : proxy.enabled
+          ? t("home.sysproxy")
+          : explicitProxy
+            ? t("home.manualTakeover")
+            : standby ? t("home.linkStandby") : t("home.takeoverOff");
+  const coreSub = known.has("core")
+    ? engineName ? `${coreText(t, core)} · ${engineName}` : coreText(t, core)
+    : t("home.statePending");
 
   const statusTitle = !canControl
     ? t(readErrors.size ? "home.stateReadFailed" : "home.statePending")
@@ -520,54 +530,6 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
       <div className="cb-home-layout">
         <section className="cb-home-main">
           <div className="cb-home-lead">
-            <div
-              className="cb-link-status"
-              data-standby={standby || undefined}
-              role="status"
-            >
-              <div className="cb-link-seg">
-                <span className="cb-link-label">{t("home.core")}</span>
-                <strong>
-                  <i
-                    aria-hidden="true"
-                    className={`cb-dot ${core.state === "Crashed" || (routingEnabled && !running) ? "bad" : standby ? "warn" : running ? "ok" : "idle"}`}
-                  />
-                  {known.has("core") ? coreText(t, core) : t("home.statePending")}
-                  <span className="cb-link-detail"> · {engineLabel}</span>
-                </strong>
-              </div>
-              <span className="cb-link-sep" aria-hidden="true">→</span>
-              <div className="cb-link-seg" data-standby={standby || undefined}>
-                <span className="cb-link-label">{t("home.linkTakeover")}</span>
-                <strong>
-                  {!canControl || !known.has("proxy") || !known.has("tun")
-                    ? t("home.statePending")
-                    : takeoverLabel}
-                </strong>
-                {standby && (
-                  <Button
-                    size="small"
-                    disabled={busy || core.state === "Starting" || !active}
-                    onClick={() => void toggleProxy()}
-                  >
-                    {t("home.linkEnable")}
-                  </Button>
-                )}
-              </div>
-              <span className="cb-link-sep" aria-hidden="true">→</span>
-              <div className="cb-link-seg">
-                <span className="cb-link-label">{t("home.outbound")}</span>
-                <strong>
-                  {running && outbound?.node
-                    ? <>
-                        <NodeName name={outbound.node} />
-                        {nodeDelay && <span className="cb-link-detail"> · {nodeDelay}</span>}
-                      </>
-                    : "—"}
-                </strong>
-              </div>
-              <span className="cb-home-mode">{known.has("mode") ? t(`mode.${mode}`) : "—"}</span>
-            </div>
             <h2>{statusTitle}</h2>
             {(readErrors.size > 0 || !setupStep && (!canControl || !active || !running || !routingEnabled || explicitOnly)) &&
               <p role={readErrors.size ? "status" : undefined}>{statusHint}</p>}
@@ -619,10 +581,22 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
                     ? "Windows"
                     : navigator.userAgent.includes("Macintosh") ? "macOS" : "Linux"}
                 </small>
+                {(edgeState === "warn" || edgeState === "bad") &&
+                  <small className="cb-route-takeover" data-state={edgeState}>{edgeLabel}</small>}
+                {standby && (
+                  <Button
+                    size="small"
+                    disabled={busy || core.state === "Starting" || !active}
+                    onClick={() => void toggleProxy()}
+                  >
+                    {t("home.linkEnable")}
+                  </Button>
+                )}
               </div>
               <span
-                className="cb-route-line"
+                className="cb-route-line cb-route-line-a"
                 data-route-segment
+                data-state={edgeState}
                 aria-hidden="true"
               />
               <div>
@@ -630,18 +604,24 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
                   <Icon name="sliders" size={32} />
                 </span>
                 <b>
-                  {t(
-                    mode === "direct"
-                      ? "studio.directRouting"
-                      : mode === "global"
-                        ? "studio.globalRouting"
-                        : "studio.routing",
-                  )}
+                  <i
+                    aria-hidden="true"
+                    className={`cb-dot ${core.state === "Crashed" ? "bad" : running ? "ok" : "idle"}`}
+                  />
+                  <span className="cb-route-title">
+                    {t(
+                      mode === "direct"
+                        ? "studio.directRouting"
+                        : mode === "global"
+                          ? "studio.globalRouting"
+                          : "studio.routing",
+                    )}
+                  </span>
                 </b>
-                <small>{t(`mode.${mode}`)}</small>
+                <small>{coreSub}</small>
               </div>
               <span
-                className="cb-route-line"
+                className="cb-route-line cb-route-line-b"
                 data-route-segment
                 aria-hidden="true"
               />

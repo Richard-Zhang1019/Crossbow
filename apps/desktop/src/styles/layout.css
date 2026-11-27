@@ -317,50 +317,6 @@ summary:focus-visible {
   min-width: 0;
   min-height: 0;
 }
-/* 三段式实时链路条：内核 → 流量接管 → 出口节点（待机时接管段琥珀色） */
-.cb-link-status {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--cb-space-12);
-  min-width: 0;
-  color: var(--cb-text-dim);
-  font-size: var(--cb-type-secondary);
-  line-height: var(--cb-leading-18-px);
-}
-.cb-link-seg {
-  display: flex;
-  align-items: center;
-  gap: var(--cb-space-8);
-  min-width: 0;
-}
-.cb-link-seg strong {
-  display: flex;
-  align-items: center;
-  gap: var(--cb-space-8);
-  min-width: 0;
-  overflow-wrap: anywhere;
-  font-weight: var(--cb-weight-medium);
-}
-.cb-link-seg[data-standby] strong {
-  color: var(--cb-warn);
-}
-.cb-link-label,
-.cb-link-detail,
-.cb-link-sep {
-  flex: none;
-  color: var(--cb-faint);
-  font-size: var(--cb-type-caption);
-}
-.cb-link-detail {
-  font-weight: var(--cb-weight-regular);
-}
-.cb-home-mode {
-  flex: none;
-  border-left: var(--cb-stroke-1) solid var(--cb-line);
-  padding-left: var(--cb-space-12);
-  font-size: var(--cb-type-caption);
-}
 .cb-home-lead h2 {
   font-size: var(--cb-type-page);
   line-height: var(--cb-leading-1_3);
@@ -456,13 +412,26 @@ summary:focus-visible {
   margin-bottom: var(--cb-space-6);
 }
 .cb-route-flow b {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cb-space-6);
   max-width: 100%;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  min-width: 0;
   font-size: var(--cb-type-body);
   line-height: var(--cb-leading-20-px);
   font-weight: var(--cb-weight-emphasis);
+}
+.cb-route-flow b > * {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.cb-route-flow b .cb-dot {
+  flex: none;
+  min-width: 0;
+  overflow: visible;
 }
 .cb-route-flow small {
   font-size: var(--cb-type-secondary);
@@ -477,11 +446,34 @@ summary:focus-visible {
   width: calc(35.294118% - 58px);
   background: var(--cb-line-strong);
 }
-.cb-route-line:nth-child(2) {
+.cb-route-line-a {
   left: calc(14.705882% + 29px);
 }
-.cb-route-line:nth-child(4) {
+.cb-route-line-b {
   left: calc(50% + 29px);
+}
+/* 第一卡的接管副行：琥珀=待机，红=接管开着但内核停了 */
+.cb-route-takeover {
+  color: var(--cb-text-dim);
+}
+.cb-route-takeover[data-state="warn"] {
+  color: var(--cb-warn);
+  font-weight: var(--cb-weight-medium);
+}
+.cb-route-takeover[data-state="bad"] {
+  color: var(--cb-bad);
+}
+.cb-route-line[data-state="warn"] {
+  background: var(--cb-warn);
+}
+.cb-route-line[data-state="warn"]::after {
+  border-color: var(--cb-warn);
+}
+.cb-route-line[data-state="bad"] {
+  background: var(--cb-bad);
+}
+.cb-route-line[data-state="bad"]::after {
+  border-color: var(--cb-bad);
 }
 .cb-route-line::after {
   content: "";
