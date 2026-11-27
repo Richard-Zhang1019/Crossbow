@@ -455,6 +455,31 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
   const proxyOn = explicitProxy ? core.state === "Running" : proxy.enabled;
   // 标题与副标题同源（core.state）：tun.coreRunning 独立取数，曾在重启
   // 竞态下与副标题各说各话（#111）
+  // #666 验收反馈的三段式链路状态（暗唤醒无网/节点抖动时，运行中 ≠ 能上网）：
+  // 内核 → 流量接管 → 出口节点。内核在跑但系统代理与 TUN 均未开启时，
+  // 状态灯为琥珀色「待机」，并在旁侧提供一键开启入口。
+  const standby = running && !routingEnabled && canControl && !explicitProxy;
+  const engineLabel =
+    engine === null
+      ? "—"
+      : engine.engine === "singbox"
+        ? "sing-box"
+        : "mihomo";
+  // explicit 平台（无系统代接管能力）没有「待机」概念：TUN 关时即手动接入
+  const takeoverLabel = tun.enabled
+    ? proxy.enabled
+      ? t("home.tunAndSysproxyOn")
+      : t("home.tunOn")
+    : explicitProxy
+      ? t("home.manualTakeover")
+      : proxy.enabled
+        ? t("home.sysproxy")
+        : t("home.linkStandby");
+  const nodeDelay =
+    outbound?.delay_ms != null && outbound.delay_ms > 0
+      ? `${outbound.delay_ms} ms`
+      : null;
+
   const statusTitle = !canControl
     ? t(readErrors.size ? "home.stateReadFailed" : "home.statePending")
     : core.state === "Starting"
@@ -495,12 +520,51 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
       <div className="cb-home-layout">
         <section className="cb-home-main">
           <div className="cb-home-lead">
-            <div className="cb-home-status">
-              <div className="cb-status-line">
-                <i
-                  className={`cb-dot ${core.state === "Crashed" || (routingEnabled && !running) ? "bad" : running ? "ok" : "idle"}`}
-                />
-                {known.has("core") ? coreText(t, core) : t("home.statePending")}
+            <div
+              className="cb-link-status"
+              data-standby={standby || undefined}
+              role="status"
+            >
+              <div className="cb-link-seg">
+                <span className="cb-link-label">{t("home.core")}</span>
+                <strong>
+                  <i
+                    aria-hidden="true"
+                    className={`cb-dot ${core.state === "Crashed" || (routingEnabled && !running) ? "bad" : standby ? "warn" : running ? "ok" : "idle"}`}
+                  />
+                  {known.has("core") ? coreText(t, core) : t("home.statePending")}
+                  <span className="cb-link-detail"> · {engineLabel}</span>
+                </strong>
+              </div>
+              <span className="cb-link-sep" aria-hidden="true">→</span>
+              <div className="cb-link-seg" data-standby={standby || undefined}>
+                <span className="cb-link-label">{t("home.linkTakeover")}</span>
+                <strong>
+                  {!canControl || !known.has("proxy") || !known.has("tun")
+                    ? t("home.statePending")
+                    : takeoverLabel}
+                </strong>
+                {standby && (
+                  <Button
+                    size="small"
+                    disabled={busy || core.state === "Starting" || !active}
+                    onClick={() => void toggleProxy()}
+                  >
+                    {t("home.linkEnable")}
+                  </Button>
+                )}
+              </div>
+              <span className="cb-link-sep" aria-hidden="true">→</span>
+              <div className="cb-link-seg">
+                <span className="cb-link-label">{t("home.outbound")}</span>
+                <strong>
+                  {running && outbound?.node
+                    ? <>
+                        <NodeName name={outbound.node} />
+                        {nodeDelay && <span className="cb-link-detail"> · {nodeDelay}</span>}
+                      </>
+                    : "—"}
+                </strong>
               </div>
               <span className="cb-home-mode">{known.has("mode") ? t(`mode.${mode}`) : "—"}</span>
             </div>

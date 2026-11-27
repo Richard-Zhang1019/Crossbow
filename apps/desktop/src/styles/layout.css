@@ -317,21 +317,43 @@ summary:focus-visible {
   min-width: 0;
   min-height: 0;
 }
-.cb-home-status,
-.cb-status-line {
+/* 三段式实时链路条：内核 → 流量接管 → 出口节点（待机时接管段琥珀色） */
+.cb-link-status {
   display: flex;
   align-items: center;
-  gap: var(--cb-space-8);
+  flex-wrap: wrap;
+  gap: var(--cb-space-12);
   min-width: 0;
   color: var(--cb-text-dim);
   font-size: var(--cb-type-secondary);
   line-height: var(--cb-leading-18-px);
 }
-.cb-home-status {
-  gap: var(--cb-space-12);
+.cb-link-seg {
+  display: flex;
+  align-items: center;
+  gap: var(--cb-space-8);
+  min-width: 0;
 }
-.cb-status-line {
+.cb-link-seg strong {
+  display: flex;
+  align-items: center;
+  gap: var(--cb-space-8);
+  min-width: 0;
   overflow-wrap: anywhere;
+  font-weight: var(--cb-weight-medium);
+}
+.cb-link-seg[data-standby] strong {
+  color: var(--cb-warn);
+}
+.cb-link-label,
+.cb-link-detail,
+.cb-link-sep {
+  flex: none;
+  color: var(--cb-faint);
+  font-size: var(--cb-type-caption);
+}
+.cb-link-detail {
+  font-weight: var(--cb-weight-regular);
 }
 .cb-home-mode {
   flex: none;
