@@ -142,6 +142,7 @@ jobs:
           node scripts/dev/verify-node-quality.mjs
           node scripts/dev/verify-custom-groups.mjs
           node scripts/dev/verify-import-notification.mjs
+          node scripts/dev/verify-core-restart-hint.mjs
           node scripts/dev/verify-node-probes.mjs
       - uses: actions/upload-artifact@v7
         if: failure() && steps.desktop-scenarios.outcome == 'failure'
@@ -218,6 +219,7 @@ jobs:
           node scripts/dev/verify-node-quality.mjs
           node scripts/dev/verify-custom-groups.mjs
           node scripts/dev/verify-import-notification.mjs
+          node scripts/dev/verify-core-restart-hint.mjs
           node scripts/dev/verify-node-probes.mjs
       - uses: actions/upload-artifact@v7
         if: failure() && steps.desktop-scenarios.outcome == 'failure'

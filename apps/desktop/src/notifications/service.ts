@@ -1,6 +1,7 @@
 import { notificationDestination } from "@/lib/workflow";
 import { invoke } from "@tauri-apps/api/core";
 import { currentLang } from "@/i18n/i18n";
+import { isCoreRestartingError } from "./restart";
 
 export type NotificationKind =
   | "success"
@@ -301,6 +302,16 @@ export interface TaskFeedback {
   nextActions?: NotificationAction[];
 }
 let attempt = 0;
+
+/** 由内核重启窗口产生的提示来源；内核就绪后统一标记为已恢复（#666）。 */
+const restartHints = new Set<string>();
+
+export async function resolveRestartHints(): Promise<void> {
+  const sources = [...restartHints];
+  restartHints.clear();
+  await Promise.all(sources.map((source) => notify.resolve(source)));
+}
+
 export const notify = {
   resolve(source: string) {
     return enqueue(source, () => invoke("notification_resolve", { source }));
@@ -383,6 +394,17 @@ export const notify = {
       return { ok: true, value };
     } catch (error) {
       window.clearTimeout(timer);
+      if (isCoreRestartingError(error)) {
+        // 内核重启窗口：只提示，不进待处理；就绪后自动标记为已恢复（#666）。
+        restartHints.add(source);
+        await publish({
+          ...metadata,
+          kind: "info",
+          title: options.titleKey ? "" : title,
+          description: notificationText("core.restarting"),
+        });
+        return { ok: false };
+      }
       await publish({
         ...metadata,
         kind: "error",
