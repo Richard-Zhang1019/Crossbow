@@ -490,8 +490,6 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
     ? engineName ? `${coreTextShort(t, core)} · ${engineName}` : coreTextShort(t, core)
     : t("home.statePending");
 
-  // 崩溃详情横幅：完整错误（含修复指引）只在这里全文呈现
-  const [errorExpanded, setErrorExpanded] = useState(false);
   const statusTitle = !canControl
     ? t(readErrors.size ? "home.stateReadFailed" : "home.statePending")
     : core.state === "Starting"
@@ -535,21 +533,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
             <h2>{statusTitle}</h2>
             {(readErrors.size > 0 || !setupStep && (!canControl || !active || !running || !routingEnabled || explicitOnly)) &&
               <p role={readErrors.size ? "status" : undefined}>{statusHint}</p>}
-            {core.state === "Crashed" && core.message && !readErrors.has("core") && (
-              <div className="cb-core-error" role="alert">
-                <Icon name="warning" size={15} />
-                <p className="cb-core-error-text" data-expanded={errorExpanded || undefined}>{core.message}</p>
-                {core.message.length > 96 && (
-                  <ButtonBase
-                    className="cb-core-error-toggle"
-                    onClick={() => setErrorExpanded(v => !v)}
-                  >
-                    {t(errorExpanded ? "home.coreErrorCollapse" : "home.coreErrorExpand")}
-                  </ButtonBase>
-                )}
-              </div>
-            )}
-            {readErrors.size > 0 && <Button size="small" onClick={() => void refresh()}>{t("home.retryState")}</Button>}
+  const statusTitle = !canControl            {readErrors.size > 0 && <Button size="small" onClick={() => void refresh()}>{t("home.retryState")}</Button>}
             {setupStep === "import" && <div className="cb-home-import">
               <Button variant="primary" size="small" onClick={() => navigateTo({ page: "profiles", control: "cb-import-profile" })}>
                 <Icon name="download" size={13} />
