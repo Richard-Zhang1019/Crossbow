@@ -530,10 +530,24 @@ fn core_answers(state: &AppState) -> bool {
     })
 }
 
-/// 决策日志里的进程标识。
-#[cfg(target_os = "macos")]
+/// 决策日志里的进程标识（sysproxy 分支在其他平台也会记录）。
 fn pid_label(pid: Option<u32>) -> String {
     pid.map(|pid| pid.to_string()).unwrap_or_else(|| "-".into())
+}
+
+/// TUN 探测错误的粗分类（#663）：日志不只要记录失败，还要能区分超时、
+/// 连接被拒与 DNS 失败。保持纯函数，便于单测。
+fn probe_failure_class(error: &str) -> &'static str {
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("timed out") || lower.contains("timeout") {
+        "timeout"
+    } else if lower.contains("refused") {
+        "refused"
+    } else if lower.contains("dns") || lower.contains("resolve") || lower.contains("lookup") {
+        "dns"
+    } else {
+        "other"
+    }
 }
 
 /// 隧道探测连续失败达到预算、内核仍在运行时的故障分层（#661/#662）。
@@ -994,6 +1008,16 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                                 "tun health check failed ({failures}/{}): {error}",
                                 timing::FAILURE_BUDGET
                             );
+                            // #663：每次失败都写入决策日志（分类 + 截断错误）；
+                            // 稳定期内的预期失败不写，避免热开 TUN 时刷屏。
+                            if !in_grace {
+                                state.core().log_decision(&format!(
+                                    "tun health: probe failed ({failures}/{}): class={} {}",
+                                    timing::FAILURE_BUDGET,
+                                    probe_failure_class(&error),
+                                    error.chars().take(200).collect::<String>()
+                                ));
+                            }
                             if failures >= timing::FAILURE_BUDGET {
                                 failures = 0;
                                 // 内核仍在运行时先定位故障层（#661/#662）：系统没有
@@ -1742,6 +1766,17 @@ pub(crate) fn refresh_tray(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn probe_failures_are_classified_for_the_decision_log() {
+        assert_eq!(probe_failure_class("Network Error: timed out"), "timeout");
+        assert_eq!(
+            probe_failure_class("Connection refused (os error 61)"),
+            "refused"
+        );
+        assert_eq!(probe_failure_class("failed to resolve dns name"), "dns");
+        assert_eq!(probe_failure_class("unexpected"), "other");
+    }
 
     #[test]
     fn batch_budget_covers_two_requests_but_stays_inside_visible_lifetime() {
