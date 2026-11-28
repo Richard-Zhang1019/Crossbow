@@ -1562,23 +1562,20 @@ pub(crate) fn tray_menu_entries(
     let tun_item = Entry::action("toggle-tun", tun_label, true);
 
     let mode = state.mode.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    let mode_label = format!(
-        "{}：{}",
-        tr(&lang, "模式", "Mode"),
-        tr(
-            &lang,
-            match mode.as_str() {
-                "direct" => "直连",
-                "global" => "全局",
-                _ => "规则",
-            },
-            match mode.as_str() {
-                "direct" => "Direct",
-                "global" => "Global",
-                _ => "Rule",
-            }
-        )
+    let mode_text = tr(
+        &lang,
+        match mode.as_str() {
+            "direct" => "直连",
+            "global" => "全局",
+            _ => "规则",
+        },
+        match mode.as_str() {
+            "direct" => "Direct",
+            "global" => "Global",
+            _ => "Rule",
+        },
     );
+    let mode_label = format!("{}：{}", tr(&lang, "模式", "Mode"), mode_text);
     let mode_menu = Entry::Submenu(
         mode_label,
         vec![
@@ -1610,6 +1607,32 @@ pub(crate) fn tray_menu_entries(
     );
 
     let mut entries = vec![proxy];
+    // 外部评审建议（2026-11-27 第 4 条）：顶部直接标出当前接管模式，
+    // 一行看清「分流模式 · 接管通道」，无需展开任何子菜单。
+    #[cfg(target_os = "macos")]
+    {
+        let takeover_text = if tun_enabled {
+            if sp.enabled {
+                tr(&lang, "系统代理 + TUN", "System proxy + TUN")
+            } else {
+                tr(&lang, "TUN", "TUN")
+            }
+        } else if sp.enabled {
+            if platform::capabilities().system_proxy {
+                format!("{} :{}", tr(&lang, "系统代理", "System proxy"), sp.port)
+            } else {
+                tr(&lang, "手动接入", "Manual setup")
+            }
+        } else {
+            tr(&lang, "未接管", "Not taking over")
+        };
+        entries.push(Entry::action(
+            "tray-status",
+            format!("{} · {}", mode_text, takeover_text),
+            false,
+        ));
+        entries.push(Entry::Separator);
+    }
     #[cfg(target_os = "macos")]
     entries.push(tun_item);
     entries.extend([Entry::Separator, mode_menu]);
