@@ -745,32 +745,8 @@ impl CoreManager {
         };
         let try_bind = || check_mixed_port_available(address);
         if wait_for_mixed_port(&try_bind, Duration::from_secs(5)).is_err() {
-            // 候选：当前内核 + 应用包内内核 + 数据目录内核 + tun-binaries 各版本副本
-            // （实测踩坑：测试用 bundle 内核占端口时，仅 tun-binaries 候选会漏匹配）
-            let mut candidates: Vec<PathBuf> = vec![self.shared.binary_path.clone()];
-            if let Ok(exe) = std::env::current_exe() {
-                if let Some(dir) = exe.parent() {
-                    for name in ["mihomo", "sing-box"] {
-                        candidates.push(dir.join(crate::engine::download::core_bin_file(name)));
-                    }
-                }
-            }
-            if let Some(data_dir) = self.shared.work_dir.parent() {
-                let tb = data_dir.join("tun-binaries");
-                if let Ok(versions) = std::fs::read_dir(&tb) {
-                    for v in versions.flatten() {
-                        for name in ["mihomo", "sing-box"] {
-                            candidates
-                                .push(v.path().join(crate::engine::download::core_bin_file(name)));
-                        }
-                    }
-                }
-                for name in ["mihomo", "sing-box"] {
-                    candidates.push(data_dir.join(crate::engine::download::core_bin_file(name)));
-                }
-            }
-            candidates.sort();
-            candidates.dedup();
+            let candidates =
+                core_binary_candidates(&self.shared.binary_path, &self.shared.work_dir);
             let mut note = String::new();
             let mut stop_failed = false;
             for (pid, path) in find_leftover_core_pids(&candidates) {
@@ -1673,6 +1649,47 @@ impl CoreDescriptor {
     }
 }
 
+/// 内核进程识别候选：当前内核 + 应用包内内核 + 数据目录内核 + tun-binaries
+/// 各版本副本（实测踩坑：测试用 bundle 内核占端口时，仅 tun-binaries 候选会
+/// 漏匹配）。端口占用预检与 geo 文件占用清理共用。
+fn core_binary_candidates(binary_path: &Path, work_dir: &Path) -> Vec<PathBuf> {
+    let mut candidates: Vec<PathBuf> = vec![binary_path.to_path_buf()];
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            for name in ["mihomo", "sing-box"] {
+                candidates.push(dir.join(crate::engine::download::core_bin_file(name)));
+            }
+        }
+    }
+    if let Some(data_dir) = work_dir.parent() {
+        let tb = data_dir.join("tun-binaries");
+        if let Ok(versions) = std::fs::read_dir(&tb) {
+            for v in versions.flatten() {
+                for name in ["mihomo", "sing-box"] {
+                    candidates.push(v.path().join(crate::engine::download::core_bin_file(name)));
+                }
+            }
+        }
+        for name in ["mihomo", "sing-box"] {
+            candidates.push(data_dir.join(crate::engine::download::core_bin_file(name)));
+        }
+    }
+    candidates.sort();
+    candidates.dedup();
+    candidates
+}
+
+/// 清理可能持有 geo 数据文件句柄的本应用残留内核，返回清理数。
+/// Windows 上运行中的内核以独占方式持有 geoip.metadb，rename 覆盖会报
+/// ACCESS_DENIED（os error 5）——先清残留再重试（#676）。
+fn kill_geo_file_holders(binary_path: &Path, work_dir: &Path) -> usize {
+    let candidates = core_binary_candidates(binary_path, work_dir);
+    find_leftover_core_pids(&candidates)
+        .into_iter()
+        .filter(|(pid, path)| kill_external_checked(*pid, Some(path), Some(work_dir)))
+        .count()
+}
+
 /// 枚举可执行路径与任一候选完全一致的进程（识别本应用残留内核，
 /// 避免误伤系统里无关的 mihomo/sing-box）。非 macOS 平台返回空——
 /// Windows/Linux 的进程路径枚举在各自移植时补齐。
@@ -2192,7 +2209,7 @@ fn watch(shared: Arc<Shared>, pid: u32, port: u16, secret: String) {
     // 直连 GitHub 下载在国内网络极易超时，且被旧版就绪窗口误杀形成
     // 「半截文件」死循环）。
     if opts.ensure_geo_files {
-        if let Err(e) = ensure_geo_files(&shared.work_dir) {
+        if let Err(e) = ensure_geo_files(&shared.work_dir, &shared.binary_path) {
             shared.kill_child();
             shared.notify(CoreStatus::Crashed(format!("GeoIP 数据库准备失败：{e}")));
             return;
@@ -2420,8 +2437,14 @@ pub const GEO_FILES: &[(&str, bool, u64, &[&str])] = &[
 ];
 
 /// 确保内核工作目录里有可用的 geo 数据文件；缺失/过小时逐镜像下载。
-fn ensure_geo_files(work_dir: &std::path::Path) -> Result<(), String> {
-    ensure_geo_files_with(work_dir, GEO_FILES, download_to)
+fn ensure_geo_files(
+    work_dir: &std::path::Path,
+    binary_path: &std::path::Path,
+) -> Result<(), String> {
+    let kill = || kill_geo_file_holders(binary_path, work_dir);
+    ensure_geo_files_with(work_dir, GEO_FILES, |name: &str, dest: &std::path::Path| {
+        download_to(name, dest, &kill)
+    })
 }
 
 fn ensure_geo_files_with(
@@ -2488,13 +2511,72 @@ fn geo_file_ok(name: &str, path: &std::path::Path, min_bytes: u64) -> bool {
 }
 
 /// 依次尝试 GeoFiles 里该文件的镜像源；下载后做健全性检查（大小 + metadb 尾部标志）。
-fn download_to(name: &str, dest: &std::path::Path) -> Result<(), String> {
+/// 把下载完成的 .part 安装到目标位。Windows 上目标被其他进程打开时
+/// rename 报 ACCESS_DENIED（os error 5）——常见持有者：上次会话残留的
+/// 内核进程（运行中的内核持有 geo 句柄）或杀毒软件实时扫描。识别到
+/// 占用即清理残留内核并带退避重试；持续失败给出可操作的分类文案（#676）。
+fn install_geo_file(
+    tmp: &std::path::Path,
+    dest: &std::path::Path,
+    kill_leftovers: &dyn Fn() -> usize,
+) -> Result<(), String> {
+    install_geo_file_with(dest, kill_leftovers, &|| {
+        std::fs::rename(tmp, dest).map_err(|e| (e, 700u64))
+    })
+}
+
+/// 注入 rename 与退避时钟的安装内核：`rename_fn` 返回 (io::Error, 建议退避毫秒)。
+fn install_geo_file_with(
+    dest: &std::path::Path,
+    kill_leftovers: &dyn Fn() -> usize,
+    rename: &dyn Fn() -> Result<(), (std::io::Error, u64)>,
+) -> Result<(), String> {
+    fn access_denied(e: &std::io::Error) -> bool {
+        e.kind() == std::io::ErrorKind::PermissionDenied
+            || e.raw_os_error().is_some_and(|code| code == 5)
+    }
+    let attempts = 3;
+    let mut last: Option<std::io::Error> = None;
+    for attempt in 0..attempts {
+        match rename() {
+            Ok(()) => return Ok(()),
+            Err((e, backoff_ms)) if access_denied(&e) => {
+                let killed = kill_leftovers();
+                append_core_log(
+                    dest.parent().unwrap_or(std::path::Path::new(".")),
+                    &format!(
+                        "geo file occupied (attempt {}/{}): killed {} leftover core(s)",
+                        attempt + 1,
+                        attempts,
+                        killed
+                    ),
+                );
+                last = Some(e);
+                if attempt + 1 < attempts {
+                    // 杀软/句柄释放是瞬态的：给一个短退避窗口
+                    std::thread::sleep(Duration::from_millis(backoff_ms.max(1)));
+                }
+            }
+            Err((e, _)) => return Err(e.to_string()),
+        }
+    }
+    let e = last.expect("retry loop exhausted without an error");
+    Err(format!(
+        "文件被其他程序占用（可能有残留的内核进程或杀毒软件正在扫描）：{e}"
+    ))
+}
+
+fn download_to(
+    name: &str,
+    dest: &std::path::Path,
+    kill_leftovers: &dyn Fn() -> usize,
+) -> Result<(), String> {
     let (urls, min_bytes) = GEO_FILES
         .iter()
         .find(|(n, _, _, _)| *n == name)
         .map(|(_, _, min, urls)| (*urls, *min))
         .ok_or_else(|| format!("unknown geo file {name}"))?;
-    fetch_first_ok(name, urls, dest, min_bytes)
+    fetch_first_ok(name, urls, dest, min_bytes, kill_leftovers)
 }
 
 /// 依次尝试镜像源下载；下载后做最小健全性检查（大小下限；metadb 另查文件头）。
@@ -2503,6 +2585,7 @@ fn fetch_first_ok(
     urls: &[&str],
     dest: &std::path::Path,
     min_bytes: u64,
+    kill_leftovers: &dyn Fn() -> usize,
 ) -> Result<(), String> {
     let agent = ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(90))
@@ -2534,7 +2617,7 @@ fn fetch_first_ok(
                     let _ = std::fs::remove_file(&tmp);
                     continue;
                 }
-                std::fs::rename(&tmp, dest).map_err(|e| e.to_string())?;
+                install_geo_file(&tmp, dest, kill_leftovers)?;
                 append_core_log(
                     dest.parent().unwrap_or(std::path::Path::new(".")),
                     &format!(
@@ -3170,6 +3253,77 @@ pub(crate) mod tests {
         // 过小直接拒
         std::fs::write(&p, vec![0u8; 1000]).unwrap();
         assert!(!geo_file_ok("geoip.metadb", &p, 4_000_000));
+    }
+
+    #[test]
+    fn install_geo_file_retries_then_succeeds_after_cleanup() {
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path().join("geoip.metadb.part");
+        let dest = dir.path().join("geoip.metadb");
+        std::fs::write(&tmp, b"data").unwrap();
+        let kills = std::cell::Cell::new(0);
+        let attempts = std::cell::Cell::new(0);
+        // 第一次 rename 撞占用（os error 5），清理后第二次成功
+        let result = install_geo_file_with(
+            &dest,
+            &|| {
+                kills.set(kills.get() + 1);
+                kills.get()
+            },
+            &|| {
+                attempts.set(attempts.get() + 1);
+                if attempts.get() == 1 {
+                    Err((std::io::Error::from_raw_os_error(5), 0))
+                } else {
+                    std::fs::rename(&tmp, &dest).map_err(|e| (e, 0))
+                }
+            },
+        );
+        assert!(result.is_ok());
+        assert_eq!(kills.get(), 1);
+        assert!(dest.exists());
+    }
+
+    #[test]
+    fn install_geo_file_classifies_persistent_occupancy() {
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path().join("geoip.metadb.part");
+        std::fs::write(&tmp, b"data").unwrap();
+        let dest = dir.path().join("geoip.metadb");
+        let kills = std::cell::Cell::new(0);
+        let result = install_geo_file_with(
+            &dest,
+            &|| {
+                kills.set(kills.get() + 1);
+                0
+            },
+            &|| Err((std::io::Error::from_raw_os_error(5), 0)),
+        );
+        let message = result.unwrap_err();
+        assert!(message.contains("文件被其他程序占用"), "{message}");
+        assert!(message.contains("os error 5"), "{message}");
+        assert_eq!(kills.get(), 3, "每次重试前都应尝试清理残留内核");
+    }
+
+    #[test]
+    fn install_geo_file_non_denied_errors_fail_fast() {
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path().join("geoip.metadb.part");
+        std::fs::write(&tmp, b"data").unwrap();
+        let dest = dir.path().join("geoip.metadb");
+        let kills = std::cell::Cell::new(0);
+        // 非 os error 5（如跨盘移动 EXDEV）不重试、不清理，立即失败
+        let result = install_geo_file_with(
+            &dest,
+            &|| {
+                kills.set(kills.get() + 1);
+                0
+            },
+            &|| Err((std::io::Error::from_raw_os_error(18), 0)),
+        );
+        assert!(result.is_err());
+        assert!(!result.unwrap_err().contains("文件被其他程序占用"));
+        assert_eq!(kills.get(), 0);
     }
 
     #[test]
