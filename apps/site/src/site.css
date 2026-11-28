@@ -96,11 +96,18 @@ main:focus { outline: none; }
 .hero-intro p { max-width: 840px; margin-inline: auto; margin-top: 28px; color: var(--dim); font-size: 16px; line-height: 1.8; }
 .mobile-break { display: none; }
 /* 首屏真实界面截图：随站点评级联动切换深浅版本 */
-.hero-shot { width: min(1000px, 100%); margin: 80px auto 48px; border: 1px solid var(--line-strong); border-radius: 12px; overflow: hidden; background: var(--surface); box-shadow: 0 24px 64px color-mix(in srgb, var(--accent) 16%, transparent); }
+.hero-shot { width: min(1000px, 100%); margin: 56px auto 48px; border: 1px solid var(--line-strong); border-radius: 12px; overflow: hidden; background: var(--surface); box-shadow: 0 24px 64px color-mix(in srgb, var(--accent) 16%, transparent); }
 .hero-shot img { display: block; width: 100%; height: auto; }
 [data-theme="light"] .hero-shot img.shot-dark { display: none; }
 [data-theme="dark"] .hero-shot img.shot-light { display: none; }
 @media (max-width: 1000px) { .hero-shot { margin-block: 56px 44px; border-radius: 10px; } }
+/* 首屏主 CTA：主按钮 + 次按钮 + 开源小字 */
+.hero-cta { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 14px; margin-top: 36px; }
+.secondary-button { display: inline-flex; align-items: center; justify-content: center; gap: 16px; min-height: 48px; padding: 12px 24px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); font-weight: 500; font-size: 16px; transition: background .2s var(--ease), border-color .2s var(--ease); }
+@media (hover:hover) and (pointer:fine) {
+  .secondary-button:hover { background: var(--surface-2); border-color: var(--accent); }
+}
+.hero-cta-note { margin-top: 16px; color: var(--dim); font-size: 13px; }
 .hero-action { text-align: center; }
 .primary-button, .btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 16px; min-height: 48px; padding: 12px 24px; border-radius: 8px; background: var(--button); color: var(--on-button); font-weight: 500; font-size: 16px; transition: background .2s var(--ease), transform .12s var(--ease); }
 .hero-action p { color: var(--dim); font-size: 12px; margin-top: 16px; }
@@ -110,6 +117,16 @@ main:focus { outline: none; }
 .section-heading p { color: var(--dim); font-size: 16px; margin-top: 16px; }
 .feature-grid, .steps-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 20px; }
 .feature-card, .step-card { padding: 32px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+/* 功能区层级：3 张大卡（主价值）+ 3 张紧凑小卡 */
+.feature-grid-compact { margin-top: 20px; }
+.feature-card-lead { padding: 36px 32px; }
+.feature-card-lead .feature-icon { width: 30px; height: 30px; margin-bottom: 24px; }
+.feature-card-lead h3 { font-size: 22px; }
+.feature-card-lead p { font-size: 15px; }
+.feature-card-compact { display: flex; align-items: flex-start; gap: 14px; padding: 22px 24px; }
+.feature-card-compact .feature-icon { width: 20px; height: 20px; margin: 3px 0 0; flex: none; }
+.feature-card-compact h3 { font-size: 15px; letter-spacing: 0; }
+.feature-card-compact p { margin-top: 6px; font-size: 13px; line-height: 1.7; }
 .feature-icon { color: var(--accent); width: 28px; height: 28px; margin-bottom: 28px; }
 .feature-card h3, .step-card h3 { font-size: 20px; letter-spacing: -.015em; }
 .feature-card p, .step-card p { margin-top: 12px; color: var(--dim); font-size: 14px; line-height: 1.8; }
@@ -145,7 +162,8 @@ main:focus { outline: none; }
 .faq-list summary span { font-size: 24px; color: var(--dim); flex-shrink: 0; }
 .faq-list details[open] summary span { transform: rotate(45deg); }
 .faq-list details > div { color: var(--dim); padding: 0 32px 24px 0; font-size: 14px; }
-.faq-list a { color: var(--accent); }
+​.faq-list a { color: var(--accent); }
+.faq-more { max-width: 800px; margin: 24px auto 0; color: var(--dim); font-size: 14px; }
 .site-footer { background: var(--surface); margin-top: 40px; padding-block: 40px 24px; }
 .footer-main, .footer-bottom { display: flex; justify-content: space-between; align-items: center; gap: 24px; }
 .footer-main .brand { font-size: 20px; }
@@ -252,6 +270,7 @@ main:focus { outline: none; }
   .platform-actions { min-height: 0; }
   .detail-section { gap: 40px; }
   .feature-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .feature-card-lead { padding: 28px 24px; }
 }
 @media (max-width:760px) {
   :root { --gutter: 24px; }
@@ -284,6 +303,7 @@ main:focus { outline: none; }
   .mobile-break { display: block; }
   .primary-button { font-size: 14px; }
   .feature-grid, .download-platforms { grid-template-columns: 1fr; }
+  .feature-card-compact { flex-direction: row; }
   .feature-card, .step-card { padding: 28px; }
   .feature-icon { margin-bottom: 24px; }
   .section-heading { margin-bottom: 32px; }
