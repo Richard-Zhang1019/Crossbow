@@ -533,7 +533,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
             <h2>{statusTitle}</h2>
             {(readErrors.size > 0 || !setupStep && (!canControl || !active || !running || !routingEnabled || explicitOnly)) &&
               <p role={readErrors.size ? "status" : undefined}>{statusHint}</p>}
-  const statusTitle = !canControl            {readErrors.size > 0 && <Button size="small" onClick={() => void refresh()}>{t("home.retryState")}</Button>}
+            {readErrors.size > 0 && <Button size="small" onClick={() => void refresh()}>{t("home.retryState")}</Button>}
             {setupStep === "import" && <div className="cb-home-import">
               <Button variant="primary" size="small" onClick={() => navigateTo({ page: "profiles", control: "cb-import-profile" })}>
                 <Icon name="download" size={13} />
