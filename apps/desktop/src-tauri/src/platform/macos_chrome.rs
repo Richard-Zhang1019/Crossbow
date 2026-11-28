@@ -84,9 +84,10 @@ pub(crate) fn install_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
     app.set_menu(menu)?;
     app.on_menu_event(|app, event| {
         if event.id().as_ref() == "app-settings" {
-            if let Some(win) = app.get_webview_window("main") {
-                let _ = win.emit("ui://goto", "settings");
-            }
+            // 主窗口可能已收起到托盘或处于轻量待机：先恢复窗口再跳转，
+            // 否则菜单项看起来没有反应（与托盘「设置」路径一致）。
+            crate::show_main_window(app);
+            let _ = app.emit("ui://goto", "settings");
         }
     });
     Ok(())

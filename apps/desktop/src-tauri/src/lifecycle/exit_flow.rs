@@ -523,7 +523,7 @@ pub(crate) fn handle_menu(app: &AppHandle, id: &str) {
         }
         "tray-update" => {
             show_main_window(app);
-            let _ = app.emit("ui://goto", serde_json::json!({ "page": "settings" }));
+            let _ = app.emit("ui://goto", "settings");
             Ok(())
         }
         "tray-delay-test" => {

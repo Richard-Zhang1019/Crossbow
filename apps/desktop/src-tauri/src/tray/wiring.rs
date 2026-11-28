@@ -1516,7 +1516,6 @@ pub(crate) fn tray_menu_entries(
         .clone();
 
     let sp = state.sysproxy.status();
-    #[cfg(target_os = "macos")]
     let tun_enabled = state
         .store
         .lock()
@@ -1609,7 +1608,6 @@ pub(crate) fn tray_menu_entries(
     let mut entries = vec![proxy];
     // 外部评审建议（2026-11-27 第 4 条）：顶部直接标出当前接管模式，
     // 一行看清「分流模式 · 接管通道」，无需展开任何子菜单。
-    #[cfg(target_os = "macos")]
     {
         let takeover_text = if tun_enabled {
             if sp.enabled {
