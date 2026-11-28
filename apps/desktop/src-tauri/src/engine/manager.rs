@@ -1236,6 +1236,30 @@ fn port_has_listener(address: SocketAddr) -> bool {
 
 /// 拉起子进程 + 就绪探测 + 监视线程（重启时复用，不重写配置文件）。
 fn spawn_and_watch(shared: Arc<Shared>, previous: Option<u32>) {
+    // 首次启动/崩溃自启：GeoIP 数据库缺失/过小时先从镜像下载。必须在
+    // spawn 之前完成——内核启动后会持有 geoip.metadb，Windows 上再 rename
+    // 覆盖就会 ACCess_DENIED（os5），清理残留时还会误伤本批次内核。
+    let opts = shared
+        .opts
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    if opts.ensure_geo_files {
+        let exclude = shared
+            .inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .child
+            .as_ref()
+            .map(|child| child.id());
+        if let Err(error) = ensure_geo_files(&shared.work_dir, &shared.binary_path, exclude) {
+            shared.kill_child();
+            shared.notify(CoreStatus::Crashed(format!(
+                "GeoIP 数据库准备失败：{error}"
+            )));
+            return;
+        }
+    }
     match shared.spawn_child(previous) {
         Ok(Some((pid, port, secret))) => {
             if previous.is_some() {
@@ -1682,10 +1706,13 @@ fn core_binary_candidates(binary_path: &Path, work_dir: &Path) -> Vec<PathBuf> {
 /// 清理可能持有 geo 数据文件句柄的本应用残留内核，返回清理数。
 /// Windows 上运行中的内核以独占方式持有 geoip.metadb，rename 覆盖会报
 /// ACCESS_DENIED（os error 5）——先清残留再重试（#676）。
-fn kill_geo_file_holders(binary_path: &Path, work_dir: &Path) -> usize {
+fn kill_geo_file_holders(binary_path: &Path, work_dir: &Path, exclude: Option<u32>) -> usize {
     let candidates = core_binary_candidates(binary_path, work_dir);
     find_leftover_core_pids(&candidates)
         .into_iter()
+        // 绝不清理本批次正在拉起/已拉起的子进程：它也会以候选路径匹配，
+        // 误杀后 rename 虽能成功，但就绪探测只会得到「内核已退出」。
+        .filter(|(pid, _)| Some(*pid) != exclude)
         .filter(|(pid, path)| kill_external_checked(*pid, Some(path), Some(work_dir)))
         .count()
 }
@@ -2205,17 +2232,6 @@ fn watch(shared: Arc<Shared>, pid: u32, port: u16, secret: String) {
         .unwrap_or_else(|e| e.into_inner())
         .clone();
 
-    // 首次启动：GeoIP 数据库缺失/过小时先从镜像下载（mihomo 自带的
-    // 直连 GitHub 下载在国内网络极易超时，且被旧版就绪窗口误杀形成
-    // 「半截文件」死循环）。
-    if opts.ensure_geo_files {
-        if let Err(e) = ensure_geo_files(&shared.work_dir, &shared.binary_path) {
-            shared.kill_child();
-            shared.notify(CoreStatus::Crashed(format!("GeoIP 数据库准备失败：{e}")));
-            return;
-        }
-    }
-
     let probe = ControllerProbe { port, secret };
     // 子进程在探测窗口内退出（如端口被占 FATAL）→ 立刻失败，不傻等满超时
     let child_gone = || {
@@ -2440,8 +2456,9 @@ pub const GEO_FILES: &[(&str, bool, u64, &[&str])] = &[
 fn ensure_geo_files(
     work_dir: &std::path::Path,
     binary_path: &std::path::Path,
+    exclude: Option<u32>,
 ) -> Result<(), String> {
-    let kill = || kill_geo_file_holders(binary_path, work_dir);
+    let kill = || kill_geo_file_holders(binary_path, work_dir, exclude);
     ensure_geo_files_with(work_dir, GEO_FILES, |name: &str, dest: &std::path::Path| {
         download_to(name, dest, &kill)
     })
