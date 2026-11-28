@@ -42,7 +42,7 @@
   --button-ink: var(--cb-faint);
   --button-height: 24px;
   width: 24px;
-  opacity: 0.85;
+  opacity: var(--cb-opacity-0_85);
 }
 .cb-node-card .cb-node-test:hover {
   --button-ink: var(--cb-text-dim);
