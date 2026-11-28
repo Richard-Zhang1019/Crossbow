@@ -673,6 +673,16 @@ pub fn run() {
             // 主窗口使用与应用界面一致的系统外观，避免浅色窗口描边。
             if let Some(win) = app.get_webview_window("main") {
                 apply_window_appearance(&win, &store.data().ui.theme);
+                // 原生质感（macOS）：窗口透明 + sidebar 材质，透出区域由 CSS
+                // 控制（标题栏条与纸面沟槽）。非 macOS 平台保持 conf 的
+                // 不透明底色，行为不变。
+                #[cfg(target_os = "macos")]
+                {
+                    let _ = win.set_background_color(Some(tauri::utils::config::Color(0, 0, 0, 0)));
+                    if let Err(error) = crate::platform::macos_chrome::install_vibrancy(&win) {
+                        eprintln!("[crossbow] {error}");
+                    }
+                }
                 // 会话结束（关机/注销）兜底：还原系统代理（#334 review P3）
                 #[cfg(target_os = "windows")]
                 if let Ok(hwnd) = win.hwnd() {
@@ -815,6 +825,11 @@ pub fn run() {
             // 托盘
             #[cfg(target_os = "macos")]
             crate::tray::speed::install(app.handle())?;
+            // macOS 应用菜单（设置… ⌘,；⌘W/⌘Q 由窗口菜单与默认退出提供）
+            #[cfg(target_os = "macos")]
+            if let Err(error) = crate::platform::macos_chrome::install_menu(app.handle()) {
+                eprintln!("[crossbow] {error}");
+            }
             #[cfg(not(target_os = "macos"))]
             {
                 let menu =

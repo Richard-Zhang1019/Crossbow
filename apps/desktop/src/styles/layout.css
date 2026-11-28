@@ -40,15 +40,24 @@ summary:focus-visible {
   padding: 0 var(--cb-space-8);
   min-width: 0;
 }
+/* macOS 原生质感：html/body/#root 透明让系统材质透出，帧把不透明底色
+   画回内容区（content-box 不含顶部标题栏条与两侧沟槽）。 */
+html.is-macos,
+html.is-macos body,
+html.is-macos #root {
+  background: transparent;
+}
 .cb-frame.is-mac {
   padding-top: var(--cb-space-28);
+  background: var(--cb-chrome);
+  background-clip: content-box;
 }
 .cb-window-drag {
   position: fixed;
   inset: 0 0 auto;
   height: 28px;
   z-index: var(--z-overlay);
-  background: var(--cb-chrome);
+  background: transparent;
 }
 .cb-global-nav {
   display: flex;

@@ -5,6 +5,10 @@ import "./index.css";
 import "@/layouts/Layout.css";
 import { isNotificationWindow, NotificationProvider, NotificationWindow } from "@/notifications/NotificationProvider";
 if (isNotificationWindow) document.documentElement.classList.add("notification-window");
+// macOS 原生质感：标题栏条与纸面沟槽透出窗口材质（Rust 侧 set_effects）。
+if (!isNotificationWindow && navigator.userAgent.includes("Macintosh")) {
+  document.documentElement.classList.add("is-macos");
+}
 
 // ---------- 黑匣子：白屏类问题定位 ----------
 // 全局错误与心跳写入 Rust 侧 webview.log：
