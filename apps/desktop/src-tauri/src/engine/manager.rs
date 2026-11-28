@@ -2549,8 +2549,11 @@ fn install_geo_file_with(
     rename: &dyn Fn() -> Result<(), (std::io::Error, u64)>,
 ) -> Result<(), String> {
     fn access_denied(e: &std::io::Error) -> bool {
+        // Windows 的 ERROR_ACCESS_DENIED 也会映射成 PermissionDenied；
+        // 数字 5 只在 Windows 有「拒绝访问」语义，Unix 的 errno 5 是 EIO，
+        // 不能当作占用去清内核。
         e.kind() == std::io::ErrorKind::PermissionDenied
-            || e.raw_os_error().is_some_and(|code| code == 5)
+            || (cfg!(windows) && e.raw_os_error() == Some(5))
     }
     let attempts = 3;
     let mut last: Option<std::io::Error> = None;
@@ -3290,7 +3293,10 @@ pub(crate) mod tests {
             &|| {
                 attempts.set(attempts.get() + 1);
                 if attempts.get() == 1 {
-                    Err((std::io::Error::from_raw_os_error(5), 0))
+                    Err((
+                        std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+                        0,
+                    ))
                 } else {
                     std::fs::rename(&tmp, &dest).map_err(|e| (e, 0))
                 }
@@ -3314,12 +3320,39 @@ pub(crate) mod tests {
                 kills.set(kills.get() + 1);
                 0
             },
-            &|| Err((std::io::Error::from_raw_os_error(5), 0)),
+            &|| {
+                Err((
+                    std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+                    0,
+                ))
+            },
         );
         let message = result.unwrap_err();
         assert!(message.contains("文件被其他程序占用"), "{message}");
-        assert!(message.contains("os error 5"), "{message}");
+        assert!(message.contains("denied"), "{message}");
         assert_eq!(kills.get(), 3, "每次重试前都应尝试清理残留内核");
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn install_geo_file_unix_eio_is_not_treated_as_occupancy() {
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path().join("geoip.metadb.part");
+        std::fs::write(&tmp, b"data").unwrap();
+        let dest = dir.path().join("geoip.metadb");
+        let kills = std::cell::Cell::new(0);
+        // errno 5 在 Unix 是 EIO，不是 ACCESS_DENIED：不清理、不按占用重试
+        let result = install_geo_file_with(
+            &dest,
+            &|| {
+                kills.set(kills.get() + 1);
+                0
+            },
+            &|| Err((std::io::Error::from_raw_os_error(5), 0)),
+        );
+        let message = result.unwrap_err();
+        assert!(!message.contains("文件被其他程序占用"), "{message}");
+        assert_eq!(kills.get(), 0);
     }
 
     #[test]
