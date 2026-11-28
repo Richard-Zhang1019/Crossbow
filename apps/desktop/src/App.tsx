@@ -5,7 +5,7 @@ import { subscriptionCleanup, unsubscribe } from "@/lib/unlisten";
 import { ButtonBase, Button } from "@/components/Button";
 import { notify, resolveRestartHints } from "@/notifications/service";
 import { useCallback, useEffect, useRef, useState } from "react";
-import HomePage, { coreText } from "@/pages/Home";
+import HomePage, { coreTextShort } from "@/pages/Home";
 import ProxiesPage from "@/pages/Proxies";
 import ProfilesPage from "@/pages/Profiles";
 import ConnectionsPage from "@/pages/Connections";
@@ -417,7 +417,7 @@ export default function App() {
           <i
             className={`cb-dot ${coreStatus?.state === "Running" ? "ok" : coreStatus?.state === "Crashed" ? "bad" : "idle"}`}
           />
-          {coreStatus ? coreText(t, coreStatus) : t("home.statePending")} · {coreLabel || "—"}
+          {coreStatus ? coreTextShort(t, coreStatus) : t("home.statePending")} · {coreLabel || "—"}
         </span>
         <span>Crossbow {appVersion && `v${appVersion}`}</span>
       </footer>

@@ -47,6 +47,7 @@ export function Icon({
     ),
     chevron: <path d="m9 5 7 7-7 7" />,
     "arrow-right": <path d="M5 12 H19 M14 7 L19 12 L14 17" />,
+    warning: <><path d="M12 3.8 21.6 20.2H2.4L12 3.8Z"/><path d="M12 9.6v4.2"/><path d="M12 17.2h.01"/></>,
     close: <path d="M6 6L18 18M18 6L6 18"/>,
     minus: <path d="M5 12H19"/>,
     check: <path d="M5 12 L10 17 L19 7" />,

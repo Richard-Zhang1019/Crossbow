@@ -326,6 +326,51 @@ html.is-macos #root {
   min-width: 0;
   min-height: 0;
 }
+/* 内核崩溃详情横幅：完整错误（含修复指引）只在此全文呈现，
+   其余位置（路径卡/健康行/速率头/底栏）用 coreTextShort 短文案 */
+.cb-core-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--cb-space-10);
+  max-width: 720px;
+  padding: var(--cb-space-10) var(--cb-space-12);
+  border: var(--cb-stroke-1) solid color-mix(in srgb, var(--cb-bad) 32%, var(--cb-line));
+  border-radius: var(--cb-radius-8);
+  background: color-mix(in srgb, var(--cb-bad) 7%, var(--cb-bg));
+  color: var(--cb-text-dim);
+  font-size: var(--cb-type-secondary);
+  line-height: var(--cb-leading-18-px);
+}
+.cb-core-error > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--cb-bad);
+}
+.cb-core-error-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.cb-core-error-text[data-expanded] {
+  display: block;
+  overflow: visible;
+}
+.cb-core-error-toggle {
+  flex: none;
+  align-self: center;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--cb-type-caption);
+  color: var(--cb-bad);
+}
+.cb-core-error-toggle:hover {
+  text-decoration: underline;
+}
 .cb-home-lead h2 {
   font-size: var(--cb-type-page);
   line-height: var(--cb-leading-1_3);

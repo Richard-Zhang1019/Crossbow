@@ -487,9 +487,11 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
             ? t("home.manualTakeover")
             : standby ? t("home.linkStandby") : t("home.takeoverOff");
   const coreSub = known.has("core")
-    ? engineName ? `${coreText(t, core)} · ${engineName}` : coreText(t, core)
+    ? engineName ? `${coreTextShort(t, core)} · ${engineName}` : coreTextShort(t, core)
     : t("home.statePending");
 
+  // 崩溃详情横幅：完整错误（含修复指引）只在这里全文呈现
+  const [errorExpanded, setErrorExpanded] = useState(false);
   const statusTitle = !canControl
     ? t(readErrors.size ? "home.stateReadFailed" : "home.statePending")
     : core.state === "Starting"
@@ -533,6 +535,20 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
             <h2>{statusTitle}</h2>
             {(readErrors.size > 0 || !setupStep && (!canControl || !active || !running || !routingEnabled || explicitOnly)) &&
               <p role={readErrors.size ? "status" : undefined}>{statusHint}</p>}
+            {core.state === "Crashed" && core.message && !readErrors.has("core") && (
+              <div className="cb-core-error" role="alert">
+                <Icon name="warning" size={15} />
+                <p className="cb-core-error-text" data-expanded={errorExpanded || undefined}>{core.message}</p>
+                {core.message.length > 96 && (
+                  <ButtonBase
+                    className="cb-core-error-toggle"
+                    onClick={() => setErrorExpanded(v => !v)}
+                  >
+                    {t(errorExpanded ? "home.coreErrorCollapse" : "home.coreErrorExpand")}
+                  </ButtonBase>
+                )}
+              </div>
+            )}
             {readErrors.size > 0 && <Button size="small" onClick={() => void refresh()}>{t("home.retryState")}</Button>}
             {setupStep === "import" && <div className="cb-home-import">
               <Button variant="primary" size="small" onClick={() => navigateTo({ page: "profiles", control: "cb-import-profile" })}>
@@ -635,7 +651,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
                     ? outbound.delay_ms > 0
                       ? `${outbound.delay_ms} ms`
                       : t("sites.error.timeout")
-                    : coreText(t, core)}
+                    : coreTextShort(t, core)}
                 </small>
               </div>
             </ConnectionFlow>
@@ -718,7 +734,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
                 <div>
                   <dt>{t("home.healthCore")}</dt>
                   <dd>
-                    <span>{known.has("core") && !readErrors.has("core") ? coreText(t, core) : t("home.statePending")}</span>
+                    <span>{known.has("core") && !readErrors.has("core") ? coreTextShort(t, core) : t("home.statePending")}</span>
                     {(setupStep === "download" || setupStep === "start") && <Button size="small"
                       loading={setupOperation === setupStep || (setupStep === "download" ? downloadRunning : core.state === "Starting")}
                       disabled={busy}
@@ -763,7 +779,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
                   <i
                     className={`cb-dot ${core.state === "Running" ? "ok" : "idle"}`}
                   />
-                  {known.has("core") ? coreText(t, core) : t("home.statePending")}
+                  {known.has("core") ? coreTextShort(t, core) : t("home.statePending")}
                 </span>
               </div>
               <div className="cb-rate-pair">
@@ -899,6 +915,13 @@ function Sparkline({ rates }: { rates: { up: number; down: number }[] }) {
       </svg>
     </div>
   );
+}
+
+/** 紧凑文案：崩溃态只报「内核异常」，完整错误由概览页错误横幅承载。
+ *  长报错（含修复指引）直接进副行/健康行/底栏会把布局撑乱（Windows 实测）。 */
+export function coreTextShort(t: ReturnType<typeof useT>, s: CoreStatus): string {
+  if (s.state === "Crashed") return t("home.coreCrashedShort");
+  return coreText(t, s);
 }
 
 export function coreText(t: ReturnType<typeof useT>, s: CoreStatus): string {
