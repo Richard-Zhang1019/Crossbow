@@ -96,7 +96,7 @@ main:focus { outline: none; }
 .hero-intro p { max-width: 840px; margin-inline: auto; margin-top: 20px; color: var(--dim); font-size: 16px; line-height: 1.8; }
 .mobile-break { display: none; }
 /* 首屏真实界面截图：随站点评级联动切换深浅版本 */
-.hero-shot { width: min(770px, 100%); margin: 56px auto 48px; border: 1px solid var(--line-strong); border-radius: 12px; overflow: hidden; background: var(--surface); box-shadow: 0 24px 64px color-mix(in srgb, var(--accent) 16%, transparent); }
+.hero-shot { width: min(1320px, 100%); margin: 56px auto 48px; border: 1px solid var(--line-strong); border-radius: 12px; overflow: hidden; background: var(--surface); box-shadow: 0 24px 64px color-mix(in srgb, var(--accent) 16%, transparent); }
 .hero-shot img { display: block; width: 100%; height: auto; }
 [data-theme="light"] .hero-shot img.shot-dark { display: none; }
 [data-theme="dark"] .hero-shot img.shot-light { display: none; }
