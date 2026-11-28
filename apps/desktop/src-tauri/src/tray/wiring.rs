@@ -740,6 +740,11 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                             {
                                 match state.sysproxy.disable() {
                                     Ok(()) => {
+                                        state.core().log_decision(&format!(
+                                            "sysproxy health: core dead {} cycles; system proxy disabled (core={core_status:?}, pid={})",
+                                            timing::FAILURE_BUDGET,
+                                            pid_label(core_pid)
+                                        ));
                                         let _ = handle
                                             .emit("sysproxy://status", state.sysproxy.status());
                                         refresh_tray(&handle);
@@ -754,6 +759,10 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                                     }
                                     Err(error) => {
                                         eprintln!("sysproxy stale-off failed: {error}");
+                                        state.core().log_decision(&format!(
+                                            "sysproxy health: system proxy disable failed: {}",
+                                            error.chars().take(200).collect::<String>()
+                                        ));
                                         let _ = handle
                                             .emit("sysproxy://status", state.sysproxy.status());
                                         notifications::publish(
@@ -805,6 +814,10 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                             if !reported_giveup {
                                 reported_giveup = true;
                                 skip_probe = true;
+                                state.core().log_decision(&format!(
+                                    "tun drift: give up after {reestablish_count} re-establishes; manual recovery required (pid={})",
+                                    pid_label(core_pid)
+                                ));
                                 let mut notice = notifications::Notice::new(
                                     notifications::Kind::Warning,
                                     "tun.takeoverGiveUp",
@@ -820,6 +833,10 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                             reestablish_count = reestablish_count.saturating_add(1);
                             reestablish_cooldown_until =
                                 std::time::Instant::now() + timing::REESTABLISH_COOLDOWN;
+                            state.core().log_decision(&format!(
+                                "tun drift: drift persists; re-establishing TUN (attempt {reestablish_count}/3, pid={})",
+                                pid_label(core_pid)
+                            ));
                             match reestablish_tun_if_enabled(&state) {
                                 Ok(()) => {
                                     let still_on = state
@@ -831,6 +848,10 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                                         .tun_enable;
                                     // 用户在重建立拿到锁之前已经关掉，不要报「已重新建立」。
                                     if still_on {
+                                        state.core().log_decision(&format!(
+                                            "tun drift: re-established (attempt {reestablish_count}/3, pid={})",
+                                            pid_label(core_pid)
+                                        ));
                                         let _ = handle.emit("tun://status", true);
                                         let _ = handle
                                             .emit("sysproxy://status", state.sysproxy.status());
@@ -843,10 +864,19 @@ pub(crate) fn spawn_tun_health_monitor(app: &AppHandle) {
                                             );
                                             notifications::publish(&handle, notice);
                                         }
+                                    } else {
+                                        state.core().log_decision(&format!(
+                                            "tun drift: re-established but TUN already disabled by user; leaving off (pid={})",
+                                            pid_label(core_pid)
+                                        ));
                                     }
                                 }
                                 Err(error) => {
                                     eprintln!("tun takeover re-establish failed: {error}");
+                                    state.core().log_decision(&format!(
+                                        "tun drift: re-establish failed: {}",
+                                        error.chars().take(200).collect::<String>()
+                                    ));
                                     failures = failures.saturating_add(1);
                                     if !reported_recovery_failure {
                                         reported_recovery_failure = true;
