@@ -530,13 +530,16 @@ fn core_answers(state: &AppState) -> bool {
     })
 }
 
-/// 决策日志里的进程标识（sysproxy 分支在其他平台也会记录）。
+/// 决策日志里的进程标识（看门狗只在 macOS / Windows 构建，见
+/// `spawn_tun_health_monitor`；Linux 没有这条循环，避免 dead_code）。
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn pid_label(pid: Option<u32>) -> String {
     pid.map(|pid| pid.to_string()).unwrap_or_else(|| "-".into())
 }
 
 /// TUN 探测错误的粗分类（#663）：日志不只要记录失败，还要能区分超时、
 /// 连接被拒与 DNS 失败。保持纯函数，便于单测。
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn probe_failure_class(error: &str) -> &'static str {
     let lower = error.to_ascii_lowercase();
     if lower.contains("timed out") || lower.contains("timeout") {
@@ -1768,6 +1771,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     fn probe_failures_are_classified_for_the_decision_log() {
         assert_eq!(probe_failure_class("Network Error: timed out"), "timeout");
         assert_eq!(
