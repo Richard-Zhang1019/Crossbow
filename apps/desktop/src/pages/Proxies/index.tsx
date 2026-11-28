@@ -600,28 +600,30 @@ function GroupCard({
               </div>
               <div className="cb-node-bottom mt-1.5 flex items-center gap-1.5">
                 <span className="cb-node-kind" title={n.kind}>{friendlyKind(n.kind,t)}</span>
-                <i
-                  className="h-[5px] w-[5px] flex-none rounded-full"
-                  style={{
-                    background:
-                      delay == null
-                        ? "var(--cb-faint)"
-                        : cls === "g"
-                          ? "var(--cb-ok)"
-                          : cls === "y"
-                            ? "var(--cb-warn)"
-                            : "var(--cb-bad)",
-                  }}
-                />
-                <span
-                  className="cb-mono text-[var(--cb-type-compat-10_5)]"
-                  style={{
-                    color: nodeTesting
-                      ? "var(--cb-accent)"
-                      : "var(--cb-text-dim)",
-                  }}
-                >
-                  {nodeTesting ? t("proxies.testing") : testLabel}
+                <span className="cb-node-delay" title={t("proxies.delayHint")}>
+                  <i
+                    aria-hidden="true"
+                    style={{
+                      background:
+                        delay == null
+                          ? "var(--cb-faint)"
+                          : cls === "g"
+                            ? "var(--cb-ok)"
+                            : cls === "y"
+                              ? "var(--cb-warn)"
+                              : "var(--cb-bad)",
+                    }}
+                  />
+                  <span
+                    className="cb-mono text-[var(--cb-type-compat-10_5)]"
+                    style={{
+                      color: nodeTesting
+                        ? "var(--cb-accent)"
+                        : "var(--cb-text-dim)",
+                    }}
+                  >
+                    {nodeTesting ? t("proxies.testing") : testLabel}
+                  </span>
                 </span>
                 <Button iconOnly size="small"
                   className="cb-node-test"
@@ -655,7 +657,8 @@ function delayText(ms: number | null, t: ReturnType<typeof useT>): string {
 }
 
 function delayClass(ms: number | null): "g" | "y" | "r" | "" {
-  if (ms == null || ms === 0) return "";
+  if (ms == null) return "";
+  if (ms === 0) return "r";
   if (ms <= 200) return "g";
   if (ms <= 500) return "y";
   return "r";

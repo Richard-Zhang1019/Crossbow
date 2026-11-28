@@ -30,9 +30,29 @@
 
 
 /* State and action have independent, always understandable locations (#647). */
-.cb-node-card .cb-node-test { position:relative; margin-left:var(--cb-space-2); }
+.cb-node-card .cb-node-test {
+  position: relative;
+  margin-left: var(--cb-space-2);
+  /* 每卡测速入口降噪：去边框盒，常时弱化；悬停浮出，测试中转强调色 */
+  --button-bg: transparent;
+  --button-line: transparent;
+  --button-hover: var(--cb-surface);
+  --button-hover-line: transparent;
+  --button-pressed: var(--cb-surface-2);
+  --button-ink: var(--cb-faint);
+  --button-height: 24px;
+  width: 24px;
+  opacity: var(--cb-opacity-0_85);
+}
+.cb-node-card .cb-node-test:hover {
+  --button-ink: var(--cb-text-dim);
+}
+.cb-node-card .cb-node-test[aria-busy="true"] {
+  --button-ink: var(--cb-accent);
+  opacity: 1;
+}
 .cb-node-card[data-selected] .cb-node-title { padding-right:var(--cb-space-24); }
-.cb-node-card .cb-node-bottom { min-height:var(--cb-control-height-compact); }
+.cb-node-card .cb-node-bottom { min-height:var(--cb-control-height-compact); align-items:center; }
 .cb-node-card .cb-node-bottom > .cb-mono { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
 .cb-node-automatic { display:flex; flex:none; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:var(--cb-space-12); padding:var(--cb-space-8) var(--cb-space-12); margin-bottom:var(--cb-space-8); border:var(--cb-stroke-1) solid var(--cb-line); border-radius:var(--cb-radius-8); color:var(--cb-text-dim); background:var(--cb-surface); font-size:var(--cb-type-secondary); line-height:var(--cb-leading-20-px); }
@@ -41,3 +61,18 @@
 .cb-node-automatic-copy > span { overflow-wrap:anywhere; min-width:0; }
 .cb-node-automatic[data-fixed="true"] { border-color:var(--cb-accent-line); background:var(--cb-accent-soft); }
 
+
+/* 延迟读数：色阶点 + 数字（title 解释统一延迟口径） */
+.cb-node-delay {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cb-space-6);
+  min-width: 0;
+}
+/* 色阶指示点：几何走设计系统 CSS，不依赖 Tailwind 任意值工具类 */
+.cb-node-delay i {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--cb-radius-circle);
+  flex: none;
+}
