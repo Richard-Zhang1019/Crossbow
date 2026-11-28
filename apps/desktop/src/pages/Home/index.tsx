@@ -487,7 +487,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
             ? t("home.manualTakeover")
             : standby ? t("home.linkStandby") : t("home.takeoverOff");
   const coreSub = known.has("core")
-    ? engineName ? `${coreText(t, core)} · ${engineName}` : coreText(t, core)
+    ? engineName ? `${coreTextShort(t, core)} · ${engineName}` : coreTextShort(t, core)
     : t("home.statePending");
 
   const statusTitle = !canControl
@@ -635,7 +635,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
                     ? outbound.delay_ms > 0
                       ? `${outbound.delay_ms} ms`
                       : t("sites.error.timeout")
-                    : coreText(t, core)}
+                    : coreTextShort(t, core)}
                 </small>
               </div>
             </ConnectionFlow>
@@ -718,7 +718,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
                 <div>
                   <dt>{t("home.healthCore")}</dt>
                   <dd>
-                    <span>{known.has("core") && !readErrors.has("core") ? coreText(t, core) : t("home.statePending")}</span>
+                    <span>{known.has("core") && !readErrors.has("core") ? coreTextShort(t, core) : t("home.statePending")}</span>
                     {(setupStep === "download" || setupStep === "start") && <Button size="small"
                       loading={setupOperation === setupStep || (setupStep === "download" ? downloadRunning : core.state === "Starting")}
                       disabled={busy}
@@ -763,7 +763,7 @@ export default function HomePage({ capabilities, connectionRevision, listeners, 
                   <i
                     className={`cb-dot ${core.state === "Running" ? "ok" : "idle"}`}
                   />
-                  {known.has("core") ? coreText(t, core) : t("home.statePending")}
+                  {known.has("core") ? coreTextShort(t, core) : t("home.statePending")}
                 </span>
               </div>
               <div className="cb-rate-pair">
@@ -899,6 +899,13 @@ function Sparkline({ rates }: { rates: { up: number; down: number }[] }) {
       </svg>
     </div>
   );
+}
+
+/** 紧凑文案：崩溃态只报「内核异常」，完整错误由概览页错误横幅承载。
+ *  长报错（含修复指引）直接进副行/健康行/底栏会把布局撑乱（Windows 实测）。 */
+export function coreTextShort(t: ReturnType<typeof useT>, s: CoreStatus): string {
+  if (s.state === "Crashed") return t("home.coreCrashedShort");
+  return coreText(t, s);
 }
 
 export function coreText(t: ReturnType<typeof useT>, s: CoreStatus): string {
