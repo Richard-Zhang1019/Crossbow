@@ -232,7 +232,17 @@ function initHero() {
   heroRender();
 }
 
+/* Hero CTA: label the primary download button for the visitor's OS. */
+function initHeroDownload() {
+  const el = document.querySelector("[data-hero-download]");
+  if (!el) return;
+  const ua = navigator.userAgent;
+  const label = /Mac/i.test(ua) ? el.dataset.mac : /Win/i.test(ua) ? el.dataset.win : null;
+  if (label) el.textContent = label;
+}
+
 function init() {
+  initHeroDownload();
   initHeader();
   initDocs();
   initDocsScroll();
